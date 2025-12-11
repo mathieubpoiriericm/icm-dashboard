@@ -1,0 +1,203 @@
+{
+  "version": 0,
+  "sha": "5eb62f3",
+  "ref": "refs/heads/main",
+  "job": {
+    "correlator": "rshiny_dashboard-dependencies",
+    "id": "rshiny_dashboard-dep-scan"
+  },
+  "detector": {
+    "name": "manual-r-dependency-scan",
+    "version": "1.0.0",
+    "url": "https://github.com/r-lib/desc"
+  },
+  "scanned": "2025-12-11T00:00:00Z",
+  "manifests": {
+    "app.R": {
+      "name": "app.R",
+      "file": {
+        "source_location": "app.R"
+      },
+      "resolved": {
+        "shiny": {
+          "package_url": "pkg:cran/shiny",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "dplyr": {
+          "package_url": "pkg:cran/dplyr",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "purrr": {
+          "package_url": "pkg:cran/purrr",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "stringr": {
+          "package_url": "pkg:cran/stringr",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "DT": {
+          "package_url": "pkg:cran/DT",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "data.table": {
+          "package_url": "pkg:cran/data.table",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "sysfonts": {
+          "package_url": "pkg:cran/sysfonts",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "showtext": {
+          "package_url": "pkg:cran/showtext",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "fastmap": {
+          "package_url": "pkg:cran/fastmap",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "memoise": {
+          "package_url": "pkg:cran/memoise",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "cachem": {
+          "package_url": "pkg:cran/cachem",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "digest": {
+          "package_url": "pkg:cran/digest",
+          "relationship": "direct",
+          "scope": "runtime"
+        }
+      }
+    },
+    "maRco/DESCRIPTION": {
+      "name": "maRco/DESCRIPTION",
+      "file": {
+        "source_location": "maRco/DESCRIPTION"
+      },
+      "resolved": {
+        "shiny": {
+          "package_url": "pkg:cran/shiny",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "dplyr": {
+          "package_url": "pkg:cran/dplyr",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "purrr": {
+          "package_url": "pkg:cran/purrr",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "stringr": {
+          "package_url": "pkg:cran/stringr",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "DT": {
+          "package_url": "pkg:cran/DT",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "data.table": {
+          "package_url": "pkg:cran/data.table",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "fastmap": {
+          "package_url": "pkg:cran/fastmap",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "memoise": {
+          "package_url": "pkg:cran/memoise",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "cachem": {
+          "package_url": "pkg:cran/cachem",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "digest": {
+          "package_url": "pkg:cran/digest",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "htmltools": {
+          "package_url": "pkg:cran/htmltools",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "httr2": {
+          "package_url": "pkg:cran/httr2",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "xml2": {
+          "package_url": "pkg:cran/xml2",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "rlang": {
+          "package_url": "pkg:cran/rlang",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "readr": {
+          "package_url": "pkg:cran/readr",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "tidyselect": {
+          "package_url": "pkg:cran/tidyselect",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "rentrez": {
+          "package_url": "pkg:cran/rentrez",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "RefManageR": {
+          "package_url": "pkg:cran/RefManageR",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "rbibutils": {
+          "package_url": "pkg:cran/rbibutils",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "UniprotR": {
+          "package_url": "pkg:cran/UniprotR",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "biomaRt": {
+          "package_url": "pkg:bioconductor/biomaRt",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "testthat": {
+          "package_url": "pkg:cran/testthat",
+          "relationship": "direct",
+          "scope": "development"
+        }
+      }
+    }
+  }
+}
