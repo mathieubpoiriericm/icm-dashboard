@@ -1,0 +1,24 @@
+# macOS-specific
+.DS_Store
+
+# Python cache
+__pycache__
+
+# Files and directories
+.bslib-cache
+.claude
+.pytest_cache
+.ruff_cache
+.superpowers
+.venv
+.vscode
+data/
+logs
+.env
+.Renviron
+CLAUDE.md
+docs/superpowers
+rshiny_dashboard.code-workspace
+secrets-values.yaml
+www/*min.css
+www/*min.js

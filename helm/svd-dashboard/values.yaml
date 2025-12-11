@@ -1,0 +1,239 @@
+# Override chart name / full release name (handled in _helpers.tpl)
+nameOverride: ""
+fullnameOverride: ""
+
+# --- Dashboard ---
+dashboard:
+  image:
+    repository: rshiny-dashboard
+    tag: "1.0.0"
+    pullPolicy: Never
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+  preloadTable2: "TRUE"
+
+# --- PostgreSQL ---
+postgresql:
+  image:
+    repository: postgres
+    tag: "18"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage:
+    size: 10Gi
+    storageClass: ""
+  credentials:
+    database: svd_dashboard
+    username: ""
+    password: ""
+  exporter:
+    enabled: true
+    image:
+      repository: prometheuscommunity/postgres-exporter
+      tag: "v0.16.0"
+    port: 9187
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+# --- Pipeline CronJob ---
+pipeline:
+  image:
+    repository: svd-pipeline
+    tag: "1.0.0"
+    pullPolicy: Never
+  schedule: "0 3 * * 1"
+  daysBack: 7
+  syncExternalData: true
+  # Max duration (seconds) before the job is killed. Prevents infinite hangs.
+  activeDeadlineSeconds: 7200
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+# --- Shared QS Data Volume ---
+qsData:
+  storage:
+    size: 1Gi
+    storageClass: ""
+    # ReadWriteOnce: works with a single dashboard replica (default).
+    # ReadWriteMany (RWX): required for multiple dashboard replicas, but needs
+    # a CSI driver that supports RWX (e.g. NFS, EFS, CephFS).
+    accessMode: ReadWriteOnce
+
+# --- Notifications ---
+notifications:
+  ntfy:
+    upstreamBaseUrl: "https://ntfy.sh"
+    enabled: true
+    image:
+      repository: binwiederhier/ntfy
+      tag: "v2.17.0"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 750m
+        memory: 768Mi
+    auth: "deny-all"
+    metrics:
+      enabled: true
+    cache:
+      size: 1Gi
+  healthchecks:
+    enabled: true
+    image:
+      repository: healthchecks/healthchecks
+      tag: "v4.0"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 750m
+        memory: 768Mi
+    storage:
+      size: 1Gi
+    # Required when healthchecks is enabled. Set via --set or -f secrets-values.yaml.
+    secretKey: ""
+
+# --- Monitoring (ServiceMonitors for external Prometheus) ---
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus
+    interval: 30s
+  ingressNginx:
+    enabled: true
+    namespace: ingress-nginx
+    portName: metrics
+    metricsPort: 10254
+    selectorLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  blackboxExporter:
+    enabled: true
+    image:
+      repository: prom/blackbox-exporter
+      tag: "v0.25.0"
+    port: 9115
+    resources:
+      requests:
+        cpu: 50m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+# --- Observability ---
+# Set to false if you already have kube-prometheus-stack and/or
+# victoria-logs deployed separately (e.g. in a 'monitoring' namespace).
+observability:
+  prometheus:
+    enabled: false
+  victoriaLogs:
+    enabled: true
+  grafanaImageRenderer:
+    enabled: true
+    image:
+      repository: grafana/grafana-image-renderer
+      tag: "v5.5.1"
+  # When the prometheus subchart is disabled but Grafana is deployed
+  # separately (e.g. in a 'monitoring' namespace), enable this to
+  # create an ExternalName service and ingress rule for Grafana.
+  grafana:
+    external:
+      enabled: true
+      namespace: monitoring
+      serviceName: prometheus-grafana
+      port: 80
+
+# --- Ingress ---
+ingress:
+  enabled: true
+  className: nginx
+  # Override these hostnames in your own values file (e.g. -f my-values.yaml)
+  hosts:
+    dashboard: csvd-dashboard.example.com
+    ntfy: ntfy.example.com
+    healthchecks: healthchecks.example.com
+    grafana: grafana.example.com
+  tls:
+    enabled: true
+    # Secret containing TLS certificate (create manually or via cert-manager)
+    secretName: "cloudflare-origin-tls"
+    # cert-manager cluster issuer name (adds annotation to Ingress)
+    clusterIssuer: ""
+
+# --- Network Policies (requires a CNI that supports NetworkPolicy, e.g. Calico/Cilium) ---
+networkPolicies:
+  enabled: false
+
+# --- Secrets (override via --set or -f secrets.yaml) ---
+secrets:
+  anthropicApiKey: ""
+  ncbiApiKey: ""
+  entrezEmail: ""
+  unpaywallEmail: ""
+  notifyUrls: ""
+  healthcheckUrl: ""
+
+# --- Subchart overrides ---
+kube-prometheus-stack:
+  grafana:
+    enabled: true
+  prometheusOperator:
+    namespaces:
+      releaseNamespace: true
+      additional: []
+  prometheus:
+    prometheusSpec:
+      serviceMonitorNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+      podMonitorNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+      probeNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+      ruleNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+  alertmanager:
+    alertmanagerSpec:
+      alertmanagerConfigNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+  nodeExporter:
+    enabled: true
+
+victoria-logs-single:
+  server:
+    retentionPeriod: 30d
+    persistentVolume:
+      enabled: true
+      size: 50Gi
+  vector:
+    enabled: true

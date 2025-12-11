@@ -1,0 +1,35 @@
+# helmfile.yaml — Orchestrates the svd-dashboard umbrella Helm chart.
+#
+# Usage:
+#   helmfile deps       # Update subchart dependencies (kube-prometheus-stack, victoria-logs-single)
+#   helmfile diff       # Preview changes before applying
+#   helmfile apply      # Apply changes (runs diff first, then apply)
+#   helmfile template   # Render templates locally (for debugging)
+#   helmfile lint       # Lint the chart
+#   helmfile destroy    # Tear down the release
+#
+# Prerequisites:
+#   - helm and helmfile installed
+#   - helm-diff plugin: helm plugin install https://github.com/databus23/helm-diff
+#   - secrets-values.yaml present at project root (gitignored)
+
+---
+helmDefaults:
+  wait: true
+  timeout: 600
+  cleanupOnFail: true
+  createNamespace: true
+
+repositories:
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: victoriametrics
+    url: https://victoriametrics.github.io/helm-charts
+
+releases:
+  - name: svd
+    namespace: svd
+    chart: ./helm/svd-dashboard
+    values:
+      - ./helm/svd-dashboard/values.yaml
+      - ./secrets-values.yaml

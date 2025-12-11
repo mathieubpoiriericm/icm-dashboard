@@ -1,0 +1,26 @@
+{{- if and .Values.notifications.ntfy.enabled .Values.notifications.ntfy.metrics.enabled .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-ntfy
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ntfy
+    {{- range $key, $value := .Values.monitoring.serviceMonitor.labels }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ntfy
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'ntfy_messages_published_(success|failure)'
+          targetLabel: __name__
+          replacement: 'ntfy_messages_published_${1}_total'
+{{- end }}
