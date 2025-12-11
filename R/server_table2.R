@@ -1,0 +1,609 @@
+# server_table2.R
+# Server logic for Table 2 (Clinical Trials Table)
+# nolint start: object_usage_linter.
+
+#' Build Table 2 Data Loader
+#'
+#' Creates a reactive that lazily loads Table 2 data only when needed.
+#'
+#' @param table2_data reactiveVal. Storage for table2 data.
+#' @param table2_display_data reactiveVal. Storage for display data.
+#' @param ct_info_data reactiveVal. Storage for clinical trial info.
+#' @param registry_matches_data reactiveVal. Storage for registry matches.
+#' @param registry_rows_data reactiveVal. Storage for registry row indices.
+#' @param sample_sizes_data reactiveVal. Storage for sample sizes.
+#'
+#' @return A reactive that returns the loaded data list.
+#'
+#' @keywords internal
+build_table2_loader <- function(
+  table2_data,
+  table2_display_data,
+  ct_info_data,
+  registry_matches_data,
+  registry_rows_data,
+  sample_sizes_data
+) {
+  shiny::reactive({
+    if (is.null(table2_data())) {
+      message("Loading Table 2 data...")
+
+      data <- load_table2_data()
+
+      table2_display <- prepare_table2_display(
+        data$table2,
+        data$ct_info,
+        data$gene_info_table2,
+        data$gene_symbols_table2
+      )
+
+      table2_data(data$table2)
+      table2_display_data(table2_display)
+      ct_info_data(data$ct_info)
+      registry_matches_data(data$registry_matches)
+      registry_rows_data(data$registry_rows)
+      sample_sizes_data(data$sample_sizes)
+
+      message("Table 2 data loaded successfully")
+    }
+
+    list(
+      table2 = table2_data(),
+      table2_display = table2_display_data(),
+      ct_info = ct_info_data(),
+      registry_matches = registry_matches_data(),
+      registry_rows = registry_rows_data(),
+      sample_sizes = sample_sizes_data(),
+      sample_sizes_hash = digest::digest(sample_sizes_data())
+    )
+  })
+}
+
+#' Build Sample Size Histogram Output
+#'
+#' Creates the renderPlot expression for the sample size histogram
+#' with filter indicator lines.
+#'
+#' @param load_table2 Reactive. The table2 data loader.
+#' @param sample_size_input Reactive. The current slider input values.
+#'
+#' @return A cached renderPlot expression.
+#'
+#' @keywords internal
+build_sample_size_histogram <- function(load_table2, sample_size_input) {
+  shiny::renderPlot({
+    data <- load_table2()
+    sample_sizes <- data$sample_sizes
+
+    par(mar = c(3L, 3L, 1L, 1L), bg = "white", family = "Roboto")
+    hist(
+      sample_sizes,
+      breaks = HISTOGRAM_BREAKS,
+      col = "#2d287a",
+      border = "white",
+      main = "",
+      xlab = "",
+      ylab = "",
+      xlim = c(0L, HISTOGRAM_XLIM_MAX),
+      las = 1L,
+      xaxt = "n"
+    )
+    axis(
+      1L,
+      at = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
+      labels = FALSE
+    )
+    text(
+      x = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
+      y = par("usr")[3L] - 0.5,
+      labels = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
+      srt = 45L,
+      adj = 1L,
+      xpd = TRUE
+    )
+
+    if (!is.null(sample_size_input())) {
+      abline(
+        v = sample_size_input()[1L],
+        col = "#e52f12",
+        lwd = 2L,
+        lty = 2L
+      )
+      abline(
+        v = sample_size_input()[2L],
+        col = "#e52f12",
+        lwd = 2L,
+        lty = 2L
+      )
+    }
+  }) |>
+    shiny::bindCache(
+      load_table2()$sample_sizes_hash,
+      sample_size_input()
+    )
+}
+
+#' Build Table 2 Filtered Data Reactive
+#'
+#' Creates a reactive expression that filters table2 based on multiple
+#' filter selections including genetic evidence, registry, phase,
+#' population, sponsor, and sample size.
+#'
+#' @param load_table2 Reactive. The table2 data loader.
+#' @param ge_filter Reactive. Genetic evidence filter values.
+#' @param reg_filter Reactive. Registry filter values.
+#' @param ct_filter Reactive. Clinical trial phase filter values.
+#' @param pop_filter Reactive. SVD population filter values.
+#' @param spon_filter Reactive. Sponsor type filter values.
+#' @param sample_size_filter_debounced Reactive. Debounced sample size range.
+#'
+#' @return A cached reactive expression returning filtered display data.
+#'
+#' @keywords internal
+build_table2_filtered_data <- function(
+  load_table2,
+  ge_filter,
+  reg_filter,
+  ct_filter,
+  pop_filter,
+  spon_filter,
+  sample_size_filter_debounced
+) {
+  shiny::reactive({
+    data <- load_table2()
+    table2 <- data$table2
+    registry_rows <- data$registry_rows
+
+    # Use pre-computed sample_size_numeric column (no need to recompute)
+    filtered_table2 <- data.table::copy(table2)[, original_row_num := .I]
+
+    # Genetic evidence filter
+    filtered_table2 <- apply_genetic_evidence_filter(
+      filtered_table2,
+      ge_filter()
+    )
+
+    # Registry filter (using fastmap $mget for O(1) lookups)
+    filtered_table2 <- apply_registry_filter(
+      filtered_table2,
+      reg_filter(),
+      registry_rows
+    )
+
+    # Clinical trial phase filter
+    filtered_table2 <- apply_phase_filter(filtered_table2, ct_filter())
+
+    # Population filter
+    filtered_table2 <- apply_population_filter(filtered_table2, pop_filter())
+
+    # Sponsor filter
+    filtered_table2 <- apply_sponsor_filter(filtered_table2, spon_filter())
+
+    # Sample size filter
+    filtered_table2 <- apply_sample_size_filter(
+      filtered_table2,
+      sample_size_filter_debounced()
+    )
+
+    kept_rows <- filtered_table2$original_row_num
+    filtered_table2[, original_row_num := NULL]
+
+    # Get filtered display data, sorted by Drug for proper row merging
+    filtered_display <- data$table2_display[kept_rows, ]
+    filtered_display <- filtered_display[order(filtered_display$Drug), ]
+    rownames(filtered_display) <- NULL
+
+    # Pre-compute drug group indices for JavaScript row merging
+    filtered_display <- add_drug_group_indices(filtered_display)
+
+    filtered_display
+  }) |>
+    shiny::bindCache(
+      ge_filter(),
+      reg_filter(),
+      ct_filter(),
+      pop_filter(),
+      spon_filter(),
+      sample_size_filter_debounced()
+    )
+}
+
+#' Apply Genetic Evidence Filter
+#'
+#' @param dt data.table. The data to filter.
+#' @param filter_value Character vector. Filter values.
+#'
+#' @return Filtered data.table.
+#'
+#' @keywords internal
+apply_genetic_evidence_filter <- function(dt, filter_value) {
+  if (!is.null(filter_value) && length(filter_value) > 0L) {
+    dt <- dt[get("Genetic Evidence") %in% filter_value]
+  }
+  dt
+}
+
+#' Apply Registry Filter
+#'
+#' @param dt data.table. The data to filter.
+#' @param filter_value Character vector. Filter values.
+#' @param registry_rows fastmap. Pre-computed row indices.
+#'
+#' @return Filtered data.table.
+#'
+#' @keywords internal
+apply_registry_filter <- function(dt, filter_value, registry_rows) {
+  if (
+    !is.null(filter_value) &&
+      length(filter_value) > 0L &&
+      !"all" %in% filter_value
+  ) {
+    matching_rows <- unique(unlist(registry_rows$mget(filter_value)))
+    dt <- dt[original_row_num %in% matching_rows]
+  }
+  dt
+}
+
+#' Apply Clinical Trial Phase Filter
+#'
+#' @param dt data.table. The data to filter.
+#' @param filter_value Character vector. Filter values.
+#'
+#' @return Filtered data.table.
+#'
+#' @keywords internal
+apply_phase_filter <- function(dt, filter_value) {
+  if (
+    !is.null(filter_value) &&
+      length(filter_value) > 0L &&
+      !"all" %in% filter_value
+  ) {
+    dt <- dt[get("Clinical Trial Phase") %in% filter_value]
+  }
+  dt
+}
+
+#' Apply Population Filter
+#'
+#' @param dt data.table. The data to filter.
+#' @param filter_value Character vector. Filter values.
+#'
+#' @return Filtered data.table.
+#'
+#' @keywords internal
+apply_population_filter <- function(dt, filter_value) {
+  if (
+    !is.null(filter_value) &&
+      length(filter_value) > 0L &&
+      !"all" %in% filter_value
+  ) {
+    dt <- dt[get("SVD Population") %in% filter_value]
+  }
+  dt
+}
+
+#' Apply Sponsor Filter
+#'
+#' @param dt data.table. The data to filter.
+#' @param filter_value Character vector. Filter values.
+#'
+#' @return Filtered data.table.
+#'
+#' @keywords internal
+apply_sponsor_filter <- function(dt, filter_value) {
+  if (
+    !is.null(filter_value) &&
+      length(filter_value) > 0L &&
+      !"all" %in% filter_value
+  ) {
+    if ("Academic" %in% filter_value && "Industry" %in% filter_value) {
+      # Both selected, keep all
+    } else if ("Academic" %in% filter_value) {
+      dt <- dt[get("Sponsor Type") == "Academic"]
+    } else {
+      dt <- dt[grepl("^Industry", get("Sponsor Type"))]
+    }
+  }
+  dt
+}
+
+#' Apply Sample Size Filter
+#'
+#' @param dt data.table. The data to filter.
+#' @param filter_range Numeric vector of length 2. Min and max values.
+#'
+#' @return Filtered data.table.
+#'
+#' @keywords internal
+apply_sample_size_filter <- function(dt, filter_range) {
+  if (!is.null(filter_range)) {
+    dt <- dt[
+      sample_size_numeric >= filter_range[1L] &
+        sample_size_numeric <= filter_range[2L]
+    ]
+  }
+  dt
+}
+
+#' Add Drug Group Indices for Row Merging
+#'
+#' Pre-computes drug group indices for JavaScript row merging,
+#' avoiding recalculation on each page draw.
+#'
+#' @param display_df Data frame. The display data.
+#'
+#' @return Data frame with __drug_group__ column added.
+#'
+#' @keywords internal
+add_drug_group_indices <- function(display_df) {
+  drugs <- display_df$Drug
+  drug_group_idx <- integer(length(drugs))
+
+  if (length(drugs) > 0L) {
+    current_group <- 0L
+    last_drug <- ""
+    for (i in seq_along(drugs)) {
+      drug_text <- gsub("<[^>]+>", "", drugs[i]) # Strip HTML for comparison
+      if (drug_text != last_drug) {
+        current_group <- current_group + 1L
+        last_drug <- drug_text
+      }
+      drug_group_idx[i] <- current_group
+    }
+  }
+
+  # Add hidden column with drug group index (0-indexed for JavaScript)
+  display_df$`__drug_group__` <- drug_group_idx - 1L
+
+  display_df
+}
+
+#' Build Table 2 Filter Message UI
+#'
+#' Creates a reactive UI expression that displays active filter status
+#' for Table 2.
+#'
+#' @param ge_filter Reactive. Genetic evidence filter values.
+#' @param reg_filter Reactive. Registry filter values.
+#' @param ct_filter Reactive. Clinical trial phase filter values.
+#' @param pop_filter Reactive. SVD population filter values.
+#' @param spon_filter Reactive. Sponsor type filter values.
+#' @param sample_size_filter_debounced Reactive. Debounced sample size range.
+#'
+#' @return A cached renderUI expression.
+#'
+#' @keywords internal
+build_table2_filter_message <- function(
+  ge_filter,
+  reg_filter,
+  ct_filter,
+  pop_filter,
+  spon_filter,
+  sample_size_filter_debounced
+) {
+  shiny::renderUI({
+    filters_applied <- build_filter_list(
+      list(
+        list(
+          name = "Genetic Evidence",
+          value = ge_filter(),
+          is_single = TRUE
+        ),
+        list(
+          name = "Clinical Trial Registry",
+          value = reg_filter(),
+          exclude_all = TRUE
+        ),
+        list(
+          name = "Clinical Trial Phase",
+          value = ct_filter(),
+          exclude_all = TRUE
+        ),
+        list(
+          name = "Population",
+          value = pop_filter(),
+          exclude_all = TRUE
+        ),
+        list(
+          name = "Sponsor",
+          value = spon_filter(),
+          exclude_all = TRUE
+        )
+      )
+    )
+
+    # Add sample size filter if not at default values
+    if (!is.null(sample_size_filter_debounced())) {
+      if (
+        sample_size_filter_debounced()[1L] != SAMPLE_SIZE_MIN ||
+          sample_size_filter_debounced()[2L] != SAMPLE_SIZE_MAX
+      ) {
+        filters_applied <- c(
+          filters_applied,
+          paste0(
+            "Sample Size: ",
+            sample_size_filter_debounced()[1L],
+            " - ",
+            sample_size_filter_debounced()[2L]
+          )
+        )
+      }
+    }
+
+    render_filter_message(filters_applied)
+  }) |>
+    shiny::bindCache(
+      ge_filter(),
+      reg_filter(),
+      ct_filter(),
+      pop_filter(),
+      spon_filter(),
+      sample_size_filter_debounced()
+    )
+}
+
+#' Build Table 2 DataTable Output
+#'
+#' Creates the DT::renderDT expression for Table 2 with row merging
+#' JavaScript for drug grouping.
+#'
+#' @param filtered_data2 Reactive. The filtered display data.
+#'
+#' @return A DT::renderDT expression.
+#'
+#' @keywords internal
+build_table2_datatable <- function(filtered_data2) {
+  DT::renderDT(
+    {
+      display_data <- filtered_data2()
+      # Get the index of the hidden drug group column
+      drug_group_col_idx <- which(
+        names(display_data) == "__drug_group__"
+      ) -
+        1L
+
+      dt2 <- DT::datatable(
+        display_data,
+        escape = FALSE,
+        rownames = FALSE,
+        options = list(
+          columnDefs = list(
+            list(width = "180px", targets = 2L),
+            # Hide the drug group column but keep data accessible
+            list(visible = FALSE, targets = drug_group_col_idx)
+          ),
+          autoWidth = FALSE,
+          pageLength = DATATABLE_PAGE_LENGTH,
+          deferRender = TRUE,
+          dom = "lfrtip",
+          scrollX = TRUE,
+          scrollCollapse = TRUE,
+          searchDelay = DATATABLE_SEARCH_DELAY,
+          initComplete = DT::JS(
+            "function() {
+              $(this.api().table().header())
+                .find('th').css('text-align', 'center');
+            }"
+          ),
+          drawCallback = DT::JS(sprintf(
+            "function(settings) {
+              // Initialize tooltips
+              if (typeof initializeTippy === 'function') {
+                initializeTippy();
+              }
+
+              var api = this.api();
+              var columnsToMerge = [0, 1, 2, 3];
+              var rows = api.rows({page: 'current'}).nodes();
+              var drugGroupColIdx = %d;
+
+              if (rows.length === 0) return;
+
+              // Get pre-computed drug group indices
+              var drugGroupIndex = api
+                .column(drugGroupColIdx, {page: 'current'})
+                .data().toArray().map(Number);
+
+              // Find max group index
+              var maxGroup = Math.max.apply(null, drugGroupIndex);
+
+              // Get DataTables default colors from actual rows
+              var stripeColor = $(rows[0]).css('background-color');
+              var whiteColor = rows.length > 1 ?
+                $(rows[1]).css('background-color') : '#ffffff';
+
+              // Find first and last row index for each drug group
+              var drugGroupFirstRow = {};
+              var drugGroupLastRow = {};
+              for (var r = 0; r < drugGroupIndex.length; r++) {
+                var g = drugGroupIndex[r];
+                if (drugGroupFirstRow[g] === undefined) {
+                  drugGroupFirstRow[g] = r;
+                }
+                drugGroupLastRow[g] = r;
+              }
+
+              // Count rows per drug group
+              var drugGroupRowCount = {};
+              for (var g = 0; g <= maxGroup; g++) {
+                if (drugGroupFirstRow[g] !== undefined) {
+                  drugGroupRowCount[g] =
+                    drugGroupLastRow[g] - drugGroupFirstRow[g] + 1;
+                }
+              }
+
+              // Determine color for each drug group's first 4 columns
+              var drugGroupColors = {};
+              var sortedGroups = Object.keys(drugGroupFirstRow)
+                .map(Number).sort(function(a,b){return a-b;});
+
+              for (var gi = 0; gi < sortedGroups.length; gi++) {
+                var dg = sortedGroups[gi];
+                if (gi === 0) {
+                  drugGroupColors[dg] = whiteColor;
+                } else {
+                  var prevDg = sortedGroups[gi - 1];
+                  var prevLastRowIdx = drugGroupLastRow[prevDg];
+                  var prevRowIsStripe = (prevLastRowIdx %% 2 === 0);
+                  var prevHasEvenRows =
+                    (drugGroupRowCount[prevDg] %% 2 === 0);
+
+                  var useStripe = prevHasEvenRows ? prevRowIsStripe :
+                    !prevRowIsStripe;
+                  drugGroupColors[dg] = useStripe ? stripeColor : whiteColor;
+                }
+              }
+
+              // Apply colors to first 4 columns only
+              for (var i = 0; i < rows.length; i++) {
+                var bgColor = drugGroupColors[drugGroupIndex[i]];
+                var rowCells = $(rows[i]).find('td');
+                for (var c = 0; c < columnsToMerge.length; c++) {
+                  rowCells.eq(columnsToMerge[c])
+                    .css('background-color', bgColor);
+                }
+              }
+
+              // Merge cells and apply rowspan
+              columnsToMerge.forEach(function(colIdx) {
+                var column = api.column(colIdx, {page: 'current'});
+                var nodes = column.nodes();
+
+                if (nodes.length === 0) return;
+
+                var lastValue = null;
+                var lastNode = null;
+                var lastGroup = null;
+                var rowspan = 1;
+
+                for (var i = 0; i < nodes.length; i++) {
+                  var cellValue = $(nodes[i]).text().trim();
+                  var currentGroup = drugGroupIndex[i];
+
+                  if (cellValue === lastValue && lastValue !== '' &&
+                      currentGroup === lastGroup) {
+                    $(nodes[i]).css('display', 'none');
+                    rowspan++;
+                    $(lastNode).attr('rowspan', rowspan);
+                  } else {
+                    lastValue = cellValue;
+                    lastNode = nodes[i];
+                    lastGroup = currentGroup;
+                    rowspan = 1;
+                    $(lastNode).css('vertical-align', 'middle');
+                  }
+                }
+              });
+            }",
+            drug_group_col_idx
+          ))
+        )
+      ) |>
+        DT::formatStyle(columns = c("Genetic Target"), fontStyle = "italic")
+
+      dt2
+    },
+    server = FALSE
+  )
+}
+# nolint end: object_usage_linter.
