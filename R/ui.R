@@ -232,7 +232,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                       # nolint next: line_length_linter.
                       "<b>standardized</b> information on putative cerebral SVD causal ",
                       # nolint next: line_length_linter.
-                      "genes<br>and drugs tested in ongoing or completed cerebral SVD ",
+                      "genes<br>and drugs tested in planned or ongoing cerebral SVD ",
                       "clinical trials."
                     ))
                   ),
@@ -356,7 +356,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                             "box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); ",
                             "white-space: nowrap;"
                           ),
-                          "Ongoing or Completed Clinical Trials"
+                          "Planned or Ongoing Clinical Trials"
                         )
                       )
                     ),
@@ -544,7 +544,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                 shiny::div(
                   style = title_style,
                   shiny::HTML(paste0(
-                    "<strong>Drugs Used in Ongoing or Completed ",
+                    "<strong>Drugs Used in Planned or Ongoing ",
                     "Clinical Trials for Cerebral Small Vessel ",
                     "Disease (SVD)</strong>"
                   ))
@@ -601,8 +601,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                 shiny::div(
                   style = title_style,
                   shiny::HTML(paste0(
-                    "<strong>SVD Drugs Tested in Ongoing or ",
-                    "Completed Clinical Trials</strong>"
+                    "<strong>SVD Drugs Tested in Planned or ",
+                    "Ongoing Clinical Trials</strong>"
                   ))
                 ),
                 shiny::div(
