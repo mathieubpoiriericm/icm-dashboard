@@ -426,6 +426,20 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                   shiny::div(
                     style = paste0(
                       "text-align: left; margin-top: 1rem; ",
+                      "font-size: 1.5rem; line-height: 1.6;"
+                    ),
+                    shiny::tags$span(
+                      style = about_box_style,
+                      shiny::HTML("<b>Scientific Board:</b>")
+                    ),
+                    shiny::tags$span(
+                      style = "color: #4b5563;",
+                      shiny::HTML(paste0(" TBD"))
+                    )
+                  ),
+                  shiny::div(
+                    style = paste0(
+                      "text-align: left; margin-top: 1rem; ",
                       "font-size: 1.5rem; color: #2d287a; line-height: 1.6;"
                     ),
                     shiny::tags$span(
