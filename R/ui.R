@@ -17,16 +17,16 @@
 build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
   shiny::fluidPage(
     shiny::tags$head(
-      # External CSS
-      shiny::tags$link(rel = "stylesheet", href = "custom.css"),
+      # External CSS (minified for faster loading)
+      shiny::tags$link(rel = "stylesheet", href = "custom.min.css"),
 
       # Tippy components (bundled locally for faster loading)
       shiny::tags$link(rel = "stylesheet", href = "css/tippy.css"),
       shiny::tags$script(src = "js/popper.min.js"),
       shiny::tags$script(src = "js/tippy.min.js"),
 
-      # External JavaScript
-      shiny::tags$script(src = "custom.js")
+      # External JavaScript (minified for faster loading)
+      shiny::tags$script(src = "custom.min.js")
     ),
 
     shiny::tags$body(

@@ -592,8 +592,9 @@ prepare_table2_display <- function(
     NA_character_
   }
 
-  table2_display[[5L]] <- purrr::map2_chr(
-    table2_display[[5L]],
+  registry_col <- which(names(table2_display) == "Registry ID")
+  table2_display[[registry_col]] <- purrr::map2_chr(
+    table2_display[[registry_col]],
     seq_len(nrow(table2_display)),
     function(ct_id, row_id) {
       ct_tooltip_info <- ct_info$ct_info[[row_id]][[1L]]
@@ -710,6 +711,9 @@ prepare_table2_display <- function(
       }
     )
   }
+
+  # Remove internal columns not meant for display
+  table2_display$sample_size_numeric <- NULL
 
   data.table::setDT(table2_display)
   table2_display

@@ -95,15 +95,34 @@ ui <- build_ui(
 )
 server <- build_server(app_data, table1_display)
 
-# Configure Shiny options for static asset caching
-# max-age in seconds (86400 = 24 hours for static content)
-options(shiny.staticimgcache = TRUE)
+# Configure Shiny options for static asset caching and performance
+options(
+  # Enable static image caching
+  shiny.staticimgcache = TRUE,
+  # Disable autoreload in production for stability
+  shiny.autoreload = FALSE,
+  # Enable full stack traces for debugging (disable in production if needed)
+  shiny.fullstacktrace = FALSE,
+  # Set larger upload limit if needed (in bytes, 30MB default)
+  shiny.maxRequestSize = 30 * 1024^2
+)
+
+# Custom resource path with caching headers for static assets
+shiny::addResourcePath(
+  prefix = "static",
+  directoryPath = file.path(getwd(), "www")
+)
 
 shinyApp(
   ui = ui,
   server = server,
   options = list(
-    # Enable static resource caching
-    shiny.autoreload = FALSE
-  )
+    # Host binding for production deployment
+    host = "0.0.0.0",
+    # Launch browser only in interactive mode
+    launch.browser = interactive()
+  ),
+  # Enable HTTP caching for static resources (requires shiny >= 1.7.0)
+  # Static files will be cached by browsers for improved repeat visit performance
+  enableBookmarking = NULL
 )

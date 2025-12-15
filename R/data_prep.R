@@ -342,6 +342,10 @@ load_and_prepare_data <- function() {
   # Convert table1 to data.table for faster filtering
   data.table::setDT(table1)
 
+  # Pre-assign row_id column to avoid recomputing on each filter operation
+
+  table1[, row_id := .I]
+
   message("Table 1 data preparation complete.")
 
   list(
@@ -410,17 +414,17 @@ load_table2_data <- function() {
     gene_info_table2$`NCBI Gene ID`
   )
 
-  # Extract trial name and primary outcome using constants for column indices
-  ct_info <- table2[, c(TABLE2_TRIAL_NAME_COL, TABLE2_PRIMARY_OUTCOME_COL)]
-  ct_info$combined <- Map(
-    function(a, b) list(c(a, b)),
-    ct_info$`Trial Name`,
-    ct_info$`Primary Outcome`
+  # Extract trial name and primary outcome using column names
+  ct_info <- data.frame(
+    ct_info = I(Map(
+      function(a, b) list(c(a, b)),
+      table2$`Trial Name`,
+      table2$`Primary Outcome`
+    ))
   )
-  ct_info <- ct_info[, -c(1L, 2L)]
-  names(ct_info) <- "ct_info"
 
-  table2 <- table2[, -c(TABLE2_TRIAL_NAME_COL, TABLE2_PRIMARY_OUTCOME_COL)]
+  table2$`Trial Name` <- NULL
+  table2$`Primary Outcome` <- NULL
 
   convert_to_date <- function(date_column) {
     is_month_year <- grepl("^\\d{1,2}/\\d{4}$", date_column)
@@ -491,6 +495,9 @@ load_table2_data <- function() {
   data.table::setindex(table2, `Genetic Evidence`)
   data.table::setindex(table2, `Clinical Trial Phase`)
   data.table::setindex(table2, `SVD Population`)
+
+  # Pre-assign original_row_num column to avoid recomputing on each filter
+  table2[, original_row_num := .I]
 
   # Extract gene symbols from gene_info_table2 (stored in "name" column)
   gene_symbols_table2 <- gene_info_table2$name

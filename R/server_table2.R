@@ -154,8 +154,8 @@ build_table2_filtered_data <- function(
     table2 <- data$table2
     registry_rows <- data$registry_rows
 
-    # Use pre-computed sample_size_numeric column (no need to recompute)
-    filtered_table2 <- data.table::copy(table2)[, original_row_num := .I]
+    # Use pre-computed sample_size_numeric and original_row_num columns
+    filtered_table2 <- data.table::copy(table2)
 
     # Genetic evidence filter
     filtered_table2 <- apply_genetic_evidence_filter(

@@ -3,19 +3,56 @@
 
 #' Clean Table 1 Data
 #'
-#' Reads and cleans the raw Table 1 CSV file, performing various
-#' data transformations including column renaming, NA handling,
+#' Reads and cleans the genes table from a PostgreSQL database, performing
+#' various data transformations including column renaming, NA handling,
 #' and text cleanup.
 #'
-#' @param file_path Path to the raw table1.csv file.
-#'   Defaults to "table1.csv" in the current directory.
+#' @param con A DBI database connection object. If NULL, a new connection
+#'   will be created using environment variables or defaults.
+#' @param dbname Database name. Defaults to "csvd_dashboard".
+#' @param host Database host. Defaults to "localhost".
+#' @param port Database port. Defaults to 5432.
+#' @param user Database user. Defaults to Sys.getenv("PGUSER").
+#' @param password Database password. Defaults to Sys.getenv("PGPASSWORD").
 #'
 #' @return A cleaned data.frame with processed columns ready for display.
 #'
 #' @export
-clean_table1 <- function(file_path = file.path(".", "table1.csv")) {
-  # Load Table 1 data
-  table1 <- read.csv(file_path, header = TRUE, sep = ",")
+clean_table1 <- function(con = NULL,
+                         dbname = "csvd_dashboard",
+                         host = "localhost",
+                         port = 5432,
+                         user = Sys.getenv("PGUSER"),
+                         password = Sys.getenv("PGPASSWORD")) {
+  # Create connection if not provided
+
+  close_con <- FALSE
+  if (is.null(con)) {
+    con <- DBI::dbConnect(
+      RPostgres::Postgres(),
+      dbname = dbname,
+      host = host,
+      port = port,
+      user = user,
+      password = password
+    )
+    close_con <- TRUE
+  }
+
+  # Load Table 1 data from the "genes" table, excluding auto-generated columns
+
+  table1 <- DBI::dbGetQuery(con, "
+    SELECT * FROM genes
+  ")
+  table1$id <- NULL
+  table1$created_at <- NULL
+  table1$updated_at <- NULL
+
+  # Close connection if we created it
+
+  if (close_con) {
+    DBI::dbDisconnect(con)
+  }
 
   # Replace empty cells with NA
   table1[!nzchar(table1, keepNA = TRUE)] <- NA
@@ -30,6 +67,10 @@ clean_table1 <- function(file_path = file.path(".", "table1.csv")) {
 
   names(table1) <- gsub("_", " ", names(table1), fixed = TRUE)
   names(table1) <- tools::toTitleCase(names(table1))
+
+  # Fix acronyms that toTitleCase doesn't handle correctly
+  names(table1) <- gsub("Gwas", "GWAS", names(table1), fixed = TRUE)
+  names(table1) <- gsub("Omics", "Omics", names(table1), fixed = TRUE)
 
   # Convert multiple comma-separated strings in a cell into a list
   # of strings (GWAS Trait)

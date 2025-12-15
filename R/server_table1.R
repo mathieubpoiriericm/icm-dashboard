@@ -28,7 +28,8 @@ build_table1_filtered_data <- function(
   omics_filter
 ) {
   shiny::reactive({
-    filtered_table1 <- data.table::copy(table1)[, row_id := .I]
+    # Use pre-assigned row_id column (no need to copy and assign)
+    filtered_table1 <- data.table::copy(table1)
 
     # MR filter (skip if both Yes and No are selected - means show all)
     if (!is.null(mr_filter()) && length(mr_filter()) == 1L) {
