@@ -3,7 +3,9 @@ import math
 
 # ---------- CONFIG ----------
 WIDTH, HEIGHT = 800, 800
-CX, CY = WIDTH / 2, HEIGHT / 2
+# X_OFFSET shifts all content right to avoid negative viewBox coordinates (Chromium iframe bug)
+X_OFFSET = 100
+CX, CY = WIDTH / 2 + X_OFFSET, HEIGHT / 2
 
 # Rings for phases (inner radius, outer radius)
 phase_rings = {
@@ -23,6 +25,12 @@ pop_colors = {
 
 MARKER_R = 9
 LABEL_D = 10
+
+# Shadow configuration (manual shadows to avoid Chromium filter bugs)
+SHADOW_OFFSET_X = 2
+SHADOW_OFFSET_Y = 2
+SHADOW_COLOR = "#000000"
+SHADOW_OPACITY = 0.2
 
 # Manual positioning adjustments for SVD Population labels
 # Each population can have: h_offset, v_offset (distances from boundary)
@@ -173,37 +181,27 @@ svg_parts = []
 
 # SVG header + defs
 svg_parts.append(
-    f'<svg width="1320" height="{HEIGHT}" '
-    f'viewBox="-100 0 1420 {HEIGHT}" '
+    f'<svg width="1420" height="{HEIGHT}" '
+    f'viewBox="0 0 1520 {HEIGHT}" '
     f'xmlns="http://www.w3.org/2000/svg">'
 )
 svg_parts.append("<defs>")
 svg_parts.append(
-    '<filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">'
-    '<feGaussianBlur in="SourceAlpha" stdDeviation="3"/>'
-    '<feOffset dx="2" dy="2" result="offsetblur"/>'
-    '<feComponentTransfer>'
-    '<feFuncA type="linear" slope="0.3"/>'
-    '</feComponentTransfer>'
-    '<feMerge>'
-    '<feMergeNode/>'
-    '<feMergeNode in="SourceGraphic"/>'
-    '</feMerge>'
-    '</filter>'
+    f'<symbol id="marker" overflow="visible">'
+    f'<circle cx="0" cy="0" r="{MARKER_R}" fill="currentColor"/>'
+    f'</symbol>'
 )
 svg_parts.append(
-    f'<circle id="marker" cx="0" cy="0" r="{MARKER_R}" '
-    'fill="currentColor" filter="url(#shadow)"/>'
-)
-svg_parts.append(
-    f'<polygon id="marker_tri" points="0,-{MARKER_R} {MARKER_R},{MARKER_R} -{MARKER_R},{MARKER_R}" '
-    'fill="currentColor" filter="url(#shadow)"/>'
+    f'<symbol id="marker_tri" overflow="visible">'
+    f'<polygon points="0,-{MARKER_R} {MARKER_R},{MARKER_R} -{MARKER_R},{MARKER_R}" fill="currentColor"/>'
+    f'</symbol>'
 )
 svg_parts.append("</defs>")
 
-# Background
+
+# Background (shifted by X_OFFSET)
 svg_parts.append(
-    f'<rect x="0" y="0" width="{WIDTH}" height="{HEIGHT}" fill="#ffffff" fill-opacity="0"/>'
+    f'<rect x="{X_OFFSET}" y="0" width="{WIDTH}" height="{HEIGHT}" fill="#ffffff" fill-opacity="0"/>'
 )
 
 global_r_outer = max(r[1] for r in phase_rings.values())
@@ -235,12 +233,17 @@ for pop in populations:
         else:
             opacity = phase_opacity.get(phase, 0.6)
 
+        # Shadow for wedge
+        svg_parts.append(
+            f'<path d="{d}" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" '
+            f'transform="translate({SHADOW_OFFSET_X},{SHADOW_OFFSET_Y})"/>'
+        )
+        # Main wedge
         svg_parts.append(
             f'<path class="wedge" '
             f'data-pop="{pop}" data-phase="{phase}" '
             f'data-pop-color="{pop_colors.get(pop, "#444")}" '
-            f'd="{d}" fill="{color}" fill-opacity="{opacity}" '
-            f'filter="url(#shadow)"/>'
+            f'd="{d}" fill="{color}" fill-opacity="{opacity}"/>'
         )
 
     # population label with background rect - position outside plot touching at corner
@@ -361,19 +364,23 @@ for pop in populations:
 
     svg_parts.append(
         f'<g class="pop-label" data-pop="{pop}">' +
+        # Shadow for label box
+        f'<rect x="{box_x + SHADOW_OFFSET_X:.2f}" y="{box_y + SHADOW_OFFSET_Y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" ' +
+        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>' +
+        # Main label box
         f'<rect class="label-bg pop-bg" x="{box_x:.2f}" y="{box_y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" ' +
-        f'fill="{base_col}" fill-opacity="0.6" pointer-events="none" filter="url(#shadow)"/>' +
+        f'fill="{base_col}" fill-opacity="0.6" pointer-events="none"/>' +
         (
             f'<text x="{lx:.2f}" y="{text_ly:.2f}" fill="#000" font-size="18" ' +
             f'text-anchor="{anchor}" dominant-baseline="{v_baseline}">{pop}</text>'
             if pop not in ["Cognitive Impairment", "Any SVD (including monogenic)"] else
             (
-                f'<text fill="#000" font-size="18" text-anchor="{anchor}" dominant-baseline="{v_baseline}">' +
-                f'<tspan x="{lx:.2f}" y="{text_ly:.2f}">Cognitive</tspan>' +
+                f'<text x="{lx:.2f}" y="{text_ly:.2f}" fill="#000" font-size="18" text-anchor="{anchor}" dominant-baseline="{v_baseline}">' +
+                f'<tspan x="{lx:.2f}" dy="0">Cognitive</tspan>' +
                 f'<tspan x="{lx:.2f}" dy="1.2em">Impairment</tspan></text>'
                 if pop == "Cognitive Impairment" else
-                f'<text fill="#000" font-size="18" text-anchor="middle" dominant-baseline="{v_baseline}">' +
-                f'<tspan x="{lx:.2f}" y="{text_ly:.2f}">Any SVD</tspan>' +
+                f'<text x="{lx:.2f}" y="{text_ly:.2f}" fill="#000" font-size="18" text-anchor="middle" dominant-baseline="{v_baseline}">' +
+                f'<tspan x="{lx:.2f}" dy="0">Any SVD</tspan>' +
                 f'<tspan x="{lx:.2f}" dy="1.2em">(including monogenic)</tspan></text>'
             )
         ) +
@@ -399,8 +406,12 @@ for phase, (r0, r1) in phase_rings.items():
 
     svg_parts.append(
         f'<g class="phase-label" data-phase="{phase}">'
+        # Shadow for phase label box
+        f'<rect x="{box_x + SHADOW_OFFSET_X:.2f}" y="{box_y + SHADOW_OFFSET_Y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
+        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
+        # Main phase label box
         f'<rect class="label-bg phase-bg" x="{box_x:.2f}" y="{box_y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
-        f'fill="#ffffff" fill-opacity="0.6" pointer-events="none" filter="url(#shadow)"/>'
+        f'fill="#ffffff" fill-opacity="0.6" pointer-events="none"/>'
         f'<text x="{lx:.2f}" y="{ly:.2f}" fill="#000" font-size="16" '
         f'text-anchor="middle" dominant-baseline="middle">'
         f'Phase {phase}</text>'
@@ -510,10 +521,18 @@ for pop in populations:
                 f'data-pco="{(row.get("Primary Outcome") or "").strip()}" '
                 f'data-sptype="{(row.get("Sponsor Type") or "").strip()}">'
                 f'<title>{tooltip}</title>'
+                # Shadow for drug marker
+                f'<circle cx="{x + SHADOW_OFFSET_X:.2f}" cy="{y + SHADOW_OFFSET_Y:.2f}" r="{MARKER_R}" '
+                f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+                # Main drug marker
                 f'<use href="#marker" '
                 f'x="{x:.2f}" y="{y:.2f}" color="{mech_colors.get(row.get("Mechanism of Action","").strip(), "#ffffff")}"/>'
+                # Shadow for drug label box
+                f'<rect x="{box_x + SHADOW_OFFSET_X:.2f}" y="{box_y + SHADOW_OFFSET_Y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
+                f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
+                # Main drug label box
                 f'<rect class="label-bg drug-bg" x="{box_x:.2f}" y="{box_y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
-                f'fill="{label_bg_color}" fill-opacity="0.6" pointer-events="none" filter="url(#shadow)"/>'
+                f'fill="{label_bg_color}" fill-opacity="0.6" pointer-events="none"/>'
                 f'<text x="{lx:.2f}" y="{ly:.2f}" '
                 f'text-anchor="{anchor}" dominant-baseline="middle">'
                 f'{drug}</text>'
@@ -540,17 +559,29 @@ no_box_x = legend_center_x - box_width/2
 
 svg_parts.append(
     f'<g id="legend" font-size="14" fill="#000" font-family="Roboto">'
+    # Shadow for legend background
+    f'<rect x="{legend_x - 20 + SHADOW_OFFSET_X}" y="{legend_y - 30 + SHADOW_OFFSET_Y}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
+    f'rx="10" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+    # Main legend background
     f'<rect id="legend-bg" x="{legend_x - 20}" y="{legend_y - 30}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
-    f'rx="10" fill="#c8c8c8" fill-opacity="0.4" filter="url(#shadow)"/>'
+    f'rx="10" fill="#c8c8c8" fill-opacity="0.4"/>'
     f'<text x="{legend_center_x:.2f}" y="{legend_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Genetic Evidence</text>'
     f'<g class="legend-item">'
+    # Shadow for Yes box
+    f'<rect x="{yes_box_x + SHADOW_OFFSET_X:.2f}" y="{legend_y + 2 + SHADOW_OFFSET_Y}" width="{box_width}" height="20" rx="6" '
+    f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+    # Main Yes box
     f'<rect x="{yes_box_x:.2f}" y="{legend_y + 2}" width="{box_width}" height="20" rx="6" '
-    f'fill="#90ee90" fill-opacity="0.6" filter="url(#shadow)"/>'
+    f'fill="#90ee90" fill-opacity="0.6"/>'
     f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">Yes</text>'
     f'</g>'
     f'<g class="legend-item">'
+    # Shadow for No box
+    f'<rect x="{no_box_x + SHADOW_OFFSET_X:.2f}" y="{legend_y + 30 + SHADOW_OFFSET_Y}" width="{box_width}" height="20" rx="6" '
+    f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+    # Main No box
     f'<rect x="{no_box_x:.2f}" y="{legend_y + 30}" width="{box_width}" height="20" rx="6" '
-    f'fill="#ffffff" fill-opacity="0.6" filter="url(#shadow)"/>'
+    f'fill="#ffffff" fill-opacity="0.6"/>'
     f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">No</text>'
     f'</g>'
     f'</g>'
@@ -582,8 +613,12 @@ moa_legend_width = max(max_mech_width + 50, title_width + 40)  # +50 for marker 
 
 svg_parts.append(
     f'<g id="legend-moa" font-size="14" fill="#000" font-family="Roboto">'
+    # Shadow for MOA legend background
+    f'<rect x="{legend_moa_x - 20 + SHADOW_OFFSET_X}" y="{legend_moa_y - 30 + SHADOW_OFFSET_Y}" width="{moa_legend_width:.2f}" height="{moa_legend_height:.2f}" '
+    f'rx="10" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+    # Main MOA legend background
     f'<rect id="legend-moa-bg" x="{legend_moa_x - 20}" y="{legend_moa_y - 30}" width="{moa_legend_width:.2f}" height="{moa_legend_height:.2f}" '
-    f'rx="10" fill="#c8c8c8" fill-opacity="0.4" filter="url(#shadow)"/>'
+    f'rx="10" fill="#c8c8c8" fill-opacity="0.4"/>'
     f'<text x="{legend_moa_x + moa_legend_width/2 - 20:.2f}" y="{legend_moa_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Mechanism of Action</text>'
 )
 
@@ -609,7 +644,10 @@ for i, mech in enumerate(mechanisms):
 
     svg_parts.append(
         f'<g class="legend-item">'
-        f'<circle cx="{legend_moa_x}" cy="{y}" r="9" fill="{color}" filter="url(#shadow)"/>'
+        # Shadow for mechanism circle
+        f'<circle cx="{legend_moa_x + SHADOW_OFFSET_X}" cy="{y + SHADOW_OFFSET_Y}" r="9" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+        # Main mechanism circle
+        f'<circle cx="{legend_moa_x}" cy="{y}" r="9" fill="{color}"/>'
         f'{text_block}'
         f'</g>'
     )
@@ -627,6 +665,12 @@ html = f"""<!DOCTYPE html>
 <meta http-equiv="Cache-Control" content="public, max-age=86400">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
+  body {{
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    overflow: hidden;
+  }}
   body.svg-loading .fig {{
     opacity: 0;
     visibility: hidden;
@@ -754,6 +798,8 @@ html = f"""<!DOCTYPE html>
 </style>
 </head>
 <body class="svg-loading">
+<!-- Mask for Chromium iframe rendering artifact -->
+<div style="position:fixed;top:0;left:0;width:40px;height:40px;background:#fff;z-index:9999;pointer-events:none;"></div>
 <div class="fig">
   <div id="sidebar">
     <div id="sidebar-content"></div>
@@ -856,34 +902,10 @@ js_code = r"""
     );
   }
 
-  // Fix two-line population label boxes for WebKit browsers
+  // Fix two-line population label boxes - DISABLED due to Chromium getBBox() bug in iframes
+  // Rects are pre-rendered with correct dimensions
   function adjustTwoLinePopLabels() {
-    const twoLineLabels = [
-      'Cognitive Impairment',
-      'Any SVD (including monogenic)'
-    ];
-
-    twoLineLabels.forEach(popName => {
-      const popLabel = document.querySelector(`g.pop-label[data-pop="${popName}"]`);
-      if (!popLabel) return;
-
-      const text = popLabel.querySelector('text');
-      const rect = popLabel.querySelector('rect.label-bg');
-      if (!text || !rect) return;
-
-      try {
-        const bbox = text.getBBox();
-        const padX = popName === 'Cognitive Impairment' ? 6 : 8;
-        const padY = 4;
-
-        rect.setAttribute('x', (bbox.x - padX).toFixed(2));
-        rect.setAttribute('y', (bbox.y - padY).toFixed(2));
-        rect.setAttribute('width', (bbox.width + padX * 2).toFixed(2));
-        rect.setAttribute('height', (bbox.height + padY * 2).toFixed(2));
-      } catch (e) {
-        console.warn('getBBox failed for ' + popName + ', keeping pre-rendered dimensions:', e);
-      }
-    });
+    return; // Disabled - getBBox() returns incorrect values in Chromium iframes
   }
 
   function avoidCognitiveOverlap() {

@@ -653,11 +653,16 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                     ))
                   ),
                 ),
-                shiny::tags$iframe(
-                  src = "python_plot.html",
-                  style = paste0(
-                    "width: 100%; height: 800px; ",
-                    "background: white; border: none;"
+                shiny::tags$div(
+                  style = "overflow: hidden; position: relative;",
+                  shiny::tags$iframe(
+                    src = "python_plot.html",
+                    style = paste0(
+                      "width: 100%; height: 800px; ",
+                      "background: white; border: none; ",
+                      "display: block; overflow: hidden; ",
+                      "clip-path: inset(0);"
+                    )
                   )
                 )
               )

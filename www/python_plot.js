@@ -83,34 +83,10 @@
     );
   }
 
-  // Fix two-line population label boxes for WebKit browsers
+  // Fix two-line population label boxes - DISABLED due to Chromium getBBox() bug in iframes
+  // Rects are pre-rendered with correct dimensions
   function adjustTwoLinePopLabels() {
-    const twoLineLabels = [
-      'Cognitive Impairment',
-      'Any SVD (including monogenic)'
-    ];
-
-    twoLineLabels.forEach(popName => {
-      const popLabel = document.querySelector(`g.pop-label[data-pop="${popName}"]`);
-      if (!popLabel) return;
-
-      const text = popLabel.querySelector('text');
-      const rect = popLabel.querySelector('rect.label-bg');
-      if (!text || !rect) return;
-
-      try {
-        const bbox = text.getBBox();
-        const padX = popName === 'Cognitive Impairment' ? 6 : 8;
-        const padY = 4;
-
-        rect.setAttribute('x', (bbox.x - padX).toFixed(2));
-        rect.setAttribute('y', (bbox.y - padY).toFixed(2));
-        rect.setAttribute('width', (bbox.width + padX * 2).toFixed(2));
-        rect.setAttribute('height', (bbox.height + padY * 2).toFixed(2));
-      } catch (e) {
-        console.warn('getBBox failed for ' + popName + ', keeping pre-rendered dimensions:', e);
-      }
-    });
+    return; // Disabled - getBBox() returns incorrect values in Chromium iframes
   }
 
   function avoidCognitiveOverlap() {
