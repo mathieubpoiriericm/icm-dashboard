@@ -64,8 +64,25 @@ install.packages(c(
   "fastmap",
   "memoise",
   "cachem",
-  "digest"
+  "digest",
+  "htmltools",
+  "httr2",
+  "xml2",
+  "rlang",
+  "readr",
+  "tidyselect",
+  "DBI",
+  "RPostgres",
+  "rentrez",
+  "RefManageR",
+  "rbibutils",
+  "testthat"
 ))
+
+# Install Bioconductor packages
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(c("biomaRt", "UniprotR"))
 ```
 
 ## Usage
