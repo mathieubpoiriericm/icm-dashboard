@@ -245,7 +245,7 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_style) {
 #' @param gene_info_results_df Data frame. NCBI gene info with URL column.
 #' @param prot_info_clean Data frame. UniProt protein info with accession
 #'   and URL.
-#' @param omim_info Data frame. OMIM phenotype information.
+#' @param omim_lookup fastmap. Pre-computed OMIM lookup map for O(1) access.
 #' @param refs Data frame. Publication references for tooltip content.
 #' @param omics_df Data frame. Omics types with full names.
 #' @param gwas_trait_mapping Named character vector. Maps trait abbreviations
@@ -262,7 +262,7 @@ prepare_table1_display <- function(
   table1,
   gene_info_results_df,
   prot_info_clean,
-  omim_info,
+  omim_lookup,
   refs,
   omics_df,
   gwas_trait_mapping,
@@ -365,7 +365,7 @@ prepare_table1_display <- function(
     }
   )
 
-  # Vectorized OMIM tooltip
+  # Vectorized OMIM tooltip (using fastmap for O(1) lookups)
   table1_display[[7L]] <- purrr::map_chr(
     table1_display[[7L]],
     function(omim_value) {
@@ -387,51 +387,27 @@ prepare_table1_display <- function(
       omim_html_parts <- vapply(
         omim_numbers,
         function(single_omim) {
-          info <- omim_info |>
-            # nolint next: object_usage_linter.
-            dplyr::filter(.data$omim_num == single_omim)
+          # Use fastmap O(1) lookup instead of dplyr::filter
+          info <- omim_lookup$get(single_omim)
 
-          if (nrow(info) > 0L) {
-            phenotype_clean <- iconv(
-              as.character(info$phenotype),
-              to = "UTF-8",
-              sub = ""
-            )
-            inheritance_clean <- iconv(
-              as.character(info$inheritance),
-              to = "UTF-8",
-              sub = ""
-            )
-            gene_locus_clean <- iconv(
-              as.character(info$gene_or_locus),
-              to = "UTF-8",
-              sub = ""
-            )
-            gene_locus_mim_clean <- iconv(
-              as.character(info$gene_or_locus_mim_number),
-              to = "UTF-8",
-              sub = ""
-            )
-
+          if (!is.null(info)) {
             tooltip_content <- paste0(
               "<strong>Phenotype</strong> ",
-              phenotype_clean,
+              info$phenotype,
               "<br>",
               "<strong>Inheritance</strong> ",
-              inheritance_clean,
+              info$inheritance,
               "<br>",
               "<strong>Gene/Locus</strong> ",
-              gene_locus_clean,
+              info$gene_or_locus,
               "<br>",
               "<strong>Gene/Locus OMIM</strong> ",
-              gene_locus_mim_clean
+              info$gene_or_locus_mim_number
             )
-
-            omim_link <- as.character(info$omim_link)
 
             as.character(
               shiny::tags$a(
-                href = omim_link,
+                href = info$omim_link,
                 target = "_blank",
                 shiny::tags$span(
                   single_omim,

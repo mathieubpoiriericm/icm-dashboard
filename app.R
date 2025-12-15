@@ -65,7 +65,7 @@ table1_display <- prepare_table1_display(
   table1 = app_data$table1,
   gene_info_results_df = app_data$gene_info_results_df,
   prot_info_clean = app_data$prot_info_clean,
-  omim_info = app_data$omim_info,
+  omim_lookup = app_data$omim_lookup,
   refs = app_data$refs,
   omics_df = app_data$omics_df,
   gwas_trait_mapping = app_data$gwas_trait_mapping,

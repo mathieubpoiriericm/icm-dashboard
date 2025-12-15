@@ -38,7 +38,7 @@ SLIDER_DEBOUNCE_MS <- 500L
 #' @description Debounce delay for checkbox filters (ms)
 CHECKBOX_DEBOUNCE_MS <- 150L
 #' @description DataTable search delay (ms)
-DATATABLE_SEARCH_DELAY <- 750L
+DATATABLE_SEARCH_DELAY <- 500L
 
 # =============================================================================
 # DATATABLE CONFIGURATION

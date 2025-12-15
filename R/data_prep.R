@@ -291,6 +291,49 @@ load_and_prepare_data <- function() {
   message("Loading OMIM info...")
   omim_info <- safe_read_csv(DATA_PATHS$omim_info)
 
+  # Pre-process UTF-8 conversions for OMIM text fields (avoids per-row iconv)
+  omim_info$phenotype_clean <- iconv(
+    as.character(omim_info$phenotype),
+    to = "UTF-8",
+    sub = ""
+  )
+  omim_info$inheritance_clean <- iconv(
+    as.character(omim_info$inheritance),
+    to = "UTF-8",
+    sub = ""
+  )
+  omim_info$gene_or_locus_clean <- iconv(
+    as.character(omim_info$gene_or_locus),
+    to = "UTF-8",
+    sub = ""
+  )
+  omim_info$gene_or_locus_mim_number_clean <- iconv(
+    as.character(omim_info$gene_or_locus_mim_number),
+    to = "UTF-8",
+    sub = ""
+  )
+
+  # Set data.table key for fast OMIM lookups by omim_num
+  data.table::setDT(omim_info)
+  data.table::setkey(omim_info, omim_num)
+
+  # Create fastmap for O(1) OMIM lookups (pre-compute tooltip content)
+  message("Pre-computing OMIM lookup map...")
+  omim_lookup <- fastmap::fastmap()
+  for (i in seq_len(nrow(omim_info))) {
+    omim_num <- as.character(omim_info$omim_num[i])
+    omim_lookup$set(
+      omim_num,
+      list(
+        phenotype = omim_info$phenotype_clean[i],
+        inheritance = omim_info$inheritance_clean[i],
+        gene_or_locus = omim_info$gene_or_locus_clean[i],
+        gene_or_locus_mim_number = omim_info$gene_or_locus_mim_number_clean[i],
+        omim_link = as.character(omim_info$omim_link[i])
+      )
+    )
+  }
+
   # Load pre-fetched references data
   message("Loading publication references...")
   safe_load_rdata(DATA_PATHS$refs, envir = environment())
@@ -312,6 +355,7 @@ load_and_prepare_data <- function() {
     gwas_trait_rows = gwas_trait_rows,
     omics_type_rows = omics_type_rows,
     omim_info = omim_info,
+    omim_lookup = omim_lookup,
     refs = refs
   )
 }

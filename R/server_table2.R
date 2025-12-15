@@ -493,107 +493,92 @@ build_table2_datatable <- function(filtered_data2) {
               }
 
               var api = this.api();
-              var columnsToMerge = [0, 1, 2, 3];
               var rows = api.rows({page: 'current'}).nodes();
-              var drugGroupColIdx = %d;
+              var numRows = rows.length;
 
-              if (rows.length === 0) return;
+              if (numRows === 0) return;
 
-              // Get pre-computed drug group indices
+              // Get pre-computed drug group indices (single API call)
               var drugGroupIndex = api
-                .column(drugGroupColIdx, {page: 'current'})
-                .data().toArray().map(Number);
+                .column(%d, {page: 'current'})
+                .data().toArray();
 
-              // Find max group index
-              var maxGroup = Math.max.apply(null, drugGroupIndex);
-
-              // Get DataTables default colors from actual rows
+              // Get colors from first two rows (cache these)
               var stripeColor = $(rows[0]).css('background-color');
-              var whiteColor = rows.length > 1 ?
+              var whiteColor = numRows > 1 ?
                 $(rows[1]).css('background-color') : '#ffffff';
 
-              // Find first and last row index for each drug group
-              var drugGroupFirstRow = {};
-              var drugGroupLastRow = {};
-              for (var r = 0; r < drugGroupIndex.length; r++) {
-                var g = drugGroupIndex[r];
-                if (drugGroupFirstRow[g] === undefined) {
-                  drugGroupFirstRow[g] = r;
-                }
-                drugGroupLastRow[g] = r;
-              }
+              // Single pass: compute group boundaries and colors
+              var groupInfo = {};
+              var sortedGroups = [];
+              var i, g;
 
-              // Count rows per drug group
-              var drugGroupRowCount = {};
-              for (var g = 0; g <= maxGroup; g++) {
-                if (drugGroupFirstRow[g] !== undefined) {
-                  drugGroupRowCount[g] =
-                    drugGroupLastRow[g] - drugGroupFirstRow[g] + 1;
-                }
-              }
-
-              // Determine color for each drug group's first 4 columns
-              var drugGroupColors = {};
-              var sortedGroups = Object.keys(drugGroupFirstRow)
-                .map(Number).sort(function(a,b){return a-b;});
-
-              for (var gi = 0; gi < sortedGroups.length; gi++) {
-                var dg = sortedGroups[gi];
-                if (gi === 0) {
-                  drugGroupColors[dg] = whiteColor;
+              for (i = 0; i < numRows; i++) {
+                g = drugGroupIndex[i];
+                if (groupInfo[g] === undefined) {
+                  groupInfo[g] = {first: i, last: i, count: 1};
+                  sortedGroups.push(g);
                 } else {
-                  var prevDg = sortedGroups[gi - 1];
-                  var prevLastRowIdx = drugGroupLastRow[prevDg];
-                  var prevRowIsStripe = (prevLastRowIdx %% 2 === 0);
-                  var prevHasEvenRows =
-                    (drugGroupRowCount[prevDg] %% 2 === 0);
-
-                  var useStripe = prevHasEvenRows ? prevRowIsStripe :
-                    !prevRowIsStripe;
-                  drugGroupColors[dg] = useStripe ? stripeColor : whiteColor;
+                  groupInfo[g].last = i;
+                  groupInfo[g].count++;
                 }
               }
 
-              // Apply colors to first 4 columns only
-              for (var i = 0; i < rows.length; i++) {
+              // Compute colors for each group
+              var drugGroupColors = {};
+              for (i = 0; i < sortedGroups.length; i++) {
+                g = sortedGroups[i];
+                if (i === 0) {
+                  drugGroupColors[g] = whiteColor;
+                } else {
+                  var prevG = sortedGroups[i - 1];
+                  var prevInfo = groupInfo[prevG];
+                  var prevRowIsStripe = (prevInfo.last %% 2 === 0);
+                  var prevHasEvenRows = (prevInfo.count %% 2 === 0);
+                  drugGroupColors[g] = (prevHasEvenRows ? prevRowIsStripe :
+                    !prevRowIsStripe) ? stripeColor : whiteColor;
+                }
+              }
+
+              // Cache column nodes and merge columns [0,1,2,3]
+              var columnsToMerge = [0, 1, 2, 3];
+              var colNodes = columnsToMerge.map(function(idx) {
+                return api.column(idx, {page: 'current'}).nodes();
+              });
+
+              // Single pass: apply colors and compute rowspans
+              var mergeState = columnsToMerge.map(function() {
+                return {lastVal: null, lastNode: null,
+                  lastGroup: null, span: 1};
+              });
+
+              for (i = 0; i < numRows; i++) {
+                var rowCells = $(rows[i]).children('td');
                 var bgColor = drugGroupColors[drugGroupIndex[i]];
-                var rowCells = $(rows[i]).find('td');
+                var currentGroup = drugGroupIndex[i];
+
+                // Apply background colors and handle merging in one pass
                 for (var c = 0; c < columnsToMerge.length; c++) {
-                  rowCells.eq(columnsToMerge[c])
-                    .css('background-color', bgColor);
-                }
-              }
+                  var cell = rowCells.eq(columnsToMerge[c]);
+                  cell.css('background-color', bgColor);
 
-              // Merge cells and apply rowspan
-              columnsToMerge.forEach(function(colIdx) {
-                var column = api.column(colIdx, {page: 'current'});
-                var nodes = column.nodes();
+                  var cellVal = cell.text().trim();
+                  var state = mergeState[c];
 
-                if (nodes.length === 0) return;
-
-                var lastValue = null;
-                var lastNode = null;
-                var lastGroup = null;
-                var rowspan = 1;
-
-                for (var i = 0; i < nodes.length; i++) {
-                  var cellValue = $(nodes[i]).text().trim();
-                  var currentGroup = drugGroupIndex[i];
-
-                  if (cellValue === lastValue && lastValue !== '' &&
-                      currentGroup === lastGroup) {
-                    $(nodes[i]).css('display', 'none');
-                    rowspan++;
-                    $(lastNode).attr('rowspan', rowspan);
+                  if (cellVal === state.lastVal && cellVal !== '' &&
+                      currentGroup === state.lastGroup) {
+                    cell.css('display', 'none');
+                    state.span++;
+                    $(state.lastNode).attr('rowspan', state.span);
                   } else {
-                    lastValue = cellValue;
-                    lastNode = nodes[i];
-                    lastGroup = currentGroup;
-                    rowspan = 1;
-                    $(lastNode).css('vertical-align', 'middle');
+                    state.lastVal = cellVal;
+                    state.lastNode = colNodes[c][i];
+                    state.lastGroup = currentGroup;
+                    state.span = 1;
+                    cell.css('vertical-align', 'middle');
                   }
                 }
-              });
+              }
             }",
             drug_group_col_idx
           ))
