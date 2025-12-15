@@ -1,6 +1,6 @@
 {
   "version": 0,
-  "sha": "5eb62f3",
+  "sha": "44de2dd",
   "ref": "refs/heads/main",
   "job": {
     "correlator": "rshiny_dashboard-dependencies",
@@ -11,7 +11,7 @@
     "version": "1.0.0",
     "url": "https://github.com/r-lib/desc"
   },
-  "scanned": "2025-12-11T00:00:00Z",
+  "scanned": "2025-12-15T00:00:00Z",
   "manifests": {
     "app.R": {
       "name": "app.R",
@@ -41,6 +41,11 @@
         },
         "DT": {
           "package_url": "pkg:cran/DT",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "tools": {
+          "package_url": "pkg:cran/tools",
           "relationship": "direct",
           "scope": "runtime"
         },
@@ -109,6 +114,21 @@
         },
         "DT": {
           "package_url": "pkg:cran/DT",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "DBI": {
+          "package_url": "pkg:cran/DBI",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "RPostgres": {
+          "package_url": "pkg:cran/RPostgres",
+          "relationship": "direct",
+          "scope": "runtime"
+        },
+        "tools": {
+          "package_url": "pkg:cran/tools",
           "relationship": "direct",
           "scope": "runtime"
         },
