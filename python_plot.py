@@ -805,7 +805,7 @@ html = f"""<!DOCTYPE html>
 </head>
 <body class="svg-loading">
 <!-- Mask for Chromium iframe rendering artifact -->
-<div style="position:fixed;top:0;left:0;width:40px;height:40px;background:#fff;z-index:9999;pointer-events:none;"></div>
+<div style="position:fixed;top:0;left:0;width:40px;height:40px;background:#fff;z-index:999;pointer-events:none;"></div>
 <div class="fig">
   <div id="sidebar">
     <div id="sidebar-content"></div>
