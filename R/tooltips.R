@@ -714,6 +714,7 @@ prepare_table2_display <- function(
 
   # Remove internal columns not meant for display
   table2_display$sample_size_numeric <- NULL
+  table2_display$original_row_num <- NULL
 
   data.table::setDT(table2_display)
   table2_display

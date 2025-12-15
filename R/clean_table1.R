@@ -1,6 +1,10 @@
 # clean_table1.R
 # Table 1 data cleaning function
 
+# nolint start: object_usage_linter.
+# Functions with_db_connection and clean_column_names are from utils.R
+# (sourced before this file in app.R)
+
 #' Clean Table 1 Data
 #'
 #' Reads and cleans the genes table from a PostgreSQL database, performing
@@ -18,41 +22,30 @@
 #' @return A cleaned data.frame with processed columns ready for display.
 #'
 #' @export
-clean_table1 <- function(con = NULL,
-                         dbname = "csvd_dashboard",
-                         host = "localhost",
-                         port = 5432,
-                         user = Sys.getenv("PGUSER"),
-                         password = Sys.getenv("PGPASSWORD")) {
-  # Create connection if not provided
-
-  close_con <- FALSE
-  if (is.null(con)) {
-    con <- DBI::dbConnect(
-      RPostgres::Postgres(),
-      dbname = dbname,
-      host = host,
-      port = port,
-      user = user,
-      password = password
-    )
-    close_con <- TRUE
-  }
-
-  # Load Table 1 data from the "genes" table, excluding auto-generated columns
-
-  table1 <- DBI::dbGetQuery(con, "
-    SELECT * FROM genes
-  ")
-  table1$id <- NULL
-  table1$created_at <- NULL
-  table1$updated_at <- NULL
-
-  # Close connection if we created it
-
-  if (close_con) {
-    DBI::dbDisconnect(con)
-  }
+clean_table1 <- function(
+  con = NULL,
+  dbname = "csvd_dashboard",
+  host = "localhost",
+  port = 5432,
+  user = Sys.getenv("PGUSER"),
+  password = Sys.getenv("PGPASSWORD")
+) {
+  # Load data using connection utility
+  table1 <- with_db_connection(
+    function(conn) {
+      df <- DBI::dbGetQuery(conn, "SELECT * FROM genes")
+      df$id <- NULL
+      df$created_at <- NULL
+      df$updated_at <- NULL
+      df
+    },
+    con = con,
+    dbname = dbname,
+    host = host,
+    port = port,
+    user = user,
+    password = password
+  )
 
   # Replace empty cells with NA
   table1[!nzchar(table1, keepNA = TRUE)] <- NA
@@ -65,12 +58,7 @@ clean_table1 <- function(con = NULL,
   table1 <- table1 |>
     dplyr::select("gene", dplyr::everything())
 
-  names(table1) <- gsub("_", " ", names(table1), fixed = TRUE)
-  names(table1) <- tools::toTitleCase(names(table1))
-
-  # Fix acronyms that toTitleCase doesn't handle correctly
-  names(table1) <- gsub("Gwas", "GWAS", names(table1), fixed = TRUE)
-  names(table1) <- gsub("Omics", "Omics", names(table1), fixed = TRUE)
+  names(table1) <- clean_column_names(names(table1))
 
   # Convert multiple comma-separated strings in a cell into a list
   # of strings (GWAS Trait)
@@ -248,3 +236,4 @@ clean_table1 <- function(con = NULL,
 
   table1
 }
+# nolint end: object_usage_linter.

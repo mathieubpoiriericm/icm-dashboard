@@ -134,12 +134,47 @@ $(document).on('shiny:connected', function() {
 $(document).on('init.dt draw.dt', function(e, settings) {
   var wrapper = $(e.target).closest('.dataTables_wrapper');
   var scrollBody = wrapper.find('.dataTables_scrollBody');
+  var scrollContainer = wrapper.find('.dataTables_scroll');
 
-  // Remove any existing top scrollbar to prevent WebKit screen tearing
+  // Remove any existing top scrollbar to prevent duplicates
   wrapper.find('.top-scrollbar').remove();
 
-  if (scrollBody.length > 0) {
+  if (scrollBody.length > 0 && scrollContainer.length > 0) {
     var scrollBodyEl = scrollBody[0];
+    var table = scrollBody.find('table');
+
+    // Create top scrollbar
+    var topScrollbar = $('<div class="top-scrollbar"></div>');
+    var topScrollbarInner = $('<div class="top-scrollbar-inner"></div>');
+    topScrollbar.append(topScrollbarInner);
+
+    // Set inner width to match table width
+    var tableWidth = table.outerWidth();
+    topScrollbarInner.css('width', tableWidth + 'px');
+
+    // Insert top scrollbar before the scroll container
+    scrollContainer.before(topScrollbar);
+
+    var topScrollbarEl = topScrollbar[0];
+    var isSyncing = false;
+
+    // Sync top scrollbar -> table scroll
+    topScrollbarEl.addEventListener('scroll', function() {
+      if (!isSyncing) {
+        isSyncing = true;
+        scrollBodyEl.scrollLeft = topScrollbarEl.scrollLeft;
+        isSyncing = false;
+      }
+    }, { passive: true });
+
+    // Sync table scroll -> top scrollbar
+    scrollBodyEl.addEventListener('scroll', function() {
+      if (!isSyncing) {
+        isSyncing = true;
+        topScrollbarEl.scrollLeft = scrollBodyEl.scrollLeft;
+        isSyncing = false;
+      }
+    }, { passive: true });
 
     // Scroll state management for disabling hover during scroll
     var scrollEndTimer = null;
@@ -155,5 +190,6 @@ $(document).on('init.dt draw.dt', function(e, settings) {
     }
 
     scrollBodyEl.addEventListener('scroll', onScrollStart, { passive: true });
+    topScrollbarEl.addEventListener('scroll', onScrollStart, { passive: true });
   }
 });

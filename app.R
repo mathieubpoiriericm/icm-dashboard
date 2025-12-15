@@ -4,7 +4,8 @@
 # This app has been modularized into the following structure:
 # R/
 #   ├── constants.R           - Application-wide constants
-#   ├── utils.R               - Common CSS styles and utility functions
+#   ├── utils.R               - Common CSS styles, DB utilities, column cleaning
+#   ├── filter_utils.R        - Unified filter and message rendering
 #   ├── data_prep.R           - Data loading and preprocessing functions
 #   ├── tooltips.R            - Tooltip generation for table displays
 #   ├── mod_checkbox_filter.R - Shiny module for checkbox filters
@@ -47,6 +48,7 @@ showtext_auto()
 # Constants must be loaded first as other modules depend on them
 source("R/constants.R")
 source("R/utils.R")
+source("R/filter_utils.R")
 source("R/data_prep.R")
 source("R/tooltips.R")
 source("R/mod_checkbox_filter.R")
@@ -123,6 +125,6 @@ shinyApp(
     launch.browser = interactive()
   ),
   # Enable HTTP caching for static resources (requires shiny >= 1.7.0)
-  # Static files will be cached by browsers for improved repeat visit performance
+  # Static files cached by browsers for improved repeat visit performance
   enableBookmarking = NULL
 )

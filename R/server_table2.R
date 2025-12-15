@@ -157,32 +157,43 @@ build_table2_filtered_data <- function(
     # Use pre-computed sample_size_numeric and original_row_num columns
     filtered_table2 <- data.table::copy(table2)
 
-    # Genetic evidence filter
-    filtered_table2 <- apply_genetic_evidence_filter(
+    # Apply filters using unified filter utilities
+    filtered_table2 <- apply_single_value_filter(
       filtered_table2,
+      "Genetic Evidence",
       ge_filter()
     )
 
-    # Registry filter (using fastmap $mget for O(1) lookups)
-    filtered_table2 <- apply_registry_filter(
+    filtered_table2 <- apply_index_filter(
       filtered_table2,
       reg_filter(),
-      registry_rows
+      registry_rows,
+      row_id_column = "original_row_num"
     )
 
-    # Clinical trial phase filter
-    filtered_table2 <- apply_phase_filter(filtered_table2, ct_filter())
-
-    # Population filter
-    filtered_table2 <- apply_population_filter(filtered_table2, pop_filter())
-
-    # Sponsor filter
-    filtered_table2 <- apply_sponsor_filter(filtered_table2, spon_filter())
-
-    # Sample size filter
-    filtered_table2 <- apply_sample_size_filter(
+    filtered_table2 <- apply_column_filter(
       filtered_table2,
-      sample_size_filter_debounced()
+      "Clinical Trial Phase",
+      ct_filter()
+    )
+
+    filtered_table2 <- apply_column_filter(
+      filtered_table2,
+      "SVD Population",
+      pop_filter()
+    )
+
+    filtered_table2 <- apply_sponsor_type_filter(
+      filtered_table2,
+      spon_filter()
+    )
+
+    filtered_table2 <- apply_range_filter(
+      filtered_table2,
+      "sample_size_numeric",
+      sample_size_filter_debounced(),
+      default_min = SAMPLE_SIZE_MIN,
+      default_max = SAMPLE_SIZE_MAX
     )
 
     kept_rows <- filtered_table2$original_row_num
@@ -206,123 +217,6 @@ build_table2_filtered_data <- function(
       spon_filter(),
       sample_size_filter_debounced()
     )
-}
-
-#' Apply Genetic Evidence Filter
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_value Character vector. Filter values.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
-apply_genetic_evidence_filter <- function(dt, filter_value) {
-  if (!is.null(filter_value) && length(filter_value) > 0L) {
-    dt <- dt[get("Genetic Evidence") %in% filter_value]
-  }
-  dt
-}
-
-#' Apply Registry Filter
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_value Character vector. Filter values.
-#' @param registry_rows fastmap. Pre-computed row indices.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
-apply_registry_filter <- function(dt, filter_value, registry_rows) {
-  if (
-    !is.null(filter_value) &&
-      length(filter_value) > 0L &&
-      !"all" %in% filter_value
-  ) {
-    matching_rows <- unique(unlist(registry_rows$mget(filter_value)))
-    dt <- dt[original_row_num %in% matching_rows]
-  }
-  dt
-}
-
-#' Apply Clinical Trial Phase Filter
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_value Character vector. Filter values.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
-apply_phase_filter <- function(dt, filter_value) {
-  if (
-    !is.null(filter_value) &&
-      length(filter_value) > 0L &&
-      !"all" %in% filter_value
-  ) {
-    dt <- dt[get("Clinical Trial Phase") %in% filter_value]
-  }
-  dt
-}
-
-#' Apply Population Filter
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_value Character vector. Filter values.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
-apply_population_filter <- function(dt, filter_value) {
-  if (
-    !is.null(filter_value) &&
-      length(filter_value) > 0L &&
-      !"all" %in% filter_value
-  ) {
-    dt <- dt[get("SVD Population") %in% filter_value]
-  }
-  dt
-}
-
-#' Apply Sponsor Filter
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_value Character vector. Filter values.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
-apply_sponsor_filter <- function(dt, filter_value) {
-  if (
-    !is.null(filter_value) &&
-      length(filter_value) > 0L &&
-      !"all" %in% filter_value
-  ) {
-    if ("Academic" %in% filter_value && "Industry" %in% filter_value) {
-      # Both selected, keep all
-    } else if ("Academic" %in% filter_value) {
-      dt <- dt[get("Sponsor Type") == "Academic"]
-    } else {
-      dt <- dt[grepl("^Industry", get("Sponsor Type"))]
-    }
-  }
-  dt
-}
-
-#' Apply Sample Size Filter
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_range Numeric vector of length 2. Min and max values.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
-apply_sample_size_filter <- function(dt, filter_range) {
-  if (!is.null(filter_range)) {
-    dt <- dt[
-      sample_size_numeric >= filter_range[1L] &
-        sample_size_numeric <= filter_range[2L]
-    ]
-  }
-  dt
 }
 
 #' Add Drug Group Indices for Row Merging

@@ -1,6 +1,10 @@
 # clean_table2.R
 # Table 2 data cleaning function
 
+# nolint start: object_usage_linter.
+# Functions with_db_connection and clean_column_names are from utils.R
+# (sourced before this file in app.R)
+
 #' Clean Table 2 Data
 #'
 #' Reads and cleans the clinical_trials table from a PostgreSQL database,
@@ -17,42 +21,33 @@
 #' @return A cleaned data.frame ready for display.
 #'
 #' @export
-clean_table2 <- function(con = NULL,
-                         dbname = "csvd_dashboard",
-                         host = "localhost",
-                         port = 5432,
-                         user = Sys.getenv("PGUSER"),
-                         password = Sys.getenv("PGPASSWORD")) {
-  # Create connection if not provided
-  close_con <- FALSE
-  if (is.null(con)) {
-    con <- DBI::dbConnect(
-      RPostgres::Postgres(),
-      dbname = dbname,
-      host = host,
-      port = port,
-      user = user,
-      password = password
-    )
-    close_con <- TRUE
-  }
+clean_table2 <- function(
+  con = NULL,
+  dbname = "csvd_dashboard",
+  host = "localhost",
+  port = 5432,
+  user = Sys.getenv("PGUSER"),
+  password = Sys.getenv("PGPASSWORD")
+) {
+  # Load data using connection utility
+  table2 <- with_db_connection(
+    function(conn) {
+      df <- DBI::dbGetQuery(conn, "SELECT * FROM clinical_trials")
+      df$id <- NULL
+      df$created_at <- NULL
+      df$updated_at <- NULL
+      df
+    },
+    con = con,
+    dbname = dbname,
+    host = host,
+    port = port,
+    user = user,
+    password = password
+  )
 
-  # Load Table 2 data from the "clinical_trials" table
-  table2 <- DBI::dbGetQuery(con, "SELECT * FROM clinical_trials")
-  table2$id <- NULL
-  table2$created_at <- NULL
-  table2$updated_at <- NULL
-
-  # Close connection if we created it
-  if (close_con) {
-    DBI::dbDisconnect(con)
-  }
-
-  # Clean column names
-  names(table2) <- gsub("_", " ", names(table2), fixed = TRUE)
-  names(table2) <- tools::toTitleCase(names(table2))
-  names(table2) <- gsub("Svd", "SVD", names(table2), fixed = TRUE)
-  names(table2) <- gsub("Registry Id", "Registry ID", names(table2), fixed = TRUE)
+  # Clean column names using utility function
+  names(table2) <- clean_column_names(names(table2))
 
   # Handle NA values
 
@@ -63,3 +58,4 @@ clean_table2 <- function(con = NULL,
 
   table2
 }
+# nolint end: object_usage_linter.
