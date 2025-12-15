@@ -206,7 +206,12 @@ svg_parts.append(
 
 global_r_outer = max(r[1] for r in phase_rings.values())
 
-# ---------- POPULATION × PHASE WEDGES ----------
+# ---------- POPULATION × PHASE WEDGES AND LABELS (two-pass rendering) ----------
+# First, collect all render data for wedges, population labels, and phase labels
+
+wedge_render_data = []
+pop_label_render_data = []
+
 for pop in populations:
     theta0 = pop_theta0[pop]
     theta1 = pop_theta1[pop]
@@ -221,7 +226,6 @@ for pop in populations:
             color = "#c8c8c8"
             grey_opacity = 0.4
         else:
-            # Keep base saturated color, apply opacity gradient instead of shading
             color = pop_colors.get(pop, "#444")
             grey_opacity = None
 
@@ -233,188 +237,160 @@ for pop in populations:
         else:
             opacity = phase_opacity.get(phase, 0.6)
 
-        # Shadow for wedge
-        svg_parts.append(
-            f'<path d="{d}" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" '
-            f'transform="translate({SHADOW_OFFSET_X},{SHADOW_OFFSET_Y})"/>'
-        )
-        # Main wedge
-        svg_parts.append(
-            f'<path class="wedge" '
-            f'data-pop="{pop}" data-phase="{phase}" '
-            f'data-pop-color="{pop_colors.get(pop, "#444")}" '
-            f'd="{d}" fill="{color}" fill-opacity="{opacity}"/>'
-        )
+        wedge_render_data.append({
+            "d": d, "pop": pop, "phase": phase, "color": color, "opacity": opacity
+        })
 
-    # population label with background rect - position outside plot touching at corner
+    # Collect population label data
     label_theta = (theta0 + theta1) / 2
-
-    # Calculate position on the outer boundary
     boundary_x, boundary_y = pol2cart(global_r_outer, label_theta)
-
-    # Determine text anchor based on which side of the plot
     cos_theta = math.cos(label_theta)
     sin_theta = math.sin(label_theta)
-
-    # Position label offset from boundary, with anchor appropriate for the side
-    # Add padding to account for label box (8px padding in adjustLabelBackgrounds)
     box_padding = 10
-
-    # Get manual positioning config for this population
     config = pop_label_config.get(pop, {"h_offset": 5, "v_offset": 5})
-    h_offset = config["h_offset"] + box_padding  # horizontal distance from boundary to label box edge
-    v_offset = config["v_offset"] + box_padding  # vertical distance from boundary to label box edge
+    h_offset = config["h_offset"] + box_padding
+    v_offset = config["v_offset"] + box_padding
 
     if cos_theta >= 0:
-        # Right side - anchor at start (left edge of text)
         anchor = "start"
-        # Position text so that box edge (text start - padding) is at offset from boundary
         lx = boundary_x + h_offset
     else:
-        # Left side - anchor at end (right edge of text)
         anchor = "end"
-        # Position text so that box edge (text end + padding) is at offset from boundary
         lx = boundary_x - h_offset
 
-    # Vertical positioning
     if sin_theta > 0:
-        # Upper half - position above the boundary
-        # Use middle baseline for consistent cross-browser rendering
-        # Adjust ly to account for text height (half of two-line text box)
         ly = boundary_y - v_offset
         v_baseline = "middle"
     else:
-        # Lower half - position below the boundary
-        # Use middle baseline for consistent cross-browser rendering
         ly = boundary_y + v_offset
         v_baseline = "middle"
 
     base_col = pop_colors.get(pop, "#444")
-
-    # Default text position (will be adjusted for two-line labels)
     text_ly = ly
 
-    # Estimate text dimensions for initial box rendering
     if pop == "Cognitive Impairment":
-        # Two-line text with 1.2em line spacing
         est_width = max(estimate_text_width("Cognitive", 18), estimate_text_width("Impairment", 18))
-        # Height calculation: first line (18px) + dy spacing (18*1.2) + descent of second line
-        # Total: 18 + 21.6 + 4 (descent) ≈ 43.6px
-        est_height = 40  # Tighter height for two-line text
-
-        # For two-line text, use minimal padding for tighter fit
-        padX, padY = 6, 4  # Reduced padding for tighter box borders
-
-        # Position box relative to text anchor
+        est_height = 40
+        padX, padY = 6, 4
         if anchor == "start":
             box_x = lx - padX
         else:
             box_x = lx - est_width - padX
-
-        # For two-line text with middle baseline:
-        # The first tspan is centered at ly, but we want the whole two-line block centered
-        # Adjust ly upward by half the spacing between lines
-        text_ly = ly - (18 * 1.2) / 2  # Move up by half of the dy spacing
-
-        # Position box to contain the adjusted text
+        text_ly = ly - (18 * 1.2) / 2
         box_y = text_ly - 18 / 2 - padY
     elif pop == "Any SVD (including monogenic)":
-        # Two-line text with 1.2em line spacing
         est_width = max(estimate_text_width("Any SVD", 18), estimate_text_width("(including monogenic)", 18))
-        # Height calculation: first line (18px) + dy spacing (18*1.2) + descent of second line
-        # Total: 18 + 21.6 + 4 (descent) ≈ 43.6px
-        est_height = 40  # Tighter height for two-line text
-
-        # For two-line text, use minimal padding for tighter fit
-        padX, padY = 8, 4  # Reduced padding for tighter box borders
-
-        # Special positioning: move label completely outside plot
-        # Position the center of the box at the offset distance
+        est_height = 40
+        padX, padY = 8, 4
         extra_offset = (est_width + padX * 2) / 2
         lx_center = lx + extra_offset
-
-        # Store the centered x position for the text
         lx = lx_center
-
-        # Position box relative to centered text
         box_x = lx_center - est_width / 2 - padX
-
-        # For two-line text with middle baseline:
-        # The first tspan is centered at ly, but we want the whole two-line block centered
-        # Adjust ly upward by half the spacing between lines
-        text_ly = ly - (18 * 1.2) / 2  # Move up by half of the dy spacing
-
-        # Position box to contain the adjusted text
+        text_ly = ly - (18 * 1.2) / 2
         box_y = text_ly - 18 / 2 - padY
     else:
         est_width = estimate_text_width(pop, 18)
-        est_height = 18  # Single line height
-
+        est_height = 18
         padX, padY = 8, 4
-        # Position box relative to text anchor
         if anchor == "start":
             box_x = lx - padX
         else:
             box_x = lx - est_width - padX
-
-        # Position box relative to vertical baseline (middle)
-        # For middle baseline, text is vertically centered at ly
-        # Box should be centered on ly as well
         box_y = ly - est_height / 2 - padY
 
-    svg_parts.append(
-        f'<g class="pop-label" data-pop="{pop}">' +
-        # Shadow for label box
-        f'<rect x="{box_x + SHADOW_OFFSET_X:.2f}" y="{box_y + SHADOW_OFFSET_Y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" ' +
-        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>' +
-        # Main label box
-        f'<rect class="label-bg pop-bg" x="{box_x:.2f}" y="{box_y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" ' +
-        f'fill="{base_col}" fill-opacity="0.6" pointer-events="none"/>' +
-        (
-            f'<text x="{lx:.2f}" y="{text_ly:.2f}" fill="#000" font-size="18" ' +
-            f'text-anchor="{anchor}" dominant-baseline="{v_baseline}">{pop}</text>'
-            if pop not in ["Cognitive Impairment", "Any SVD (including monogenic)"] else
-            (
-                f'<text x="{lx:.2f}" y="{text_ly:.2f}" fill="#000" font-size="18" text-anchor="{anchor}" dominant-baseline="{v_baseline}">' +
-                f'<tspan x="{lx:.2f}" dy="0">Cognitive</tspan>' +
-                f'<tspan x="{lx:.2f}" dy="1.2em">Impairment</tspan></text>'
-                if pop == "Cognitive Impairment" else
-                f'<text x="{lx:.2f}" y="{text_ly:.2f}" fill="#000" font-size="18" text-anchor="middle" dominant-baseline="{v_baseline}">' +
-                f'<tspan x="{lx:.2f}" dy="0">Any SVD</tspan>' +
-                f'<tspan x="{lx:.2f}" dy="1.2em">(including monogenic)</tspan></text>'
-            )
-        ) +
-        '</g>'
-    )
+    pop_label_render_data.append({
+        "pop": pop, "lx": lx, "ly": ly, "text_ly": text_ly, "anchor": anchor,
+        "v_baseline": v_baseline, "base_col": base_col,
+        "box_x": box_x, "box_y": box_y, "est_width": est_width, "est_height": est_height,
+        "padX": padX, "padY": padY
+    })
 
 boundary_angle = pop_theta1["Any SVD (including monogenic)"]
 
-# ---------- PHASE RINGS + LABELS ----------
+# Collect phase label data
+phase_label_render_data = []
 for phase, (r0, r1) in phase_rings.items():
     r_mid = (r0 + r1) / 2
-    # Phase ring circles removed - boundaries are now defined by wedge shadows only
     lx, ly = pol2cart(r_mid, boundary_angle)
-
-    # Estimate text dimensions for phase labels (16px font)
     phase_text = f"Phase {phase}"
     est_width = estimate_text_width(phase_text, 16)
-    est_height = 16 * 1.2  # Single line height with spacing
+    est_height = 16 * 1.2
     padX, padY = 8, 4
-    # Middle anchor, middle baseline
     box_x = lx - est_width / 2 - padX
     box_y = ly - est_height / 2 - padY
 
+    phase_label_render_data.append({
+        "phase": phase, "lx": lx, "ly": ly,
+        "box_x": box_x, "box_y": box_y, "est_width": est_width, "est_height": est_height,
+        "padX": padX, "padY": padY
+    })
+
+# FIRST PASS: Render ALL shadows (population labels, phase labels)
+for p in pop_label_render_data:
     svg_parts.append(
-        f'<g class="phase-label" data-phase="{phase}">'
-        # Shadow for phase label box
-        f'<rect x="{box_x + SHADOW_OFFSET_X:.2f}" y="{box_y + SHADOW_OFFSET_Y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
+        f'<rect x="{p["box_x"] + SHADOW_OFFSET_X:.2f}" y="{p["box_y"] + SHADOW_OFFSET_Y:.2f}" '
+        f'width="{p["est_width"] + p["padX"]*2:.2f}" height="{p["est_height"] + p["padY"]*2:.2f}" rx="6" '
         f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
-        # Main phase label box
-        f'<rect class="label-bg phase-bg" x="{box_x:.2f}" y="{box_y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
-        f'fill="#ffffff" fill-opacity="0.6" pointer-events="none"/>'
-        f'<text x="{lx:.2f}" y="{ly:.2f}" fill="#000" font-size="16" '
+    )
+
+for ph in phase_label_render_data:
+    svg_parts.append(
+        f'<rect x="{ph["box_x"] + SHADOW_OFFSET_X:.2f}" y="{ph["box_y"] + SHADOW_OFFSET_Y:.2f}" '
+        f'width="{ph["est_width"] + ph["padX"]*2:.2f}" height="{ph["est_height"] + ph["padY"]*2:.2f}" rx="6" '
+        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
+    )
+
+# SECOND PASS: Render ALL main elements (wedges, population labels, phase labels)
+for w in wedge_render_data:
+    svg_parts.append(
+        f'<path class="wedge" '
+        f'data-pop="{w["pop"]}" data-phase="{w["phase"]}" '
+        f'data-pop-color="{pop_colors.get(w["pop"], "#444")}" '
+        f'd="{w["d"]}" fill="{w["color"]}" fill-opacity="{w["opacity"]}"/>'
+    )
+
+for p in pop_label_render_data:
+    pop = p["pop"]
+    # Use white text for dark backgrounds (CAA, Cognitive Impairment)
+    text_color = "#fff" if pop in ["CAA", "Cognitive Impairment"] else "#000"
+    if pop == "Cognitive Impairment":
+        text_elem = (
+            f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
+            f'text-anchor="{p["anchor"]}" dominant-baseline="{p["v_baseline"]}">'
+            f'<tspan x="{p["lx"]:.2f}" dy="0">Cognitive</tspan>'
+            f'<tspan x="{p["lx"]:.2f}" dy="1.2em">Impairment</tspan></text>'
+        )
+    elif pop == "Any SVD (including monogenic)":
+        text_elem = (
+            f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
+            f'text-anchor="middle" dominant-baseline="{p["v_baseline"]}">'
+            f'<tspan x="{p["lx"]:.2f}" dy="0">Any SVD</tspan>'
+            f'<tspan x="{p["lx"]:.2f}" dy="1.2em">(including monogenic)</tspan></text>'
+        )
+    else:
+        text_elem = (
+            f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
+            f'text-anchor="{p["anchor"]}" dominant-baseline="{p["v_baseline"]}">{pop}</text>'
+        )
+
+    svg_parts.append(
+        f'<g class="pop-label" data-pop="{pop}">'
+        f'<rect class="label-bg pop-bg" x="{p["box_x"]:.2f}" y="{p["box_y"]:.2f}" '
+        f'width="{p["est_width"] + p["padX"]*2:.2f}" height="{p["est_height"] + p["padY"]*2:.2f}" rx="6" '
+        f'fill="{p["base_col"]}" fill-opacity="1" pointer-events="none"/>'
+        f'{text_elem}'
+        f'</g>'
+    )
+
+for ph in phase_label_render_data:
+    svg_parts.append(
+        f'<g class="phase-label" data-phase="{ph["phase"]}">'
+        f'<rect class="label-bg phase-bg" x="{ph["box_x"]:.2f}" y="{ph["box_y"]:.2f}" '
+        f'width="{ph["est_width"] + ph["padX"]*2:.2f}" height="{ph["est_height"] + ph["padY"]*2:.2f}" rx="6" '
+        f'fill="#ffffff" fill-opacity="1" pointer-events="none"/>'
+        f'<text x="{ph["lx"]:.2f}" y="{ph["ly"]:.2f}" fill="#000" font-size="16" '
         f'text-anchor="middle" dominant-baseline="middle">'
-        f'Phase {phase}</text>'
+        f'Phase {ph["phase"]}</text>'
         f'</g>'
     )
 
@@ -442,10 +418,9 @@ marker_palette = [
 # Map mechanisms to colors (cycle if more mechanisms than colors)
 mech_colors = {mech: marker_palette[i % len(marker_palette)] for i, mech in enumerate(mechanisms)}
 
-# ---------- DRUG MARKERS ----------
-svg_parts.append(
-    '<g id="drugs" font-family="Roboto" font-size="12" fill="#000">'
-)
+# ---------- DRUG MARKERS (two-pass rendering: all shadows first, then all main elements) ----------
+# First, collect all drug data for two-pass rendering
+drug_render_data = []
 
 for pop in populations:
     pop_rows = pop_to_rows[pop]
@@ -474,73 +449,89 @@ for pop in populations:
             theta = theta0 + frac * (theta1 - theta0)
 
             x, y = pol2cart(r, theta)
-            # Position labels at consistent horizontal distance from markers
-            horizontal_distance = 10  # pixels from marker edge
+            horizontal_distance = 10
             anchor = "start" if math.cos(theta) >= 0 else "end"
 
-            # Calculate label position: marker position + horizontal offset
             if math.cos(theta) >= 0:
-                # Right side: label to the right of marker
                 lx = x + MARKER_R + horizontal_distance
             else:
-                # Left side: label to the left of marker
                 lx = x - MARKER_R - horizontal_distance
             ly = y
 
             tooltip = f"{drug} — Phase {phase}, {pop}"
-
-            # Set background color based on genetic evidence
             has_genetic_evidence = row.get("Genetic Evidence", "").strip() == "Yes"
-            label_bg_color = "#90ee90" if has_genetic_evidence else "#ffffff"  # darker green if Yes, white otherwise
+            label_bg_color = "#90ee90" if has_genetic_evidence else "#ffffff"
 
-            # Estimate text dimensions for drug labels (12px font)
             est_width = estimate_text_width(drug, 12)
-            est_height = 12 * 1.3  # Single line height with spacing
+            est_height = 12 * 1.3
             padX, padY = 4, 2
-            # Position box relative to text anchor
             if anchor == "start":
                 box_x = lx - padX
             else:
                 box_x = lx - est_width - padX
-            box_y = ly - est_height / 2 - padY  # middle baseline
+            box_y = ly - est_height / 2 - padY
 
-            svg_parts.append(
-                f'<g class="drug" '
-                f'data-drug="{drug}" '
-                f'data-phase="{phase}" '
-                f'data-pop="{pop}" '
-                f'data-pop-color="{pop_colors.get(pop, "#444")}" '
-                f'data-mech="{(row.get("Mechanism of Action") or "").strip()}" '
-                f'data-gtarget="{(row.get("Genetic Target") or "").strip()}" '
-                f'data-ge="{(row.get("Genetic Evidence") or "").strip()}" '
-                f'data-tname="{(row.get("Trial Name") or "").strip()}" '
-                f'data-regid="{(row.get("Registry ID") or "").strip()}" '
-                f'data-svdpopd="{(row.get("SVD Population Details") or "").strip()}" '
-                f'data-ssize="{(row.get("Target Sample Size") or "").strip()}" '
-                f'data-estcomp="{(row.get("Estimated Completion Date") or "").strip()}" '
-                f'data-pco="{(row.get("Primary Outcome") or "").strip()}" '
-                f'data-sptype="{(row.get("Sponsor Type") or "").strip()}">'
-                f'<title>{tooltip}</title>'
-                # Shadow for drug marker
-                f'<circle cx="{x + SHADOW_OFFSET_X:.2f}" cy="{y + SHADOW_OFFSET_Y:.2f}" r="{MARKER_R}" '
-                f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-                # Main drug marker
-                f'<use href="#marker" '
-                f'x="{x:.2f}" y="{y:.2f}" color="{mech_colors.get(row.get("Mechanism of Action","").strip(), "#ffffff")}"/>'
-                # Shadow for drug label box
-                f'<rect x="{box_x + SHADOW_OFFSET_X:.2f}" y="{box_y + SHADOW_OFFSET_Y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
-                f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
-                # Main drug label box
-                f'<rect class="label-bg drug-bg" x="{box_x:.2f}" y="{box_y:.2f}" width="{est_width + padX*2:.2f}" height="{est_height + padY*2:.2f}" rx="6" '
-                f'fill="{label_bg_color}" fill-opacity="0.6" pointer-events="none"/>'
-                f'<text x="{lx:.2f}" y="{ly:.2f}" '
-                f'text-anchor="{anchor}" dominant-baseline="middle">'
-                f'{drug}</text>'
-                f'</g>'
-            )
+            drug_render_data.append({
+                "drug": drug, "phase": phase, "pop": pop, "row": row,
+                "x": x, "y": y, "lx": lx, "ly": ly, "anchor": anchor,
+                "tooltip": tooltip, "label_bg_color": label_bg_color,
+                "est_width": est_width, "est_height": est_height,
+                "padX": padX, "padY": padY, "box_x": box_x, "box_y": box_y
+            })
+
+svg_parts.append(
+    '<g id="drugs" font-family="Roboto" font-size="12" fill="#000">'
+)
+
+# FIRST PASS: Render ALL shadows
+for d in drug_render_data:
+    # Shadow for drug marker
+    svg_parts.append(
+        f'<circle cx="{d["x"] + SHADOW_OFFSET_X:.2f}" cy="{d["y"] + SHADOW_OFFSET_Y:.2f}" r="{MARKER_R}" '
+        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+    )
+    # Shadow for drug label box
+    svg_parts.append(
+        f'<rect x="{d["box_x"] + SHADOW_OFFSET_X:.2f}" y="{d["box_y"] + SHADOW_OFFSET_Y:.2f}" '
+        f'width="{d["est_width"] + d["padX"]*2:.2f}" height="{d["est_height"] + d["padY"]*2:.2f}" rx="6" '
+        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
+    )
+
+# SECOND PASS: Render ALL main elements
+for d in drug_render_data:
+    row = d["row"]
+    svg_parts.append(
+        f'<g class="drug" '
+        f'data-drug="{d["drug"]}" '
+        f'data-phase="{d["phase"]}" '
+        f'data-pop="{d["pop"]}" '
+        f'data-pop-color="{pop_colors.get(d["pop"], "#444")}" '
+        f'data-mech="{(row.get("Mechanism of Action") or "").strip()}" '
+        f'data-gtarget="{(row.get("Genetic Target") or "").strip()}" '
+        f'data-ge="{(row.get("Genetic Evidence") or "").strip()}" '
+        f'data-tname="{(row.get("Trial Name") or "").strip()}" '
+        f'data-regid="{(row.get("Registry ID") or "").strip()}" '
+        f'data-svdpopd="{(row.get("SVD Population Details") or "").strip()}" '
+        f'data-ssize="{(row.get("Target Sample Size") or "").strip()}" '
+        f'data-estcomp="{(row.get("Estimated Completion Date") or "").strip()}" '
+        f'data-pco="{(row.get("Primary Outcome") or "").strip()}" '
+        f'data-sptype="{(row.get("Sponsor Type") or "").strip()}">'
+        f'<title>{d["tooltip"]}</title>'
+        # Main drug marker
+        f'<use href="#marker" '
+        f'x="{d["x"]:.2f}" y="{d["y"]:.2f}" color="{mech_colors.get(row.get("Mechanism of Action","").strip(), "#ffffff")}"/>'
+        # Main drug label box
+        f'<rect class="label-bg drug-bg" x="{d["box_x"]:.2f}" y="{d["box_y"]:.2f}" '
+        f'width="{d["est_width"] + d["padX"]*2:.2f}" height="{d["est_height"] + d["padY"]*2:.2f}" rx="6" '
+        f'fill="{d["label_bg_color"]}" fill-opacity="1" pointer-events="none"/>'
+        f'<text x="{d["lx"]:.2f}" y="{d["ly"]:.2f}" '
+        f'text-anchor="{d["anchor"]}" dominant-baseline="middle">'
+        f'{d["drug"]}</text>'
+        f'</g>'
+    )
 
 svg_parts.append("</g>")
-# ---------- MARKER LEGEND ----------
+# ---------- LEGENDS (two-pass rendering: all shadows first, then all main elements) ----------
 # Position legend at top-right of plot
 legend_x = CX + global_r_outer + 150
 legend_y = CY - global_r_outer + 20
@@ -557,38 +548,7 @@ box_width = 40
 yes_box_x = legend_center_x - box_width/2
 no_box_x = legend_center_x - box_width/2
 
-svg_parts.append(
-    f'<g id="legend" font-size="14" fill="#000" font-family="Roboto">'
-    # Shadow for legend background
-    f'<rect x="{legend_x - 20 + SHADOW_OFFSET_X}" y="{legend_y - 30 + SHADOW_OFFSET_Y}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
-    f'rx="10" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-    # Main legend background
-    f'<rect id="legend-bg" x="{legend_x - 20}" y="{legend_y - 30}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
-    f'rx="10" fill="#c8c8c8" fill-opacity="0.4"/>'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Genetic Evidence</text>'
-    f'<g class="legend-item">'
-    # Shadow for Yes box
-    f'<rect x="{yes_box_x + SHADOW_OFFSET_X:.2f}" y="{legend_y + 2 + SHADOW_OFFSET_Y}" width="{box_width}" height="20" rx="6" '
-    f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-    # Main Yes box
-    f'<rect x="{yes_box_x:.2f}" y="{legend_y + 2}" width="{box_width}" height="20" rx="6" '
-    f'fill="#90ee90" fill-opacity="0.6"/>'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">Yes</text>'
-    f'</g>'
-    f'<g class="legend-item">'
-    # Shadow for No box
-    f'<rect x="{no_box_x + SHADOW_OFFSET_X:.2f}" y="{legend_y + 30 + SHADOW_OFFSET_Y}" width="{box_width}" height="20" rx="6" '
-    f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-    # Main No box
-    f'<rect x="{no_box_x:.2f}" y="{legend_y + 30}" width="{box_width}" height="20" rx="6" '
-    f'fill="#ffffff" fill-opacity="0.6"/>'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">No</text>'
-    f'</g>'
-    f'</g>'
-)
-
-# ---------- MECHANISM OF ACTION LEGEND ----------
-# Move MOA legend directly underneath the Genetic Evidence legend
+# MOA legend positioning
 legend_moa_x = legend_x
 legend_moa_y = legend_y + 110
 
@@ -599,7 +559,6 @@ moa_legend_height = 36 + num_mechanisms * 36 + 5  # header + items + padding (in
 # Calculate maximum text width for mechanisms
 max_mech_width = 0
 for mech in mechanisms:
-    # Estimate based on longest line in mechanism text
     if "(" in mech:
         lines = [mech[:mech.find("(")].rstrip(), mech[mech.find("("):]]
         max_line_width = max(estimate_text_width(line, 14) for line in lines)
@@ -607,26 +566,76 @@ for mech in mechanisms:
         max_line_width = estimate_text_width(mech, 14)
     max_mech_width = max(max_mech_width, max_line_width)
 
-# Also account for title width
 title_width = estimate_text_width("Mechanism of Action", 15)
-moa_legend_width = max(max_mech_width + 50, title_width + 40)  # +50 for marker and padding
+moa_legend_width = max(max_mech_width + 50, title_width + 40)
 
+# LEGEND RENDERING (layered: background shadows, backgrounds, inner shadows, inner elements)
+
+# Layer 1: Legend background shadows
 svg_parts.append(
-    f'<g id="legend-moa" font-size="14" fill="#000" font-family="Roboto">'
-    # Shadow for MOA legend background
+    f'<rect x="{legend_x - 20 + SHADOW_OFFSET_X}" y="{legend_y - 30 + SHADOW_OFFSET_Y}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
+    f'rx="10" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+)
+svg_parts.append(
     f'<rect x="{legend_moa_x - 20 + SHADOW_OFFSET_X}" y="{legend_moa_y - 30 + SHADOW_OFFSET_Y}" width="{moa_legend_width:.2f}" height="{moa_legend_height:.2f}" '
     f'rx="10" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-    # Main MOA legend background
+)
+
+# Layer 2: Legend background rects
+svg_parts.append(
+    f'<rect id="legend-bg" x="{legend_x - 20}" y="{legend_y - 30}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
+    f'rx="10" fill="#e8e8e8" fill-opacity="1"/>'
+)
+svg_parts.append(
     f'<rect id="legend-moa-bg" x="{legend_moa_x - 20}" y="{legend_moa_y - 30}" width="{moa_legend_width:.2f}" height="{moa_legend_height:.2f}" '
-    f'rx="10" fill="#c8c8c8" fill-opacity="0.4"/>'
+    f'rx="10" fill="#e8e8e8" fill-opacity="1"/>'
+)
+
+# Layer 3: Inner element shadows (Yes/No boxes, mechanism circles)
+# Shadow for Yes box
+svg_parts.append(
+    f'<rect x="{yes_box_x + SHADOW_OFFSET_X:.2f}" y="{legend_y + 2 + SHADOW_OFFSET_Y}" width="{box_width}" height="20" rx="6" '
+    f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+)
+# Shadow for No box
+svg_parts.append(
+    f'<rect x="{no_box_x + SHADOW_OFFSET_X:.2f}" y="{legend_y + 30 + SHADOW_OFFSET_Y}" width="{box_width}" height="20" rx="6" '
+    f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+)
+# Shadows for all mechanism circles
+for i, mech in enumerate(mechanisms):
+    y = legend_moa_y + 16 + i * 36
+    svg_parts.append(
+        f'<circle cx="{legend_moa_x + SHADOW_OFFSET_X}" cy="{y + SHADOW_OFFSET_Y}" r="9" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+    )
+
+# Layer 4: Inner elements (Yes/No boxes, mechanism circles, text)
+# Genetic Evidence legend content
+svg_parts.append(
+    f'<g id="legend" font-size="14" fill="#000" font-family="Roboto">'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Genetic Evidence</text>'
+    f'<g class="legend-item">'
+    f'<rect x="{yes_box_x:.2f}" y="{legend_y + 2}" width="{box_width}" height="20" rx="6" '
+    f'fill="#90ee90" fill-opacity="1"/>'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">Yes</text>'
+    f'</g>'
+    f'<g class="legend-item">'
+    f'<rect x="{no_box_x:.2f}" y="{legend_y + 30}" width="{box_width}" height="20" rx="6" '
+    f'fill="#ffffff" fill-opacity="1"/>'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">No</text>'
+    f'</g>'
+    f'</g>'
+)
+
+# MOA legend content
+svg_parts.append(
+    f'<g id="legend-moa" font-size="14" fill="#000" font-family="Roboto">'
     f'<text x="{legend_moa_x + moa_legend_width/2 - 20:.2f}" y="{legend_moa_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Mechanism of Action</text>'
 )
 
-# Add one entry per mechanism
 for i, mech in enumerate(mechanisms):
-    y = legend_moa_y + 16 + i * 36  # Increased spacing from title
+    y = legend_moa_y + 16 + i * 36
     color = mech_colors.get(mech, "#000000")
-    # Split mechanism into before/after parenthesis
     paren_index = mech.find("(")
     if paren_index != -1:
         mech_main = mech[:paren_index].rstrip()
@@ -644,9 +653,6 @@ for i, mech in enumerate(mechanisms):
 
     svg_parts.append(
         f'<g class="legend-item">'
-        # Shadow for mechanism circle
-        f'<circle cx="{legend_moa_x + SHADOW_OFFSET_X}" cy="{y + SHADOW_OFFSET_Y}" r="9" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-        # Main mechanism circle
         f'<circle cx="{legend_moa_x}" cy="{y}" r="9" fill="{color}"/>'
         f'{text_block}'
         f'</g>'

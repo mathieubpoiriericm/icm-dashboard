@@ -414,6 +414,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                       style = about_box_style,
                       shiny::HTML("<b>How to Cite:</b>")
                     ),
+                    " ",
                     shiny::tags$span(
                       style = "color: #4b5563;",
                       shiny::HTML(paste0(
@@ -432,6 +433,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                       style = about_box_style,
                       shiny::HTML("<b>Scientific Board:</b>")
                     ),
+                    " ",
                     shiny::tags$span(
                       style = "color: #4b5563;",
                       shiny::HTML(paste0(" TBD"))
@@ -446,6 +448,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                       style = about_box_style,
                       shiny::HTML("<b>Contact Us:</b>")
                     ),
+                    " ",
                     shiny::tags$span(
                       style = "color: #4b5563;",
                       shiny::HTML(paste0(
@@ -466,6 +469,23 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                     shiny::tags$a(
                       href = "mailto:mathieu.poirier@icm-institute.org",
                       "mathieu.poirier@icm-institute.org"
+                    )
+                  ),
+                  shiny::div(
+                    style = paste0(
+                      "text-align: left; margin-top: 1rem; ",
+                      "font-size: 1.5rem; color: #2d287a; line-height: 1.6;"
+                    ),
+                    shiny::tags$span(
+                      style = about_box_style,
+                      shiny::HTML("<b>Acknowledgements:</b>")
+                    ),
+                    " ",
+                    shiny::tags$span(
+                      style = "color: #4b5563;",
+                      shiny::HTML(paste0(
+                        "TBD"
+                      ))
                     )
                   )
                 )
@@ -639,7 +659,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
                   shiny::div(
                     style = tip_box_style,
                     shiny::HTML(paste0(
-                      "<strong>Visually Inspired by:</strong> Figure 1 ",
+                      "<strong>Visually-inspired by:</strong> Fig. 1 ",
                       "in Cummings, J. <i>et al.</i>,<br>",
                       "Alzheimer's ",
                       "disease drug ",
