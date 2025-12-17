@@ -3,7 +3,12 @@ from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Database credentials
+DB_HOST = os.getenv("DB_HOST")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = "csvd_user"
+DB_PORT = 5432
+DB_PASSWORD = os.getenv("PGPASSWORD")
 
 class Database:
     _pool: Optional[asyncpg.Pool] = None
@@ -12,7 +17,11 @@ class Database:
     async def get_pool(cls) -> asyncpg.Pool:
         if cls._pool is None:
             cls._pool = await asyncpg.create_pool(
-                DATABASE_URL,
+                host=DB_HOST,
+                port=DB_PORT,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                database=DB_NAME,
                 min_size=2,
                 max_size=10
             )
