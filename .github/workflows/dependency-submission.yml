@@ -23,11 +23,8 @@ jobs:
 
       - name: Update dependency graph metadata
         run: |
-          # Update the SHA in dependency-graph.json to current commit (short form)
           SHORT_SHA=$(git rev-parse --short HEAD)
           sed -i "s/\"sha\": \"[^\"]*\"/\"sha\": \"$SHORT_SHA\"/" dependency-graph.json
-
-          # Update the scanned timestamp to current UTC time
           CURRENT_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           sed -i "s/\"scanned\": \"[^\"]*\"/\"scanned\": \"$CURRENT_DATE\"/" dependency-graph.json
 
