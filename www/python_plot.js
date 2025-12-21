@@ -310,14 +310,42 @@
     const tip = document.getElementById('tooltip');
     if (!tip) return;
     tip.classList.remove('show');
+    // Clear cached dimensions when hiding tooltip
+    cachedTipDimensions = null;
+  }
+
+  // Tooltip dimension cache to avoid layout thrashing
+  let cachedTipDimensions = null;
+  let rafPending = false;
+  let pendingX = 0;
+  let pendingY = 0;
+
+  // Throttled tooltip position update using requestAnimationFrame
+  function throttledUpdateTooltipPosition(x, y) {
+    pendingX = x;
+    pendingY = y;
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        updateTooltipPosition(pendingX, pendingY);
+      });
+    }
   }
 
   function updateTooltipPosition(x, y) {
     const tip = document.getElementById('tooltip');
     if (!tip) return;
 
-    const tipWidth = tip.offsetWidth;
-    const tipHeight = tip.offsetHeight;
+    // Use cached dimensions or read once per tooltip show
+    if (!cachedTipDimensions) {
+      cachedTipDimensions = {
+        width: tip.offsetWidth,
+        height: tip.offsetHeight
+      };
+    }
+    const tipWidth = cachedTipDimensions.width;
+    const tipHeight = cachedTipDimensions.height;
     const margin = 10;
     const cursorOffset = 5;
 
@@ -422,7 +450,7 @@
 
       });
       w.addEventListener('mousemove', (ev) => {
-        updateTooltipPosition(ev.clientX, ev.clientY);
+        throttledUpdateTooltipPosition(ev.clientX, ev.clientY);
       });
       w.addEventListener('mouseout', () => {
         hideTooltip();
@@ -517,7 +545,7 @@
         showTooltip(html, ev.clientX, ev.clientY, popColor);
       });
       node.addEventListener('mousemove', (ev) => {
-        updateTooltipPosition(ev.clientX, ev.clientY);
+        throttledUpdateTooltipPosition(ev.clientX, ev.clientY);
       });
       node.addEventListener('mouseout', () => {
         hideTooltip();

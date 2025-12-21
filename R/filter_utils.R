@@ -241,6 +241,7 @@ build_filter_list <- function(filter_specs) {
 #'
 #' Creates the styled div for displaying active filter status.
 #' Used by both Table 1 and Table 2 filter message rendering.
+#' Uses CSS classes for theme support (light/dark mode).
 #'
 #' @param filters_applied Character vector of filter descriptions.
 #'
@@ -250,7 +251,7 @@ build_filter_list <- function(filter_specs) {
 render_filter_message <- function(filters_applied) {
   if (length(filters_applied) > 0L) {
     shiny::div(
-      style = filter_active_style,
+      class = filter_active_class,
       shiny::HTML(paste0(
         "<strong>Active Filters:</strong> ",
         paste(filters_applied, collapse = " | ")
@@ -258,7 +259,7 @@ render_filter_message <- function(filters_applied) {
     )
   } else {
     shiny::div(
-      style = filter_none_style,
+      class = filter_none_class,
       shiny::HTML("<strong>Active Filters:</strong> None")
     )
   }

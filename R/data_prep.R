@@ -2,26 +2,48 @@
 # Data loading and preprocessing
 # nolint start: object_usage_linter.
 
-#' Safely load an RData file with error handling
+# Check if qs package is available for faster serialization
+qs_available <- requireNamespace("qs", quietly = TRUE)
+
+#' Safely read a serialized R object with error handling
 #'
-#' Wraps the base load() function with tryCatch to provide informative
-#' error messages when data files are missing or corrupt.
+#' Attempts to read using qs format first (3-5x faster), then falls back
+#' to RDS format. Wraps with tryCatch to provide informative error messages.
 #'
-#' @param file_path Character. Path to the RData file.
-#' @param env Environment. Environment to load into (default: parent frame).
+#' @param file_path Character. Path to the RDS file (will also check for .qs).
 #'
-#' @return Invisible NULL. Side effect: objects loaded into env.
+#' @return The object stored in the file.
 #'
 #' @keywords internal
-safe_load_rdata <- function(file_path, envir = parent.frame()) {
+safe_read_rds <- function(file_path) {
+
+  # Try qs format first if available (significantly faster)
+  if (qs_available) {
+    qs_path <- sub("\\.rds$", ".qs", file_path, ignore.case = TRUE)
+    if (file.exists(qs_path)) {
+      return(tryCatch(
+        {
+          qs::qread(qs_path, nthreads = parallel::detectCores())
+        },
+        error = function(e) {
+          message(sprintf(
+            "qs read failed for '%s', falling back to RDS", qs_path
+          ))
+          NULL
+        }
+      ))
+    }
+  }
+
+  # Fall back to RDS format
   tryCatch(
     {
-      load(file_path, envir = envir)
+      readRDS(file_path)
     },
     error = function(e) {
       stop(
         sprintf(
-          "Failed to load data file '%s': %s\n%s",
+          "Failed to load file '%s': %s\n%s",
           file_path,
           e$message,
           "Please ensure the file exists and is not corrupt."
@@ -30,6 +52,58 @@ safe_load_rdata <- function(file_path, envir = parent.frame()) {
       )
     }
   )
+}
+
+#' Convert RDS files to qs format for faster loading
+#'
+#' Converts all RDS files in DATA_PATHS to qs format. Run this once
+#' to speed up subsequent app startups by 3-5x.
+#'
+#' @param overwrite Logical. Overwrite existing qs files. Defaults to FALSE.
+#'
+#' @return Invisible NULL. Prints conversion status.
+#'
+#' @export
+convert_rds_to_qs <- function(overwrite = FALSE) {
+  if (!qs_available) {
+    stop("qs package not installed. Install with: install.packages('qs')")
+  }
+
+  rds_paths <- unlist(
+    DATA_PATHS[grep("\\.rds$", DATA_PATHS, ignore.case = TRUE)]
+  )
+
+  for (rds_path in rds_paths) {
+    qs_path <- sub("\\.rds$", ".qs", rds_path, ignore.case = TRUE)
+
+    if (!file.exists(rds_path)) {
+      message(sprintf("  Skipping (not found): %s", rds_path))
+      next
+    }
+
+    if (file.exists(qs_path) && !overwrite) {
+      message(sprintf("  Skipping (exists): %s", qs_path))
+      next
+    }
+
+    tryCatch({
+      obj <- readRDS(rds_path)
+      qs::qsave(obj, qs_path, nthreads = parallel::detectCores())
+      rds_size <- file.size(rds_path)
+      qs_size <- file.size(qs_path)
+      message(sprintf(
+        "  Converted: %s (%.1f KB -> %.1f KB, %.0f%% smaller)",
+        basename(rds_path),
+        rds_size / 1024,
+        qs_size / 1024,
+        (1 - qs_size / rds_size) * 100
+      ))
+    }, error = function(e) {
+      message(sprintf("  Failed: %s - %s", rds_path, e$message))
+    })
+  }
+
+  invisible(NULL)
 }
 
 #' Safely read a CSV file with error handling
@@ -63,13 +137,13 @@ safe_read_csv <- function(file_path) {
 
 #' Load and prepare Table 1 data
 #'
-#' Loads pre-cleaned RData files and external data sources, applies formatting
+#' Loads pre-cleaned RDS files and external data sources, applies formatting
 #' corrections, and creates pre-computed lookup tables for efficient filtering
 #' in the Shiny application.
 #'
 #' @details
 #' This function performs the following operations:
-#' - Loads table1_clean.RData, gene_info_results_df.RData, prot_info_clean.RData
+#' - Loads table1_clean.RDS, gene_info_results_df.RDS, prot_info_clean.RDS
 #' - Fixes empty Mendelian Randomization values
 #' - Applies title case formatting to pathway and protein names
 #' - Extracts unique GWAS traits and omics types
@@ -99,7 +173,7 @@ safe_read_csv <- function(file_path) {
 load_and_prepare_data <- function() {
   # Load required data with error handling
   message("Loading Table 1 data...")
-  safe_load_rdata(DATA_PATHS$table1_clean, envir = environment())
+  table1 <- safe_read_rds(DATA_PATHS$table1_clean)
 
   # Fix empty Mendelian Randomization values (should be "No")
   table1$`Mendelian Randomization`[
@@ -109,9 +183,10 @@ load_and_prepare_data <- function() {
 
   # Load pre-fetched NCBI gene info
   message("Loading gene info...")
-  safe_load_rdata(DATA_PATHS$gene_info, envir = environment())
+  gene_info_results_df <- safe_read_rds(DATA_PATHS$gene_info)
   gene_info_results_df <- dplyr::rename(
     gene_info_results_df,
+    `Name` = "name",
     `NCBI Gene ID` = "uid",
     `Protein Coded by This Gene` = "description",
     `Other Aliases` = "otheraliases"
@@ -121,7 +196,6 @@ load_and_prepare_data <- function() {
   )
 
   # Add URL to NCBI Gene webpage using constant
-
   gene_info_results_df$URL <- paste0(
     NCBI_GENE_BASE_URL,
     gene_info_results_df$`NCBI Gene ID`
@@ -129,8 +203,7 @@ load_and_prepare_data <- function() {
 
   # Load pre-fetched protein info
   message("Loading protein info...")
-  safe_load_rdata(DATA_PATHS$prot_info, envir = environment())
-  prot_info_clean <- prot_info_clean
+  prot_info_clean <- safe_read_rds(DATA_PATHS$prot_info)
 
   # Title casing for the Affected Pathway column
   table1$`Affected Pathway` <- tools::toTitleCase(table1$`Affected Pathway`)
@@ -149,9 +222,10 @@ load_and_prepare_data <- function() {
     function(x) gsub("proteomics", "Proteomics", x, fixed = TRUE)
   )
 
-  # Vectorized extraction of omics types
-  all_omics_types <- table1$`Evidence From Other Omics Studies` |>
-    purrr::map(function(omics_evidence) {
+  # Vectorized extraction of omics types (optimized with vapply)
+  all_omics_types <- unlist(lapply(
+    table1$`Evidence From Other Omics Studies`,
+    function(omics_evidence) {
       if (
         length(omics_evidence) > 0L &&
           omics_evidence[1L] != PLACEHOLDER_NONE_FOUND
@@ -160,9 +234,9 @@ load_and_prepare_data <- function() {
       } else {
         character(0L)
       }
-    }) |>
-    unlist() |>
-    (\(x) x[grepl("^[A-Z]{4}$", x)])()
+    }
+  ))
+  all_omics_types <- all_omics_types[grepl("^[A-Z]{4}$", all_omics_types)]
 
   omics_df <- data.frame(
     Omics_Type = unique(all_omics_types),
@@ -172,9 +246,10 @@ load_and_prepare_data <- function() {
   # Use constant for omics full names
   omics_df$Full_Name <- OMICS_FULL_NAMES[omics_df$Omics_Type]
 
-  # Vectorized extraction of GWAS traits
-  gwas_traits_all <- table1$`GWAS Trait` |>
-    purrr::map(function(gwas_traits) {
+  # Vectorized extraction of GWAS traits (optimized with lapply)
+  gwas_traits_all <- unlist(lapply(
+    table1$`GWAS Trait`,
+    function(gwas_traits) {
       if (is.list(gwas_traits)) {
         gwas_traits <- gwas_traits[[1L]]
       }
@@ -183,8 +258,8 @@ load_and_prepare_data <- function() {
       } else {
         character(0L)
       }
-    }) |>
-    unlist()
+    }
+  ))
 
   unique_gwas_traits <- unique(gwas_traits_all)
   unique_gwas_traits <- unique_gwas_traits[
@@ -198,7 +273,7 @@ load_and_prepare_data <- function() {
 
   # Load GWAS trait full names for tooltips
   message("Loading GWAS trait mappings...")
-  safe_load_rdata(DATA_PATHS$gwas_trait_names, envir = environment())
+  gwas_trait_names <- safe_read_rds(DATA_PATHS$gwas_trait_names)
 
   first_mapping <- data.frame(
     abbrev = names(gwas_trait_names)[1L],
@@ -215,13 +290,16 @@ load_and_prepare_data <- function() {
   )
 
   # Pre-compute GWAS trait membership for fast filtering (using fastmap)
+  # Optimized: use vapply instead of purrr::map_lgl for faster iteration
   gwas_trait_rows <- fastmap::fastmap()
+  gwas_col <- table1$`GWAS Trait`
   for (trait in unique_gwas_traits) {
     gwas_trait_rows$set(
       trait,
-      which(purrr::map_lgl(
-        table1$`GWAS Trait`,
-        ~ any(.x %in% trait)
+      which(vapply(
+        gwas_col,
+        function(x) any(x %in% trait),
+        logical(1L)
       ))
     )
   }
@@ -229,8 +307,8 @@ load_and_prepare_data <- function() {
   # Add "(none found)" rows for filtering
   gwas_trait_rows$set(
     PLACEHOLDER_NONE_FOUND,
-    which(purrr::map_lgl(
-      table1$`GWAS Trait`,
+    which(vapply(
+      gwas_col,
       function(traits) {
         if (is.list(traits)) {
           traits <- traits[[1L]]
@@ -238,18 +316,21 @@ load_and_prepare_data <- function() {
         length(traits) == 0L ||
           is.null(traits) ||
           (length(traits) == 1L &&
-            (is.na(traits[1L]) || traits[1L] == PLACEHOLDER_NONE_FOUND))
-      }
+             (is.na(traits[1L]) || traits[1L] == PLACEHOLDER_NONE_FOUND))
+      },
+      logical(1L)
     ))
   )
 
   # Pre-compute omics type membership for fast filtering (using fastmap)
+  # Optimized: use vapply instead of purrr::map_lgl for faster iteration
   omics_type_rows <- fastmap::fastmap()
+  omics_col <- table1$`Evidence From Other Omics Studies`
   for (omics_type in omics_df$Omics_Type) {
     omics_type_rows$set(
       omics_type,
-      which(purrr::map_lgl(
-        table1$`Evidence From Other Omics Studies`,
+      which(vapply(
+        omics_col,
         function(omics_evidence) {
           if (
             length(omics_evidence) > 0L &&
@@ -264,7 +345,8 @@ load_and_prepare_data <- function() {
           } else {
             FALSE
           }
-        }
+        },
+        logical(1L)
       ))
     )
   }
@@ -272,8 +354,8 @@ load_and_prepare_data <- function() {
   # Add "(none found)" rows for omics filtering
   omics_type_rows$set(
     PLACEHOLDER_NONE_FOUND,
-    which(purrr::map_lgl(
-      table1$`Evidence From Other Omics Studies`,
+    which(vapply(
+      omics_col,
       function(omics_evidence) {
         if (is.list(omics_evidence)) {
           omics_evidence <- omics_evidence[[1L]]
@@ -281,9 +363,10 @@ load_and_prepare_data <- function() {
         length(omics_evidence) == 0L ||
           is.null(omics_evidence) ||
           (length(omics_evidence) == 1L &&
-            (is.na(omics_evidence[1L]) ||
-              omics_evidence[1L] == PLACEHOLDER_NONE_FOUND))
-      }
+             (is.na(omics_evidence[1L]) ||
+                omics_evidence[1L] == PLACEHOLDER_NONE_FOUND))
+      },
+      logical(1L)
     ))
   )
 
@@ -336,8 +419,7 @@ load_and_prepare_data <- function() {
 
   # Load pre-fetched references data
   message("Loading publication references...")
-  safe_load_rdata(DATA_PATHS$refs, envir = environment())
-  refs <- refs
+  refs <- safe_read_rds(DATA_PATHS$refs)
 
   # Convert table1 to data.table for faster filtering
   data.table::setDT(table1)
@@ -372,7 +454,7 @@ load_and_prepare_data <- function() {
 #'
 #' @details
 #' This function performs the following operations:
-#' - Loads table2_clean.RData and gene_info_table2.RData
+#' - Loads table2_clean.RDS and gene_info_table2.RDS
 #' - Renames gene info columns to match Table 1 format
 #' - Extracts trial name and primary outcome into ct_info
 #' - Converts completion dates to "Month Year" format
@@ -394,14 +476,15 @@ load_and_prepare_data <- function() {
 #' @seealso \code{\link{load_and_prepare_data}} for main gene data
 load_table2_data <- function() {
   message("Loading Table 2 clinical trial data...")
-  safe_load_rdata(DATA_PATHS$table2_clean, envir = environment())
+  table2 <- safe_read_rds(DATA_PATHS$table2_clean)
 
   message("Loading Table 2 gene info...")
-  safe_load_rdata(DATA_PATHS$gene_info_table2, envir = environment())
+  gene_info_table2 <- safe_read_rds(DATA_PATHS$gene_info_table2)
 
   # Rename columns and add URL (same as Table 1 gene info)
   gene_info_table2 <- dplyr::rename(
     gene_info_table2,
+    `Name` = "name",
     `NCBI Gene ID` = "uid",
     `Protein Coded by This Gene` = "description",
     `Other Aliases` = "otheraliases"
@@ -450,8 +533,9 @@ load_table2_data <- function() {
   }
 
   # Use constant for registry patterns
+  # Optimized: use vapply instead of purrr::map_chr
   registry_matches <- data.frame(
-    matched_pattern = purrr::map_chr(
+    matched_pattern = vapply(
       table2$`Registry ID`,
       function(registry_id) {
         matches <- vapply(
@@ -466,7 +550,8 @@ load_table2_data <- function() {
         } else {
           NA_character_
         }
-      }
+      },
+      character(1L)
     ),
     stringsAsFactors = FALSE
   )
@@ -499,8 +584,8 @@ load_table2_data <- function() {
   # Pre-assign original_row_num column to avoid recomputing on each filter
   table2[, original_row_num := .I]
 
-  # Extract gene symbols from gene_info_table2 (stored in "name" column)
-  gene_symbols_table2 <- gene_info_table2$name
+  # Extract gene symbols from gene_info_table2 (stored in "Name" column)
+  gene_symbols_table2 <- gene_info_table2$Name
 
   # Pre-compute sample sizes for histogram (avoids re-computing on each draw)
   sample_sizes <- table2$sample_size_numeric

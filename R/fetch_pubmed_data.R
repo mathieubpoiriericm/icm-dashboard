@@ -22,8 +22,18 @@ fetch_pub <- function(pmid) {
     error = function(e) FALSE
   )
 
-  if (interactive() && ncbi_available) {
-    ref <- RefManageR::ReadPubMed(query = as.character(pmid))
+  ref <- NULL
+
+  if (ncbi_available) {
+    ref <- tryCatch(
+      RefManageR::ReadPubMed(query = as.character(pmid)),
+      error = function(e) {
+        warning(sprintf("Failed to fetch PMID %s: %s", pmid, e$message))
+        NULL
+      }
+    )
+  } else {
+    warning("NCBI is not reachable, skipping PubMed fetch")
   }
 
   ref
@@ -134,6 +144,8 @@ extract_unique_pmids <- function(references) {
 #' @param pmids A character vector of PMIDs.
 #' @param bibentry_dir Directory to store .bib and .xml files.
 #'   Defaults to "bibentry".
+#' @param delay Delay in seconds between API requests to avoid rate limiting.
+#'   NCBI recommends no more than 3 requests per second. Defaults to 0.5.
 #' @param verbose If TRUE, prints progress messages. Defaults to FALSE.
 #'
 #' @return A data.frame with columns: pmid, formatted reference text.
@@ -142,13 +154,16 @@ extract_unique_pmids <- function(references) {
 fetch_all_pubmed_refs <- function(
   pmids,
   bibentry_dir = "bibentry",
+  delay = 0.5,
   verbose = FALSE
 ) {
   # Ensure bibentry directory exists
-
   if (!dir.exists(bibentry_dir)) {
     dir.create(bibentry_dir, recursive = TRUE)
   }
+
+  # Track which PMIDs were successfully fetched
+  successful_pmids <- character(0)
 
   # Fetch and save bib/xml files
   for (i in seq_along(pmids)) {
@@ -161,33 +176,74 @@ fetch_all_pubmed_refs <- function(
     # Fetch publication info
     bib_to_write <- fetch_pub(pmid)
 
+    # Skip if fetch failed
+    if (is.null(bib_to_write) || length(bib_to_write) == 0) {
+      if (verbose) {
+        message(sprintf("  Skipping PMID %s - fetch returned NULL", pmid))
+      }
+      next
+    }
+
     # Save .bib file
     bib_file_name <- paste0(pmid, ".bib")
-    RefManageR::WriteBib(
-      bib_to_write,
-      file = file.path(bibentry_dir, bib_file_name)
+    tryCatch(
+      {
+        RefManageR::WriteBib(
+          bib_to_write,
+          file = file.path(bibentry_dir, bib_file_name)
+        )
+
+        # Convert .bib file to .xml
+        xml_file_name <- paste0(pmid, ".xml")
+        rbibutils::bibConvert(
+          infile = file.path(bibentry_dir, bib_file_name),
+          outfile = file.path(bibentry_dir, xml_file_name)
+        )
+
+        successful_pmids <- c(successful_pmids, pmid)
+      },
+      error = function(e) {
+        if (verbose) {
+          message(sprintf("  Error processing PMID %s: %s", pmid, e$message))
+        }
+      }
     )
 
-    # Convert .bib file to .xml
-    xml_file_name <- paste0(pmid, ".xml")
-    rbibutils::bibConvert(
-      infile = file.path(bibentry_dir, bib_file_name),
-      outfile = file.path(bibentry_dir, xml_file_name)
-    )
+    # Delay between requests to avoid rate limiting
+    if (i < length(pmids)) {
+      Sys.sleep(delay)
+    }
+  }
+
+  if (length(successful_pmids) == 0) {
+    warning("No PMIDs were successfully fetched")
+    return(data.frame(
+      pmid = character(0),
+      formatted_ref = character(0),
+      stringsAsFactors = FALSE
+    ))
   }
 
   # Parse XML files and build result dataframe
   refs <- data.frame(
-    pmid = pmids,
+    pmid = successful_pmids,
+    formatted_ref = NA_character_,
     stringsAsFactors = FALSE
   )
 
-  for (i in seq_along(pmids)) {
-    xml_path <- file.path(bibentry_dir, paste0(pmids[i], ".xml"))
-    refs[i, 2L] <- parse_reference_xml(xml_path)
+  for (i in seq_along(successful_pmids)) {
+    xml_path <- file.path(bibentry_dir, paste0(successful_pmids[i], ".xml"))
+    refs$formatted_ref[i] <- tryCatch(
+      parse_reference_xml(xml_path),
+      error = function(e) {
+        if (verbose) {
+          message(sprintf("  Error parsing XML for PMID %s: %s",
+                          successful_pmids[i], e$message))
+        }
+        NA_character_
+      }
+    )
   }
-
-  names(refs) <- c("pmid", "formatted_ref")
 
   # Manual correction of author name encoding issue
   refs$formatted_ref <- gsub(

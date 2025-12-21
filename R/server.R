@@ -23,6 +23,15 @@ build_server <- function(app_data, table1_display) {
     omics_type_rows <- app_data$omics_type_rows
 
     # =========================================================================
+    # THEME SWITCHING (BSLIB DARK MODE)
+    # =========================================================================
+    shiny::observe({
+      session$setCurrentTheme(
+        if (isTRUE(input$dark_mode)) dark_theme else light_theme
+      )
+    })
+
+    # =========================================================================
     # PYTHON PLOT HANDLER
     # =========================================================================
     setup_python_plot_handler(input, session)
@@ -37,7 +46,8 @@ build_server <- function(app_data, table1_display) {
       table2_reactive_vals$ct_info_data,
       table2_reactive_vals$registry_matches_data,
       table2_reactive_vals$registry_rows_data,
-      table2_reactive_vals$sample_sizes_data
+      table2_reactive_vals$sample_sizes_data,
+      table2_reactive_vals$sample_sizes_hash_data
     )
 
     # Trigger Table 2 loading when Clinical Trials tabs are accessed
@@ -148,7 +158,8 @@ create_table2_reactive_vals <- function() {
     ct_info_data = shiny::reactiveVal(NULL),
     registry_matches_data = shiny::reactiveVal(NULL),
     registry_rows_data = shiny::reactiveVal(NULL),
-    sample_sizes_data = shiny::reactiveVal(NULL)
+    sample_sizes_data = shiny::reactiveVal(NULL),
+    sample_sizes_hash_data = shiny::reactiveVal(NULL)
   )
 }
 

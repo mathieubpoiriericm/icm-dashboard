@@ -92,11 +92,10 @@ fetch_all_gene_info <- function(gene_symbols, delay = 0.1, verbose = FALSE) {
 #' extract_table2_gene_symbols()
 #' }
 extract_table2_gene_symbols <- function(verbose = TRUE) {
-  # Load into local environment to avoid global variable binding warning
-  env <- new.env()
-  load("data/rdata/table2_clean.RData", envir = env)
+  # Load table2 data
+  table2 <- readRDS("data/rdata/table2_clean.rds")
 
-  genes_raw <- env$table2[["Genetic Target"]]
+  genes_raw <- table2[["Genetic Target"]]
 
   # Split comma-separated genes and flatten
   all_genes <- unlist(strsplit(genes_raw, ",[ ]*"))
@@ -162,11 +161,17 @@ fetch_save_table2_gene_info <- function(
     verbose = verbose
   )
 
+  # Add gene symbol as first column for matching (same as Table 1)
+  gene_info_table2 <- cbind(
+    name = gene_symbols,
+    gene_info_table2
+  )
+
   # Save results
-  save(gene_info_table2, file = "data/rdata/gene_info_table2.RData")
+  saveRDS(gene_info_table2, file = "data/rdata/gene_info_table2.rds")
 
   if (verbose) {
-    message("Saved to data/rdata/gene_info_table2.RData")
+    message("Saved to data/rdata/gene_info_table2.rds")
   }
 
   invisible(gene_info_table2)

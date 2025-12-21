@@ -199,36 +199,21 @@ create_box_style <- function(
 #   - Success: #008000 (green)
 #   - Warning: #ff0000 (red)
 
-#' CSS Style for Tooltips
+#' CSS Class for Tooltips
 #'
-#' Common CSS style string for elements with tooltips.
-#' Uses color: inherit to preserve link colors when used inside anchors.
+#' CSS class name for elements with tooltips.
+#' Styles are defined in www/custom.css for hover effect support.
 #'
 #' @export
-tooltip_style <- create_box_style(
-  text_color = "inherit",
-  padding = "4px 8px",
-  extra_styles = list(
-    `border-bottom` = "1px dotted #667eea",
-    cursor = "help"
-  )
-)
+tooltip_class <- "tooltip-box"
 
-#' CSS Style for Italic Tooltips
+#' CSS Class for Italic Tooltips
 #'
-#' CSS style string for italic elements with tooltips (e.g., gene symbols).
-#' Uses color: inherit to preserve link colors when used inside anchors.
+#' CSS class name for italic elements with tooltips (e.g., gene symbols).
+#' Styles are defined in www/custom.css for hover effect support.
 #'
 #' @export
-tooltip_style_italic <- create_box_style(
-  text_color = "inherit",
-  padding = "4px 8px",
-  extra_styles = list(
-    `border-bottom` = "1px dotted #667eea",
-    `font-style` = "italic",
-    cursor = "help"
-  )
-)
+tooltip_class_italic <- "tooltip-box tooltip-box-italic"
 
 #' CSS Style for Tip Boxes
 #'
@@ -269,11 +254,24 @@ title_style <- build_css_style(
   text_align = "center"
 )
 
-#' CSS Style for Active Filter Messages
+#' CSS Class for Active Filter Messages
 #'
-#' CSS style string for displaying active filter status.
+#' CSS class name for displaying active filter status.
+#' Styles are defined in custom.css for theme support.
 #'
 #' @export
+filter_active_class <- "filter-message filter-active"
+
+#' CSS Class for No Active Filters
+#'
+#' CSS class name for displaying when no filters are active.
+#' Styles are defined in custom.css for theme support.
+#'
+#' @export
+filter_none_class <- "filter-message filter-none"
+
+# Legacy style exports (kept for backwards compatibility)
+# These may be removed in a future version
 filter_active_style <- build_css_style(
   color = "#ff0000",
   font_size = "1rem",
@@ -286,11 +284,6 @@ filter_active_style <- build_css_style(
   width = "auto"
 )
 
-#' CSS Style for No Active Filters
-#'
-#' CSS style string for displaying when no filters are active.
-#'
-#' @export
 filter_none_style <- build_css_style(
   color = "#008000",
   font_size = "1rem",
@@ -345,3 +338,45 @@ about_box_style <- create_box_style(
   border_color = "#e1e4e8",
   extra_styles = list(`line-height` = "1.6")
 )
+
+# =============================================================================
+# UI COMPONENT HELPERS
+# =============================================================================
+
+#' Create Info Card Row for About Tab
+#'
+#' Creates a consistent labeled card pattern used in the About tab.
+#' Reduces code duplication by consolidating the repeated card structure.
+#'
+#' @param label The label text to display in the card.
+#' @param content The content to display next to the card. Can be plain text,
+#'   HTML content (via shiny::HTML), or any shiny tag element.
+#'
+#' @return A shiny div containing the card and content.
+#'
+#' @examples
+#' \dontrun{
+#' about_info_card("Contact:", "email@example.com")
+#' about_info_card("Citation:", shiny::HTML("<i>et al.</i> Title"))
+#' about_info_card("Link:", shiny::tags$a(href = "...", "Click here"))
+#' }
+#'
+#' @export
+about_info_card <- function(label, content) {
+  shiny::div(
+    class = "d-flex align-items-baseline gap-2 mb-3",
+    bslib::card(
+      class = "d-inline-block",
+      fill = FALSE,
+      bslib::card_body(
+        class = "py-2 px-3 fw-bold text-primary",
+        label
+      )
+    ),
+    if (inherits(content, "shiny.tag") || inherits(content, "html")) {
+      content
+    } else {
+      shiny::span(class = "text-body", content)
+    }
+  )
+}

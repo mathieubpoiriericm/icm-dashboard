@@ -10,17 +10,17 @@ CX, CY = WIDTH / 2 + X_OFFSET, HEIGHT / 2
 # Rings for phases (inner radius, outer radius)
 phase_rings = {
     "III": (0, 180),
-    "II":  (180, 250),
-    "I":   (250, 320),
+    "II": (180, 250),
+    "I": (250, 320),
 }
 
 # Order & colors for SVD populations (angular sectors)
 populations = ["CAA", "Cognitive Impairment", "Stroke", "Any SVD (including monogenic)"]
 pop_colors = {
-    "CAA":                            "#440154",  # viridis purple
-    "Cognitive Impairment":           "#31688e",  # viridis blue
-    "Stroke":                         "#35b779",  # viridis green
-    "Any SVD (including monogenic)":  "#fde725",  # viridis yellow
+    "CAA": "#440154",  # viridis purple
+    "Cognitive Impairment": "#31688e",  # viridis blue
+    "Stroke": "#35b779",  # viridis green
+    "Any SVD (including monogenic)": "#fde725",  # viridis yellow
 }
 
 MARKER_R = 9
@@ -43,6 +43,7 @@ pop_label_config = {
 
 # ---------- HELPERS ----------
 
+
 def estimate_text_width(text, font_size):
     """
     Estimate text width in pixels for Roboto font.
@@ -50,30 +51,95 @@ def estimate_text_width(text, font_size):
     """
     # Approximate character widths as fraction of font size for Roboto
     char_widths = {
-        'i': 0.25, 'l': 0.25, 'I': 0.25, 'j': 0.25, 't': 0.35, 'f': 0.35, 'r': 0.38,
-        ' ': 0.25, '.': 0.25, ',': 0.25, ':': 0.25, ';': 0.25, '!': 0.25, '|': 0.25,
-        'a': 0.55, 'c': 0.52, 'e': 0.55, 'g': 0.55, 'n': 0.55, 'o': 0.55, 's': 0.50,
-        'b': 0.55, 'd': 0.55, 'h': 0.55, 'k': 0.50, 'p': 0.55, 'q': 0.55, 'u': 0.55,
-        'v': 0.50, 'x': 0.50, 'y': 0.50, 'z': 0.50,
-        'm': 0.85, 'w': 0.75,
-        'A': 0.65, 'B': 0.65, 'C': 0.65, 'D': 0.68, 'E': 0.60, 'F': 0.58, 'G': 0.70,
-        'H': 0.68, 'J': 0.50, 'K': 0.65, 'L': 0.55, 'M': 0.82, 'N': 0.68, 'O': 0.72,
-        'P': 0.62, 'Q': 0.72, 'R': 0.65, 'S': 0.60, 'T': 0.60, 'U': 0.68, 'V': 0.65,
-        'W': 0.90, 'X': 0.65, 'Y': 0.62, 'Z': 0.60,
-        '0': 0.55, '1': 0.55, '2': 0.55, '3': 0.55, '4': 0.55,
-        '5': 0.55, '6': 0.55, '7': 0.55, '8': 0.55, '9': 0.55,
-        '-': 0.35, '–': 0.50, '—': 0.70, '(': 0.35, ')': 0.35,
+        "i": 0.25,
+        "l": 0.25,
+        "I": 0.25,
+        "j": 0.25,
+        "t": 0.35,
+        "f": 0.35,
+        "r": 0.38,
+        " ": 0.25,
+        ".": 0.25,
+        ",": 0.25,
+        ":": 0.25,
+        ";": 0.25,
+        "!": 0.25,
+        "|": 0.25,
+        "a": 0.55,
+        "c": 0.52,
+        "e": 0.55,
+        "g": 0.55,
+        "n": 0.55,
+        "o": 0.55,
+        "s": 0.50,
+        "b": 0.55,
+        "d": 0.55,
+        "h": 0.55,
+        "k": 0.50,
+        "p": 0.55,
+        "q": 0.55,
+        "u": 0.55,
+        "v": 0.50,
+        "x": 0.50,
+        "y": 0.50,
+        "z": 0.50,
+        "m": 0.85,
+        "w": 0.75,
+        "A": 0.65,
+        "B": 0.65,
+        "C": 0.65,
+        "D": 0.68,
+        "E": 0.60,
+        "F": 0.58,
+        "G": 0.70,
+        "H": 0.68,
+        "J": 0.50,
+        "K": 0.65,
+        "L": 0.55,
+        "M": 0.82,
+        "N": 0.68,
+        "O": 0.72,
+        "P": 0.62,
+        "Q": 0.72,
+        "R": 0.65,
+        "S": 0.60,
+        "T": 0.60,
+        "U": 0.68,
+        "V": 0.65,
+        "W": 0.90,
+        "X": 0.65,
+        "Y": 0.62,
+        "Z": 0.60,
+        "0": 0.55,
+        "1": 0.55,
+        "2": 0.55,
+        "3": 0.55,
+        "4": 0.55,
+        "5": 0.55,
+        "6": 0.55,
+        "7": 0.55,
+        "8": 0.55,
+        "9": 0.55,
+        "-": 0.35,
+        "–": 0.50,
+        "—": 0.70,
+        "(": 0.35,
+        ")": 0.35,
     }
 
     width = 0
     for char in text:
-        width += char_widths.get(char, 0.55) * font_size  # default to 0.55 for unknown chars
+        width += (
+            char_widths.get(char, 0.55) * font_size
+        )  # default to 0.55 for unknown chars
 
     return width
+
 
 def pol2cart(r, theta):
     """Polar (r, theta in radians) -> Cartesian (x, y)"""
     return CX + r * math.cos(theta), CY + r * math.sin(theta)
+
 
 def annular_sector_path(r_inner, r_outer, theta0, theta1):
     """SVG path for an annular sector between angles theta0, theta1 (radians)."""
@@ -106,6 +172,7 @@ def annular_sector_path(r_inner, r_outer, theta0, theta1):
     ]
     return " ".join(d)
 
+
 def shade_hex(hex_color, factor):
     """Darkens a hex color by factor in [0,1]."""
     hex_color = hex_color.lstrip("#")
@@ -119,6 +186,7 @@ def shade_hex(hex_color, factor):
 
     return f"#{r2:02x}{g2:02x}{b2:02x}"
 
+
 # ---------- LOAD DATA ----------
 rows = []
 with open("./data/csv/table2_for_py.csv", newline="", encoding="utf-8-sig") as f:
@@ -131,7 +199,7 @@ pop_name_mapping = {
     "SVD": "Any SVD (including monogenic)",
     "CAA": "CAA",
     "Cognitive Impairment": "Cognitive Impairment",
-    "Stroke": "Stroke"
+    "Stroke": "Stroke",
 }
 
 # Group rows by population to distribute angles & markers
@@ -154,10 +222,7 @@ for pop in populations:
 total = sum(pop_counts.values()) or 1  # avoid div-by-zero if empty
 
 # Angular span for each population
-pop_angles = {
-    pop: (count / total) * 2 * math.pi
-    for pop, count in pop_counts.items()
-}
+pop_angles = {pop: (count / total) * 2 * math.pi for pop, count in pop_counts.items()}
 
 # Cumulative angles (before rotation)
 pop_theta0 = {}
@@ -181,20 +246,20 @@ svg_parts = []
 
 # SVG header + defs
 svg_parts.append(
-    f'<svg width="1420" height="{HEIGHT}" '
-    f'viewBox="0 0 1520 {HEIGHT}" '
+    f'<svg width="1600" height="{HEIGHT}" '
+    f'viewBox="0 0 1600 {HEIGHT}" '
     f'xmlns="http://www.w3.org/2000/svg">'
 )
 svg_parts.append("<defs>")
 svg_parts.append(
     f'<symbol id="marker" overflow="visible">'
     f'<circle cx="0" cy="0" r="{MARKER_R}" fill="currentColor"/>'
-    f'</symbol>'
+    f"</symbol>"
 )
 svg_parts.append(
     f'<symbol id="marker_tri" overflow="visible">'
     f'<polygon points="0,-{MARKER_R} {MARKER_R},{MARKER_R} -{MARKER_R},{MARKER_R}" fill="currentColor"/>'
-    f'</symbol>'
+    f"</symbol>"
 )
 svg_parts.append("</defs>")
 
@@ -237,9 +302,9 @@ for pop in populations:
         else:
             opacity = phase_opacity.get(phase, 0.6)
 
-        wedge_render_data.append({
-            "d": d, "pop": pop, "phase": phase, "color": color, "opacity": opacity
-        })
+        wedge_render_data.append(
+            {"d": d, "pop": pop, "phase": phase, "color": color, "opacity": opacity}
+        )
 
     # Collect population label data
     label_theta = (theta0 + theta1) / 2
@@ -269,7 +334,9 @@ for pop in populations:
     text_ly = ly
 
     if pop == "Cognitive Impairment":
-        est_width = max(estimate_text_width("Cognitive", 18), estimate_text_width("Impairment", 18))
+        est_width = max(
+            estimate_text_width("Cognitive", 18), estimate_text_width("Impairment", 18)
+        )
         est_height = 40
         padX, padY = 6, 4
         if anchor == "start":
@@ -279,7 +346,10 @@ for pop in populations:
         text_ly = ly - (18 * 1.2) / 2
         box_y = text_ly - 18 / 2 - padY
     elif pop == "Any SVD (including monogenic)":
-        est_width = max(estimate_text_width("Any SVD", 18), estimate_text_width("(including monogenic)", 18))
+        est_width = max(
+            estimate_text_width("Any SVD", 18),
+            estimate_text_width("(including monogenic)", 18),
+        )
         est_height = 40
         padX, padY = 8, 4
         extra_offset = (est_width + padX * 2) / 2
@@ -298,12 +368,23 @@ for pop in populations:
             box_x = lx - est_width - padX
         box_y = ly - est_height / 2 - padY
 
-    pop_label_render_data.append({
-        "pop": pop, "lx": lx, "ly": ly, "text_ly": text_ly, "anchor": anchor,
-        "v_baseline": v_baseline, "base_col": base_col,
-        "box_x": box_x, "box_y": box_y, "est_width": est_width, "est_height": est_height,
-        "padX": padX, "padY": padY
-    })
+    pop_label_render_data.append(
+        {
+            "pop": pop,
+            "lx": lx,
+            "ly": ly,
+            "text_ly": text_ly,
+            "anchor": anchor,
+            "v_baseline": v_baseline,
+            "base_col": base_col,
+            "box_x": box_x,
+            "box_y": box_y,
+            "est_width": est_width,
+            "est_height": est_height,
+            "padX": padX,
+            "padY": padY,
+        }
+    )
 
 boundary_angle = pop_theta1["Any SVD (including monogenic)"]
 
@@ -319,24 +400,32 @@ for phase, (r0, r1) in phase_rings.items():
     box_x = lx - est_width / 2 - padX
     box_y = ly - est_height / 2 - padY
 
-    phase_label_render_data.append({
-        "phase": phase, "lx": lx, "ly": ly,
-        "box_x": box_x, "box_y": box_y, "est_width": est_width, "est_height": est_height,
-        "padX": padX, "padY": padY
-    })
+    phase_label_render_data.append(
+        {
+            "phase": phase,
+            "lx": lx,
+            "ly": ly,
+            "box_x": box_x,
+            "box_y": box_y,
+            "est_width": est_width,
+            "est_height": est_height,
+            "padX": padX,
+            "padY": padY,
+        }
+    )
 
 # FIRST PASS: Render ALL shadows (population labels, phase labels)
 for p in pop_label_render_data:
     svg_parts.append(
         f'<rect x="{p["box_x"] + SHADOW_OFFSET_X:.2f}" y="{p["box_y"] + SHADOW_OFFSET_Y:.2f}" '
-        f'width="{p["est_width"] + p["padX"]*2:.2f}" height="{p["est_height"] + p["padY"]*2:.2f}" rx="6" '
+        f'width="{p["est_width"] + p["padX"] * 2:.2f}" height="{p["est_height"] + p["padY"] * 2:.2f}" rx="6" '
         f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
     )
 
 for ph in phase_label_render_data:
     svg_parts.append(
         f'<rect x="{ph["box_x"] + SHADOW_OFFSET_X:.2f}" y="{ph["box_y"] + SHADOW_OFFSET_Y:.2f}" '
-        f'width="{ph["est_width"] + ph["padX"]*2:.2f}" height="{ph["est_height"] + ph["padY"]*2:.2f}" rx="6" '
+        f'width="{ph["est_width"] + ph["padX"] * 2:.2f}" height="{ph["est_height"] + ph["padY"] * 2:.2f}" rx="6" '
         f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
     )
 
@@ -376,22 +465,22 @@ for p in pop_label_render_data:
     svg_parts.append(
         f'<g class="pop-label" data-pop="{pop}">'
         f'<rect class="label-bg pop-bg" x="{p["box_x"]:.2f}" y="{p["box_y"]:.2f}" '
-        f'width="{p["est_width"] + p["padX"]*2:.2f}" height="{p["est_height"] + p["padY"]*2:.2f}" rx="6" '
+        f'width="{p["est_width"] + p["padX"] * 2:.2f}" height="{p["est_height"] + p["padY"] * 2:.2f}" rx="6" '
         f'fill="{p["base_col"]}" fill-opacity="1" pointer-events="none"/>'
-        f'{text_elem}'
-        f'</g>'
+        f"{text_elem}"
+        f"</g>"
     )
 
 for ph in phase_label_render_data:
     svg_parts.append(
         f'<g class="phase-label" data-phase="{ph["phase"]}">'
         f'<rect class="label-bg phase-bg" x="{ph["box_x"]:.2f}" y="{ph["box_y"]:.2f}" '
-        f'width="{ph["est_width"] + ph["padX"]*2:.2f}" height="{ph["est_height"] + ph["padY"]*2:.2f}" rx="6" '
+        f'width="{ph["est_width"] + ph["padX"] * 2:.2f}" height="{ph["est_height"] + ph["padY"] * 2:.2f}" rx="6" '
         f'fill="#ffffff" fill-opacity="1" pointer-events="none"/>'
         f'<text x="{ph["lx"]:.2f}" y="{ph["ly"]:.2f}" fill="#000" font-size="16" '
         f'text-anchor="middle" dominant-baseline="middle">'
-        f'Phase {ph["phase"]}</text>'
-        f'</g>'
+        f"Phase {ph['phase']}</text>"
+        f"</g>"
     )
 
 # ---------- BRIGHT, SATURATED COLORS FOR MECHANISM OF ACTION ----------
@@ -416,7 +505,9 @@ marker_palette = [
 ]
 
 # Map mechanisms to colors (cycle if more mechanisms than colors)
-mech_colors = {mech: marker_palette[i % len(marker_palette)] for i, mech in enumerate(mechanisms)}
+mech_colors = {
+    mech: marker_palette[i % len(marker_palette)] for i, mech in enumerate(mechanisms)
+}
 
 # ---------- DRUG MARKERS (two-pass rendering: all shadows first, then all main elements) ----------
 # First, collect all drug data for two-pass rendering
@@ -471,17 +562,29 @@ for pop in populations:
                 box_x = lx - est_width - padX
             box_y = ly - est_height / 2 - padY
 
-            drug_render_data.append({
-                "drug": drug, "phase": phase, "pop": pop, "row": row,
-                "x": x, "y": y, "lx": lx, "ly": ly, "anchor": anchor,
-                "tooltip": tooltip, "label_bg_color": label_bg_color,
-                "est_width": est_width, "est_height": est_height,
-                "padX": padX, "padY": padY, "box_x": box_x, "box_y": box_y
-            })
+            drug_render_data.append(
+                {
+                    "drug": drug,
+                    "phase": phase,
+                    "pop": pop,
+                    "row": row,
+                    "x": x,
+                    "y": y,
+                    "lx": lx,
+                    "ly": ly,
+                    "anchor": anchor,
+                    "tooltip": tooltip,
+                    "label_bg_color": label_bg_color,
+                    "est_width": est_width,
+                    "est_height": est_height,
+                    "padX": padX,
+                    "padY": padY,
+                    "box_x": box_x,
+                    "box_y": box_y,
+                }
+            )
 
-svg_parts.append(
-    '<g id="drugs" font-family="Roboto" font-size="12" fill="#000">'
-)
+svg_parts.append('<g id="drugs" font-family="Roboto" font-size="12" fill="#000">')
 
 # FIRST PASS: Render ALL shadows
 for d in drug_render_data:
@@ -493,7 +596,7 @@ for d in drug_render_data:
     # Shadow for drug label box
     svg_parts.append(
         f'<rect x="{d["box_x"] + SHADOW_OFFSET_X:.2f}" y="{d["box_y"] + SHADOW_OFFSET_Y:.2f}" '
-        f'width="{d["est_width"] + d["padX"]*2:.2f}" height="{d["est_height"] + d["padY"]*2:.2f}" rx="6" '
+        f'width="{d["est_width"] + d["padX"] * 2:.2f}" height="{d["est_height"] + d["padY"] * 2:.2f}" rx="6" '
         f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
     )
 
@@ -516,18 +619,18 @@ for d in drug_render_data:
         f'data-estcomp="{(row.get("Estimated Completion Date") or "").strip()}" '
         f'data-pco="{(row.get("Primary Outcome") or "").strip()}" '
         f'data-sptype="{(row.get("Sponsor Type") or "").strip()}">'
-        f'<title>{d["tooltip"]}</title>'
+        f"<title>{d['tooltip']}</title>"
         # Main drug marker
         f'<use href="#marker" '
-        f'x="{d["x"]:.2f}" y="{d["y"]:.2f}" color="{mech_colors.get(row.get("Mechanism of Action","").strip(), "#ffffff")}"/>'
+        f'x="{d["x"]:.2f}" y="{d["y"]:.2f}" color="{mech_colors.get(row.get("Mechanism of Action", "").strip(), "#ffffff")}"/>'
         # Main drug label box
         f'<rect class="label-bg drug-bg" x="{d["box_x"]:.2f}" y="{d["box_y"]:.2f}" '
-        f'width="{d["est_width"] + d["padX"]*2:.2f}" height="{d["est_height"] + d["padY"]*2:.2f}" rx="6" '
+        f'width="{d["est_width"] + d["padX"] * 2:.2f}" height="{d["est_height"] + d["padY"] * 2:.2f}" rx="6" '
         f'fill="{d["label_bg_color"]}" fill-opacity="1" pointer-events="none"/>'
         f'<text x="{d["lx"]:.2f}" y="{d["ly"]:.2f}" '
         f'text-anchor="{d["anchor"]}" dominant-baseline="middle">'
-        f'{d["drug"]}</text>'
-        f'</g>'
+        f"{d['drug']}</text>"
+        f"</g>"
     )
 
 svg_parts.append("</g>")
@@ -543,10 +646,10 @@ legend_width = max(legend_title_width, legend_item_width) + 40  # Add padding
 legend_height = 90  # Fixed height for two items
 
 # Center the Yes/No boxes within the legend
-legend_center_x = legend_x + legend_width/2 - 20  # Center of legend box
+legend_center_x = legend_x + legend_width / 2 - 20  # Center of legend box
 box_width = 40
-yes_box_x = legend_center_x - box_width/2
-no_box_x = legend_center_x - box_width/2
+yes_box_x = legend_center_x - box_width / 2
+no_box_x = legend_center_x - box_width / 2
 
 # MOA legend positioning
 legend_moa_x = legend_x
@@ -554,13 +657,15 @@ legend_moa_y = legend_y + 110
 
 # Calculate MOA legend box height based on number of mechanisms
 num_mechanisms = len(mechanisms)
-moa_legend_height = 36 + num_mechanisms * 36 + 5  # header + items + padding (increased spacing)
+moa_legend_height = (
+    36 + num_mechanisms * 36 + 5
+)  # header + items + padding (increased spacing)
 
 # Calculate maximum text width for mechanisms
 max_mech_width = 0
 for mech in mechanisms:
     if "(" in mech:
-        lines = [mech[:mech.find("(")].rstrip(), mech[mech.find("("):]]
+        lines = [mech[: mech.find("(")].rstrip(), mech[mech.find("(") :]]
         max_line_width = max(estimate_text_width(line, 14) for line in lines)
     else:
         max_line_width = estimate_text_width(mech, 14)
@@ -618,19 +723,19 @@ svg_parts.append(
     f'<rect x="{yes_box_x:.2f}" y="{legend_y + 2}" width="{box_width}" height="20" rx="6" '
     f'fill="#90ee90" fill-opacity="1"/>'
     f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">Yes</text>'
-    f'</g>'
+    f"</g>"
     f'<g class="legend-item">'
     f'<rect x="{no_box_x:.2f}" y="{legend_y + 30}" width="{box_width}" height="20" rx="6" '
     f'fill="#ffffff" fill-opacity="1"/>'
     f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">No</text>'
-    f'</g>'
-    f'</g>'
+    f"</g>"
+    f"</g>"
 )
 
 # MOA legend content
 svg_parts.append(
     f'<g id="legend-moa" font-size="14" fill="#000" font-family="Roboto">'
-    f'<text x="{legend_moa_x + moa_legend_width/2 - 20:.2f}" y="{legend_moa_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Mechanism of Action</text>'
+    f'<text x="{legend_moa_x + moa_legend_width / 2 - 20:.2f}" y="{legend_moa_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Mechanism of Action</text>'
 )
 
 for i, mech in enumerate(mechanisms):
@@ -642,20 +747,18 @@ for i, mech in enumerate(mechanisms):
         mech_paren = mech[paren_index:].strip()
         text_block = (
             f'<text x="{legend_moa_x + 24}" y="{y}" font-family="Roboto">'
-            f'{mech_main}'
+            f"{mech_main}"
             f'<tspan x="{legend_moa_x + 24}" dy="1.2em">{mech_paren}</tspan>'
-            f'</text>'
+            f"</text>"
         )
     else:
-        text_block = (
-            f'<text x="{legend_moa_x + 24}" y="{y}" dominant-baseline="middle" font-family="Roboto">{mech}</text>'
-        )
+        text_block = f'<text x="{legend_moa_x + 24}" y="{y}" dominant-baseline="middle" font-family="Roboto">{mech}</text>'
 
     svg_parts.append(
         f'<g class="legend-item">'
         f'<circle cx="{legend_moa_x}" cy="{y}" r="9" fill="{color}"/>'
-        f'{text_block}'
-        f'</g>'
+        f"{text_block}"
+        f"</g>"
     )
 
 svg_parts.append("</g>")
@@ -814,7 +917,7 @@ html = f"""<!DOCTYPE html>
     {svg_html}
   </div>
 </div>
-<script src="python_plot.js"></script>
+<script src="python_plot.min.js"></script>
 </body>
 </html>
 """

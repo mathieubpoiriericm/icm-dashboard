@@ -46,6 +46,19 @@ DATATABLE_SEARCH_DELAY <- 500L
 #' @description Default page length for DataTables
 DATATABLE_PAGE_LENGTH <- 10L
 
+#' @description Server-side processing for DataTables
+#' Set to TRUE for large datasets (>1000 rows) to improve initial load time
+#' Set to FALSE for smaller datasets for better client-side search/filter
+DATATABLE_SERVER_SIDE <- FALSE
+
+# =============================================================================
+# ASYNC LOADING CONFIGURATION
+# =============================================================================
+#' @description Enable async loading for Table 2 data
+#' Requires: promises, future packages
+#' Set to TRUE for non-blocking UI during data load (recommended for slow I/O)
+ASYNC_TABLE2_LOADING <- FALSE
+
 # =============================================================================
 # CACHE CONFIGURATION
 # =============================================================================
@@ -77,15 +90,15 @@ PUBMED_BASE_URL <- "https://pubmed.ncbi.nlm.nih.gov/"
 # =============================================================================
 # DATA FILE PATHS
 # =============================================================================
-#' @description Paths to RData files
+#' @description Paths to RDS files
 DATA_PATHS <- list(
-  table1_clean = "data/rdata/table1_clean.RData",
-  table2_clean = "data/rdata/table2_clean.RData",
-  gene_info = "data/rdata/gene_info_results_df.RData",
-  gene_info_table2 = "data/rdata/gene_info_table2.RData",
-  prot_info = "data/rdata/prot_info_clean.RData",
-  refs = "data/rdata/refs.RData",
-  gwas_trait_names = "data/rdata/gwas_trait_names.RData",
+  table1_clean = "data/rdata/table1_clean.rds",
+  table2_clean = "data/rdata/table2_clean.rds",
+  gene_info = "data/rdata/gene_info_results_df.rds",
+  gene_info_table2 = "data/rdata/gene_info_table2.rds",
+  prot_info = "data/rdata/prot_info_clean.rds",
+  refs = "data/rdata/refs.rds",
+  gwas_trait_names = "data/rdata/gwas_trait_names.rds",
   omim_info = "data/csv/omim_info.csv"
 )
 

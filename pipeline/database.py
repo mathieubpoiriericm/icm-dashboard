@@ -1,6 +1,6 @@
 import asyncpg
 from contextlib import asynccontextmanager
-from typing import Optional, List, Dict, Any
+from typing import Optional
 import os
 
 # Database credentials

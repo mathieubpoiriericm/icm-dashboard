@@ -21,14 +21,18 @@ checkbox_filter_ui <- function(
 ) {
   ns <- shiny::NS(id)
 
-  shiny::div(
+  bslib::card(
     id = id,
-    class = "filter-box",
-    shiny::checkboxGroupInput(
-      ns("filter"),
-      label,
-      choices = choices,
-      selected = selected
+    fill = FALSE,
+    class = "mb-3",
+    bslib::card_body(
+      class = "py-3 px-3",
+      shiny::checkboxGroupInput(
+        ns("filter"),
+        label,
+        choices = choices,
+        selected = selected
+      )
     )
   )
 }

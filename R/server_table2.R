@@ -5,6 +5,8 @@
 #' Build Table 2 Data Loader
 #'
 #' Creates a reactive that lazily loads Table 2 data only when needed.
+#' Supports async loading with promises/future when ASYNC_TABLE2_LOADING
+#' is TRUE.
 #'
 #' @param table2_data reactiveVal. Storage for table2 data.
 #' @param table2_display_data reactiveVal. Storage for display data.
@@ -12,6 +14,7 @@
 #' @param registry_matches_data reactiveVal. Storage for registry matches.
 #' @param registry_rows_data reactiveVal. Storage for registry row indices.
 #' @param sample_sizes_data reactiveVal. Storage for sample sizes.
+#' @param sample_sizes_hash_data reactiveVal. Storage for pre-computed hash.
 #'
 #' @return A reactive that returns the loaded data list.
 #'
@@ -22,29 +25,78 @@ build_table2_loader <- function(
   ct_info_data,
   registry_matches_data,
   registry_rows_data,
-  sample_sizes_data
+  sample_sizes_data,
+  sample_sizes_hash_data
 ) {
+  # Track loading state for async operations
+  loading_in_progress <- shiny::reactiveVal(FALSE)
+
   shiny::reactive({
-    if (is.null(table2_data())) {
+    if (is.null(table2_data()) && !loading_in_progress()) {
       message("Loading Table 2 data...")
 
-      data <- load_table2_data()
+      # Check if async loading is enabled and packages are available
+      use_async <- ASYNC_TABLE2_LOADING &&
+        exists("ASYNC_PACKAGES_AVAILABLE") &&
+        ASYNC_PACKAGES_AVAILABLE
 
-      table2_display <- prepare_table2_display(
-        data$table2,
-        data$ct_info,
-        data$gene_info_table2,
-        data$gene_symbols_table2
-      )
+      if (use_async) {
+        # Async loading with future/promises
+        loading_in_progress(TRUE)
+        future::future({
+          load_table2_data()
+        }, seed = TRUE) |>
+          promises::then(
+            onFulfilled = function(data) {
+              table2_display <- prepare_table2_display(
+                data$table2,
+                data$ct_info,
+                data$gene_info_table2,
+                data$gene_symbols_table2
+              )
+              table2_data(data$table2)
+              table2_display_data(table2_display)
+              ct_info_data(data$ct_info)
+              registry_matches_data(data$registry_matches)
+              registry_rows_data(data$registry_rows)
+              sample_sizes_data(data$sample_sizes)
+              sample_sizes_hash_data(data$sample_sizes_hash)
+              loading_in_progress(FALSE)
+              message("Table 2 data loaded successfully (async)")
+            },
+            onRejected = function(e) {
+              loading_in_progress(FALSE)
+              warning("Async Table 2 loading failed: ", e$message)
+            }
+          )
+        # Return NULL while loading
+        return(NULL)
+      } else {
+        # Synchronous loading (default)
+        data <- load_table2_data()
 
-      table2_data(data$table2)
-      table2_display_data(table2_display)
-      ct_info_data(data$ct_info)
-      registry_matches_data(data$registry_matches)
-      registry_rows_data(data$registry_rows)
-      sample_sizes_data(data$sample_sizes)
+        table2_display <- prepare_table2_display(
+          data$table2,
+          data$ct_info,
+          data$gene_info_table2,
+          data$gene_symbols_table2
+        )
 
-      message("Table 2 data loaded successfully")
+        table2_data(data$table2)
+        table2_display_data(table2_display)
+        ct_info_data(data$ct_info)
+        registry_matches_data(data$registry_matches)
+        registry_rows_data(data$registry_rows)
+        sample_sizes_data(data$sample_sizes)
+        sample_sizes_hash_data(data$sample_sizes_hash)
+
+        message("Table 2 data loaded successfully")
+      }
+    }
+
+    # Return NULL if still loading or not yet loaded
+    if (is.null(table2_data())) {
+      return(NULL)
     }
 
     list(
@@ -54,7 +106,7 @@ build_table2_loader <- function(
       registry_matches = registry_matches_data(),
       registry_rows = registry_rows_data(),
       sample_sizes = sample_sizes_data(),
-      sample_sizes_hash = digest::digest(sample_sizes_data())
+      sample_sizes_hash = sample_sizes_hash_data()
     )
   })
 }
@@ -154,50 +206,89 @@ build_table2_filtered_data <- function(
     table2 <- data$table2
     registry_rows <- data$registry_rows
 
-    # Use pre-computed sample_size_numeric and original_row_num columns
-    filtered_table2 <- data.table::copy(table2)
+    # Start with all row IDs, filter by intersection (avoids data.table copy)
+    kept_rows <- table2$original_row_num
 
-    # Apply filters using unified filter utilities
-    filtered_table2 <- apply_single_value_filter(
-      filtered_table2,
-      "Genetic Evidence",
-      ge_filter()
-    )
+    # Apply filters by computing row intersections
+    # Genetic Evidence filter
+    if (!is.null(ge_filter()) && length(ge_filter()) == 1L) {
+      ge_rows <- table2[
+        get("Genetic Evidence") %in% ge_filter(), original_row_num
+      ]
+      kept_rows <- intersect(kept_rows, ge_rows)
+    }
 
-    filtered_table2 <- apply_index_filter(
-      filtered_table2,
-      reg_filter(),
-      registry_rows,
-      row_id_column = "original_row_num"
-    )
+    # Registry filter (using fastmap for O(1) lookups)
+    if (
+      !is.null(reg_filter()) &&
+        length(reg_filter()) > 0L &&
+        !"all" %in% reg_filter()
+    ) {
+      reg_rows <- unique(unlist(registry_rows$mget(reg_filter())))
+      kept_rows <- intersect(kept_rows, reg_rows)
+    }
 
-    filtered_table2 <- apply_column_filter(
-      filtered_table2,
-      "Clinical Trial Phase",
-      ct_filter()
-    )
+    # Clinical Trial Phase filter
+    if (
+      !is.null(ct_filter()) &&
+        length(ct_filter()) > 0L &&
+        !"all" %in% ct_filter()
+    ) {
+      ct_rows <- table2[
+        get("Clinical Trial Phase") %in% ct_filter(),
+        original_row_num
+      ]
+      kept_rows <- intersect(kept_rows, ct_rows)
+    }
 
-    filtered_table2 <- apply_column_filter(
-      filtered_table2,
-      "SVD Population",
-      pop_filter()
-    )
+    # SVD Population filter
+    if (
+      !is.null(pop_filter()) &&
+        length(pop_filter()) > 0L &&
+        !"all" %in% pop_filter()
+    ) {
+      pop_rows <- table2[
+        get("SVD Population") %in% pop_filter(), original_row_num
+      ]
+      kept_rows <- intersect(kept_rows, pop_rows)
+    }
 
-    filtered_table2 <- apply_sponsor_type_filter(
-      filtered_table2,
-      spon_filter()
-    )
+    # Sponsor Type filter (special logic for Academic/Industry)
+    if (
+      !is.null(spon_filter()) &&
+        length(spon_filter()) > 0L &&
+        !"all" %in% spon_filter()
+    ) {
+      if (!("Academic" %in% spon_filter() && "Industry" %in% spon_filter())) {
+        if ("Academic" %in% spon_filter()) {
+          spon_rows <- table2[
+            get("Sponsor Type") == "Academic",
+            original_row_num
+          ]
+        } else {
+          spon_rows <- table2[
+            grepl("^Industry", get("Sponsor Type")),
+            original_row_num
+          ]
+        }
+        kept_rows <- intersect(kept_rows, spon_rows)
+      }
+    }
 
-    filtered_table2 <- apply_range_filter(
-      filtered_table2,
-      "sample_size_numeric",
-      sample_size_filter_debounced(),
-      default_min = SAMPLE_SIZE_MIN,
-      default_max = SAMPLE_SIZE_MAX
-    )
-
-    kept_rows <- filtered_table2$original_row_num
-    filtered_table2[, original_row_num := NULL]
+    # Sample size range filter
+    if (!is.null(sample_size_filter_debounced())) {
+      range_val <- sample_size_filter_debounced()
+      if (
+        range_val[1L] != SAMPLE_SIZE_MIN || range_val[2L] != SAMPLE_SIZE_MAX
+      ) {
+        size_rows <- table2[
+          sample_size_numeric >= range_val[1L] &
+            sample_size_numeric <= range_val[2L],
+          original_row_num
+        ]
+        kept_rows <- intersect(kept_rows, size_rows)
+      }
+    }
 
     # Get filtered display data, sorted by Drug for proper row merging
     filtered_display <- data$table2_display[kept_rows, ]
@@ -360,16 +451,16 @@ build_table2_datatable <- function(filtered_data2) {
         display_data,
         escape = FALSE,
         rownames = FALSE,
+        plugins = "natural",
         options = list(
           columnDefs = list(
-            list(width = "180px", targets = 2L),
             # Hide the drug group column but keep data accessible
             list(visible = FALSE, targets = drug_group_col_idx)
           ),
-          autoWidth = FALSE,
+          autoWidth = TRUE,
           pageLength = DATATABLE_PAGE_LENGTH,
           deferRender = TRUE,
-          dom = "lfrtip",
+          dom = "rtip",
           scrollX = TRUE,
           scrollCollapse = TRUE,
           searchDelay = DATATABLE_SEARCH_DELAY,
@@ -392,6 +483,34 @@ build_table2_datatable <- function(filtered_data2) {
 
               if (numRows === 0) return;
 
+              // Reset all mergeable cells to default state first
+              var columnsToMerge = [0, 1, 2, 3];
+              for (var i = 0; i < numRows; i++) {
+                var rowCells = $(rows[i]).children('td');
+                for (var c = 0; c < columnsToMerge.length; c++) {
+                  var cell = rowCells.eq(columnsToMerge[c]);
+                  cell.css('display', '');
+                  cell.removeAttr('rowspan');
+                  cell.css('vertical-align', '');
+                  cell.css('background-color', '');
+                }
+              }
+
+              // Check if sorted by Drug column (column 0)
+              // Only apply row merging when sorted by Drug
+              var order = api.order();
+              var sortedByDrug = order.length === 0 || order[0][0] === 0;
+
+              if (!sortedByDrug) {
+                // Not sorted by Drug - skip row merging
+                return;
+              }
+
+              // Skip custom coloring for single row (striping is meaningless)
+              if (numRows < 2) {
+                return;
+              }
+
               // Get pre-computed drug group indices (single API call)
               var drugGroupIndex = api
                 .column(%d, {page: 'current'})
@@ -399,8 +518,7 @@ build_table2_datatable <- function(filtered_data2) {
 
               // Get colors from first two rows (cache these)
               var stripeColor = $(rows[0]).css('background-color');
-              var whiteColor = numRows > 1 ?
-                $(rows[1]).css('background-color') : '#ffffff';
+              var whiteColor = $(rows[1]).css('background-color');
 
               // Single pass: compute group boundaries and colors
               var groupInfo = {};
@@ -434,8 +552,7 @@ build_table2_datatable <- function(filtered_data2) {
                 }
               }
 
-              // Cache column nodes and merge columns [0,1,2,3]
-              var columnsToMerge = [0, 1, 2, 3];
+              // Cache column nodes for merging
               var colNodes = columnsToMerge.map(function(idx) {
                 return api.column(idx, {page: 'current'}).nodes();
               });
@@ -482,7 +599,7 @@ build_table2_datatable <- function(filtered_data2) {
 
       dt2
     },
-    server = FALSE
+    server = DATATABLE_SERVER_SIDE
   )
 }
 # nolint end: object_usage_linter.

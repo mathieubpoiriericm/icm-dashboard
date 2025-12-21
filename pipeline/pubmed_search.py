@@ -3,8 +3,8 @@ from typing import List, Set
 from Bio import Entrez
 from datetime import datetime, timedelta
 
-Entrez.email = "mathieu.poirier@icm-institute.org"
-Entrez.api_key = os.getenv("ENTREZ_KEY") or os.getenv("NCBI_API_KEY")
+Entrez.email = "mathieu.poirier@icm-institute.org"  # type: ignore[assignment]
+Entrez.api_key = os.getenv("ENTREZ_KEY") or os.getenv("NCBI_API_KEY")  # type: ignore[assignment]
 
 SVD_QUERY = """
 ("cerebral small vessel disease"[Title/Abstract] OR

@@ -1,31 +1,82 @@
 # app.R
 # SVD Dashboard - Main Application Entry Point
 #
-# This app has been modularized into the following structure:
-# R/
-#   ├── constants.R           - Application-wide constants
-#   ├── utils.R               - Common CSS styles, DB utilities, column cleaning
-#   ├── filter_utils.R        - Unified filter and message rendering
-#   ├── data_prep.R           - Data loading and preprocessing functions
-#   ├── tooltips.R            - Tooltip generation for table displays
-#   ├── mod_checkbox_filter.R - Shiny module for checkbox filters
-#   ├── server_table1.R       - Table 1 server logic
-#   ├── server_table2.R       - Table 2 server logic
-#   ├── server.R              - Main server logic
-#   ├── ui.R                  - UI definition
-#   ├── clean_table1.R        - Table 1 data cleaning
-#   ├── clean_table2.R        - Table 2 data cleaning
-#   ├── fetch_ncbi_gene_data.R    - NCBI gene data fetching
-#   ├── fetch_omim_data.R         - OMIM data fetching
-#   ├── fetch_pubmed_data.R       - PubMed reference fetching
-#   ├── fetch_uniprot_data.R      - UniProt protein data fetching
-#   └── phenogram.R               - Phenogram data generation
+# Project Structure:
+# ├── app.R                      - Main application entry point (this file)
+# ├── python_plot.py             - Python visualization script
+# ├── README.md                  - Project documentation
+# ├── Dockerfile                 - Docker container configuration
+# │
+# ├── R/                         - Shiny application modules
+# │   ├── constants.R            - Application-wide constants
+# │   ├── utils.R                - CSS styles, DB utils, column cleaning
+# │   ├── filter_utils.R         - Unified filter and message rendering
+# │   ├── data_prep.R            - Data loading and preprocessing functions
+# │   ├── tooltips.R             - Tooltip generation for table displays
+# │   ├── mod_checkbox_filter.R  - Shiny module for checkbox filters
+# │   ├── server_table1.R        - Table 1 server logic
+# │   ├── server_table2.R        - Table 2 server logic
+# │   ├── server.R               - Main server logic
+# │   ├── ui.R                   - UI definition
+# │   ├── clean_table1.R         - Table 1 data cleaning
+# │   ├── clean_table2.R         - Table 2 data cleaning
+# │   ├── fetch_ncbi_gene_data.R - NCBI gene data fetching
+# │   ├── fetch_omim_data.R      - OMIM data fetching
+# │   ├── fetch_pubmed_data.R    - PubMed reference fetching
+# │   ├── fetch_uniprot_data.R   - UniProt protein data fetching
+# │   └── phenogram.R            - Phenogram data generation
+# │
+# ├── www/                       - Static web assets
+# │   ├── custom.css             - Custom styles (source)
+# │   ├── custom.min.css         - Minified CSS (generated)
+# │   ├── custom.js              - Custom JavaScript (source)
+# │   ├── custom.min.js          - Minified JS (generated)
+# │   ├── python_plot.js         - Python plot integration JS (source)
+# │   ├── python_plot.min.js     - Minified JS (generated)
+# │   ├── python_plot.html       - Python plot template
+# │   ├── phenogram_template.html - Phenogram HTML template
+# │   ├── fonts/                 - Web fonts (Roboto)
+# │   ├── images/                - Static images (logos, phenogram)
+# │   ├── css/                   - Third-party CSS (tippy)
+# │   └── js/                    - Third-party JS (popper, tippy)
+# │
+# ├── data/                      - Application data
+# │   ├── csv/                   - CSV data files
+# │   ├── rdata/                 - RDS data files
+# │   ├── txt/                   - Text data files
+# │   └── xlsx/                  - Excel data files
+# │
+# ├── pipeline/                  - Automated data pipeline (Python)
+# │   ├── pubmed_search.py       - PubMed literature search
+# │   ├── pdf_retrieval.py       - PDF download module
+# │   ├── llm_extraction.py      - LLM-based data extraction
+# │   ├── validation.py          - Data validation logic
+# │   ├── quality_metrics.py     - Quality metrics computation
+# │   ├── database.py            - Database operations
+# │   └── data_merger.py         - Data merging utilities
+# │
+# ├── scripts/                   - Utility scripts
+# │   ├── connection_pool.r      - Database connection pooling
+# │   └── trigger_update.r       - Pipeline trigger script
+# │
+# ├── tests/                     - Test suite
+# │   ├── testthat.R             - Test configuration
+# │   └── testthat/              - Unit tests
+# │
+# ├── maRco/                     - Custom R package for data utilities
+# │   ├── R/                     - Package source code
+# │   ├── man/                   - Documentation
+# │   └── DESCRIPTION            - Package metadata
+# │
+# ├── bibentry/                  - Bibliography entries
+# └── .github/workflows/         - GitHub Actions CI/CD
 #
 # Helper functions for data fetching/cleaning are in the maRco package.
 # Install with: devtools::install("maRco")
 
 # Load required packages
 library(shiny)
+library(bslib)
 # Load only required tidyverse packages (faster than full tidyverse)
 library(dplyr)
 library(purrr)
@@ -39,10 +90,136 @@ library(fastmap)
 library(memoise)
 library(cachem)
 library(digest)
+library(parallel)
+
+# Optional: qs package for 3-5x faster data loading
+# Install with: install.packages("qs")
+# Then run: source("R/data_prep.R"); convert_rds_to_qs()
+if (requireNamespace("qs", quietly = TRUE)) {
+  message("qs package available - using fast serialization")
+}
+
+# Optional: promises and future packages for async Table 2 loading
+# Install with: install.packages(c("promises", "future"))
+# Enable by setting ASYNC_TABLE2_LOADING <- TRUE in R/constants.R
+async_packages_available <- requireNamespace("promises", quietly = TRUE) &&
+  requireNamespace("future", quietly = TRUE)
+if (async_packages_available) {
+  message("promises/future packages available - async loading supported")
+  future::plan(future::multisession, workers = 2L)
+}
 
 # Load Roboto font from local file (faster than font_add_google)
 font_add("Roboto", "www/fonts/Roboto-Regular.ttf")
 showtext_auto()
+
+# Pre-cache bslib Sass compilation for faster startup
+# bslib uses the sass package internally; setting a disk cache means
+# compiled CSS is reused across app restarts instead of recompiling
+message("Setting up Sass/bslib theme cache...")
+bslib_cache_dir <- file.path(getwd(), ".bslib-cache")
+if (!dir.exists(bslib_cache_dir)) {
+  dir.create(bslib_cache_dir, recursive = TRUE)
+}
+options(
+  sass.cache = cachem::cache_disk(
+    dir = bslib_cache_dir,
+    max_size = 50 * 1024^2,
+    max_age = 60 * 60 * 24 * 30  # 30-day cache
+  )
+)
+
+# Minify CSS for production performance
+message("Minifying CSS...")
+minify_css <- function(input_path, output_path) {
+  css <- readLines(input_path, warn = FALSE) |> paste(collapse = "\n")
+  original_size <- nchar(css)
+
+
+  # Remove comments
+  css <- gsub("/\\*[\\s\\S]*?\\*/", "", css, perl = TRUE)
+  # Remove newlines and collapse whitespace
+  css <- gsub("\\s+", " ", css, perl = TRUE)
+  # Remove spaces around special characters
+  css <- gsub("\\s*([{};:,>~+])\\s*", "\\1", css, perl = TRUE)
+  # Remove trailing semicolons before closing braces
+  css <- gsub(";}", "}", css, fixed = TRUE)
+  # Trim
+
+  css <- trimws(css)
+
+  writeLines(css, output_path)
+  minified_size <- nchar(css)
+
+  list(original = original_size, minified = minified_size)
+}
+
+css_result <- tryCatch({
+  minify_css("www/custom.css", "www/custom.min.css")
+}, error = function(e) {
+
+  warning("CSS minification failed: ", e$message)
+  NULL
+})
+
+if (!is.null(css_result)) {
+  reduction <- (1 - css_result$minified / css_result$original) * 100
+  message(sprintf(
+    "  CSS minified: %s -> %s bytes (%.1f%% reduction)",
+    format(css_result$original, big.mark = ","),
+    format(css_result$minified, big.mark = ","),
+    reduction
+  ))
+}
+
+# Minify JavaScript for production performance
+message("Minifying JavaScript...")
+minify_js <- function(input_path, output_path) {
+  js <- readLines(input_path, warn = FALSE) |> paste(collapse = "\n")
+  original_size <- nchar(js)
+
+  # Remove single-line comments (but not URLs with //)
+  js <- gsub("(^|[^:])//.*?(?=\n|$)", "\\1", js, perl = TRUE)
+  # Remove multi-line comments
+  js <- gsub("/\\*[\\s\\S]*?\\*/", "", js, perl = TRUE)
+  # Collapse whitespace (but preserve strings)
+  js <- gsub("\\s+", " ", js, perl = TRUE)
+  # Remove spaces around operators and braces
+
+  js <- gsub("\\s*([{};:,=+\\-*/<>!&|?])\\s*", "\\1", js, perl = TRUE)
+  # Trim
+  js <- trimws(js)
+
+  writeLines(js, output_path)
+  minified_size <- nchar(js)
+
+  list(original = original_size, minified = minified_size)
+}
+
+js_files <- list(
+  list(input = "www/custom.js", output = "www/custom.min.js"),
+  list(input = "www/python_plot.js", output = "www/python_plot.min.js")
+)
+
+for (js_file in js_files) {
+  js_result <- tryCatch({
+    minify_js(js_file$input, js_file$output)
+  }, error = function(e) {
+    warning("JS minification failed for ", js_file$input, ": ", e$message)
+    NULL
+  })
+
+  if (!is.null(js_result)) {
+    reduction <- (1 - js_result$minified / js_result$original) * 100
+    message(sprintf(
+      "  %s: %s -> %s bytes (%.1f%% reduction)",
+      basename(js_file$output),
+      format(js_result$original, big.mark = ","),
+      format(js_result$minified, big.mark = ","),
+      reduction
+    ))
+  }
+}
 
 # Source Shiny module files in dependency order
 # Constants must be loaded first as other modules depend on them
@@ -71,8 +248,8 @@ table1_display <- prepare_table1_display(
   refs = app_data$refs,
   omics_df = app_data$omics_df,
   gwas_trait_mapping = app_data$gwas_trait_mapping,
-  tooltip_style = tooltip_style,
-  tooltip_style_italic = tooltip_style_italic
+  tooltip_class = tooltip_class,
+  tooltip_class_italic = tooltip_class_italic
 )
 
 # Compute dashboard statistics (optimized to avoid loading full Table 2 data)
@@ -81,7 +258,7 @@ n_genes <- length(unique(app_data$table1$Gene))
 n_publications <- length(unique(unlist(app_data$table1$References)))
 
 # Load only Table 2 for trial count and drug count (minimal data needed)
-load("data/rdata/table2_clean.RData", envir = environment())
+table2 <- readRDS("data/rdata/table2_clean.rds")
 n_trials <- length(unique(table2$`Registry ID`))
 n_drugs <- length(unique(table2$Drug))
 rm(table2) # Free memory immediately

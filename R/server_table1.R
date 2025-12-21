@@ -28,14 +28,16 @@ build_table1_filtered_data <- function(
   omics_filter
 ) {
   shiny::reactive({
-    # Use pre-assigned row_id column (no need to copy and assign)
-    filtered_table1 <- data.table::copy(table1)
+    # Start with all row IDs, filter by intersection (avoids data.table copy)
+    kept_rows <- table1$row_id
 
     # MR filter (skip if both Yes and No are selected - means show all)
     if (!is.null(mr_filter()) && length(mr_filter()) == 1L) {
-      filtered_table1 <- filtered_table1[
-        get("Mendelian Randomization") %in% mr_filter()
+      mr_rows <- table1[
+        get("Mendelian Randomization") %in% mr_filter(),
+        row_id
       ]
+      kept_rows <- intersect(kept_rows, mr_rows)
     }
 
     # GWAS trait filter (using fastmap $mget for O(1) lookups)
@@ -44,10 +46,8 @@ build_table1_filtered_data <- function(
         length(gwas_trait_filter()) > 0L &&
         !"all" %in% gwas_trait_filter()
     ) {
-      matching_rows <- unique(
-        unlist(gwas_trait_rows$mget(gwas_trait_filter()))
-      )
-      filtered_table1 <- filtered_table1[row_id %in% matching_rows]
+      gwas_rows <- unique(unlist(gwas_trait_rows$mget(gwas_trait_filter())))
+      kept_rows <- intersect(kept_rows, gwas_rows)
     }
 
     # Omics filter (using fastmap $mget for O(1) lookups)
@@ -56,13 +56,14 @@ build_table1_filtered_data <- function(
         length(omics_filter()) > 0L &&
         !"all" %in% omics_filter()
     ) {
-      matching_rows <- unique(unlist(omics_type_rows$mget(omics_filter())))
-      filtered_table1 <- filtered_table1[row_id %in% matching_rows]
+      omics_rows <- unique(unlist(omics_type_rows$mget(omics_filter())))
+      kept_rows <- intersect(kept_rows, omics_rows)
     }
 
-    kept_rows <- filtered_table1$row_id
     result <- table1_display[kept_rows, , drop = FALSE]
     row.names(result) <- NULL
+    # Remove row_id column (used for filtering) before display
+    result <- result[, !names(result) %in% "row_id", drop = FALSE]
     result <- cbind(
       data.frame(`#` = seq_len(nrow(result)), check.names = FALSE),
       result
@@ -142,8 +143,7 @@ build_table1_datatable <- function(filtered_data) {
               colspan = 3L,
               style = paste0(
                 "text-align: center; ",
-                "border-right: 2px solid #e1e4e8; ",
-                "border-bottom: 2px solid #e1e4e8;"
+                "border-right: 2px solid #e1e4e8;"
               ),
               "Putative Causal Genes"
             ),
@@ -151,14 +151,13 @@ build_table1_datatable <- function(filtered_data) {
               colspan = 4L,
               style = paste0(
                 "text-align: center; ",
-                "border-right: 2px solid #e1e4e8; ",
-                "border-bottom: 2px solid #e1e4e8;"
+                "border-right: 2px solid #e1e4e8;"
               ),
               "Evidence From Omics Studies"
             ),
             th(
               colspan = 2L,
-              style = "text-align: center; border-bottom: 2px solid #e1e4e8;",
+              style = "text-align: center;",
               "Expression Context"
             ),
             th(rowspan = 2L, "References")
@@ -188,11 +187,9 @@ build_table1_datatable <- function(filtered_data) {
         container = sketch,
         escape = FALSE,
         rownames = FALSE,
+        plugins = "natural",
         options = list(
           columnDefs = list(
-            list(orderable = FALSE, targets = c(4L, 6L, 7L, 10L)),
-            list(width = "25px", targets = 0L),
-            list(width = "300px", targets = 10L),
             list(
               targets = c(6L, 7L, 8L, 9L, 10L),
               render = DT::JS(
@@ -226,10 +223,10 @@ build_table1_datatable <- function(filtered_data) {
               )
             )
           ),
-          autoWidth = FALSE,
+          autoWidth = TRUE,
           pageLength = DATATABLE_PAGE_LENGTH,
           deferRender = TRUE,
-          dom = "lfrtip",
+          dom = "rtip",
           scrollX = TRUE,
           scrollCollapse = TRUE,
           searchDelay = DATATABLE_SEARCH_DELAY,
@@ -273,7 +270,7 @@ build_table1_datatable <- function(filtered_data) {
 
       dt
     },
-    server = FALSE
+    server = DATATABLE_SERVER_SIDE
   )
 }
 # nolint end: object_usage_linter.

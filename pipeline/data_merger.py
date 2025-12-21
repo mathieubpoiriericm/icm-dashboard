@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pipeline.database import (
-    Database, get_existing_genes, get_existing_trials,
+    get_existing_genes, get_existing_trials,
     insert_gene, insert_trial
 )
 
