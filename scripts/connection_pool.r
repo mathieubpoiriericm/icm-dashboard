@@ -1,4 +1,4 @@
-# PLANNED: Connection pool for efficient database access
+# Connection pool for efficient database access
 get_db_pool <- function() {
   pool::dbPool(
     drv = RPostgres::Postgres(),
@@ -12,7 +12,7 @@ get_db_pool <- function() {
   )
 }
 
-# PLANNED: Fetch Table 1 (genes) from database
+# Fetch Table 1 (genes) from database
 fetch_table1_from_db <- function(pool) {
   DBI::dbGetQuery(
     pool,
@@ -29,7 +29,7 @@ fetch_table1_from_db <- function(pool) {
   )
 }
 
-# PLANNED: Fetch Table 2 (clinical trials) from database
+# Fetch Table 2 (clinical trials) from database
 fetch_table2_from_db <- function(pool) {
   DBI::dbGetQuery(
     pool,
@@ -45,7 +45,7 @@ fetch_table2_from_db <- function(pool) {
   )
 }
 
-# PLANNED: Fetch OMIM info from database
+# Fetch OMIM info from database
 fetch_omim_from_db <- function(pool) {
   DBI::dbGetQuery(pool, "SELECT omim_number, phenotype FROM omim_info")
 }
