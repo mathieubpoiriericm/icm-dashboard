@@ -27,9 +27,10 @@ checkbox_filter_ui <- function(
     class = "mb-3",
     bslib::card_body(
       class = "py-3 px-3",
+      shiny::tags$label(label, class = "control-label"),
       shiny::checkboxGroupInput(
         ns("filter"),
-        label,
+        label = NULL,
         choices = choices,
         selected = selected
       )

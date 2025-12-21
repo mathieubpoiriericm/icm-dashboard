@@ -311,3 +311,27 @@ $(window).on('resize', function() {
   syncControlsWidth('firstTable');
   syncControlsWidth('secondTable');
 });
+
+// =============================================================================
+// ACCESSIBILITY FIX - Convert orphan DT labels to spans
+// =============================================================================
+
+// Fix orphan DataTable "entries" labels that have no associated form field
+// These generate accessibility warnings in Chrome DevTools
+function fixOrphanDtLabels() {
+  $('.dt-bslib-label').each(function() {
+    var $label = $(this);
+    // Only convert if it's actually a label element (not already fixed)
+    if ($label.is('label')) {
+      var $span = $('<span>').addClass('dt-bslib-label').text($label.text());
+      $label.replaceWith($span);
+    }
+  });
+}
+
+// Run on Shiny connect and DataTable init (labels may be created after init)
+$(document).on('shiny:connected', fixOrphanDtLabels);
+$(document).on('init.dt', function() {
+  // Slight delay to ensure DT has finished rendering controls
+  setTimeout(fixOrphanDtLabels, 100);
+});
