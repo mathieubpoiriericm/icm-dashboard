@@ -20,6 +20,13 @@ This dashboard provides up-to-date and standardized information on:
 
 ## Features
 
+### Dark Mode
+Toggle between light and dark themes using the built-in switch in the navbar. The dashboard features:
+- Real-time theme switching powered by bslib's `input_dark_mode()`
+- Glassmorphism effects in dark mode for a modern aesthetic
+- Light theme: Clean white background with #2d287a primary accent
+- Dark theme: #121212 background optimized for low-light viewing
+
 ### Gene Table
 Browse putative causal genes with filters for:
 - Mendelian Randomization status
@@ -93,7 +100,11 @@ install.packages(c(
   "rentrez",
   "RefManageR",
   "rbibutils",
-  "testthat"
+  "testthat",
+  "qs",
+  "parallel",
+  "jsonlite",
+  "shinyWidgets"
 ))
 
 # Install Bioconductor packages
@@ -101,8 +112,8 @@ if (!require("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
 BiocManager::install(c("biomaRt", "UniprotR"))
 
-# Optional packages for enhanced performance
-install.packages(c("qs", "future", "promises"))
+# Optional packages for async data loading
+install.packages(c("future", "promises"))
 ```
 
 ### Install Python Dependencies (for data pipeline)
@@ -187,7 +198,7 @@ rshiny_dashboard/
 │   └── trigger_update.r      # Regenerate RDS from database
 ├── data/
 │   ├── csv/                  # CSV data files
-│   ├── rdata/                # Preprocessed RDS files
+│   ├── rdata/                # Preprocessed data files (QS format)
 │   ├── txt/                  # Text data files
 │   └── xlsx/                 # Excel data files
 ├── www/
@@ -306,14 +317,27 @@ This creates `www/python_plot.html` and `www/python_plot.js`.
 
 ## Performance Features
 
-- **CSS/JS Minification**: Source files are auto-minified at startup
+### Startup Optimizations
+- **CSS/JS Minification**: Source files are auto-minified at startup (37KB CSS → 12KB)
+- **Disk Cache**: bslib Sass cache with 30-day TTL avoids recompilation
+- **Local Fonts**: Roboto loaded from local files (faster than Google Fonts CDN)
+- **Optimized Statistics**: Dashboard counts load minimal data, freeing memory immediately
+
+### Runtime Optimizations
+- **Fast Serialization**: QS format for data files (3-5x faster than RDS)
+- **Fast Indexing**: fastmap for O(1) row lookups in filter operations
+- **Data.table**: Efficient filtering with data.table instead of dplyr
+- **Pre-computed Display**: Tooltips and display tables generated at startup, not runtime
+- **Pre-computed Indices**: Filter row indices pre-computed for instant filter application
+
+### Caching Strategies
 - **In-Memory Caching**: memoise with 50MB cache for tooltips and computed values
 - **Reactive Caching**: bindCache() prevents unnecessary recalculations
-- **Disk Cache**: bslib Sass cache with 30-day TTL
-- **Lazy Loading**: Clinical trials table loads only when accessed
-- **Fast Serialization**: Optional qs format (3-5x faster than RDS)
+- **Lazy Loading**: Clinical trials table loads only when tab is accessed
+
+### UI Responsiveness
+- **Debounced Inputs**: Slider inputs (500ms) and checkbox filters (150ms) debounced
 - **Async Loading**: Optional future/promises support for non-blocking data loads
-- **Fast Indexing**: fastmap for O(1) row lookups in filters
 
 ## License
 
