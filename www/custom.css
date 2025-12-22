@@ -42,7 +42,7 @@ table.dataTable tbody td {
 }
 
 body {
-  background: #7a7a7a;
+  background: #7a7a7a !important;
   min-height: 100vh;
   padding: 4rem;
   margin: 0;
@@ -131,12 +131,12 @@ h2 {
   font-weight: 700 !important;
   color: #1f2937;
   display: block;
-  margin-bottom: 0.75rem !important;
+  margin-bottom: 0 !important;
 }
 
 /* Add spacing between filter title and checkboxes */
 .bslib-sidebar-layout .card .shiny-options-group {
-  margin-top: 0.75rem;
+  margin-top: 0;
 }
 
 [data-bs-theme="dark"] .bslib-sidebar-layout .card .control-label,
@@ -694,11 +694,21 @@ table.dataTable tbody tr td i.et-al {
   border-radius: 20px !important;
   overflow: hidden;
   margin-top: 1rem;
+  display: flex;
+  align-items: stretch;
+}
+
+.bslib-sidebar-layout>.sidebar {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
 }
 
 .bslib-sidebar-layout>.main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Responsive adjustments for smaller screens */
@@ -1041,9 +1051,15 @@ table.dataTable tbody tr td i.et-al {
   border-color: rgba(248, 113, 113, 0.5);
 }
 
-/* Sidebar filter cards - slightly less prominent */
+/* Sidebar background - white (light mode only) */
+.bslib-sidebar-layout>.sidebar {
+  background: white !important;
+}
+
+/* Sidebar filter cards - same as dt-bslib-controls (light mode only) */
 .bslib-sidebar-layout .bslib-card {
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--svd-bg-light, #f8f9fc);
+  border: 1px solid var(--svd-border, #e1e4e8);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 

@@ -310,35 +310,99 @@ build_table2_filtered_data <- function(
     )
 }
 
-#' Add Drug Group Indices for Row Merging
+#' Add Row Merge Metadata for JavaScript
 #'
-#' Pre-computes drug group indices for JavaScript row merging,
-#' avoiding recalculation on each page draw.
+#' Pre-computes rowspan values, visibility, and color assignments for
+#' JavaScript row merging. This moves computation from client-side JS
+#' (which runs on every page draw) to server-side R (which runs once
+#' when data is filtered).
 #'
 #' @param display_df Data frame. The display data.
 #'
-#' @return Data frame with __drug_group__ column added.
+#' @return Data frame with hidden metadata columns added:
+#'   - __drug_group__: Drug group index (0-indexed)
+#'   - __color_class__: Alternating color class (0 or 1)
+#'   - __rowspans__: JSON array of rowspan values for columns 0-3
 #'
 #' @keywords internal
 add_drug_group_indices <- function(display_df) {
-  drugs <- display_df$Drug
-  drug_group_idx <- integer(length(drugs))
+  n_rows <- nrow(display_df)
 
-  if (length(drugs) > 0L) {
-    current_group <- 0L
-    last_drug <- ""
-    for (i in seq_along(drugs)) {
-      drug_text <- gsub("<[^>]+>", "", drugs[i]) # Strip HTML for comparison
-      if (drug_text != last_drug) {
-        current_group <- current_group + 1L
-        last_drug <- drug_text
+  if (n_rows == 0L) {
+    display_df$`__drug_group__` <- integer(0L)
+    display_df$`__color_class__` <- integer(0L)
+    display_df$`__rowspans__` <- character(0L)
+    return(display_df)
+  }
+
+  # Strip HTML helper for text comparison
+  strip_html <- function(x) gsub("<[^>]+>", "", x)
+
+  # Columns to merge (0-indexed): Drug, Genetic Target, Trial Phase, Population
+  merge_cols <- c("Drug", "Genetic Target", "Clinical Trial Phase",
+                  "SVD Population")
+
+  # Extract text values for comparison (strip HTML)
+  col_values <- lapply(merge_cols, function(col) {
+    if (col %in% names(display_df)) strip_html(display_df[[col]])
+    else rep("", n_rows)
+  })
+
+  # Compute drug groups
+  drugs <- col_values[[1L]]
+  drug_group_idx <- integer(n_rows)
+  current_group <- 0L
+  last_drug <- ""
+
+  for (i in seq_len(n_rows)) {
+    if (drugs[i] != last_drug) {
+      current_group <- current_group + 1L
+      last_drug <- drugs[i]
+    }
+    drug_group_idx[i] <- current_group
+  }
+
+  # Compute color classes (alternating by drug group)
+  # Group 1 = class 0, Group 2 = class 1, Group 3 = class 0, etc.
+  color_class <- (drug_group_idx - 1L) %% 2L
+
+  # Compute rowspans for each column
+  # For each row, rowspan = 0 means hidden, rowspan > 0 means visible with span
+  rowspans_matrix <- matrix(0L, nrow = n_rows, ncol = length(merge_cols))
+
+  for (col_idx in seq_along(merge_cols)) {
+    vals <- col_values[[col_idx]]
+    i <- 1L
+    while (i <= n_rows) {
+      # Find span of identical values within same drug group
+      span_start <- i
+      current_val <- vals[i]
+      current_drug_group <- drug_group_idx[i]
+
+      while (i < n_rows &&
+             vals[i + 1L] == current_val &&
+             current_val != "" &&
+             drug_group_idx[i + 1L] == current_drug_group) {
+        i <- i + 1L
       }
-      drug_group_idx[i] <- current_group
+
+      # Set rowspan for first row of group, 0 for others (hidden)
+      rowspans_matrix[span_start, col_idx] <- i - span_start + 1L
+      # Rows span_start+1 to i remain 0 (hidden)
+
+      i <- i + 1L
     }
   }
 
-  # Add hidden column with drug group index (0-indexed for JavaScript)
-  display_df$`__drug_group__` <- drug_group_idx - 1L
+  # Convert rowspans to JSON strings for each row
+  rowspans_json <- apply(rowspans_matrix, 1L, function(row) {
+    jsonlite::toJSON(as.integer(row), auto_unbox = FALSE)
+  })
+
+  # Add hidden columns
+  display_df$`__drug_group__` <- drug_group_idx - 1L  # 0-indexed
+  display_df$`__color_class__` <- color_class
+  display_df$`__rowspans__` <- rowspans_json
 
   display_df
 }
@@ -429,8 +493,10 @@ build_table2_filter_message <- function(
 
 #' Build Table 2 DataTable Output
 #'
-#' Creates the DT::renderDT expression for Table 2 with row merging
-#' JavaScript for drug grouping.
+#' Creates the DT::renderDT expression for Table 2 with row merging.
+#' Row merging metadata (rowspans, colors) is pre-computed server-side
+#' in add_drug_group_indices() to minimize JavaScript computation on
+#' each page draw.
 #'
 #' @param filtered_data2 Reactive. The filtered display data.
 #'
@@ -441,11 +507,12 @@ build_table2_datatable <- function(filtered_data2) {
   DT::renderDT(
     {
       display_data <- filtered_data2()
-      # Get the index of the hidden drug group column
-      drug_group_col_idx <- which(
-        names(display_data) == "__drug_group__"
-      ) -
-        1L
+
+      # Get indices of hidden metadata columns (0-indexed for JS)
+      col_names <- names(display_data)
+      drug_group_col_idx <- which(col_names == "__drug_group__") - 1L
+      color_class_col_idx <- which(col_names == "__color_class__") - 1L
+      rowspans_col_idx <- which(col_names == "__rowspans__") - 1L
 
       dt2 <- DT::datatable(
         display_data,
@@ -454,8 +521,12 @@ build_table2_datatable <- function(filtered_data2) {
         plugins = "natural",
         options = list(
           columnDefs = list(
-            # Hide the drug group column but keep data accessible
-            list(visible = FALSE, targets = drug_group_col_idx)
+            # Hide all metadata columns but keep data accessible
+            list(
+              visible = FALSE,
+              targets = c(drug_group_col_idx, color_class_col_idx,
+                          rowspans_col_idx)
+            )
           ),
           autoWidth = TRUE,
           pageLength = DATATABLE_PAGE_LENGTH,
@@ -468,6 +539,13 @@ build_table2_datatable <- function(filtered_data2) {
             "function() {
               $(this.api().table().header())
                 .find('th').css('text-align', 'center');
+
+              // Cache stripe colors at init (runs once, not on every draw)
+              var rows = this.api().rows().nodes();
+              if (rows.length >= 2) {
+                this._stripeColor = $(rows[0]).css('background-color');
+                this._whiteColor = $(rows[1]).css('background-color');
+              }
             }"
           ),
           drawCallback = DT::JS(sprintf(
@@ -483,8 +561,10 @@ build_table2_datatable <- function(filtered_data2) {
 
               if (numRows === 0) return;
 
-              // Reset all mergeable cells to default state first
+              // Columns to merge (Drug, Genetic Target, Trial Phase, Population)
               var columnsToMerge = [0, 1, 2, 3];
+
+              // Reset all mergeable cells to default state first
               for (var i = 0; i < numRows; i++) {
                 var rowCells = $(rows[i]).children('td');
                 for (var c = 0; c < columnsToMerge.length; c++) {
@@ -502,96 +582,49 @@ build_table2_datatable <- function(filtered_data2) {
               var sortedByDrug = order.length === 0 || order[0][0] === 0;
 
               if (!sortedByDrug) {
-                // Not sorted by Drug - skip row merging
                 return;
               }
 
-              // Skip custom coloring for single row (striping is meaningless)
               if (numRows < 2) {
                 return;
               }
 
-              // Get pre-computed drug group indices (single API call)
-              var drugGroupIndex = api
-                .column(%d, {page: 'current'})
-                .data().toArray();
+              // Get pre-computed metadata from hidden columns (single API call each)
+              var colorClasses = api.column(%d, {page: 'current'}).data().toArray();
+              var rowspansData = api.column(%d, {page: 'current'}).data().toArray();
 
-              // Get colors from first two rows (cache these)
-              var stripeColor = $(rows[0]).css('background-color');
-              var whiteColor = $(rows[1]).css('background-color');
+              // Use cached colors from initComplete, fallback if not available
+              var stripeColor = this._stripeColor || $(rows[0]).css('background-color');
+              var whiteColor = this._whiteColor || $(rows[1]).css('background-color');
+              var colors = [whiteColor, stripeColor];
 
-              // Single pass: compute group boundaries and colors
-              var groupInfo = {};
-              var sortedGroups = [];
-              var i, g;
-
-              for (i = 0; i < numRows; i++) {
-                g = drugGroupIndex[i];
-                if (groupInfo[g] === undefined) {
-                  groupInfo[g] = {first: i, last: i, count: 1};
-                  sortedGroups.push(g);
-                } else {
-                  groupInfo[g].last = i;
-                  groupInfo[g].count++;
-                }
-              }
-
-              // Compute colors for each group
-              var drugGroupColors = {};
-              for (i = 0; i < sortedGroups.length; i++) {
-                g = sortedGroups[i];
-                if (i === 0) {
-                  drugGroupColors[g] = whiteColor;
-                } else {
-                  var prevG = sortedGroups[i - 1];
-                  var prevInfo = groupInfo[prevG];
-                  var prevRowIsStripe = (prevInfo.last %% 2 === 0);
-                  var prevHasEvenRows = (prevInfo.count %% 2 === 0);
-                  drugGroupColors[g] = (prevHasEvenRows ? prevRowIsStripe :
-                    !prevRowIsStripe) ? stripeColor : whiteColor;
-                }
-              }
-
-              // Cache column nodes for merging
-              var colNodes = columnsToMerge.map(function(idx) {
-                return api.column(idx, {page: 'current'}).nodes();
-              });
-
-              // Single pass: apply colors and compute rowspans
-              var mergeState = columnsToMerge.map(function() {
-                return {lastVal: null, lastNode: null,
-                  lastGroup: null, span: 1};
-              });
-
-              for (i = 0; i < numRows; i++) {
+              // Single pass: apply pre-computed colors and rowspans
+              for (var i = 0; i < numRows; i++) {
                 var rowCells = $(rows[i]).children('td');
-                var bgColor = drugGroupColors[drugGroupIndex[i]];
-                var currentGroup = drugGroupIndex[i];
+                var bgColor = colors[colorClasses[i]];
+                var rowspans = JSON.parse(rowspansData[i]);
 
-                // Apply background colors and handle merging in one pass
                 for (var c = 0; c < columnsToMerge.length; c++) {
                   var cell = rowCells.eq(columnsToMerge[c]);
                   cell.css('background-color', bgColor);
 
-                  var cellVal = cell.text().trim();
-                  var state = mergeState[c];
-
-                  if (cellVal === state.lastVal && cellVal !== '' &&
-                      currentGroup === state.lastGroup) {
+                  var span = rowspans[c];
+                  if (span === 0) {
+                    // Hidden cell (merged into previous)
                     cell.css('display', 'none');
-                    state.span++;
-                    $(state.lastNode).attr('rowspan', state.span);
+                  } else if (span > 1) {
+                    // First cell of merged group
+                    cell.attr('rowspan', span);
+                    cell.css('vertical-align', 'middle');
                   } else {
-                    state.lastVal = cellVal;
-                    state.lastNode = colNodes[c][i];
-                    state.lastGroup = currentGroup;
-                    state.span = 1;
+                    // Normal cell (span === 1)
                     cell.css('vertical-align', 'middle');
                   }
                 }
               }
             }",
-            drug_group_col_idx
+            color_class_col_idx,
+            rowspans_col_idx
           ))
         )
       ) |>

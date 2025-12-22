@@ -28,11 +28,16 @@ checkbox_filter_ui <- function(
     bslib::card_body(
       class = "py-3 px-3",
       shiny::tags$label(label, class = "control-label"),
-      shiny::checkboxGroupInput(
+      shinyWidgets::prettyCheckboxGroup(
         ns("filter"),
         label = NULL,
         choices = choices,
-        selected = selected
+        selected = selected,
+        shape = "curve",
+        fill = TRUE,
+        animation = "smooth",
+        status = "primary",
+        icon = shiny::icon("check")
       )
     )
   )
@@ -41,7 +46,6 @@ checkbox_filter_ui <- function(
 #' Checkbox Filter Module Server (with "Show All" toggle)
 #'
 #' Handles the toggle behavior where selecting "Show All" deselects others
-
 #' and selecting any other option deselects "Show All"
 #'
 #' @param id Module namespace ID
@@ -71,7 +75,7 @@ checkbox_filter_server <- function(id, default_selection = "all") {
           shiny::isolate(previous_selection("all"))
           # Freeze to prevent cascading invalidation
           shiny::freezeReactiveValue(input, "filter")
-          shiny::updateCheckboxGroupInput(
+          shinyWidgets::updatePrettyCheckboxGroup(
             session,
             "filter",
             selected = "all"
@@ -90,7 +94,7 @@ checkbox_filter_server <- function(id, default_selection = "all") {
           shiny::isolate(previous_selection(new_selection))
           # Freeze to prevent cascading invalidation
           shiny::freezeReactiveValue(input, "filter")
-          shiny::updateCheckboxGroupInput(
+          shinyWidgets::updatePrettyCheckboxGroup(
             session,
             "filter",
             selected = new_selection
@@ -144,7 +148,7 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
           shiny::isolate(previous_selection(choices))
           # Freeze to prevent cascading invalidation
           shiny::freezeReactiveValue(input, "filter")
-          shiny::updateCheckboxGroupInput(
+          shinyWidgets::updatePrettyCheckboxGroup(
             session,
             "filter",
             selected = choices

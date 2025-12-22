@@ -25,11 +25,11 @@ build_server <- function(app_data, table1_display) {
     # =========================================================================
     # THEME SWITCHING (BSLIB DARK MODE)
     # =========================================================================
-    shiny::observe({
+    shiny::observeEvent(input$dark_mode, {
       session$setCurrentTheme(
         if (isTRUE(input$dark_mode)) dark_theme else light_theme
       )
-    })
+    }, ignoreNULL = FALSE)
 
     # =========================================================================
     # PYTHON PLOT HANDLER

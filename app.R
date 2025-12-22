@@ -91,13 +91,9 @@ library(memoise)
 library(cachem)
 library(digest)
 library(parallel)
-
-# Optional: qs package for 3-5x faster data loading
-# Install with: install.packages("qs")
-# Then run: source("R/data_prep.R"); convert_rds_to_qs()
-if (requireNamespace("qs", quietly = TRUE)) {
-  message("qs package available - using fast serialization")
-}
+library(qs)
+library(jsonlite)
+library(shinyWidgets)
 
 # Optional: promises and future packages for async Table 2 loading
 # Install with: install.packages(c("promises", "future"))
@@ -258,7 +254,7 @@ n_genes <- length(unique(app_data$table1$Gene))
 n_publications <- length(unique(unlist(app_data$table1$References)))
 
 # Load only Table 2 for trial count and drug count (minimal data needed)
-table2 <- readRDS("data/rdata/table2_clean.rds")
+table2 <- safe_read_data(DATA_PATHS$table2_clean)
 n_trials <- length(unique(table2$`Registry ID`))
 n_drugs <- length(unique(table2$Drug))
 rm(table2) # Free memory immediately

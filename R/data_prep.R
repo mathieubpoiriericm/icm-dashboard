@@ -2,62 +2,64 @@
 # Data loading and preprocessing
 # nolint start: object_usage_linter.
 
-# Check if qs package is available for faster serialization
-qs_available <- requireNamespace("qs", quietly = TRUE)
-
 #' Safely read a serialized R object with error handling
 #'
-#' Attempts to read using qs format first (3-5x faster), then falls back
-#' to RDS format. Wraps with tryCatch to provide informative error messages.
+#' Reads data files using qs format (default, 3-5x faster) with automatic
+#' fallback to RDS format for backward compatibility.
 #'
-#' @param file_path Character. Path to the RDS file (will also check for .qs).
+#' @param file_path Character. Path to the data file (.qs or .rds).
 #'
 #' @return The object stored in the file.
 #'
 #' @keywords internal
-safe_read_rds <- function(file_path) {
-
-  # Try qs format first if available (significantly faster)
-  if (qs_available) {
-    qs_path <- sub("\\.rds$", ".qs", file_path, ignore.case = TRUE)
-    if (file.exists(qs_path)) {
+safe_read_data <- function(file_path) {
+  # If path is .qs, try it directly
+  if (grepl("\\.qs$", file_path, ignore.case = TRUE)) {
+    if (file.exists(file_path)) {
       return(tryCatch(
-        {
-          qs::qread(qs_path, nthreads = parallel::detectCores())
-        },
+        qs::qread(file_path, nthreads = parallel::detectCores()),
         error = function(e) {
-          message(sprintf(
-            "qs read failed for '%s', falling back to RDS", qs_path
-          ))
-          NULL
+          stop(
+            sprintf("Failed to load qs file '%s': %s", file_path, e$message),
+            call. = FALSE
+          )
         }
       ))
     }
+    # Fall back to .rds if .qs doesn't exist
+    rds_path <- sub("\\.qs$", ".rds", file_path, ignore.case = TRUE)
+    if (file.exists(rds_path)) {
+      message(sprintf("QS file not found, falling back to RDS: %s", rds_path))
+      return(readRDS(rds_path))
+    }
+    stop(
+      sprintf("Neither '%s' nor '%s' found", file_path, rds_path),
+      call. = FALSE
+    )
   }
 
-  # Fall back to RDS format
-  tryCatch(
-    {
-      readRDS(file_path)
-    },
-    error = function(e) {
-      stop(
-        sprintf(
-          "Failed to load file '%s': %s\n%s",
-          file_path,
-          e$message,
-          "Please ensure the file exists and is not corrupt."
-        ),
-        call. = FALSE
-      )
+  # If path is .rds (legacy), check for .qs version first
+  if (grepl("\\.rds$", file_path, ignore.case = TRUE)) {
+    qs_path <- sub("\\.rds$", ".qs", file_path, ignore.case = TRUE)
+    if (file.exists(qs_path)) {
+      return(qs::qread(qs_path, nthreads = parallel::detectCores()))
     }
-  )
+    # Fall back to .rds
+    if (file.exists(file_path)) {
+      return(readRDS(file_path))
+    }
+  }
+
+  stop(sprintf("File not found: %s", file_path), call. = FALSE)
 }
+
+# Alias for backward compatibility with existing code
+safe_read_rds <- safe_read_data
 
 #' Convert RDS files to qs format for faster loading
 #'
-#' Converts all RDS files in DATA_PATHS to qs format. Run this once
-#' to speed up subsequent app startups by 3-5x.
+#' Converts all RDS files to qs format based on DATA_PATHS configuration.
+#' Run this once after deployment or when data files are updated.
 #'
 #' @param overwrite Logical. Overwrite existing qs files. Defaults to FALSE.
 #'
@@ -65,24 +67,23 @@ safe_read_rds <- function(file_path) {
 #'
 #' @export
 convert_rds_to_qs <- function(overwrite = FALSE) {
-  if (!qs_available) {
-    stop("qs package not installed. Install with: install.packages('qs')")
-  }
+  message("Converting RDS files to QS format...")
 
-  rds_paths <- unlist(
-    DATA_PATHS[grep("\\.rds$", DATA_PATHS, ignore.case = TRUE)]
+  # Get qs paths from DATA_PATHS and derive rds paths
+  qs_paths <- unlist(
+    DATA_PATHS[grep("\\.qs$", DATA_PATHS, ignore.case = TRUE)]
   )
 
-  for (rds_path in rds_paths) {
-    qs_path <- sub("\\.rds$", ".qs", rds_path, ignore.case = TRUE)
+  for (qs_path in qs_paths) {
+    rds_path <- sub("\\.qs$", ".rds", qs_path, ignore.case = TRUE)
 
     if (!file.exists(rds_path)) {
-      message(sprintf("  Skipping (not found): %s", rds_path))
+      message(sprintf("  Skipping (RDS not found): %s", rds_path))
       next
     }
 
     if (file.exists(qs_path) && !overwrite) {
-      message(sprintf("  Skipping (exists): %s", qs_path))
+      message(sprintf("  Skipping (QS exists): %s", basename(qs_path)))
       next
     }
 
@@ -103,6 +104,7 @@ convert_rds_to_qs <- function(overwrite = FALSE) {
     })
   }
 
+  message("Conversion complete.")
   invisible(NULL)
 }
 
