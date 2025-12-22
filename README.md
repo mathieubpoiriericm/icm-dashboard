@@ -13,9 +13,9 @@ This dashboard provides up-to-date and standardized information on:
 | Layer | Technologies |
 |-------|-------------|
 | Frontend | R Shiny, bslib (Bootstrap 5 with dark mode), DT, Plotly, Tippy.js |
-| Backend | R 4.0+, data.table, fastmap, memoise, RPostgres |
-| Data Pipeline | Python 3.11+, asyncpg, Biopython, Anthropic API |
-| Database | PostgreSQL 16 |
+| Backend | R 4.4+, data.table, fastmap, memoise, RPostgres |
+| Data Pipeline | Python 3.13+, asyncpg, Biopython, Anthropic API |
+| Database | PostgreSQL 18+ |
 | DevOps | GitHub Actions, Docker, Kubernetes |
 
 ## Features
@@ -60,12 +60,12 @@ Interactive Plotly timeline of SVD drugs tested in clinical trials.
 ### Prerequisites
 
 **For running the Shiny app only:**
-- R (>= 4.0)
+- R (>= 4.4)
 - The `maRco` helper package
 
 **For running the data pipeline:**
-- Python 3.11+
-- PostgreSQL 16
+- Python 3.3+
+- PostgreSQL 18+
 
 ### Install R Dependencies
 
