@@ -64,7 +64,7 @@ Interactive Plotly timeline of SVD drugs tested in clinical trials.
 - The `maRco` helper package
 
 **For running the data pipeline:**
-- Python 3.3+
+- Python 3.13+
 - PostgreSQL 18+
 
 ### Install R Dependencies
