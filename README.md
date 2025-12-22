@@ -60,7 +60,7 @@ Interactive Plotly timeline of SVD drugs tested in clinical trials.
 ### Prerequisites
 
 **For running the Shiny app only:**
-- R (>= 4.4)
+- R 4.4+
 - The `maRco` helper package
 
 **For running the data pipeline:**
