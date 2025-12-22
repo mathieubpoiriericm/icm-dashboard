@@ -124,7 +124,7 @@ pip install asyncpg biopython anthropic pydantic
 
 ### Database Setup (for data pipeline)
 
-1. Install PostgreSQL 16
+1. Install PostgreSQL 18
 2. Create a database and user:
    ```sql
    CREATE USER csvd_user WITH PASSWORD 'your_password';
@@ -255,7 +255,7 @@ python pipeline/pubmed_search.py
 The pipeline runs automatically every Monday at 6 AM UTC via GitHub Actions. See `.github/workflows/update_pipeline.yml` for configuration.
 
 The workflow:
-1. Spins up a PostgreSQL 16 service container
+1. Spins up a PostgreSQL 18 service container
 2. Initializes the database schema
 3. Runs the Python pipeline
 4. Regenerates RDS files using R
