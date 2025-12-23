@@ -194,7 +194,7 @@ rshiny_dashboard/
 │   ├── quality_metrics.py    # Data quality assessment
 │   └── validation.py         # Data validation logic
 ├── scripts/
-│   └── trigger_update.R      # Regenerate RDS from database
+│   └── trigger_update.R      # Regenerate QS from database
 ├── www/
 │   ├── custom.css            # Custom styles (source)
 │   ├── custom.min.css        # Minified styles (loaded by app)
@@ -225,7 +225,7 @@ The dashboard is powered by an automated data pipeline that keeps gene and clini
 3. **Extract**: Uses Anthropic Claude to extract structured gene/drug/trial data
 4. **Validate**: Performs data quality checks and validation
 5. **Store**: Inserts/updates records in PostgreSQL database
-6. **Export**: Regenerates RDS files for the Shiny application
+6. **Export**: Regenerates QS files for the Shiny application
 
 ### Running the Pipeline Manually
 
@@ -241,8 +241,8 @@ The workflow:
 1. Spins up a PostgreSQL 18 service container
 2. Initializes the database schema
 3. Runs the Python pipeline
-4. Regenerates RDS files using R
-5. Auto-commits updated RDS files to the repository
+4. Regenerates QS files using R
+5. Auto-commits updated QS files to the repository
 
 ## Deployment
 
