@@ -1,8 +1,11 @@
 from typing import List, Optional
 from pipeline.database import (
-    get_existing_genes, get_existing_trials,
-    insert_gene, insert_trial
+    get_existing_genes,
+    get_existing_trials,
+    insert_gene,
+    insert_trial,
 )
+
 
 async def merge_gene_entries(new_entries: List[dict]) -> dict:
     """Merge new gene entries into the PostgreSQL database.
@@ -25,12 +28,16 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
             "gene": entry["gene_symbol"],
             "chromosomal_location": entry.get("chromosomal_location", ""),
             "gwas_trait": ", ".join(entry.get("gwas_trait", [])),
-            "mendelian_randomization": "Y" if entry.get("mendelian_randomization") else "",
-            "evidence_from_other_omics_studies": format_omics(entry.get("omics_evidence", [])),
+            "mendelian_randomization": "Y"
+            if entry.get("mendelian_randomization")
+            else "",
+            "evidence_from_other_omics_studies": format_omics(
+                entry.get("omics_evidence", [])
+            ),
             "link_to_monogenetic_disease": format_omim(entry.get("omim_number")),
             "brain_cell_types": entry.get("brain_cell_types", ""),
             "affected_pathway": entry.get("affected_pathway", ""),
-            "references": entry.get("pmid", "")
+            "references": entry.get("pmid", ""),
         }
 
         await insert_gene(gene_data)
@@ -42,6 +49,7 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
 
     return {"inserted": inserted, "updated": updated}
 
+
 def format_omics(evidence: List[str]) -> str:
     """Format omics evidence for database storage.
 
@@ -52,6 +60,7 @@ def format_omics(evidence: List[str]) -> str:
     # e.g., ["TWAS:brain", "PWAS:blood"] -> "TWAS:brain*;PWAS:blood*;"
     return ";".join(f"{e}*" for e in evidence) + ";" if evidence else ""
 
+
 def format_omim(omim_number: Optional[str]) -> str:
     """Format OMIM number for link_to_monogenetic_disease column.
 
@@ -60,6 +69,7 @@ def format_omim(omim_number: Optional[str]) -> str:
     if not omim_number:
         return ""
     return omim_number
+
 
 async def merge_trial_entries(new_entries: List[dict]) -> dict:
     """Merge new trial entries into the PostgreSQL database.
@@ -94,7 +104,7 @@ async def merge_trial_entries(new_entries: List[dict]) -> dict:
             "target_sample_size": entry.get("target_sample_size"),
             "estimated_completion_date": entry.get("estimated_completion_date", ""),
             "primary_outcome": entry["primary_outcome"],
-            "sponsor_type": entry["sponsor_type"]
+            "sponsor_type": entry["sponsor_type"],
         }
 
         await insert_trial(trial_data)

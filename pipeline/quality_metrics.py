@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class PipelineMetrics:
     papers_processed: int = 0

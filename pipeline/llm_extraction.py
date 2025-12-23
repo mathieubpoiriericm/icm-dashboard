@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 client = anthropic.Anthropic()
 
+
 class GeneEntry(BaseModel):
     gene_symbol: str
     protein_name: Optional[str]
@@ -15,6 +16,7 @@ class GeneEntry(BaseModel):
     brain_cell_types: Optional[str]
     affected_pathway: Optional[str]
     confidence: float  # 0.0-1.0
+
 
 class TrialEntry(BaseModel):
     drug: str
@@ -31,6 +33,7 @@ class TrialEntry(BaseModel):
     primary_outcome: str
     sponsor_type: str
     confidence: float
+
 
 EXTRACTION_PROMPT = """You are extracting structured data from an SVD research paper.
 
@@ -54,19 +57,83 @@ CONFIDENCE SCORING:
 
 Return valid JSON matching the schema. If no relevant data, return empty arrays."""
 
+
 def extract_from_paper(text: str, pmid: str) -> dict:
     """Extract genes and trials using Claude API."""
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=4096,
-        messages=[{
-            "role": "user",
-            "content": f"{EXTRACTION_PROMPT}\n\n---\nPMID: {pmid}\n\n{text[:50000]}"
-        }]
+        messages=[
+            {
+                "role": "user",
+                "content": f"{EXTRACTION_PROMPT}\n\n---\nPMID: {pmid}\n\n{text[:50000]}",
+            }
+        ],
     )
     return parse_llm_response(response.content[0].text)
 
 
 def parse_llm_response(text: str) -> dict:
-    """Parse the LLM response JSON into structured data."""
-    raise NotImplementedError(f"parse_llm_response not implemented for text: {text[:50]}")
+    """Parse the LLM response JSON into structured data.
+
+    Handles various response formats:
+    - Direct JSON object
+    - JSON wrapped in markdown code blocks
+    - Partial/malformed JSON with recovery
+
+    Returns:
+        dict with 'genes' and 'trials' keys (empty lists if parsing fails)
+    """
+    import json
+    import re
+
+    # Default empty result
+    result = {"genes": [], "trials": []}
+
+    if not text or not text.strip():
+        return result
+
+    # Try to extract JSON from markdown code blocks
+    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if json_match:
+        text = json_match.group(1)
+
+    # Try direct JSON parsing
+    try:
+        parsed = json.loads(text.strip())
+        if isinstance(parsed, dict):
+            result["genes"] = parsed.get("genes", [])
+            result["trials"] = parsed.get("trials", [])
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    # Try to find JSON object in the text
+    json_obj_match = re.search(r"\{[\s\S]*\}", text)
+    if json_obj_match:
+        try:
+            parsed = json.loads(json_obj_match.group())
+            if isinstance(parsed, dict):
+                result["genes"] = parsed.get("genes", [])
+                result["trials"] = parsed.get("trials", [])
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    # Last resort: try to extract arrays separately
+    genes_match = re.search(r'"genes"\s*:\s*(\[[\s\S]*?\])', text)
+    trials_match = re.search(r'"trials"\s*:\s*(\[[\s\S]*?\])', text)
+
+    if genes_match:
+        try:
+            result["genes"] = json.loads(genes_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    if trials_match:
+        try:
+            result["trials"] = json.loads(trials_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    return result

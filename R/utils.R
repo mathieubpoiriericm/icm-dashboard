@@ -17,8 +17,8 @@
 #' @param dbname Database name. Defaults to "csvd_dashboard".
 #' @param host Database host. Defaults to "localhost".
 #' @param port Database port. Defaults to 5432.
-#' @param user Database user. Defaults to Sys.getenv("PGUSER").
-#' @param password Database password. Defaults to Sys.getenv("PGPASSWORD").
+#' @param user Database user. Defaults to Sys.getenv("DB_USER").
+#' @param password Database password. Defaults to Sys.getenv("DB_PASSWORD").
 #'
 #' @return The result of executing fn with the connection.
 #'
@@ -36,8 +36,8 @@ with_db_connection <- function(
   dbname = "csvd_dashboard",
   host = "localhost",
   port = 5432,
-  user = Sys.getenv("PGUSER"),
-  password = Sys.getenv("PGPASSWORD")
+  user = Sys.getenv("DB_USER"),
+  password = Sys.getenv("DB_PASSWORD")
 ) {
   close_con <- FALSE
   if (is.null(con)) {

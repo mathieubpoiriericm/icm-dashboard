@@ -15,6 +15,7 @@ SVD_QUERY = """
  "clinical trial"[tiab] OR "drug"[tiab])
 """
 
+
 def search_recent_papers(days_back: int = 7) -> List[str]:
     """Return PMIDs of papers published in the last N days."""
     mindate = (datetime.now() - timedelta(days=days_back)).strftime("%Y/%m/%d")
@@ -25,10 +26,11 @@ def search_recent_papers(days_back: int = 7) -> List[str]:
         mindate=mindate,
         maxdate="3000",
         retmax=500,
-        usehistory="y"
+        usehistory="y",
     )
     results = Entrez.read(handle)
     return results["IdList"]
+
 
 def filter_new_pmids(pmids: List[str], existing: Set[str]) -> List[str]:
     """Remove PMIDs already in the dashboard."""

@@ -142,7 +142,7 @@ pip install asyncpg biopython anthropic pydantic
 | `DB_HOST` | PostgreSQL host | Pipeline / live data |
 | `DB_PORT` | PostgreSQL port (default: 5432) | Pipeline / live data |
 | `DB_NAME` | Database name | Pipeline / live data |
-| `PGPASSWORD` | Database password | Pipeline / live data |
+| `DB_PASSWORD` | Database password | Pipeline / live data |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM extraction | Pipeline only |
 | `NCBI_API_KEY` | NCBI Entrez API key | Pipeline only |
 
@@ -166,7 +166,6 @@ Rscript -e "shiny::runApp()"
 rshiny_dashboard/
 ├── app.R                     # Main application entry point
 ├── python_plot.py            # Clinical trials visualization generator
-├── Dockerfile                # Docker container configuration
 ├── R/
 │   ├── constants.R           # Application-wide constants
 │   ├── utils.R               # CSS styles, DB utilities, column cleaning
@@ -186,6 +185,7 @@ rshiny_dashboard/
 │   ├── fetch_uniprot_data.R      # UniProt protein data fetching
 │   └── phenogram.R               # Phenogram data generation
 ├── pipeline/                 # Python data ETL
+│   ├── main.py               # Pipeline orchestrator entry point
 │   ├── pubmed_search.py      # PubMed literature search via Entrez
 │   ├── pdf_retrieval.py      # PDF download module
 │   ├── llm_extraction.py     # LLM-based data extraction (Anthropic)
@@ -193,14 +193,8 @@ rshiny_dashboard/
 │   ├── data_merger.py        # Data consolidation utilities
 │   ├── quality_metrics.py    # Data quality assessment
 │   └── validation.py         # Data validation logic
-├── scripts/                  # Database and utility scripts
-│   ├── connection_pool.r     # R connection pooling
-│   └── trigger_update.r      # Regenerate RDS from database
-├── data/
-│   ├── csv/                  # CSV data files
-│   ├── rdata/                # Preprocessed data files (QS format)
-│   ├── txt/                  # Text data files
-│   └── xlsx/                 # Excel data files
+├── scripts/
+│   └── trigger_update.R      # Regenerate RDS from database
 ├── www/
 │   ├── custom.css            # Custom styles (source)
 │   ├── custom.min.css        # Minified styles (loaded by app)
@@ -208,29 +202,18 @@ rshiny_dashboard/
 │   ├── custom.min.js         # Minified JavaScript (loaded by app)
 │   ├── python_plot.html      # Clinical trials visualization
 │   ├── python_plot.js        # Plot interactivity and sidepanel
+│   ├── python_plot.min.js    # Minified plot JavaScript
 │   ├── phenogram_template.html  # Interactive phenogram
 │   ├── fonts/                # Web fonts (Roboto)
 │   ├── css/                  # Tippy.js styles
 │   ├── js/                   # Popper.js and Tippy.js
 │   └── images/               # Logo and phenogram images
-├── tests/
-│   └── testthat/             # Unit tests
-│       ├── helper-setup.R
-│       ├── test-constants.R
-│       ├── test-data_prep.R
-│       ├── test-server_modules.R
-│       └── test-tooltips.R
-├── maRco/                    # Helper functions R package
-│   ├── R/                    # Package source files
-│   ├── man/                  # Documentation
-│   └── DESCRIPTION           # Package metadata
-├── .github/workflows/
-│   └── update_pipeline.yml   # Weekly automated pipeline
-└── misc/                     # Supporting files
-    ├── yaml_files/           # Kubernetes configurations
-    ├── json_files/           # Grafana/monitoring configs
-    ├── html_files/           # Documentation
-    └── sql_files/            # Database schema
+└── maRco/                    # Helper functions R package
+   ├── R/                    # Package source files
+   ├── man/                  # Documentation
+   ├── DESCRIPTION           # Package metadata
+   ├── NAMESPACE             # Package exports
+   └── README.md             # Package documentation
 ```
 
 ## Data Pipeline

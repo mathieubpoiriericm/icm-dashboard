@@ -56,8 +56,8 @@
 # │   └── data_merger.py         - Data merging utilities
 # │
 # ├── scripts/                   - Utility scripts
-# │   ├── connection_pool.r      - Database connection pooling
-# │   └── trigger_update.r       - Pipeline trigger script
+# │   ├── connection_pool.R      - Database connection pooling
+# │   └── trigger_update.R       - Pipeline trigger script
 # │
 # ├── tests/                     - Test suite
 # │   ├── testthat.R             - Test configuration

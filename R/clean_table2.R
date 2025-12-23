@@ -15,8 +15,8 @@
 #' @param dbname Database name. Defaults to "csvd_dashboard".
 #' @param host Database host. Defaults to "localhost".
 #' @param port Database port. Defaults to 5432.
-#' @param user Database user. Defaults to Sys.getenv("PGUSER").
-#' @param password Database password. Defaults to Sys.getenv("PGPASSWORD").
+#' @param user Database user. Defaults to Sys.getenv("DB_USER").
+#' @param password Database password. Defaults to Sys.getenv("DB_PASSWORD").
 #'
 #' @return A cleaned data.frame ready for display.
 #'
@@ -26,8 +26,8 @@ clean_table2 <- function(
   dbname = "csvd_dashboard",
   host = "localhost",
   port = 5432,
-  user = Sys.getenv("PGUSER"),
-  password = Sys.getenv("PGPASSWORD")
+  user = Sys.getenv("DB_USER"),
+  password = Sys.getenv("DB_PASSWORD")
 ) {
   # Load data using connection utility
   table2 <- with_db_connection(

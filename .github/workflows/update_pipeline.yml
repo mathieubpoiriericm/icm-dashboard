@@ -14,7 +14,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: csvd_user
-          POSTGRES_PASSWORD: ${{ secrets.PGPASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
           POSTGRES_DB: csvd_dashboard
         ports:
           - 5432:5432
@@ -29,7 +29,7 @@ jobs:
 
       - name: Initialize database schema
         env:
-          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           psql -h localhost -U csvd_user -d csvd_dashboard \
             -f misc/sql_files/setup.sql
@@ -48,7 +48,8 @@ jobs:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           DB_HOST: localhost
           DB_NAME: csvd_dashboard
-          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          DB_USER: csvd_user
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: python pipeline/main.py
 
       - name: Set up R
@@ -64,8 +65,8 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_NAME: csvd_dashboard
-          PGUSER: csvd_user
-          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          DB_USER: csvd_user
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: Rscript scripts/trigger_update.R
 
       - name: Commit RDS changes

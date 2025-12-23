@@ -40,8 +40,10 @@ message("Saved: data/rdata/table1_clean.rds")
 
 # Extract gene symbols from table1 for external data fetching
 gene_symbols_table1 <- unique(table1_clean$Gene)
-message(sprintf("Found %d unique genes in Table 1", length(gene_symbols_table1))
-)
+message(sprintf(
+  "Found %d unique genes in Table 1",
+  length(gene_symbols_table1)
+))
 
 # =============================================================================
 # STEP 2: Clean and save Table 2 (clinical trials) from database
