@@ -10,7 +10,7 @@ This script orchestrates:
 5. Merging validated data into PostgreSQL
 
 Usage:
-    python pipeline/main.py [--days-back N] [--dry-run]
+    python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
 """
 
 import argparse
@@ -133,7 +133,9 @@ async def process_paper(pmid: str, metrics: PipelineMetrics) -> dict:
     }
 
 
-async def run_pipeline(days_back: int = 7, dry_run: bool = False) -> PipelineMetrics:
+async def run_pipeline(
+    days_back: int = 7, dry_run: bool = False, test_mode: bool = False
+) -> PipelineMetrics:
     """Run the complete data pipeline."""
     metrics = PipelineMetrics()
 
@@ -162,6 +164,16 @@ async def run_pipeline(days_back: int = 7, dry_run: bool = False) -> PipelineMet
 
     if not new_pmids:
         logger.info("All papers already processed. Pipeline complete.")
+        return metrics
+
+    # Test mode: skip LLM extraction and database merge
+    if test_mode:
+        logger.info("Test mode enabled - skipping LLM extraction and database merge")
+        logger.info(f"  Would process {len(new_pmids)} papers:")
+        for pmid in new_pmids[:10]:  # Show first 10
+            logger.info(f"    PMID: {pmid}")
+        if len(new_pmids) > 10:
+            logger.info(f"    ... and {len(new_pmids) - 10} more")
         return metrics
 
     # Step 3: Process each paper
@@ -243,10 +255,19 @@ def main():
     parser.add_argument(
         "--dry-run", action="store_true", help="Run without writing to database"
     )
+    parser.add_argument(
+        "--test-mode",
+        action="store_true",
+        help="Run without LLM extraction or database merge (for testing search/retrieval only)",
+    )
 
     args = parser.parse_args()
 
-    asyncio.run(run_pipeline(days_back=args.days_back, dry_run=args.dry_run))
+    asyncio.run(
+        run_pipeline(
+            days_back=args.days_back, dry_run=args.dry_run, test_mode=args.test_mode
+        )
+    )
 
 
 if __name__ == "__main__":
