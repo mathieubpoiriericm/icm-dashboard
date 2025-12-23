@@ -57,10 +57,10 @@ jobs:
 
       - name: Install R dependencies
         run: |
-          install.packages(c("DBI", "RPostgres", "pool"), repos = "https://cloud.r-project.org")
+          install.packages(c("DBI", "RPostgres", "pool", "qs"), repos = "https://cloud.r-project.org")
         shell: Rscript {0}
 
-      - name: Regenerate RDS from database
+      - name: Regenerate QS data from database
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -69,11 +69,11 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: Rscript scripts/trigger_update.R
 
-      - name: Commit RDS changes
+      - name: Commit QS data changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/rdata/
+          git add data/qs/
           git diff --quiet && git diff --staged --quiet || \
-            git commit -m "Auto-update RDS: $(date +'%Y-%m-%d')"
+            git commit -m "Auto-update QS data: $(date +'%Y-%m-%d')"
           git push

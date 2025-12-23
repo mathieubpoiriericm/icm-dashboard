@@ -5,7 +5,6 @@
 # ├── app.R                      - Main application entry point (this file)
 # ├── python_plot.py             - Python visualization script
 # ├── README.md                  - Project documentation
-# ├── Dockerfile                 - Docker container configuration
 # │
 # ├── R/                         - Shiny application modules
 # │   ├── constants.R            - Application-wide constants
@@ -42,11 +41,12 @@
 # │
 # ├── data/                      - Application data
 # │   ├── csv/                   - CSV data files
-# │   ├── rdata/                 - RDS data files
+# │   ├── qs/                    - QS data files (for faster loading)
 # │   ├── txt/                   - Text data files
 # │   └── xlsx/                  - Excel data files
 # │
 # ├── pipeline/                  - Automated data pipeline (Python)
+# │   ├── main.py                - Pipeline orchestration entry point
 # │   ├── pubmed_search.py       - PubMed literature search
 # │   ├── pdf_retrieval.py       - PDF download module
 # │   ├── llm_extraction.py      - LLM-based data extraction
@@ -55,21 +55,8 @@
 # │   ├── database.py            - Database operations
 # │   └── data_merger.py         - Data merging utilities
 # │
-# ├── scripts/                   - Utility scripts
-# │   ├── connection_pool.R      - Database connection pooling
-# │   └── trigger_update.R       - Pipeline trigger script
-# │
-# ├── tests/                     - Test suite
-# │   ├── testthat.R             - Test configuration
-# │   └── testthat/              - Unit tests
-# │
-# ├── maRco/                     - Custom R package for data utilities
-# │   ├── R/                     - Package source code
-# │   ├── man/                   - Documentation
-# │   └── DESCRIPTION            - Package metadata
-# │
-# ├── bibentry/                  - Bibliography entries
-# └── .github/workflows/         - GitHub Actions CI/CD
+# └── scripts/                   - Utility scripts
+#     └── trigger_update.R       - Pipeline trigger script
 #
 # Helper functions for data fetching/cleaning are in the maRco package.
 # Install with: devtools::install("maRco")
@@ -121,7 +108,7 @@ options(
   sass.cache = cachem::cache_disk(
     dir = bslib_cache_dir,
     max_size = 50 * 1024^2,
-    max_age = 60 * 60 * 24 * 30  # 30-day cache
+    max_age = 60 * 60 * 24 * 30 # 30-day cache
   )
 )
 
@@ -130,7 +117,6 @@ message("Minifying CSS...")
 minify_css <- function(input_path, output_path) {
   css <- readLines(input_path, warn = FALSE) |> paste(collapse = "\n")
   original_size <- nchar(css)
-
 
   # Remove comments
   css <- gsub("/\\*[\\s\\S]*?\\*/", "", css, perl = TRUE)
@@ -150,13 +136,15 @@ minify_css <- function(input_path, output_path) {
   list(original = original_size, minified = minified_size)
 }
 
-css_result <- tryCatch({
-  minify_css("www/custom.css", "www/custom.min.css")
-}, error = function(e) {
-
-  warning("CSS minification failed: ", e$message)
-  NULL
-})
+css_result <- tryCatch(
+  {
+    minify_css("www/custom.css", "www/custom.min.css")
+  },
+  error = function(e) {
+    warning("CSS minification failed: ", e$message)
+    NULL
+  }
+)
 
 if (!is.null(css_result)) {
   reduction <- (1 - css_result$minified / css_result$original) * 100
@@ -198,12 +186,15 @@ js_files <- list(
 )
 
 for (js_file in js_files) {
-  js_result <- tryCatch({
-    minify_js(js_file$input, js_file$output)
-  }, error = function(e) {
-    warning("JS minification failed for ", js_file$input, ": ", e$message)
-    NULL
-  })
+  js_result <- tryCatch(
+    {
+      minify_js(js_file$input, js_file$output)
+    },
+    error = function(e) {
+      warning("JS minification failed for ", js_file$input, ": ", e$message)
+      NULL
+    }
+  )
 
   if (!is.null(js_result)) {
     reduction <- (1 - js_result$minified / js_result$original) * 100

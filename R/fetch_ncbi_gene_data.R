@@ -93,7 +93,7 @@ fetch_all_gene_info <- function(gene_symbols, delay = 0.1, verbose = FALSE) {
 #' }
 extract_table2_gene_symbols <- function(verbose = TRUE) {
   # Load table2 data
-  table2 <- readRDS("data/rdata/table2_clean.rds")
+  table2 <- qs::qread("data/qs/table2_clean.qs")
 
   genes_raw <- table2[["Genetic Target"]]
 
@@ -122,7 +122,7 @@ extract_table2_gene_symbols <- function(verbose = TRUE) {
 #' Fetch and Save Table 2 Gene Info
 #'
 #' Extracts gene symbols from Table 2, fetches gene information from NCBI,
-#' and saves the results to data/rdata/.
+#' and saves the results to data/qs/.
 #'
 #' @param delay Delay in seconds between API requests. Defaults to 0.1.
 #' @param verbose If TRUE, prints progress messages. Defaults to TRUE.
@@ -168,10 +168,10 @@ fetch_save_table2_gene_info <- function(
   )
 
   # Save results
-  saveRDS(gene_info_table2, file = "data/rdata/gene_info_table2.rds")
+  qs::qsave(gene_info_table2, "data/qs/gene_info_table2.qs")
 
   if (verbose) {
-    message("Saved to data/rdata/gene_info_table2.rds")
+    message("Saved to data/qs/gene_info_table2.qs")
   }
 
   invisible(gene_info_table2)

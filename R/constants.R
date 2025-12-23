@@ -92,13 +92,13 @@ PUBMED_BASE_URL <- "https://pubmed.ncbi.nlm.nih.gov/"
 # =============================================================================
 #' @description Paths to data files (qs format by default, falls back to rds)
 DATA_PATHS <- list(
-  table1_clean = "data/rdata/table1_clean.qs",
-  table2_clean = "data/rdata/table2_clean.qs",
-  gene_info = "data/rdata/gene_info_results_df.qs",
-  gene_info_table2 = "data/rdata/gene_info_table2.qs",
-  prot_info = "data/rdata/prot_info_clean.qs",
-  refs = "data/rdata/refs.qs",
-  gwas_trait_names = "data/rdata/gwas_trait_names.qs",
+  table1_clean = "data/qs/table1_clean.qs",
+  table2_clean = "data/qs/table2_clean.qs",
+  gene_info = "data/qs/gene_info_results_df.qs",
+  gene_info_table2 = "data/qs/gene_info_table2.qs",
+  prot_info = "data/qs/prot_info_clean.qs",
+  refs = "data/qs/refs.qs",
+  gwas_trait_names = "data/qs/gwas_trait_names.qs",
   omim_info = "data/csv/omim_info.csv"
 )
 
