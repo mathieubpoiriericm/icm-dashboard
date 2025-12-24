@@ -74,12 +74,12 @@ async def insert_gene(gene_data: dict) -> bool:
                 protein, gene, chromosomal_location, gwas_trait,
                 mendelian_randomization, evidence_from_other_omics_studies,
                 link_to_monogenetic_disease, brain_cell_types,
-                affected_pathway, references
+                affected_pathway, "references"
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (gene) DO UPDATE SET
                 gwas_trait = EXCLUDED.gwas_trait,
                 evidence_from_other_omics_studies = EXCLUDED.evidence_from_other_omics_studies,
-                references = genes.references || '; ' || EXCLUDED.references,
+                "references" = genes."references" || '; ' || EXCLUDED."references",
                 updated_at = CURRENT_TIMESTAMP
         """,
             *[
