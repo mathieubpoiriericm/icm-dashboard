@@ -30,6 +30,8 @@ build_table2_loader <- function(
 ) {
   # Track loading state for async operations
   loading_in_progress <- shiny::reactiveVal(FALSE)
+  # Track load errors for user notification
+  load_error <- shiny::reactiveVal(NULL)
 
   shiny::reactive({
     if (is.null(table2_data()) && !loading_in_progress()) {
@@ -66,6 +68,7 @@ build_table2_loader <- function(
             },
             onRejected = function(e) {
               loading_in_progress(FALSE)
+              load_error(e$message)
               warning("Async Table 2 loading failed: ", e$message)
             }
           )
@@ -106,7 +109,8 @@ build_table2_loader <- function(
       registry_matches = registry_matches_data(),
       registry_rows = registry_rows_data(),
       sample_sizes = sample_sizes_data(),
-      sample_sizes_hash = sample_sizes_hash_data()
+      sample_sizes_hash = sample_sizes_hash_data(),
+      load_error = load_error()
     )
   })
 }
@@ -125,6 +129,8 @@ build_table2_loader <- function(
 build_sample_size_histogram <- function(load_table2, sample_size_input) {
   shiny::renderPlot({
     data <- load_table2()
+    # Guard against NULL data during lazy loading
+    shiny::req(data)
     sample_sizes <- data$sample_sizes
 
     par(mar = c(3L, 3L, 1L, 1L), bg = "white", family = "Roboto")
@@ -170,7 +176,8 @@ build_sample_size_histogram <- function(load_table2, sample_size_input) {
     }
   }) |>
     shiny::bindCache(
-      load_table2()$sample_sizes_hash,
+      # Safe cache key: use empty string if data not yet loaded
+      if (!is.null(load_table2())) load_table2()$sample_sizes_hash else "",
       sample_size_input()
     )
 }
@@ -203,6 +210,8 @@ build_table2_filtered_data <- function(
 ) {
   shiny::reactive({
     data <- load_table2()
+    # Guard against NULL data during lazy loading
+    shiny::req(data, data$table2, data$registry_rows)
     table2 <- data$table2
     registry_rows <- data$registry_rows
 
@@ -507,6 +516,13 @@ build_table2_datatable <- function(filtered_data2) {
   DT::renderDT(
     {
       display_data <- filtered_data2()
+      # Validate data is available and not empty
+      shiny::validate(
+        shiny::need(
+          !is.null(display_data) && nrow(display_data) > 0L,
+          "No clinical trials match the selected filters. Try adjusting your filter criteria."
+        )
+      )
 
       # Get indices of hidden metadata columns (0-indexed for JS)
       col_names <- names(display_data)

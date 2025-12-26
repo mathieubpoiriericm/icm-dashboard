@@ -28,6 +28,9 @@ build_table1_filtered_data <- function(
   omics_filter
 ) {
   shiny::reactive({
+    # Validate required data is available
+    shiny::req(table1, table1_display)
+
     # Start with all row IDs, filter by intersection (avoids data.table copy)
     kept_rows <- table1$row_id
 
@@ -133,6 +136,15 @@ build_table1_filter_message <- function(
 build_table1_datatable <- function(filtered_data) {
   DT::renderDT(
     {
+      # Get filtered data and validate it's not empty
+      data <- filtered_data()
+      shiny::validate(
+        shiny::need(
+          !is.null(data) && nrow(data) > 0L,
+          "No genes match the selected filters. Try adjusting your filter criteria."
+        )
+      )
+
       # Create custom header with spanning column for Gene Information
       sketch <- htmltools::withTags(table(
         class = "display",
@@ -183,7 +195,7 @@ build_table1_datatable <- function(filtered_data) {
       ))
 
       dt <- DT::datatable(
-        filtered_data(),
+        data,
         container = sketch,
         escape = FALSE,
         rownames = FALSE,

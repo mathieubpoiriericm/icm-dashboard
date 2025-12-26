@@ -93,7 +93,12 @@ if (async_packages_available) {
 }
 
 # Load Roboto font from local file (faster than font_add_google)
-font_add("Roboto", "www/fonts/Roboto-Regular.ttf")
+font_path <- "www/fonts/Roboto-Regular.ttf"
+if (file.exists(font_path)) {
+  font_add("Roboto", font_path)
+} else {
+  warning("Roboto font not found at ", font_path, ", using system default")
+}
 showtext_auto()
 
 # Pre-cache bslib Sass compilation for faster startup
@@ -147,7 +152,12 @@ css_result <- tryCatch(
 )
 
 if (!is.null(css_result)) {
-  reduction <- (1 - css_result$minified / css_result$original) * 100
+  # Guard against division by zero
+  reduction <- if (css_result$original > 0L) {
+    (1 - css_result$minified / css_result$original) * 100
+  } else {
+    0
+  }
   message(sprintf(
     "  CSS minified: %s -> %s bytes (%.1f%% reduction)",
     format(css_result$original, big.mark = ","),
@@ -197,7 +207,12 @@ for (js_file in js_files) {
   )
 
   if (!is.null(js_result)) {
-    reduction <- (1 - js_result$minified / js_result$original) * 100
+    # Guard against division by zero
+    reduction <- if (js_result$original > 0L) {
+      (1 - js_result$minified / js_result$original) * 100
+    } else {
+      0
+    }
     message(sprintf(
       "  %s: %s -> %s bytes (%.1f%% reduction)",
       basename(js_file$output),

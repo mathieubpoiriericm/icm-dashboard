@@ -41,20 +41,36 @@ with_db_connection <- function(
 ) {
   close_con <- FALSE
   if (is.null(con)) {
-    con <- DBI::dbConnect(
-      RPostgres::Postgres(),
-      dbname = dbname,
-      host = host,
-      port = port,
-      user = user,
-      password = password
+    con <- tryCatch(
+      DBI::dbConnect(
+        RPostgres::Postgres(),
+        dbname = dbname,
+        host = host,
+        port = port,
+        user = user,
+        password = password
+      ),
+      error = function(e) {
+        stop(
+          sprintf(
+            "Database connection failed (host=%s, dbname=%s): %s",
+            host, dbname, e$message
+          ),
+          call. = FALSE
+        )
+      }
     )
     close_con <- TRUE
   }
 
   on.exit({
-    if (close_con) {
-      DBI::dbDisconnect(con)
+    if (close_con && !is.null(con)) {
+      tryCatch(
+        DBI::dbDisconnect(con),
+        error = function(e) {
+          warning("Failed to close database connection: ", e$message)
+        }
+      )
     }
   })
 

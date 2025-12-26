@@ -36,6 +36,18 @@ apply_column_filter <- function(
   exclude_all = TRUE,
   match_type = "exact"
 ) {
+  # Type assertions for defensive programming
+  stopifnot(
+    "dt must be a data.table" = data.table::is.data.table(dt),
+    "column must be a single character string" =
+      is.character(column) && length(column) == 1L,
+    "filter_value must be NULL or character" =
+      is.null(filter_value) || is.character(filter_value),
+    "exclude_all must be logical" = is.logical(exclude_all),
+    "match_type must be one of 'exact', 'prefix', 'regex'" =
+      match_type %in% c("exact", "prefix", "regex")
+  )
+
   # Skip if no filter value
   if (is.null(filter_value) || length(filter_value) == 0L) {
     return(dt)
@@ -80,6 +92,17 @@ apply_index_filter <- function(
   row_id_column = "original_row_num",
   exclude_all = TRUE
 ) {
+  # Type assertions for defensive programming
+  stopifnot(
+    "dt must be a data.table" = data.table::is.data.table(dt),
+    "filter_value must be NULL or character" =
+      is.null(filter_value) || is.character(filter_value),
+    "index_map must be a fastmap" = inherits(index_map, "fastmap"),
+    "row_id_column must be a single character string" =
+      is.character(row_id_column) && length(row_id_column) == 1L,
+    "exclude_all must be logical" = is.logical(exclude_all)
+  )
+
   # Skip if no filter value
   if (is.null(filter_value) || length(filter_value) == 0L) {
     return(dt)
@@ -117,6 +140,19 @@ apply_range_filter <- function(
   default_min = NULL,
   default_max = NULL
 ) {
+  # Type assertions for defensive programming
+  stopifnot(
+    "dt must be a data.table" = data.table::is.data.table(dt),
+    "column must be a single character string" =
+      is.character(column) && length(column) == 1L,
+    "range_value must be NULL or numeric vector of length 2" =
+      is.null(range_value) || (is.numeric(range_value) && length(range_value) == 2L),
+    "default_min must be NULL or numeric" =
+      is.null(default_min) || is.numeric(default_min),
+    "default_max must be NULL or numeric" =
+      is.null(default_max) || is.numeric(default_max)
+  )
+
   # Skip if no filter value
   if (is.null(range_value)) {
     return(dt)
