@@ -97,7 +97,8 @@ apply_index_filter <- function(
     "dt must be a data.table" = data.table::is.data.table(dt),
     "filter_value must be NULL or character" =
       is.null(filter_value) || is.character(filter_value),
-    "index_map must be a fastmap" = inherits(index_map, "fastmap"),
+    "index_map must be a fastmap (must have mget method)" =
+      is.list(index_map) && is.function(index_map$mget),
     "row_id_column must be a single character string" =
       is.character(row_id_column) && length(row_id_column) == 1L,
     "exclude_all must be logical" = is.logical(exclude_all)
