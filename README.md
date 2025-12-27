@@ -70,7 +70,7 @@ Interactive Plotly timeline of SVD drugs tested in clinical trials.
 ### Install R Dependencies
 
 ```r
-# Install maRco package (required for data fetching/cleaning)
+# Install maRco package (v0.11.0 - required for data fetching/cleaning)
 devtools::install("maRco")
 
 # Install required CRAN packages
@@ -119,7 +119,7 @@ install.packages(c("future", "promises"))
 ### Install Python Dependencies (for data pipeline)
 
 ```bash
-pip install asyncpg biopython anthropic pydantic
+pip install -r pipeline/requirements.txt
 ```
 
 ### Database Setup (for data pipeline)
@@ -142,6 +142,7 @@ pip install asyncpg biopython anthropic pydantic
 | `DB_HOST` | PostgreSQL host | Pipeline / live data |
 | `DB_PORT` | PostgreSQL port (default: 5432) | Pipeline / live data |
 | `DB_NAME` | Database name | Pipeline / live data |
+| `DB_USER` | Database username | Pipeline / live data |
 | `DB_PASSWORD` | Database password | Pipeline / live data |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM extraction | Pipeline only |
 | `NCBI_API_KEY` | NCBI Entrez API key | Pipeline only |
@@ -284,7 +285,7 @@ See `misc/yaml_files/` for Kubernetes deployment configurations including:
 Run unit tests with:
 
 ```r
-testthat::test_dir("tests/testthat")
+source("tests/test_all.R")
 ```
 
 ## Clinical Trials Visualization
