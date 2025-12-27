@@ -7,12 +7,7 @@ Entrez.email = "mathieu.poirier@icm-institute.org"  # type: ignore[assignment]
 Entrez.api_key = os.getenv("ENTREZ_KEY") or os.getenv("NCBI_API_KEY")  # type: ignore[assignment]
 
 SVD_QUERY = """
-("cerebral small vessel disease"[Title/Abstract] OR
- "white matter hyperintensities"[Title/Abstract] OR
- "lacunar stroke"[Title/Abstract] OR
- "CADASIL"[Title/Abstract]) AND
-("gene"[tiab] OR "genetic"[tiab] OR
- "clinical trial"[tiab] OR "drug"[tiab])
+("cerebral small vessel disease"[Title/Abstract])
 """
 
 
