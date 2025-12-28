@@ -11,11 +11,13 @@
 #' @param app_data List containing prepared application data from
 #'   load_and_prepare_data().
 #' @param table1_display Data frame with pre-computed tooltip HTML for Table 1.
+#' @param preloaded_table2 Optional list containing preloaded Table 2 data.
+#'   If provided, eliminates lazy loading delay on Clinical Trials tabs.
 #'
 #' @return A Shiny server function.
 #'
 #' @export
-build_server <- function(app_data, table1_display) {
+build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
   function(input, output, session) {
     # Extract data from app_data
     table1 <- app_data$table1
@@ -37,9 +39,22 @@ build_server <- function(app_data, table1_display) {
     setup_python_plot_handler(input, session)
 
     # =========================================================================
-    # TABLE 2 LAZY LOADING
+    # TABLE 2 DATA (PRELOADED OR LAZY LOADED)
     # =========================================================================
     table2_reactive_vals <- create_table2_reactive_vals()
+
+    # If preloaded data is available, initialize reactiveVals immediately
+    if (!is.null(preloaded_table2)) {
+      table2_reactive_vals$table2_data(preloaded_table2$table2)
+      table2_reactive_vals$table2_display_data(preloaded_table2$table2_display)
+      table2_reactive_vals$ct_info_data(preloaded_table2$ct_info)
+      table2_reactive_vals$registry_matches_data(preloaded_table2$registry_matches)
+      table2_reactive_vals$registry_rows_data(preloaded_table2$registry_rows)
+      table2_reactive_vals$sample_sizes_data(preloaded_table2$sample_sizes)
+      table2_reactive_vals$sample_sizes_hash_data(preloaded_table2$sample_sizes_hash)
+      message("Using preloaded Table 2 data")
+    }
+
     load_table2 <- build_table2_loader(
       table2_reactive_vals$table2_data,
       table2_reactive_vals$table2_display_data,
@@ -51,6 +66,7 @@ build_server <- function(app_data, table1_display) {
     )
 
     # Trigger Table 2 loading when Clinical Trials tabs are accessed
+    # (only triggers actual loading if not already preloaded)
     setup_table2_lazy_load_trigger(input, load_table2)
 
     # =========================================================================

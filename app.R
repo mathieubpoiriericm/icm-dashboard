@@ -82,12 +82,6 @@ library(qs)
 library(jsonlite)
 library(shinyWidgets)
 
-# Async support for Table 2 loading
-# Enable by setting ASYNC_TABLE2_LOADING <- TRUE in R/constants.R
-library(promises)
-library(future)
-future::plan(future::multisession, workers = 2L)
-
 # Load Roboto font from local file (faster than font_add_google)
 font_path <- "www/fonts/Roboto-Regular.ttf"
 if (file.exists(font_path)) {
@@ -250,16 +244,46 @@ table1_display <- prepare_table1_display(
   tooltip_class_italic = tooltip_class_italic
 )
 
-# Compute dashboard statistics (optimized to avoid loading full Table 2 data)
+# Compute dashboard statistics
 message("Computing dashboard statistics...")
 n_genes <- length(unique(app_data$table1$Gene))
 n_publications <- length(unique(unlist(app_data$table1$References)))
 
-# Load only Table 2 for trial count and drug count (minimal data needed)
-table2 <- safe_read_data(DATA_PATHS$table2_clean)
-n_trials <- length(unique(table2$`Registry ID`))
-n_drugs <- length(unique(table2$Drug))
-rm(table2) # Free memory immediately
+# Preload Table 2 data at startup to eliminate delay on tab switch
+if (PRELOAD_TABLE2) {
+  message("Preloading Table 2 data...")
+  table2_data <- load_table2_data()
+
+  message("Preparing Table 2 display...")
+  table2_display <- prepare_table2_display(
+    table2_data$table2,
+    table2_data$ct_info,
+    table2_data$gene_info_table2,
+    table2_data$gene_symbols_table2
+  )
+
+  # Store preloaded data for server
+  preloaded_table2 <- list(
+    table2 = table2_data$table2,
+    table2_display = table2_display,
+    ct_info = table2_data$ct_info,
+    registry_matches = table2_data$registry_matches,
+    registry_rows = table2_data$registry_rows,
+    sample_sizes = table2_data$sample_sizes,
+    sample_sizes_hash = table2_data$sample_sizes_hash
+  )
+
+  n_trials <- length(unique(table2_data$table2$`Registry ID`))
+  n_drugs <- length(unique(table2_data$table2$Drug))
+  rm(table2_data) # Free intermediate data
+} else {
+  # Lazy loading mode - just get counts
+  table2 <- safe_read_data(DATA_PATHS$table2_clean)
+  n_trials <- length(unique(table2$`Registry ID`))
+  n_drugs <- length(unique(table2$Drug))
+  rm(table2)
+  preloaded_table2 <- NULL
+}
 
 message("Application ready!")
 
@@ -270,7 +294,7 @@ ui <- build_ui(
   n_trials = n_trials,
   n_pubs = n_publications
 )
-server <- build_server(app_data, table1_display)
+server <- build_server(app_data, table1_display, preloaded_table2)
 
 # Configure Shiny options for static asset caching and performance
 options(

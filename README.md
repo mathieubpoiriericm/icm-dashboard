@@ -104,9 +104,7 @@ install.packages(c(
   "qs",
   "parallel",
   "jsonlite",
-  "shinyWidgets",
-  "future",
-  "promises"
+  "shinyWidgets"
 ))
 
 # Install Bioconductor packages
@@ -316,11 +314,10 @@ This creates `www/python_plot.html` and `www/python_plot.js`.
 ### Caching Strategies
 - **In-Memory Caching**: memoise with 50MB cache for tooltips and computed values
 - **Reactive Caching**: bindCache() prevents unnecessary recalculations
-- **Lazy Loading**: Clinical trials table loads only when tab is accessed
+- **Preloaded Data**: Clinical trials table preloaded at startup for instant tab switching
 
 ### UI Responsiveness
 - **Debounced Inputs**: Slider inputs (500ms) and checkbox filters (150ms) debounced
-- **Async Loading**: Optional future/promises support for non-blocking data loads
 
 ## License
 

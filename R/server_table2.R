@@ -5,8 +5,8 @@
 #' Build Table 2 Data Loader
 #'
 #' Creates a reactive that lazily loads Table 2 data only when needed.
-#' Supports async loading with promises/future when ASYNC_TABLE2_LOADING
-#' is TRUE.
+#' If PRELOAD_TABLE2 is TRUE, the data is preloaded at app startup and
+#' this loader simply returns the already-populated reactiveVals.
 #'
 #' @param table2_data reactiveVal. Storage for table2 data.
 #' @param table2_display_data reactiveVal. Storage for display data.
@@ -28,78 +28,29 @@ build_table2_loader <- function(
   sample_sizes_data,
   sample_sizes_hash_data
 ) {
-  # Track loading state for async operations
-  loading_in_progress <- shiny::reactiveVal(FALSE)
-  # Track load errors for user notification
-  load_error <- shiny::reactiveVal(NULL)
-
   shiny::reactive({
-    if (is.null(table2_data()) && !loading_in_progress()) {
+    # Load data if not already loaded (preloaded or lazy)
+    if (is.null(table2_data())) {
       message("Loading Table 2 data...")
 
-      # Check if async loading is enabled and packages are available
-      use_async <- ASYNC_TABLE2_LOADING &&
-        exists("ASYNC_PACKAGES_AVAILABLE") &&
-        ASYNC_PACKAGES_AVAILABLE
+      data <- load_table2_data()
 
-      if (use_async) {
-        # Async loading with future/promises
-        loading_in_progress(TRUE)
-        future::future({
-          load_table2_data()
-        }, seed = TRUE) |>
-          promises::then(
-            onFulfilled = function(data) {
-              table2_display <- prepare_table2_display(
-                data$table2,
-                data$ct_info,
-                data$gene_info_table2,
-                data$gene_symbols_table2
-              )
-              table2_data(data$table2)
-              table2_display_data(table2_display)
-              ct_info_data(data$ct_info)
-              registry_matches_data(data$registry_matches)
-              registry_rows_data(data$registry_rows)
-              sample_sizes_data(data$sample_sizes)
-              sample_sizes_hash_data(data$sample_sizes_hash)
-              loading_in_progress(FALSE)
-              message("Table 2 data loaded successfully (async)")
-            },
-            onRejected = function(e) {
-              loading_in_progress(FALSE)
-              load_error(e$message)
-              warning("Async Table 2 loading failed: ", e$message)
-            }
-          )
-        # Return NULL while loading
-        return(NULL)
-      } else {
-        # Synchronous loading (default)
-        data <- load_table2_data()
+      table2_display <- prepare_table2_display(
+        data$table2,
+        data$ct_info,
+        data$gene_info_table2,
+        data$gene_symbols_table2
+      )
 
-        table2_display <- prepare_table2_display(
-          data$table2,
-          data$ct_info,
-          data$gene_info_table2,
-          data$gene_symbols_table2
-        )
+      table2_data(data$table2)
+      table2_display_data(table2_display)
+      ct_info_data(data$ct_info)
+      registry_matches_data(data$registry_matches)
+      registry_rows_data(data$registry_rows)
+      sample_sizes_data(data$sample_sizes)
+      sample_sizes_hash_data(data$sample_sizes_hash)
 
-        table2_data(data$table2)
-        table2_display_data(table2_display)
-        ct_info_data(data$ct_info)
-        registry_matches_data(data$registry_matches)
-        registry_rows_data(data$registry_rows)
-        sample_sizes_data(data$sample_sizes)
-        sample_sizes_hash_data(data$sample_sizes_hash)
-
-        message("Table 2 data loaded successfully")
-      }
-    }
-
-    # Return NULL if still loading or not yet loaded
-    if (is.null(table2_data())) {
-      return(NULL)
+      message("Table 2 data loaded successfully")
     }
 
     list(
@@ -109,8 +60,7 @@ build_table2_loader <- function(
       registry_matches = registry_matches_data(),
       registry_rows = registry_rows_data(),
       sample_sizes = sample_sizes_data(),
-      sample_sizes_hash = sample_sizes_hash_data(),
-      load_error = load_error()
+      sample_sizes_hash = sample_sizes_hash_data()
     )
   })
 }

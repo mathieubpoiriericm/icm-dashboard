@@ -52,12 +52,11 @@ DATATABLE_PAGE_LENGTH <- 10L
 DATATABLE_SERVER_SIDE <- FALSE
 
 # =============================================================================
-# ASYNC LOADING CONFIGURATION
+# PRELOAD CONFIGURATION
 # =============================================================================
-#' @description Enable async loading for Table 2 data
-#' Requires: promises, future packages
-#' Set to TRUE for non-blocking UI during data load (recommended for slow I/O)
-ASYNC_TABLE2_LOADING <- FALSE
+#' @description Preload Table 2 data at app startup
+#' This eliminates the delay when first accessing Clinical Trials tabs
+PRELOAD_TABLE2 <- TRUE
 
 # =============================================================================
 # CACHE CONFIGURATION
