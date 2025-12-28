@@ -82,15 +82,11 @@ library(qs)
 library(jsonlite)
 library(shinyWidgets)
 
-# Optional: promises and future packages for async Table 2 loading
-# Install with: install.packages(c("promises", "future"))
+# Async support for Table 2 loading
 # Enable by setting ASYNC_TABLE2_LOADING <- TRUE in R/constants.R
-async_packages_available <- requireNamespace("promises", quietly = TRUE) &&
-  requireNamespace("future", quietly = TRUE)
-if (async_packages_available) {
-  message("promises/future packages available - async loading supported")
-  future::plan(future::multisession, workers = 2L)
-}
+library(promises)
+library(future)
+future::plan(future::multisession, workers = 2L)
 
 # Load Roboto font from local file (faster than font_add_google)
 font_path <- "www/fonts/Roboto-Regular.ttf"
