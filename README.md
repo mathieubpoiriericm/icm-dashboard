@@ -104,16 +104,15 @@ install.packages(c(
   "qs",
   "parallel",
   "jsonlite",
-  "shinyWidgets"
+  "shinyWidgets",
+  "future",
+  "promises"
 ))
 
 # Install Bioconductor packages
 if (!require("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
 BiocManager::install(c("biomaRt", "UniprotR"))
-
-# Optional packages for async data loading
-install.packages(c("future", "promises"))
 ```
 
 ### Install Python Dependencies (for data pipeline)
