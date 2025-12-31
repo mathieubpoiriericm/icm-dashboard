@@ -166,7 +166,7 @@ safe_read_csv <- function(file_path) {
 #'     for fast filtering}
 #'   \item{omics_type_rows}{List of row indices per omics type
 #'     for fast filtering}
-#'   \item{omim_info}{OMIM phenotype information}
+#'   \item{omim_lookup}{fastmap for O(1) OMIM lookups by omim_num}
 #'   \item{refs}{Publication references for tooltips}
 #' }
 #'
@@ -292,85 +292,57 @@ load_and_prepare_data <- function() {
   )
 
   # Pre-compute GWAS trait membership for fast filtering (using fastmap)
-  # Optimized: use vapply instead of purrr::map_lgl for faster iteration
+  # Vectorized: expand list column to long format, then split by trait
   gwas_trait_rows <- fastmap::fastmap()
   gwas_col <- table1$`GWAS Trait`
-  for (trait in unique_gwas_traits) {
-    gwas_trait_rows$set(
-      trait,
-      which(vapply(
-        gwas_col,
-        function(x) any(x %in% trait),
-        logical(1L)
-      ))
-    )
-  }
+  n_rows <- length(gwas_col)
 
-  # Add "(none found)" rows for filtering
-  gwas_trait_rows$set(
-    PLACEHOLDER_NONE_FOUND,
-    which(vapply(
-      gwas_col,
-      function(traits) {
-        if (is.list(traits)) {
-          traits <- traits[[1L]]
-        }
-        length(traits) == 0L ||
-          is.null(traits) ||
-          (length(traits) == 1L &&
-             (is.na(traits[1L]) || traits[1L] == PLACEHOLDER_NONE_FOUND))
-      },
-      logical(1L)
-    ))
-  )
+  # Build expanded data.table: row_id -> trait mapping
+  gwas_expanded <- data.table::rbindlist(lapply(seq_len(n_rows), function(i) {
+    traits <- gwas_col[[i]]
+    if (is.list(traits)) traits <- traits[[1L]]
+    if (length(traits) == 0L || is.null(traits) ||
+          (length(traits) == 1L && (is.na(traits[1L]) ||
+                                      traits[1L] == PLACEHOLDER_NONE_FOUND))) {
+      data.table::data.table(row_id = i, trait = PLACEHOLDER_NONE_FOUND)
+    } else {
+      data.table::data.table(row_id = i, trait = traits)
+    }
+  }))
+
+  # Split row indices by trait (vectorized grouping)
+  gwas_split <- split(gwas_expanded$row_id, gwas_expanded$trait)
+  for (trait in names(gwas_split)) {
+    gwas_trait_rows$set(trait, gwas_split[[trait]])
+  }
 
   # Pre-compute omics type membership for fast filtering (using fastmap)
-  # Optimized: use vapply instead of purrr::map_lgl for faster iteration
+  # Vectorized: expand list column to long format, then split by type
   omics_type_rows <- fastmap::fastmap()
   omics_col <- table1$`Evidence From Other Omics Studies`
-  for (omics_type in omics_df$Omics_Type) {
-    omics_type_rows$set(
-      omics_type,
-      which(vapply(
-        omics_col,
-        function(omics_evidence) {
-          if (
-            length(omics_evidence) > 0L &&
-              omics_evidence[1L] != PLACEHOLDER_NONE_FOUND
-          ) {
-            omics_types <- vapply(
-              omics_evidence,
-              function(x) sub(";.*", "", x),
-              character(1L)
-            )
-            any(omics_types == omics_type)
-          } else {
-            FALSE
-          }
-        },
-        logical(1L)
-      ))
-    )
-  }
 
-  # Add "(none found)" rows for omics filtering
-  omics_type_rows$set(
-    PLACEHOLDER_NONE_FOUND,
-    which(vapply(
-      omics_col,
-      function(omics_evidence) {
-        if (is.list(omics_evidence)) {
-          omics_evidence <- omics_evidence[[1L]]
-        }
-        length(omics_evidence) == 0L ||
-          is.null(omics_evidence) ||
+  # Build expanded data.table: row_id -> omics_type mapping
+  omics_expanded <- data.table::rbindlist(lapply(seq_len(n_rows), function(i) {
+    omics_evidence <- omics_col[[i]]
+    if (is.list(omics_evidence)) omics_evidence <- omics_evidence[[1L]]
+    if (length(omics_evidence) == 0L || is.null(omics_evidence) ||
           (length(omics_evidence) == 1L &&
              (is.na(omics_evidence[1L]) ||
-                omics_evidence[1L] == PLACEHOLDER_NONE_FOUND))
-      },
-      logical(1L)
-    ))
-  )
+                omics_evidence[1L] == PLACEHOLDER_NONE_FOUND))) {
+      data.table::data.table(row_id = i, omics_type = PLACEHOLDER_NONE_FOUND)
+    } else {
+      # Extract omics type prefix (before semicolon)
+      omics_types <- vapply(omics_evidence, function(x) sub(";.*", "", x),
+                            character(1L))
+      data.table::data.table(row_id = i, omics_type = omics_types)
+    }
+  }))
+
+  # Split row indices by omics type (vectorized grouping)
+  omics_split <- split(omics_expanded$row_id, omics_expanded$omics_type)
+  for (omics_type in names(omics_split)) {
+    omics_type_rows$set(omics_type, omics_split[[omics_type]])
+  }
 
   # Load OMIM info (using safe CSV reader)
   message("Loading OMIM info...")
@@ -442,7 +414,6 @@ load_and_prepare_data <- function() {
     gwas_trait_mapping = gwas_trait_mapping,
     gwas_trait_rows = gwas_trait_rows,
     omics_type_rows = omics_type_rows,
-    omim_info = omim_info,
     omim_lookup = omim_lookup,
     refs = refs
   )

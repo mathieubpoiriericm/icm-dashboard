@@ -402,7 +402,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         ),
         shiny::tags$iframe(
           src = "phenogram_template.html",
-          class = "viz-iframe phenogram-iframe"
+          class = "viz-iframe phenogram-iframe",
+          loading = "lazy"
         )
       )
     ),
@@ -615,7 +616,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
           class = "iframe-container",
           shiny::tags$iframe(
             src = "python_plot.html",
-            class = "viz-iframe trials-iframe"
+            class = "viz-iframe trials-iframe",
+            loading = "lazy"
           )
         )
       )

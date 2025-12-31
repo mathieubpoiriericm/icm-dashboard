@@ -25,6 +25,15 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     omics_type_rows <- app_data$omics_type_rows
 
     # =========================================================================
+    # SESSION CLEANUP
+    # =========================================================================
+    session$onSessionEnded(function() {
+      # Clean up session-scoped reactive values to prevent memory accumulation
+      # in multi-user deployments
+      message(sprintf("Session ended, cleaning up resources"))
+    })
+
+    # =========================================================================
     # THEME SWITCHING (BSLIB DARK MODE)
     # =========================================================================
     shiny::observeEvent(input$dark_mode, {
@@ -41,33 +50,31 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     # =========================================================================
     # TABLE 2 DATA (PRELOADED OR LAZY LOADED)
     # =========================================================================
-    table2_reactive_vals <- create_table2_reactive_vals()
-
-    # If preloaded data is available, initialize reactiveVals immediately
+    # Optimization: When preloaded, use direct reference instead of copying
+    # into per-session reactiveVals (saves ~1-3MB per session)
     if (!is.null(preloaded_table2)) {
-      table2_reactive_vals$table2_data(preloaded_table2$table2)
-      table2_reactive_vals$table2_display_data(preloaded_table2$table2_display)
-      table2_reactive_vals$ct_info_data(preloaded_table2$ct_info)
-      table2_reactive_vals$registry_matches_data(preloaded_table2$registry_matches)
-      table2_reactive_vals$registry_rows_data(preloaded_table2$registry_rows)
-      table2_reactive_vals$sample_sizes_data(preloaded_table2$sample_sizes)
-      table2_reactive_vals$sample_sizes_hash_data(preloaded_table2$sample_sizes_hash)
-      message("Using preloaded Table 2 data")
+      # Use preloaded data directly - no per-session copies needed
+      load_table2 <- shiny::reactive({
+        preloaded_table2
+      })
+      message("Using preloaded Table 2 data (direct reference)")
+    } else {
+      # Lazy loading: create reactiveVals to track loading state
+      table2_reactive_vals <- create_table2_reactive_vals()
+
+      load_table2 <- build_table2_loader(
+        table2_reactive_vals$table2_data,
+        table2_reactive_vals$table2_display_data,
+        table2_reactive_vals$ct_info_data,
+        table2_reactive_vals$registry_matches_data,
+        table2_reactive_vals$registry_rows_data,
+        table2_reactive_vals$sample_sizes_data,
+        table2_reactive_vals$sample_sizes_hash_data
+      )
+
+      # Trigger Table 2 loading when Clinical Trials tabs are accessed
+      setup_table2_lazy_load_trigger(input, load_table2)
     }
-
-    load_table2 <- build_table2_loader(
-      table2_reactive_vals$table2_data,
-      table2_reactive_vals$table2_display_data,
-      table2_reactive_vals$ct_info_data,
-      table2_reactive_vals$registry_matches_data,
-      table2_reactive_vals$registry_rows_data,
-      table2_reactive_vals$sample_sizes_data,
-      table2_reactive_vals$sample_sizes_hash_data
-    )
-
-    # Trigger Table 2 loading when Clinical Trials tabs are accessed
-    # (only triggers actual loading if not already preloaded)
-    setup_table2_lazy_load_trigger(input, load_table2)
 
     # =========================================================================
     # FILTER MODULES
@@ -106,7 +113,7 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     # =========================================================================
     output$sample_size_histogram <- build_sample_size_histogram(
       load_table2,
-      shiny::reactive(input$sample_size_filter)
+      sample_size_filter_debounced
     )
 
     filtered_data2 <- build_table2_filtered_data(

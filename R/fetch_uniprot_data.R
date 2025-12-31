@@ -7,14 +7,22 @@
 #'
 #' @param genes A character vector of gene symbols.
 #' @param organism NCBI taxonomy ID. Defaults to "9606" (Homo sapiens).
+#' @param delay Numeric. Seconds to wait between API requests to avoid rate
+#'   limiting. Defaults to 0.1 (100ms).
 #'
 #' @return A data.frame with columns: gene, accession, protein_name.
 #'
 #' @export
-fetch_uniprot_accessions <- function(genes, organism = "9606") {
+fetch_uniprot_accessions <- function(genes, organism = "9606", delay = 0.1) {
   base_url <- "https://rest.uniprot.org/uniprotkb/search"
 
-  results <- lapply(genes, function(gene) {
+  results <- lapply(seq_along(genes), function(i) {
+    gene <- genes[i]
+
+    # Rate limiting: pause between requests (skip first request)
+    if (i > 1L && delay > 0) {
+      Sys.sleep(delay)
+    }
     # UniProt query:
     # gene_exact matches official names
     # gene matches synonyms
@@ -182,17 +190,21 @@ generate_uniprot_urls <- function(accession_ids) {
 #' @param genes A character vector of gene symbols.
 #' @param organism NCBI taxonomy ID. Defaults to "9606" (Homo sapiens).
 #' @param verbose If TRUE, prints progress messages. Defaults to FALSE.
+#' @param delay Numeric. Seconds to wait between API requests to avoid rate
+#'   limiting. Defaults to 0.1 (100ms).
 #'
 #' @return A data.frame with gene, accession, GO info, and URL columns.
 #'
 #' @export
-fetch_uniprot_data <- function(genes, organism = "9606", verbose = FALSE) {
+fetch_uniprot_data <- function(genes, organism = "9606", verbose = FALSE,
+                               delay = 0.1) {
   if (verbose) {
     message("Fetching UniProt accession IDs...")
   }
 
   # Fetch accession IDs
-  accession_data <- fetch_uniprot_accessions(genes, organism = organism)
+  accession_data <- fetch_uniprot_accessions(genes, organism = organism,
+                                             delay = delay)
 
   # Get valid accession IDs for GO lookup
   valid_accessions <- accession_data$accession[!is.na(accession_data$accession)]

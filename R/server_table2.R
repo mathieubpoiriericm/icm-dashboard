@@ -77,59 +77,66 @@ build_table2_loader <- function(
 #'
 #' @keywords internal
 build_sample_size_histogram <- function(load_table2, sample_size_input) {
-  shiny::renderPlot({
-    data <- load_table2()
-    # Guard against NULL data during lazy loading
-    shiny::req(data)
-    sample_sizes <- data$sample_sizes
+  shiny::renderCachedPlot(
+    {
+      data <- load_table2()
+      # Guard against NULL data during lazy loading
+      shiny::req(data)
+      sample_sizes <- data$sample_sizes
 
-    par(mar = c(3L, 3L, 1L, 1L), bg = "white", family = "Roboto")
-    hist(
-      sample_sizes,
-      breaks = HISTOGRAM_BREAKS,
-      col = "#2d287a",
-      border = "white",
-      main = "",
-      xlab = "",
-      ylab = "",
-      xlim = c(0L, HISTOGRAM_XLIM_MAX),
-      las = 1L,
-      xaxt = "n"
-    )
-    axis(
-      1L,
-      at = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
-      labels = FALSE
-    )
-    text(
-      x = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
-      y = par("usr")[3L] - 0.5,
-      labels = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
-      srt = 45L,
-      adj = 1L,
-      xpd = TRUE
-    )
+      par(mar = c(3L, 3L, 1L, 1L), bg = "white", family = "Roboto")
+      hist(
+        sample_sizes,
+        breaks = HISTOGRAM_BREAKS,
+        col = "#2d287a",
+        border = "white",
+        main = "",
+        xlab = "",
+        ylab = "",
+        xlim = c(0L, HISTOGRAM_XLIM_MAX),
+        las = 1L,
+        xaxt = "n"
+      )
+      axis(
+        1L,
+        at = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
+        labels = FALSE
+      )
+      text(
+        x = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
+        y = par("usr")[3L] - 0.5,
+        labels = seq(0L, HISTOGRAM_XLIM_MAX, by = HISTOGRAM_TICK_INTERVAL),
+        srt = 45L,
+        adj = 1L,
+        xpd = TRUE
+      )
 
-    if (!is.null(sample_size_input())) {
-      abline(
-        v = sample_size_input()[1L],
-        col = "#e52f12",
-        lwd = 2L,
-        lty = 2L
+      if (!is.null(sample_size_input())) {
+        abline(
+          v = sample_size_input()[1L],
+          col = "#e52f12",
+          lwd = 2L,
+          lty = 2L
+        )
+        abline(
+          v = sample_size_input()[2L],
+          col = "#e52f12",
+          lwd = 2L,
+          lty = 2L
+        )
+      }
+    },
+    cacheKeyExpr = {
+      data <- load_table2()
+      list(
+        sample_sizes_hash = if (!is.null(data)) data$sample_sizes_hash else "",
+        range = sample_size_input()
       )
-      abline(
-        v = sample_size_input()[2L],
-        col = "#e52f12",
-        lwd = 2L,
-        lty = 2L
-      )
-    }
-  }) |>
-    shiny::bindCache(
-      # Safe cache key: use empty string if data not yet loaded
-      if (!is.null(load_table2())) load_table2()$sample_sizes_hash else "",
-      sample_size_input()
+    },
+    sizePolicy = shiny::sizeGrowthRatio(
+      width = 400, height = 180, growthRate = 1.2
     )
+  )
 }
 
 #' Build Table 2 Filtered Data Reactive
@@ -339,9 +346,9 @@ add_drug_group_indices <- function(display_df) {
       current_drug_group <- drug_group_idx[i]
 
       while (i < n_rows &&
-             vals[i + 1L] == current_val &&
-             current_val != "" &&
-             drug_group_idx[i + 1L] == current_drug_group) {
+               vals[i + 1L] == current_val &&
+               current_val != "" &&
+               drug_group_idx[i + 1L] == current_drug_group) {
         i <- i + 1L
       }
 
@@ -470,7 +477,10 @@ build_table2_datatable <- function(filtered_data2) {
       shiny::validate(
         shiny::need(
           !is.null(display_data) && nrow(display_data) > 0L,
-          "No clinical trials match the selected filters. Try adjusting your filter criteria."
+          paste(
+            "No clinical trials match the selected filters.",
+            "Try adjusting your filter criteria."
+          )
         )
       )
 
@@ -527,7 +537,7 @@ build_table2_datatable <- function(filtered_data2) {
 
               if (numRows === 0) return;
 
-              // Columns to merge (Drug, Genetic Target, Trial Phase, Population)
+              // Columns to merge (Drug, Target, Phase, Population)
               var columnsToMerge = [0, 1, 2, 3];
 
               // Reset all mergeable cells to default state first
@@ -555,13 +565,17 @@ build_table2_datatable <- function(filtered_data2) {
                 return;
               }
 
-              // Get pre-computed metadata from hidden columns (single API call each)
-              var colorClasses = api.column(%d, {page: 'current'}).data().toArray();
-              var rowspansData = api.column(%d, {page: 'current'}).data().toArray();
+              // Get pre-computed metadata from hidden columns
+              var colorClasses = api
+                .column(%d, {page: 'current'}).data().toArray();
+              var rowspansData = api
+                .column(%d, {page: 'current'}).data().toArray();
 
-              // Use cached colors from initComplete, fallback if not available
-              var stripeColor = this._stripeColor || $(rows[0]).css('background-color');
-              var whiteColor = this._whiteColor || $(rows[1]).css('background-color');
+              // Use cached colors from initComplete, fallback if needed
+              var stripeColor = this._stripeColor ||
+                $(rows[0]).css('background-color');
+              var whiteColor = this._whiteColor ||
+                $(rows[1]).css('background-color');
               var colors = [whiteColor, stripeColor];
 
               // Single pass: apply pre-computed colors and rowspans
