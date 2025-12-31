@@ -1,17 +1,17 @@
 name: Weekly cSVD Pipeline Update
 
 on:
-  schedule:
-    - cron: "0 6 * * 1" # Every Monday at 6 AM UTC
+  # schedule:
+  #   - cron: "0 6 * * 1" # Every Monday at 6 AM UTC (disabled for testing)
   workflow_dispatch: # Manual trigger
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: csvd_user
           POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Install Python dependencies
         run: pip install -r pipeline/requirements.txt

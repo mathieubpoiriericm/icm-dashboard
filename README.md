@@ -70,7 +70,7 @@ Interactive Plotly timeline of SVD drugs tested in clinical trials.
 ### Install R Dependencies
 
 ```r
-# Install maRco package (v0.11.0 - required for data fetching/cleaning)
+# Install maRco package (v0.12.0 - required for data fetching/cleaning)
 devtools::install("maRco")
 
 # Install required CRAN packages
@@ -303,21 +303,28 @@ This creates `www/python_plot.html` and `www/python_plot.js`.
 - **Disk Cache**: bslib Sass cache with 30-day TTL avoids recompilation
 - **Local Fonts**: Roboto loaded from local files (faster than Google Fonts CDN)
 - **Optimized Statistics**: Dashboard counts load minimal data, freeing memory immediately
+- **Vectorized Index Building**: GWAS trait and omics type indices built using `data.table::rbindlist()` + `split()` instead of row-by-row `vapply` loops
 
 ### Runtime Optimizations
 - **Fast Serialization**: QS format for data files (3-5x faster than RDS)
 - **Fast Indexing**: fastmap for O(1) row lookups in filter operations
+- **O(1) OMIM Lookups**: `omim_lookup` fastmap for constant-time OMIM data retrieval
 - **Data.table**: Efficient filtering with data.table instead of dplyr
 - **Pre-computed Display**: Tooltips and display tables generated at startup, not runtime
 - **Pre-computed Indices**: Filter row indices pre-computed for instant filter application
+- **Direct Data References**: Preloaded Table 2 data uses direct reference instead of per-session copies (~1-3MB savings per session)
+- **Session Memory Cleanup**: Explicit `session$onSessionEnded` handler clears per-session data in multi-user deployments
+- **API Rate Limiting**: UniProt API requests throttled with 100ms delay to avoid rate limiting (configurable via `delay` parameter)
 
 ### Caching Strategies
 - **In-Memory Caching**: memoise with 50MB cache for tooltips and computed values
 - **Reactive Caching**: bindCache() prevents unnecessary recalculations
 - **Preloaded Data**: Clinical trials table preloaded at startup for instant tab switching
+- **Cached Plots**: Sample size histogram uses `renderCachedPlot()` with `sizeGrowthRatio()` for size-responsive caching
 
 ### UI Responsiveness
 - **Debounced Inputs**: Slider inputs (500ms) and checkbox filters (150ms) debounced
+- **Lazy-Loaded Iframes**: Phenogram and clinical trials visualizations use browser-native `loading="lazy"` attribute
 
 ## License
 
