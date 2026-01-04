@@ -1,12 +1,13 @@
 // Dashboard Custom JavaScript
 
-// Utility: Progressive retry with exponential backoff (consolidates scattered setTimeout chains)
+// Utility: Debounced retry - executes immediately then once after delay
+// Reduced from multiple retries to minimize mid-scroll disruption
 function progressiveRetry(fn, delays) {
-  delays = delays || [50, 150, 400];
-  fn(); // Execute immediately
-  delays.forEach(function(delay) {
-    setTimeout(fn, delay);
-  });
+  // Execute immediately
+  fn();
+  // Single delayed retry (use last delay value for stability, or default 200ms)
+  var finalDelay = (delays && delays.length > 0) ? delays[delays.length - 1] : 200;
+  setTimeout(fn, finalDelay);
 }
 
 // Python plot handling
@@ -178,37 +179,71 @@ $(document).on('init.dt', function(e, settings) {
     scrollContainer.before(topScrollbar);
 
     var topScrollbarEl = topScrollbar[0];
-    var isSyncing = false;
 
-    // Sync top scrollbar -> table scroll
-    topScrollbarEl.addEventListener('scroll', function() {
-      if (!isSyncing) {
-        isSyncing = true;
-        scrollBodyEl.scrollLeft = topScrollbarEl.scrollLeft;
-        isSyncing = false;
+    // Unified RAF-based scroll sync to prevent WebKit layout thrashing
+    // Uses a single RAF and tracks which element initiated the scroll
+    var syncRAF = null;
+    var syncSource = null;  // 'top' or 'body'
+    var lastSyncTime = 0;
+    var SYNC_COOLDOWN = 16;  // ~1 frame at 60fps
+
+    function syncScroll(source) {
+      var now = performance.now();
+      // Ignore if this is a programmatic scroll from the sync itself
+      if (syncSource && syncSource !== source && (now - lastSyncTime) < SYNC_COOLDOWN) {
+        return;
       }
+
+      if (syncRAF) {
+        cancelAnimationFrame(syncRAF);
+      }
+
+      syncSource = source;
+      syncRAF = requestAnimationFrame(function() {
+        lastSyncTime = performance.now();
+        if (source === 'top') {
+          scrollBodyEl.scrollLeft = topScrollbarEl.scrollLeft;
+        } else {
+          topScrollbarEl.scrollLeft = scrollBodyEl.scrollLeft;
+        }
+        syncRAF = null;
+        // Reset source after a brief delay to allow the programmatic scroll to settle
+        setTimeout(function() { syncSource = null; }, SYNC_COOLDOWN);
+      });
+    }
+
+    topScrollbarEl.addEventListener('scroll', function() {
+      syncScroll('top');
     }, { passive: true });
 
-    // Sync table scroll -> top scrollbar
     scrollBodyEl.addEventListener('scroll', function() {
-      if (!isSyncing) {
-        isSyncing = true;
-        topScrollbarEl.scrollLeft = scrollBodyEl.scrollLeft;
-        isSyncing = false;
-      }
+      syncScroll('body');
     }, { passive: true });
 
     // Scroll state management for disabling hover during scroll
+    // Also RAF-debounced to prevent class toggle thrashing
     var scrollEndTimer = null;
+    var scrollStateRAF = null;
+    var isScrolling = false;
 
     function onScrollStart() {
-      if (!scrollBodyEl.classList.contains('is-scrolling')) {
-        scrollBodyEl.classList.add('is-scrolling');
-      }
-      clearTimeout(scrollEndTimer);
-      scrollEndTimer = setTimeout(function() {
-        scrollBodyEl.classList.remove('is-scrolling');
-      }, 150);
+      // Skip if we already have a pending RAF for scroll state
+      if (scrollStateRAF) return;
+
+      scrollStateRAF = requestAnimationFrame(function() {
+        scrollStateRAF = null;
+
+        if (!isScrolling) {
+          isScrolling = true;
+          scrollBodyEl.classList.add('is-scrolling');
+        }
+
+        clearTimeout(scrollEndTimer);
+        scrollEndTimer = setTimeout(function() {
+          isScrolling = false;
+          scrollBodyEl.classList.remove('is-scrolling');
+        }, 150);
+      });
     }
 
     scrollBodyEl.addEventListener('scroll', onScrollStart, { passive: true });

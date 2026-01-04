@@ -203,6 +203,8 @@ h2 {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   contain: paint;
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* WebKit-specific horizontal scroll optimization */
@@ -210,11 +212,8 @@ h2 {
   .dataTables_scrollBody {
     scroll-behavior: auto;
   }
-
-  .dataTables_scrollBody table {
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-  }
+  /* Note: Removed translateZ(0) from inner table to reduce GPU layer count.
+     The scroll container already has translate3d which is sufficient. */
 }
 
 /* Hide top scrollbar to prevent WebKit screen tearing from dual scrollbar sync */
@@ -270,6 +269,8 @@ h2 {
   transform: translate3d(0, 0, 0);
   position: relative;
   z-index: 1;
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
 }
 
 .top-scrollbar-inner {
@@ -336,9 +337,8 @@ table.dataTable {
   border: 1px solid #e1e4e8;
   overflow: hidden;
   table-layout: auto;
-  /* GPU layer for the table itself to prevent tearing */
-  -webkit-transform: translate3d(0, 0, 0);
-  transform: translate3d(0, 0, 0);
+  /* Containment for scroll performance - isolates layout/paint calculations */
+  contain: layout paint;
   isolation: isolate;
 }
 
@@ -423,9 +423,18 @@ table.dataTable tbody tr:hover {
   background-color: #f8f9f9;
 }
 
-/* Disable hover effects during scroll to prevent tearing */
+/* Disable hover effects and transitions during scroll to prevent tearing */
 .dataTables_scrollBody.is-scrolling table.dataTable tbody {
   pointer-events: none;
+}
+
+.dataTables_scrollBody.is-scrolling table.dataTable,
+.dataTables_scrollBody.is-scrolling table.dataTable * {
+  transition: none !important;
+}
+
+.dataTables_scrollBody.is-scrolling table.dataTable tbody tr {
+  background-color: transparent !important;
 }
 
 table.dataTable tbody tr td i {
