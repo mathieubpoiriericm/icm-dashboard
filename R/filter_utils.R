@@ -147,7 +147,8 @@ apply_range_filter <- function(
     "column must be a single character string" =
       is.character(column) && length(column) == 1L,
     "range_value must be NULL or numeric vector of length 2" =
-      is.null(range_value) || (is.numeric(range_value) && length(range_value) == 2L),
+      is.null(range_value) ||
+      (is.numeric(range_value) && length(range_value) == 2L),
     "default_min must be NULL or numeric" =
       is.null(default_min) || is.numeric(default_min),
     "default_max must be NULL or numeric" =

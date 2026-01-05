@@ -141,7 +141,10 @@ build_table1_datatable <- function(filtered_data) {
       shiny::validate(
         shiny::need(
           !is.null(data) && nrow(data) > 0L,
-          "No genes match the selected filters. Try adjusting your filter criteria."
+          paste(
+            "No genes match the selected filters.",
+            "Try adjusting your filter criteria."
+          )
         )
       )
 
