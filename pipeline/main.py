@@ -38,10 +38,15 @@ from pipeline.database import Database, get_existing_pmids, record_processed_pmi
 from pipeline.quality_metrics import PipelineMetrics  # noqa: E402
 
 # Configure logging
+LOG_FILE = PROJECT_ROOT / "logs" / "pipeline.log"
+LOG_FILE.parent.mkdir(exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_FILE),
+    ],
 )
 logger = logging.getLogger(__name__)
 
