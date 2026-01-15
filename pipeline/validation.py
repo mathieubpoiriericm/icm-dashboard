@@ -37,28 +37,23 @@ async def validate_gene_entry(entry: dict) -> ValidationResult:
         warnings.append(f"Normalized '{gene_symbol}' -> '{ncbi_info['symbol']}'")
         entry["gene_symbol"] = ncbi_info["symbol"]
 
-    # Stage 3: GWAS trait validation (matches dashboard's actual GWAS traits)
-    valid_traits = {
-        "WMH",
-        "SVS",
-        "BG-PVS",
-        "WM-PVS",
-        "HIP-PVS",
-        "PSMD",
-        "extreme-cSVD",
-        "FA",
-        "lacunes",
-        "stroke",
-    }
-    for trait in entry.get("gwas_trait", []):
-        if trait not in valid_traits:
-            warnings.append(f"Unknown GWAS trait: {trait}")
-
-    # Stage 4: OMIM validation (if provided)
-    if entry.get("omim_number"):
-        omim_valid = await verify_omim_number(entry["omim_number"])
-        if not omim_valid:
-            warnings.append(f"OMIM {entry['omim_number']} not verified")
+    # Stage 3: GWAS trait validation (only if traits provided)
+    if entry.get("gwas_trait"):
+        valid_traits = {
+            "WMH",
+            "SVS",
+            "BG-PVS",
+            "WM-PVS",
+            "HIP-PVS",
+            "PSMD",
+            "extreme-cSVD",
+            "FA",
+            "lacunes",
+            "stroke",
+        }
+        for trait in entry["gwas_trait"]:
+            if trait not in valid_traits:
+                warnings.append(f"Unknown GWAS trait: {trait}")
 
     return ValidationResult(True, errors, warnings, entry)
 
@@ -78,31 +73,6 @@ async def verify_ncbi_gene(symbol: str) -> Optional[dict]:
             gene_id = data["esearchresult"]["idlist"][0]
             return await fetch_gene_details(gene_id)
     return None
-
-
-async def verify_omim_number(omim_number: str) -> bool:
-    """Verify OMIM number format and basic validity.
-
-    OMIM numbers are 6-digit identifiers. Full API access requires registration,
-    so we perform basic format validation and optionally check the OMIM website.
-    """
-    import re
-
-    # Validate 6-digit format
-    if not re.match(r"^\d{6}$", str(omim_number).strip()):
-        return False
-
-    # Attempt to verify via OMIM website (no API key required for basic check)
-    url = f"https://omim.org/entry/{omim_number}"
-
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-        try:
-            resp = await client.head(url)
-            # 200 = exists, 404 = not found
-            return resp.status_code == 200
-        except Exception:
-            # If we can't reach OMIM, accept valid format
-            return True
 
 
 async def fetch_gene_details(gene_id: str) -> Optional[dict]:

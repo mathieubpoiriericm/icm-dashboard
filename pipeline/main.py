@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -34,12 +35,10 @@ from pipeline.pdf_retrieval import get_fulltext  # noqa: E402
 from pipeline.llm_extraction import extract_from_paper  # noqa: E402
 from pipeline.validation import validate_gene_entry  # noqa: E402
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
-from pipeline.database import Database, get_existing_pmids, record_processed_pmid  # noqa: E402
+from pipeline.database import Database, get_existing_pmids, record_processed_pmid, reset_sequence  # noqa: E402
 from pipeline.quality_metrics import PipelineMetrics  # noqa: E402
 
 # Configure logging
-from datetime import datetime
-
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
@@ -199,6 +198,9 @@ async def run_pipeline(
 
     # Step 4: Merge into database
     logger.info("Step 4: Merging validated data into database...")
+
+    # Reset sequences to avoid primary key conflicts
+    await reset_sequence("genes")
 
     if all_genes:
         gene_result = await merge_gene_entries(all_genes)

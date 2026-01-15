@@ -8,33 +8,44 @@ client = anthropic.Anthropic()
 
 class GeneEntry(BaseModel):
     gene_symbol: str
-    protein_name: Optional[str]
-    gwas_trait: List[str]
-    mendelian_randomization: bool
-    omics_evidence: List[str]
-    omim_number: Optional[str]
-    brain_cell_types: Optional[str]
-    affected_pathway: Optional[str]
-    confidence: float  # 0.0-1.0
+    protein_name: Optional[str] = None
+    gwas_trait: List[str] = []  # Optional: default empty list
+    mendelian_randomization: bool = False  # Optional: default False
+    omics_evidence: List[str] = []  # Optional: default empty list
+    confidence: float  # Required: 0.0-1.0
+    causal_evidence_summary: Optional[str] = None  # Brief explanation of causal evidence
 
 
-EXTRACTION_PROMPT = """You are extracting structured data from an SVD research paper.
+EXTRACTION_PROMPT = """You are an expert in cerebral small vessel disease (cSVD) research and multi-omics studies (genomics, transcriptomics, proteomics, epigenomics).
 
-TASK: Extract genes relevant to cerebral small vessel disease (cSVD).
+TASK: Extract genes that are putatively causally linked to cSVD.
 
-Extract gene entries where the gene is:
-- Identified in GWAS for SVD phenotypes (WMH, SVS, lacunar stroke, PVS, etc.)
-- Supported by Mendelian randomization evidence
-- Identified in TWAS, PWAS, EWAS, or other omics studies
-- Linked to monogenic SVD conditions (e.g., CADASIL, CARASIL, Fabry disease)
+PRIMARY CRITERION (REQUIRED):
+Include genes where the paper presents ANY evidence suggesting a putative causal relationship with cSVD or cSVD-related phenotypes:
+- White matter hyperintensities (WMH)
+- Lacunar stroke / lacunar infarcts
+- Perivascular spaces (PVS, BG-PVS, WM-PVS)
+- Small vessel stroke (SVS)
+- Cerebral microbleeds
+- PSMD (peak width of skeletonized mean diffusivity)
+- Other cSVD imaging markers
+
+Putative causal evidence includes: GWAS associations, fine-mapping, colocalization, Mendelian randomization, functional studies, expression QTLs, animal/cell models, or any mechanistic evidence linking the gene to cSVD pathology.
+
+OPTIONAL SUPPORTING EVIDENCE (record if present, but NOT required):
+- gwas_trait: Specific GWAS phenotype associations
+- mendelian_randomization: Whether MR evidence supports causality
+- omics_evidence: Results from TWAS, PWAS, EWAS, or other omics studies
+
+For each gene, provide a brief causal_evidence_summary explaining WHY it is considered causally linked.
 
 CONFIDENCE SCORING:
-- 1.0: Explicit statement with clear evidence
-- 0.7-0.9: Strong implication with supporting context
-- 0.4-0.6: Mentioned but evidence unclear
-- <0.4: Tangential mention, likely not relevant
+- 1.0: Direct causal evidence explicitly stated
+- 0.7-0.9: Strong causal implication with supporting context
+- 0.4-0.6: Mentioned in causal context but evidence is weak
+- <0.4: Tangential mention, no clear causal implication
 
-Return valid JSON with a "genes" array. If no relevant genes found, return {"genes": []}."""
+Return valid JSON with a "genes" array. If no causally-linked genes found, return {"genes": []}."""
 
 
 def extract_from_paper(text: str, pmid: str) -> List[dict]:

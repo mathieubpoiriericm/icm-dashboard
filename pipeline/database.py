@@ -56,6 +56,21 @@ async def get_existing_pmids() -> set:
         return {row["pmid"] for row in rows}
 
 
+async def reset_sequence(table: str, column: str = "id") -> None:
+    """Reset a table's sequence to avoid primary key conflicts.
+
+    This fixes issues where the sequence is out of sync with existing data,
+    which can happen after manual inserts or restores.
+    """
+    async with Database.connection() as conn:
+        # Get the sequence name for this table/column
+        seq_name = f"{table}_{column}_seq"
+        # Reset sequence to max existing ID + 1
+        await conn.execute(f"""
+            SELECT setval('{seq_name}', COALESCE((SELECT MAX({column}) FROM {table}), 0) + 1, false)
+        """)
+
+
 async def insert_gene(gene_data: dict) -> bool:
     """Insert or update a gene entry."""
     async with Database.connection() as conn:
