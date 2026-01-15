@@ -38,8 +38,11 @@ from pipeline.database import Database, get_existing_pmids, record_processed_pmi
 from pipeline.quality_metrics import PipelineMetrics  # noqa: E402
 
 # Configure logging
-LOG_FILE = PROJECT_ROOT / "logs" / "pipeline.log"
-LOG_FILE.parent.mkdir(exist_ok=True)
+from datetime import datetime
+
+LOG_DIR = PROJECT_ROOT / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
