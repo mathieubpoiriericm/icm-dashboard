@@ -26,12 +26,12 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
             "protein": entry.get("protein_name", entry["gene_symbol"]),
             "gene": entry["gene_symbol"],
             "chromosomal_location": "",
-            "gwas_trait": ", ".join(entry.get("gwas_trait", [])),
+            "gwas_trait": ", ".join(entry.get("gwas_trait") or []),
             "mendelian_randomization": "Y"
             if entry.get("mendelian_randomization")
             else "",
             "evidence_from_other_omics_studies": format_omics(
-                entry.get("omics_evidence", [])
+                entry.get("omics_evidence") or []
             ),
             "link_to_monogenetic_disease": "",
             "brain_cell_types": "",
