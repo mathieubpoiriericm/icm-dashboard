@@ -1,10 +1,5 @@
 from typing import List, Optional
-from pipeline.database import (
-    get_existing_genes,
-    get_existing_trials,
-    insert_gene,
-    insert_trial,
-)
+from pipeline.database import get_existing_genes, insert_gene
 
 
 async def merge_gene_entries(new_entries: List[dict]) -> dict:
@@ -69,45 +64,3 @@ def format_omim(omim_number: Optional[str]) -> str:
     if not omim_number:
         return ""
     return omim_number
-
-
-async def merge_trial_entries(new_entries: List[dict]) -> dict:
-    """Merge new trial entries into the PostgreSQL database.
-
-    Database schema (matches R/clean_table2.R expectations):
-    - drug, mechanism_of_action, genetic_target, genetic_evidence,
-    - trial_name, registry_id, clinical_trial_phase,
-    - svd_population, svd_population_details, target_sample_size,
-    - estimated_completion_date, primary_outcome, sponsor_type
-
-    Returns dict with count of inserted entries.
-    """
-    existing_trials = await get_existing_trials()
-    inserted = 0
-
-    for entry in new_entries:
-        registry_id = entry.get("registry_ID", "")
-
-        if registry_id and registry_id in existing_trials:
-            continue  # Skip existing trials
-
-        trial_data = {
-            "drug": entry["drug"],
-            "mechanism_of_action": entry["mechanism_of_action"],
-            "genetic_target": entry.get("genetic_target", ""),
-            "genetic_evidence": "Yes" if entry.get("genetic_evidence") else "No",
-            "trial_name": entry["trial_name"],
-            "registry_id": registry_id,
-            "clinical_trial_phase": entry.get("clinical_trial_phase", ""),
-            "svd_population": entry["svd_population"],
-            "svd_population_details": entry.get("svd_population_details", ""),
-            "target_sample_size": entry.get("target_sample_size"),
-            "estimated_completion_date": entry.get("estimated_completion_date", ""),
-            "primary_outcome": entry["primary_outcome"],
-            "sponsor_type": entry["sponsor_type"],
-        }
-
-        await insert_trial(trial_data)
-        inserted += 1
-
-    return {"inserted": inserted}

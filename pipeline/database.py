@@ -49,15 +49,6 @@ async def get_existing_genes() -> set:
         return {row["gene"] for row in rows}
 
 
-async def get_existing_trials() -> set:
-    """Fetch all registry IDs currently in the database."""
-    async with Database.connection() as conn:
-        rows = await conn.fetch(
-            "SELECT registry_id FROM clinical_trials WHERE registry_id IS NOT NULL"
-        )
-        return {row["registry_id"] for row in rows}
-
-
 async def get_existing_pmids() -> set:
     """Fetch all PMIDs already processed."""
     async with Database.connection() as conn:
@@ -101,67 +92,28 @@ async def insert_gene(gene_data: dict) -> bool:
     return True
 
 
-async def insert_trial(trial_data: dict) -> bool:
-    """Insert a new clinical trial entry."""
-    async with Database.connection() as conn:
-        await conn.execute(
-            """
-            INSERT INTO clinical_trials (
-                drug, mechanism_of_action, genetic_target, genetic_evidence,
-                trial_name, registry_id, clinical_trial_phase, svd_population,
-                svd_population_details, target_sample_size,
-                estimated_completion_date, primary_outcome, sponsor_type
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            ON CONFLICT (registry_id, drug) DO NOTHING
-        """,
-            *[
-                trial_data.get(k)
-                for k in [
-                    "drug",
-                    "mechanism_of_action",
-                    "genetic_target",
-                    "genetic_evidence",
-                    "trial_name",
-                    "registry_id",
-                    "clinical_trial_phase",
-                    "svd_population",
-                    "svd_population_details",
-                    "target_sample_size",
-                    "estimated_completion_date",
-                    "primary_outcome",
-                    "sponsor_type",
-                ]
-            ],
-        )
-    return True
-
-
 async def record_processed_pmid(
     pmid: str,
     fulltext_available: bool = False,
     source: str = "abstract",
     genes_extracted: int = 0,
-    trials_extracted: int = 0,
 ) -> bool:
     """Record a processed PMID to avoid reprocessing."""
     async with Database.connection() as conn:
         await conn.execute(
             """
             INSERT INTO pubmed_refs (
-                pmid, fulltext_available, source,
-                genes_extracted, trials_extracted
-            ) VALUES ($1, $2, $3, $4, $5)
+                pmid, fulltext_available, source, genes_extracted
+            ) VALUES ($1, $2, $3, $4)
             ON CONFLICT (pmid) DO UPDATE SET
                 fulltext_available = EXCLUDED.fulltext_available,
                 source = EXCLUDED.source,
                 genes_extracted = EXCLUDED.genes_extracted,
-                trials_extracted = EXCLUDED.trials_extracted,
                 processed_at = CURRENT_TIMESTAMP
         """,
             pmid,
             fulltext_available,
             source,
             genes_extracted,
-            trials_extracted,
         )
     return True

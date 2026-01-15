@@ -106,7 +106,7 @@ async def download_and_parse_pdf(url: str) -> Optional[str]:
     Handles redirects and various PDF formats.
     """
     try:
-        import fitz  # type: ignore[import]  # PyMuPDF
+        import fitz  # PyMuPDF
     except ImportError:
         # PyMuPDF not available, skip PDF extraction
         return None
