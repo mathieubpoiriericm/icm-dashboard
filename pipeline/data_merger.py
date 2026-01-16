@@ -26,7 +26,9 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
             "protein": entry.get("protein_name", entry["gene_symbol"]),
             "gene": entry["gene_symbol"],
             "chromosomal_location": "",
+            # Join traits with ", " for R data.table compatibility (R expects single string)
             "gwas_trait": ", ".join(entry.get("gwas_trait") or []),
+            # Use "Y"/empty string instead of boolean for R/legacy dashboard format
             "mendelian_randomization": "Y"
             if entry.get("mendelian_randomization")
             else "",
@@ -36,11 +38,13 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
             "link_to_monogenetic_disease": "",
             "brain_cell_types": "",
             "affected_pathway": "",
+            # Store PMID as reference; database ON CONFLICT appends new refs with ";"
             "references": entry.get("pmid", ""),
         }
 
         await insert_gene(gene_data)
 
+        # Check before insert to track new vs existing (insert_gene uses upsert)
         if gene in existing_genes:
             updated += 1
         else:

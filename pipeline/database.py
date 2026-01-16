@@ -37,6 +37,7 @@ class Database:
     @classmethod
     @asynccontextmanager
     async def connection(cls):
+        """Acquire a connection from the pool with automatic release."""
         pool = await cls.get_pool()
         async with pool.acquire() as conn:
             yield conn
@@ -72,8 +73,10 @@ async def reset_sequence(table: str, column: str = "id") -> None:
 
 
 async def insert_gene(gene_data: dict) -> bool:
-    """Insert or update a gene entry."""
+    """Insert or update a gene entry using upsert (INSERT ... ON CONFLICT)."""
     async with Database.connection() as conn:
+        # ON CONFLICT: if gene already exists, update selected fields
+        # References are appended with "; " separator to preserve provenance
         await conn.execute(
             """
             INSERT INTO genes (

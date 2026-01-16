@@ -199,7 +199,8 @@ async def run_pipeline(
     # Step 4: Merge into database
     logger.info("Step 4: Merging validated data into database...")
 
-    # Reset sequences to avoid primary key conflicts
+    # Reset sequences to avoid primary key conflicts after manual inserts/restores
+    # PostgreSQL sequences can get out of sync with actual max ID values
     await reset_sequence("genes")
 
     if all_genes:

@@ -16,15 +16,21 @@ CONFIDENCE_THRESHOLD = 0.7
 
 
 async def validate_gene_entry(entry: dict) -> ValidationResult:
-    """Multi-stage gene validation."""
+    """Multi-stage gene validation.
+
+    Validation stages (fail-fast on critical errors):
+    1. Confidence threshold - reject low-confidence LLM extractions
+    2. NCBI Gene lookup - verify gene exists in human genome
+    3. GWAS trait check - warn on unrecognized phenotypes (non-blocking)
+    """
     errors, warnings = [], []
 
-    # Stage 1: Confidence threshold
+    # Stage 1: Confidence threshold - filters out LLM hallucinations
     if entry.get("confidence", 0) < CONFIDENCE_THRESHOLD:
         errors.append(f"Low confidence: {entry['confidence']}")
         return ValidationResult(False, errors, warnings, None)
 
-    # Stage 2: NCBI Gene validation
+    # Stage 2: NCBI Gene validation - ensures gene symbol is real
     gene_symbol = entry["gene_symbol"]
     ncbi_info = await verify_ncbi_gene(gene_symbol)
 
@@ -32,25 +38,27 @@ async def validate_gene_entry(entry: dict) -> ValidationResult:
         errors.append(f"Gene '{gene_symbol}' not found in NCBI Gene")
         return ValidationResult(False, errors, warnings, None)
 
-    # Normalize gene symbol to official NCBI symbol
+    # Normalize gene symbol to official NCBI symbol (handles aliases)
     if ncbi_info["symbol"] != gene_symbol:
         warnings.append(f"Normalized '{gene_symbol}' -> '{ncbi_info['symbol']}'")
         entry["gene_symbol"] = ncbi_info["symbol"]
 
-    # Stage 3: GWAS trait validation (only if traits provided)
+    # Stage 3: GWAS trait validation (warnings only - unknown traits allowed)
+    # Trait set derived from cSVD GWAS literature phenotypes
     if entry.get("gwas_trait"):
         valid_traits = {
-            "WMH",
-            "SVS",
-            "BG-PVS",
-            "WM-PVS",
-            "HIP-PVS",
-            "PSMD",
+            "WMH",  # White matter hyperintensities
+            "SVS",  # Small vessel stroke
+            "BG-PVS",  # Basal ganglia perivascular spaces
+            "WM-PVS",  # White matter perivascular spaces
+            "HIP-PVS",  # Hippocampal perivascular spaces
+            "PSMD",  # Peak width of skeletonized mean diffusivity
             "extreme-cSVD",
-            "FA",
+            "FA",  # Fractional anisotropy
             "lacunes",
             "stroke",
         }
+        # Warn but don't reject - LLM may extract valid novel traits
         for trait in entry["gwas_trait"]:
             if trait not in valid_traits:
                 warnings.append(f"Unknown GWAS trait: {trait}")

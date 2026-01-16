@@ -78,9 +78,10 @@ async def fetch_pmc_fulltext(pmid: str) -> Optional[str]:
             root = etree.fromstring(pmc_resp.content)
 
             # Extract all paragraph text from the body
+            # PMC XML uses <body><p> structure, but some articles use <sec><p>
             paragraphs = root.findall(".//body//p")
             if not paragraphs:
-                # Try alternate path for some PMC formats
+                # Fallback for alternate PMC XML schemas (section-based structure)
                 paragraphs = root.findall(".//sec//p")
 
             if not paragraphs:

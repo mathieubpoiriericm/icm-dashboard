@@ -84,12 +84,15 @@ def parse_llm_response(text: str) -> List[dict]:
     if not text or not text.strip():
         return []
 
-    # Try to extract JSON from markdown code blocks
+    # 4-tier fallback strategy for parsing LLM JSON output
+    # Needed because LLMs sometimes wrap JSON in markdown or include extra text
+
+    # Tier 1: Extract JSON from markdown code blocks (```json ... ```)
     json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
     if json_match:
         text = json_match.group(1)
 
-    # Try direct JSON parsing
+    # Tier 2: Direct JSON parsing (cleanest case)
     try:
         parsed = json.loads(text.strip())
         if isinstance(parsed, dict):
@@ -97,7 +100,7 @@ def parse_llm_response(text: str) -> List[dict]:
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON object in the text
+    # Tier 3: Find JSON object anywhere in text (handles preamble/postamble)
     json_obj_match = re.search(r"\{[\s\S]*\}", text)
     if json_obj_match:
         try:
@@ -107,7 +110,7 @@ def parse_llm_response(text: str) -> List[dict]:
         except json.JSONDecodeError:
             pass
 
-    # Last resort: try to extract genes array directly
+    # Tier 4: Extract genes array directly (handles malformed outer object)
     genes_match = re.search(r'"genes"\s*:\s*(\[[\s\S]*?\])', text)
     if genes_match:
         try:
