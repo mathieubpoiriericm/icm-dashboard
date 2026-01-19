@@ -73,10 +73,8 @@ async def reset_sequence(table: str, column: str = "id") -> None:
 
 
 async def insert_gene(gene_data: dict) -> bool:
-    """Insert or update a gene entry using upsert (INSERT ... ON CONFLICT)."""
+    """Insert a new gene entry. Use only for genes not already in the database."""
     async with Database.connection() as conn:
-        # ON CONFLICT: if gene already exists, update selected fields
-        # References are appended with "; " separator to preserve provenance
         await conn.execute(
             """
             INSERT INTO genes (
@@ -85,11 +83,6 @@ async def insert_gene(gene_data: dict) -> bool:
                 link_to_monogenetic_disease, brain_cell_types,
                 affected_pathway, "references"
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (gene) DO UPDATE SET
-                gwas_trait = EXCLUDED.gwas_trait,
-                evidence_from_other_omics_studies = EXCLUDED.evidence_from_other_omics_studies,
-                "references" = genes."references" || '; ' || EXCLUDED."references",
-                updated_at = CURRENT_TIMESTAMP
         """,
             *[
                 gene_data.get(k)
@@ -106,6 +99,31 @@ async def insert_gene(gene_data: dict) -> bool:
                     "references",
                 ]
             ],
+        )
+    return True
+
+
+async def update_gene(gene_data: dict) -> bool:
+    """Update an existing gene entry without triggering sequence increment.
+
+    Only updates fields that may change between pipeline runs:
+    - gwas_trait, evidence_from_other_omics_studies, references
+    References are appended with "; " separator to preserve provenance.
+    """
+    async with Database.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE genes SET
+                gwas_trait = $1,
+                evidence_from_other_omics_studies = $2,
+                "references" = "references" || '; ' || $3,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE UPPER(gene) = UPPER($4)
+        """,
+            gene_data.get("gwas_trait"),
+            gene_data.get("evidence_from_other_omics_studies"),
+            gene_data.get("references"),
+            gene_data.get("gene"),
         )
     return True
 

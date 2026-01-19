@@ -1,5 +1,5 @@
 from typing import List
-from pipeline.database import get_existing_genes, insert_gene
+from pipeline.database import get_existing_genes, insert_gene, update_gene
 
 
 async def merge_gene_entries(new_entries: List[dict]) -> dict:
@@ -42,12 +42,12 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
             "references": entry.get("pmid", ""),
         }
 
-        await insert_gene(gene_data)
-
-        # Check before insert to track new vs existing (insert_gene uses upsert)
+        # Check BEFORE calling database to avoid sequence gaps from ON CONFLICT
         if gene in existing_genes:
+            await update_gene(gene_data)
             updated += 1
         else:
+            await insert_gene(gene_data)
             inserted += 1
 
     return {"inserted": inserted, "updated": updated}
