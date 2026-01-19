@@ -3,7 +3,7 @@ from typing import List, Set
 from Bio import Entrez
 from datetime import datetime, timedelta
 
-Entrez.email = "mathieu.poirier@icm-institute.org"  # type: ignore[assignment]
+Entrez.email = os.getenv("ENTREZ_EMAIL", "")  # type: ignore[assignment]
 Entrez.api_key = os.getenv("ENTREZ_KEY") or os.getenv("NCBI_API_KEY")  # type: ignore[assignment]
 
 # Primary disease terms for cSVD/SVD - canonical names used in literature

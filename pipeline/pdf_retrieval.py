@@ -2,7 +2,7 @@ import os
 from typing import Optional
 import httpx
 
-UNPAYWALL_EMAIL = "mathieu.poirier3@mail.mcgill.ca"
+UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL", "")
 
 
 async def get_fulltext(pmid: str, doi: Optional[str]) -> dict:
