@@ -2,6 +2,15 @@ from typing import List
 from pipeline.database import get_existing_genes, insert_gene, update_gene
 
 
+def ensure_list(value) -> list:
+    """Ensure value is a list (handles LLM returning string instead of list)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
 async def merge_gene_entries(new_entries: List[dict]) -> dict:
     """Merge new gene entries into the PostgreSQL database.
 
@@ -27,7 +36,7 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
             "gene": entry["gene_symbol"],
             "chromosomal_location": "",
             # Join traits with ", " for R data.table compatibility (R expects single string)
-            "gwas_trait": ", ".join(entry.get("gwas_trait") or []),
+            "gwas_trait": ", ".join(ensure_list(entry.get("gwas_trait"))),
             # Use "Y"/empty string instead of boolean for R/legacy dashboard format
             "mendelian_randomization": "Y"
             if entry.get("mendelian_randomization")
