@@ -11,6 +11,17 @@ def ensure_list(value) -> list:
     return list(value)
 
 
+def dedupe_list(items: list) -> list:
+    """Remove duplicates from list while preserving order."""
+    seen = set()
+    result = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
 async def merge_gene_entries(new_entries: List[dict]) -> dict:
     """Merge new gene entries into the PostgreSQL database.
 
@@ -36,13 +47,13 @@ async def merge_gene_entries(new_entries: List[dict]) -> dict:
             "gene": entry["gene_symbol"],
             "chromosomal_location": "",
             # Join traits with ", " for R data.table compatibility (R expects single string)
-            "gwas_trait": ", ".join(ensure_list(entry.get("gwas_trait"))),
+            "gwas_trait": ", ".join(dedupe_list(ensure_list(entry.get("gwas_trait")))),
             # Use "Y"/empty string instead of boolean for R/legacy dashboard format
             "mendelian_randomization": "Y"
             if entry.get("mendelian_randomization")
             else "",
             "evidence_from_other_omics_studies": format_omics(
-                entry.get("omics_evidence") or []
+                dedupe_list(entry.get("omics_evidence") or [])
             ),
             "link_to_monogenetic_disease": "",
             "brain_cell_types": "",

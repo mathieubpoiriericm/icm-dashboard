@@ -116,7 +116,10 @@ async def update_gene(gene_data: dict) -> bool:
             UPDATE genes SET
                 gwas_trait = $1,
                 evidence_from_other_omics_studies = $2,
-                "references" = "references" || '; ' || $3,
+                "references" = CASE
+                    WHEN "references" LIKE '%' || $3 || '%' THEN "references"
+                    ELSE "references" || '; ' || $3
+                END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE UPPER(gene) = UPPER($4)
         """,
