@@ -1,8 +1,3 @@
----
-output:
-  pdf_document: default
-  html_document: default
----
 # SVD Dashboard Data Pipeline
 
 An automated ETL pipeline for extracting gene data from PubMed literature related to cerebral small vessel disease (cSVD).
