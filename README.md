@@ -183,14 +183,14 @@ rshiny_dashboard/
 │   ├── fetch_uniprot_data.R      # UniProt protein data fetching
 │   └── phenogram.R               # Phenogram data generation
 ├── pipeline/                 # Python data ETL
-│   ├── main.py               # Pipeline orchestrator entry point
+│   ├── main.py               # CLI entry point & pipeline orchestrator
 │   ├── pubmed_search.py      # PubMed literature search via Entrez
-│   ├── pdf_retrieval.py      # PDF download module
-│   ├── llm_extraction.py     # LLM-based data extraction (Anthropic)
-│   ├── database.py           # PostgreSQL async operations
-│   ├── data_merger.py        # Data consolidation utilities
-│   ├── quality_metrics.py    # Data quality assessment
-│   └── validation.py         # Data validation logic
+│   ├── pdf_retrieval.py      # Multi-source text retrieval (PMC/Unpaywall/Abstract)
+│   ├── llm_extraction.py     # LLM-based gene extraction (Anthropic Claude)
+│   ├── validation.py         # NCBI gene verification & confidence filtering
+│   ├── data_merger.py        # Data transformation & database loading
+│   ├── database.py           # Async PostgreSQL operations
+│   └── quality_metrics.py    # Pipeline statistics tracking
 ├── scripts/
 │   └── trigger_update.R      # Regenerate QS from database
 ├── www/
@@ -216,20 +216,30 @@ rshiny_dashboard/
 
 ## Data Pipeline
 
-The dashboard is powered by an automated data pipeline that keeps gene and clinical trial data up-to-date:
+The dashboard is powered by an automated Python ETL pipeline that keeps gene and clinical trial data up-to-date by mining PubMed literature.
 
-1. **Search**: Queries PubMed for recent SVD-related publications
-2. **Retrieve**: Downloads PDFs and metadata via NCBI Entrez API
-3. **Extract**: Uses Anthropic Claude to extract structured gene/drug/trial data
-4. **Validate**: Performs data quality checks and validation
-5. **Store**: Inserts/updates records in PostgreSQL database
-6. **Export**: Regenerates QS files for the Shiny application
+### Pipeline Architecture
 
-### Running the Pipeline Manually
+The pipeline follows a linear ETL flow with validation gates:
+
+1. **Search**: Query PubMed via Biopython Entrez for recent SVD-related genetic papers (combines disease terms + genetic terms)
+2. **Filter**: Skip already-processed PMIDs (tracked in `pubmed_refs` table)
+3. **Retrieve**: Fetch full text using fallback chain: PMC XML → Unpaywall PDF → PubMed abstract
+4. **Extract**: Use Claude Sonnet to extract structured gene data with confidence scores (Pydantic-validated)
+5. **Validate**: Verify genes against NCBI Gene database; reject entries below 0.7 confidence threshold
+6. **Load**: Batch insert/update validated genes into PostgreSQL
+
+### Running the Pipeline
 
 ```bash
-python pipeline/pubmed_search.py
+python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
 ```
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--days-back` | 7 | Number of days to look back for new papers (1-3650) |
+| `--dry-run` | - | Run pipeline without writing to database |
+| `--test-mode` | - | Skip LLM extraction (test search/retrieval only) |
 
 ### Automated Updates
 
