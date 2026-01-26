@@ -162,56 +162,58 @@ Rscript -e "shiny::runApp()"
 
 ```
 rshiny_dashboard/
-├── app.R                     # Main application entry point
-├── python_plot.py            # Clinical trials visualization generator
+├── app.R                         # Main application entry point
+├── python_plot.py                # Clinical trials visualization generator
+├── LICENSE                       # MIT License
+├── README.md                     # Project documentation
 ├── R/
-│   ├── constants.R           # Application-wide constants
-│   ├── utils.R               # CSS styles, DB utilities, column cleaning
-│   ├── filter_utils.R        # Unified filter utilities for data.table
-│   ├── data_prep.R           # Data loading and preprocessing
-│   ├── tooltips.R            # Tooltip generation for tables
-│   ├── mod_checkbox_filter.R # Shiny module for checkbox filters
-│   ├── server.R              # Main server orchestrator
-│   ├── server_table1.R       # Gene Table server logic
-│   ├── server_table2.R       # Clinical Trials Table server logic
-│   ├── ui.R                  # UI definition with Bootstrap 5
-│   ├── clean_table1.R        # Table 1 data cleaning
-│   ├── clean_table2.R        # Table 2 data cleaning
+│   ├── constants.R               # Application-wide constants
+│   ├── utils.R                   # CSS styles, DB utilities, column cleaning
+│   ├── filter_utils.R            # Unified filter utilities for data.table
+│   ├── data_prep.R               # Data loading and preprocessing
+│   ├── tooltips.R                # Tooltip generation for tables
+│   ├── mod_checkbox_filter.R     # Shiny module for checkbox filters
+│   ├── server.R                  # Main server orchestrator
+│   ├── server_table1.R           # Gene Table server logic
+│   ├── server_table2.R           # Clinical Trials Table server logic
+│   ├── ui.R                      # UI definition with Bootstrap 5
+│   ├── clean_table1.R            # Table 1 data cleaning
+│   ├── clean_table2.R            # Table 2 data cleaning
 │   ├── fetch_ncbi_gene_data.R    # NCBI gene data fetching
 │   ├── fetch_omim_data.R         # OMIM data fetching
 │   ├── fetch_pubmed_data.R       # PubMed reference fetching
 │   ├── fetch_uniprot_data.R      # UniProt protein data fetching
 │   └── phenogram.R               # Phenogram data generation
-├── pipeline/                 # Python data ETL
-│   ├── main.py               # CLI entry point & pipeline orchestrator
-│   ├── pubmed_search.py      # PubMed literature search via Entrez
-│   ├── pdf_retrieval.py      # Multi-source text retrieval (PMC/Unpaywall/Abstract)
-│   ├── llm_extraction.py     # LLM-based gene extraction (Anthropic Claude)
-│   ├── validation.py         # NCBI gene verification & confidence filtering
-│   ├── data_merger.py        # Data transformation & database loading
-│   ├── database.py           # Async PostgreSQL operations
-│   └── quality_metrics.py    # Pipeline statistics tracking
+├── pipeline/
+│   ├── main.py                   # CLI entry point & pipeline orchestrator
+│   ├── pubmed_search.py          # PubMed literature search via Entrez
+│   ├── pdf_retrieval.py          # Multi-source text retrieval (PMC/Unpaywall/Abstract)
+│   ├── llm_extraction.py         # LLM-based gene extraction (Anthropic Claude)
+│   ├── validation.py             # NCBI gene verification & confidence filtering
+│   ├── data_merger.py            # Data transformation & database loading
+│   ├── database.py               # Async PostgreSQL operations
+│   ├── quality_metrics.py        # Pipeline statistics tracking
+│   ├── requirements.txt          # Python dependencies
+│   └── README.md                 # Pipeline documentation
 ├── scripts/
-│   └── trigger_update.R      # Regenerate QS from database
+│   └── trigger_update.R          # Regenerate QS files from database
 ├── www/
-│   ├── custom.css            # Custom styles (source)
-│   ├── custom.min.css        # Minified styles (loaded by app)
-│   ├── custom.js             # Custom JavaScript (source)
-│   ├── custom.min.js         # Minified JavaScript (loaded by app)
-│   ├── python_plot.html      # Clinical trials visualization
-│   ├── python_plot.js        # Plot interactivity and sidepanel
-│   ├── python_plot.min.js    # Minified plot JavaScript
-│   ├── phenogram_template.html  # Interactive phenogram
-│   ├── fonts/                # Web fonts (Roboto)
-│   ├── css/                  # Tippy.js styles
-│   ├── js/                   # Popper.js and Tippy.js
-│   └── images/               # Logo and phenogram images
-└── maRco/                    # Helper functions R package
-   ├── R/                    # Package source files
-   ├── man/                  # Documentation
-   ├── DESCRIPTION           # Package metadata
-   ├── NAMESPACE             # Package exports
-   └── README.md             # Package documentation
+│   ├── custom.css                # Custom styles (source)
+│   ├── custom.min.css            # Minified styles (loaded by app)
+│   ├── custom.js                 # Custom JavaScript (source)
+│   ├── custom.min.js             # Minified JavaScript (loaded by app)
+│   ├── python_plot.html          # Clinical trials visualization
+│   ├── python_plot.js            # Plot interactivity and sidepanel
+│   ├── python_plot.min.js        # Minified plot JavaScript
+│   ├── phenogram_template.html   # Interactive phenogram viewer
+│   ├── fonts/                    # Web fonts (Roboto)
+│   ├── css/                      # Tippy.js styles
+│   ├── js/                       # Popper.js and Tippy.js
+│   └── images/                   # Logo and phenogram images
+└── .github/
+    └── workflows/
+        ├── dependency-submission.yml  # Dependency graph action
+        └── update_pipeline.yml        # Automated pipeline runner
 ```
 
 ## Data Pipeline
