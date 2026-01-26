@@ -3,8 +3,9 @@
 #
 # Project Structure:
 # ├── app.R                      - Main application entry point (this file)
-# ├── python_plot.py             - Python visualization script
+# ├── python_plot.py             - Python visualization for clinical trials
 # ├── README.md                  - Project documentation
+# ├── LICENSE                    - MIT License
 # │
 # ├── R/                         - Shiny application modules
 # │   ├── constants.R            - Application-wide constants
@@ -13,52 +14,47 @@
 # │   ├── data_prep.R            - Data loading and preprocessing functions
 # │   ├── tooltips.R             - Tooltip generation for table displays
 # │   ├── mod_checkbox_filter.R  - Shiny module for checkbox filters
-# │   ├── server_table1.R        - Table 1 server logic
-# │   ├── server_table2.R        - Table 2 server logic
-# │   ├── server.R               - Main server logic
-# │   ├── ui.R                   - UI definition
-# │   ├── clean_table1.R         - Table 1 data cleaning
-# │   ├── clean_table2.R         - Table 2 data cleaning
-# │   ├── fetch_ncbi_gene_data.R - NCBI gene data fetching
-# │   ├── fetch_omim_data.R      - OMIM data fetching
+# │   ├── server_table1.R        - Table 1 (Gene Table) server logic
+# │   ├── server_table2.R        - Table 2 (Clinical Trials) server logic
+# │   ├── server.R               - Main server orchestrator
+# │   ├── ui.R                   - UI definition with Bootstrap 5 theming
+# │   ├── clean_table1.R         - Table 1 data cleaning from PostgreSQL
+# │   ├── clean_table2.R         - Table 2 data cleaning from PostgreSQL
+# │   ├── fetch_ncbi_gene_data.R - NCBI Gene API data fetching
+# │   ├── fetch_omim_data.R      - OMIM link generation
 # │   ├── fetch_pubmed_data.R    - PubMed reference fetching
 # │   ├── fetch_uniprot_data.R   - UniProt protein data fetching
 # │   └── phenogram.R            - Phenogram data generation
 # │
 # ├── www/                       - Static web assets
 # │   ├── custom.css             - Custom styles (source)
-# │   ├── custom.min.css         - Minified CSS (generated)
+# │   ├── custom.min.css         - Minified CSS (generated at startup)
 # │   ├── custom.js              - Custom JavaScript (source)
-# │   ├── custom.min.js          - Minified JS (generated)
-# │   ├── python_plot.js         - Python plot integration JS (source)
-# │   ├── python_plot.min.js     - Minified JS (generated)
-# │   ├── python_plot.html       - Python plot template
-# │   ├── phenogram_template.html - Phenogram HTML template
+# │   ├── custom.min.js          - Minified JS (generated at startup)
+# │   ├── python_plot.js         - Clinical trials plot JS (source)
+# │   ├── python_plot.min.js     - Minified plot JS (generated)
+# │   ├── python_plot.html       - Clinical trials Plotly visualization
+# │   ├── phenogram_template.html - Interactive phenogram viewer
 # │   ├── fonts/                 - Web fonts (Roboto)
 # │   ├── images/                - Static images (logos, phenogram)
 # │   ├── css/                   - Third-party CSS (tippy)
 # │   └── js/                    - Third-party JS (popper, tippy)
 # │
-# ├── data/                      - Application data
-# │   ├── csv/                   - CSV data files
-# │   ├── qs/                    - QS data files (for faster loading)
-# │   ├── txt/                   - Text data files
-# │   └── xlsx/                  - Excel data files
-# │
 # ├── pipeline/                  - Automated data pipeline (Python)
 # │   ├── main.py                - Pipeline orchestration entry point
-# │   ├── pubmed_search.py       - PubMed literature search
-# │   ├── pdf_retrieval.py       - PDF download module
-# │   ├── llm_extraction.py      - LLM-based data extraction
-# │   ├── validation.py          - Data validation logic
-# │   ├── quality_metrics.py     - Quality metrics computation
-# │   ├── database.py            - Database operations
-# │   └── data_merger.py         - Data merging utilities
+# │   ├── pubmed_search.py       - PubMed Entrez literature search
+# │   ├── pdf_retrieval.py       - Full-text retrieval (PMC/Unpaywall)
+# │   ├── llm_extraction.py      - Claude LLM-based gene extraction
+# │   ├── validation.py          - NCBI gene validation
+# │   ├── data_merger.py         - Data transformation and DB loading
+# │   ├── database.py            - Async PostgreSQL operations
+# │   ├── quality_metrics.py     - Pipeline statistics tracking
+# │   └── requirements.txt       - Python dependencies
 # │
 # └── scripts/                   - Utility scripts
-#     └── trigger_update.R       - Pipeline trigger script
+#     └── trigger_update.R       - Regenerate QS files from database
 #
-# Helper functions for data fetching/cleaning are in the maRco package.
+# Helper functions are also available in the maRco package.
 # Install with: devtools::install("maRco")
 
 # Load required packages
