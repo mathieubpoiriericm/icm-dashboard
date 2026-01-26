@@ -207,6 +207,20 @@ load_and_prepare_data <- function() {
   message("Loading protein info...")
   prot_info_clean <- safe_read_rds(DATA_PATHS$prot_info)
 
+  # Create fastmap for O(1) protein lookups by gene name
+  message("Pre-computing protein info lookup map...")
+  prot_info_lookup <- fastmap::fastmap()
+  for (i in seq_len(nrow(prot_info_clean))) {
+    gene_name <- prot_info_clean$gene[i]
+    prot_info_lookup$set(
+      gene_name,
+      list(
+        accession = prot_info_clean$accession[i],
+        url = prot_info_clean$url[i]
+      )
+    )
+  }
+
   # Title casing for the Affected Pathway column
   table1$`Affected Pathway` <- tools::toTitleCase(table1$`Affected Pathway`)
 
@@ -408,6 +422,7 @@ load_and_prepare_data <- function() {
     table1 = table1,
     gene_info_results_df = gene_info_results_df,
     prot_info_clean = prot_info_clean,
+    prot_info_lookup = prot_info_lookup,
     omics_df = omics_df,
     unique_gwas_traits = unique_gwas_traits,
     gwas_traits_df = gwas_traits_df,

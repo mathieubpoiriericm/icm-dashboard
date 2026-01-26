@@ -244,7 +244,9 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
 #' @param table1 Data frame or data.table. Main gene data table.
 #' @param gene_info_results_df Data frame. NCBI gene info with URL column.
 #' @param prot_info_clean Data frame. UniProt protein info with accession
-#'   and URL.
+#'   and URL. Kept for backwards compatibility; use prot_info_lookup instead.
+#' @param prot_info_lookup fastmap. Pre-computed protein lookup map for O(1)
+#'   access by gene name. If NULL, falls back to prot_info_clean data frame.
 #' @param omim_lookup fastmap. Pre-computed OMIM lookup map for O(1) access.
 #' @param refs Data frame. Publication references for tooltip content.
 #' @param omics_df Data frame. Omics types with full names.
@@ -262,6 +264,7 @@ prepare_table1_display <- function(
   table1,
   gene_info_results_df,
   prot_info_clean,
+  prot_info_lookup = NULL,
   omim_lookup,
   refs,
   omics_df,
@@ -316,7 +319,7 @@ prepare_table1_display <- function(
     }
   )
 
-  # Vectorized protein tooltip
+  # Vectorized protein tooltip (using fastmap for O(1) lookups)
   # Store original protein names for sorting before HTML transformation
   original_protein_names <- table1_display[[2L]]
 
@@ -327,22 +330,29 @@ prepare_table1_display <- function(
       original_protein_names
     ),
     function(protein_name, gene_name, sort_name) {
-      prot_match <- prot_info_clean[prot_info_clean$gene == gene_name, ]
+      # Use fastmap O(1) lookup if available, otherwise fall back to data frame
+      prot_info <- if (!is.null(prot_info_lookup)) {
+        prot_info_lookup$get(gene_name)
+      } else {
+        prot_match <- prot_info_clean[prot_info_clean$gene == gene_name, ]
+        if (nrow(prot_match) > 0L) {
+          list(accession = prot_match$accession, url = prot_match$url)
+        } else {
+          NULL
+        }
+      }
 
-      if (nrow(prot_match) > 0L) {
-        accession_number <- prot_match$accession
-        protein_url <- prot_match$url
-
+      if (!is.null(prot_info)) {
         protein_tooltip_content <- sprintf(
           "<strong>UniProt Accession Number</strong> %s",
-          accession_number
+          prot_info$accession
         )
 
         as.character(
           shiny::tags$span(
             `data-order` = tolower(sort_name),
             shiny::tags$a(
-              href = protein_url,
+              href = prot_info$url,
               target = "_blank",
               shiny::tags$span(
                 protein_name,
@@ -574,6 +584,10 @@ prepare_table1_display <- function(
 #' @param ct_info Data frame. Trial name and primary outcome for tooltips.
 #' @param gene_info_results_df Data frame. NCBI gene info with URL column.
 #' @param gene_symbols_lookup Character vector. Gene symbols for matching.
+#' @param tooltip_class Character. CSS class name for standard tooltips.
+#'   Defaults to the global tooltip_class constant.
+#' @param tooltip_class_italic Character. CSS class name for italic tooltips
+#'   (gene symbols). Defaults to the global tooltip_class_italic constant.
 #'
 #' @return data.table. table2 with HTML tooltip markup in display columns.
 #'
@@ -583,7 +597,9 @@ prepare_table2_display <- function(
   table2,
   ct_info,
   gene_info_results_df,
-  gene_symbols_lookup
+  gene_symbols_lookup,
+  tooltip_class = tooltip_class,
+  tooltip_class_italic = tooltip_class_italic
 ) {
   table2_display <- as.data.frame(table2)
 

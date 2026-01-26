@@ -236,6 +236,7 @@ table1_display <- prepare_table1_display(
   table1 = app_data$table1,
   gene_info_results_df = app_data$gene_info_results_df,
   prot_info_clean = app_data$prot_info_clean,
+  prot_info_lookup = app_data$prot_info_lookup,
   omim_lookup = app_data$omim_lookup,
   refs = app_data$refs,
   omics_df = app_data$omics_df,
@@ -259,7 +260,9 @@ if (PRELOAD_TABLE2) {
     table2_data$table2,
     table2_data$ct_info,
     table2_data$gene_info_table2,
-    table2_data$gene_symbols_table2
+    table2_data$gene_symbols_table2,
+    tooltip_class = tooltip_class,
+    tooltip_class_italic = tooltip_class_italic
   )
 
   # Store preloaded data for server

@@ -39,7 +39,9 @@ build_table2_loader <- function(
         data$table2,
         data$ct_info,
         data$gene_info_table2,
-        data$gene_symbols_table2
+        data$gene_symbols_table2,
+        tooltip_class = tooltip_class,
+        tooltip_class_italic = tooltip_class_italic
       )
 
       table2_data(data$table2)
@@ -314,19 +316,9 @@ add_drug_group_indices <- function(display_df) {
     else rep("", n_rows)
   })
 
-  # Compute drug groups
+  # Compute drug groups (vectorized using cumsum)
   drugs <- col_values[[1L]]
-  drug_group_idx <- integer(n_rows)
-  current_group <- 0L
-  last_drug <- ""
-
-  for (i in seq_len(n_rows)) {
-    if (drugs[i] != last_drug) {
-      current_group <- current_group + 1L
-      last_drug <- drugs[i]
-    }
-    drug_group_idx[i] <- current_group
-  }
+  drug_group_idx <- cumsum(c(TRUE, drugs[-1L] != drugs[-n_rows]))
 
   # Compute color classes (alternating by drug group)
   # Group 1 = class 0, Group 2 = class 1, Group 3 = class 0, etc.
