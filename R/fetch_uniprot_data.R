@@ -1,18 +1,18 @@
 # fetch_uniprot_data.R
 # UniProt data fetching and cleaning functions
 
-#' Fetch UniProt Accession IDs
-#'
-#' Fetches UniProt accession IDs and protein names for a vector of gene symbols.
-#'
-#' @param genes A character vector of gene symbols.
-#' @param organism NCBI taxonomy ID. Defaults to "9606" (Homo sapiens).
-#' @param delay Numeric. Seconds to wait between API requests to avoid rate
-#'   limiting. Defaults to 0.1 (100ms).
-#'
-#' @return A data.frame with columns: gene, accession, protein_name.
-#'
-#' @export
+# Fetch UniProt Accession IDs
+#
+# Fetches UniProt accession IDs and protein names for a vector of gene symbols.
+#
+# Args:
+#   genes: A character vector of gene symbols.
+#   organism: NCBI taxonomy ID. Defaults to "9606" (Homo sapiens).
+#   delay: Numeric. Seconds to wait between API requests to avoid rate
+#     limiting. Defaults to 0.1 (100ms).
+#
+# Returns:
+#   A data.frame with columns: gene, accession, protein_name.
 fetch_uniprot_accessions <- function(genes, organism = "9606", delay = 0.1) {
   base_url <- "https://rest.uniprot.org/uniprotkb/search"
 
@@ -97,15 +97,15 @@ fetch_uniprot_accessions <- function(genes, organism = "9606", delay = 0.1) {
   do.call(rbind, results)
 }
 
-#' Clean GO Column
-#'
-#' Cleans a Gene Ontology column by removing GO numbers and fixing formatting.
-#'
-#' @param go_column A character vector of GO annotations.
-#'
-#' @return A cleaned character vector.
-#'
-#' @export
+# Clean GO Column
+#
+# Cleans a Gene Ontology column by removing GO numbers and fixing formatting.
+#
+# Args:
+#   go_column: A character vector of GO annotations.
+#
+# Returns:
+#   A cleaned character vector.
 clean_go_column <- function(go_column) {
   # Remove GO numbers in brackets
 
@@ -119,15 +119,15 @@ clean_go_column <- function(go_column) {
   go_column
 }
 
-#' Clean Protein GO Info
-#'
-#' Cleans protein Gene Ontology information data.frame.
-#'
-#' @param prot_info A data.frame from UniprotR::GetProteinGOInfo().
-#'
-#' @return A cleaned data.frame with renamed and cleaned columns.
-#'
-#' @export
+# Clean Protein GO Info
+#
+# Cleans protein Gene Ontology information data.frame.
+#
+# Args:
+#   prot_info: A data.frame from UniprotR::GetProteinGOInfo().
+#
+# Returns:
+#   A cleaned data.frame with renamed and cleaned columns.
 clean_protein_go_info <- function(prot_info) {
   # Remove first two columns (usually Entry and Status)
   prot_info_clean <- prot_info[, -c(1L, 2L)]
@@ -169,33 +169,33 @@ clean_protein_go_info <- function(prot_info) {
   prot_info_clean
 }
 
-#' Generate UniProt URLs
-#'
-#' Generates UniProt entry URLs from accession IDs.
-#'
-#' @param accession_ids A character vector of UniProt accession IDs.
-#'
-#' @return A character vector of URLs.
-#'
-#' @export
+# Generate UniProt URLs
+#
+# Generates UniProt entry URLs from accession IDs.
+#
+# Args:
+#   accession_ids: A character vector of UniProt accession IDs.
+#
+# Returns:
+#   A character vector of URLs.
 generate_uniprot_urls <- function(accession_ids) {
   paste0("https://www.uniprot.org/uniprotkb/", accession_ids, "/entry")
 }
 
-#' Fetch and Process UniProt Data
-#'
-#' Main function that fetches UniProt accession IDs and GO information
-#' for a vector of genes.
-#'
-#' @param genes A character vector of gene symbols.
-#' @param organism NCBI taxonomy ID. Defaults to "9606" (Homo sapiens).
-#' @param verbose If TRUE, prints progress messages. Defaults to FALSE.
-#' @param delay Numeric. Seconds to wait between API requests to avoid rate
-#'   limiting. Defaults to 0.1 (100ms).
-#'
-#' @return A data.frame with gene, accession, GO info, and URL columns.
-#'
-#' @export
+# Fetch and Process UniProt Data
+#
+# Main function that fetches UniProt accession IDs and GO information
+# for a vector of genes.
+#
+# Args:
+#   genes: A character vector of gene symbols.
+#   organism: NCBI taxonomy ID. Defaults to "9606" (Homo sapiens).
+#   verbose: If TRUE, prints progress messages. Defaults to FALSE.
+#   delay: Numeric. Seconds to wait between API requests to avoid rate
+#     limiting. Defaults to 0.1 (100ms).
+#
+# Returns:
+#   A data.frame with gene, accession, GO info, and URL columns.
 fetch_uniprot_data <- function(genes, organism = "9606", verbose = FALSE,
                                delay = 0.1) {
   if (verbose) {

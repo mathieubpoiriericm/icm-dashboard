@@ -1,16 +1,16 @@
 # fetch_ncbi_gene_data.R
 # NCBI gene data fetching and cleaning functions
 
-#' Fetch Gene Info from NCBI
-#'
-#' Fetches gene information from NCBI for a single gene symbol.
-#' Used internally by fetch_all_gene_info().
-#'
-#' @param gene_symbol A character string of the gene symbol to look up.
-#'
-#' @return A data.frame with columns: uid, description, otheraliases.
-#'
-#' @export
+# Fetch Gene Info from NCBI
+#
+# Fetches gene information from NCBI for a single gene symbol.
+# Used internally by fetch_all_gene_info().
+#
+# Args:
+#   gene_symbol: A character string of the gene symbol to look up.
+#
+# Returns:
+#   A data.frame with columns: uid, description, otheraliases.
 fetch_gene_info <- function(gene_symbol) {
   tryCatch(
     {
@@ -45,18 +45,18 @@ fetch_gene_info <- function(gene_symbol) {
   )
 }
 
-#' Fetch Gene Info for Multiple Genes
-#'
-#' Fetches gene information from NCBI for a vector of gene symbols.
-#' Includes a delay between requests to respect NCBI rate limits.
-#'
-#' @param gene_symbols A character vector of gene symbols to look up.
-#' @param delay Delay in seconds between API requests. Defaults to 0.1.
-#' @param verbose If TRUE, prints progress messages. Defaults to FALSE.
-#'
-#' @return A data.frame with columns: uid, description, otheraliases.
-#'
-#' @export
+# Fetch Gene Info for Multiple Genes
+#
+# Fetches gene information from NCBI for a vector of gene symbols.
+# Includes a delay between requests to respect NCBI rate limits.
+#
+# Args:
+#   gene_symbols: A character vector of gene symbols to look up.
+#   delay: Delay in seconds between API requests. Defaults to 0.1.
+#   verbose: If TRUE, prints progress messages. Defaults to FALSE.
+#
+# Returns:
+#   A data.frame with columns: uid, description, otheraliases.
 fetch_all_gene_info <- function(gene_symbols, delay = 0.1, verbose = FALSE) {
   gene_info_results <- vector("list", length(gene_symbols))
 
@@ -76,21 +76,16 @@ fetch_all_gene_info <- function(gene_symbols, delay = 0.1, verbose = FALSE) {
   do.call(rbind, gene_info_results)
 }
 
-#' Extract Gene Symbols from Table 2
-#'
-#' Extracts unique gene symbols from the "Genetic Target" column of Table 2
-#' and saves them to data/txt/genes_table2.txt.
-#'
-#' @param verbose If TRUE, prints progress messages. Defaults to TRUE.
-#'
-#' @return A character vector of unique gene symbols.
-#'
-#' @export
-#' @examples
-#' \dontrun{
-#' source("R/fetch_ncbi_gene_data.R")
-#' extract_table2_gene_symbols()
-#' }
+# Extract Gene Symbols from Table 2
+#
+# Extracts unique gene symbols from the "Genetic Target" column of Table 2
+# and saves them to data/txt/genes_table2.txt.
+#
+# Args:
+#   verbose: If TRUE, prints progress messages. Defaults to TRUE.
+#
+# Returns:
+#   A character vector of unique gene symbols.
 extract_table2_gene_symbols <- function(verbose = TRUE) {
   # Load table2 data
   table2 <- qs::qread("data/qs/table2_clean.qs")
@@ -119,24 +114,19 @@ extract_table2_gene_symbols <- function(verbose = TRUE) {
   all_genes
 }
 
-#' Fetch and Save Table 2 Gene Info
-#'
-#' Extracts gene symbols from Table 2, fetches gene information from NCBI,
-#' and saves the results to data/qs/.
-#'
-#' @param delay Delay in seconds between API requests. Defaults to 0.1.
-#' @param verbose If TRUE, prints progress messages. Defaults to TRUE.
-#' @param extract_genes If TRUE, extracts genes from Table 2 first.
-#'   If FALSE, reads from existing data/txt/genes_table2.txt. Defaults to TRUE.
-#'
-#' @return Invisibly returns the gene info data frame.
-#'
-#' @export
-#' @examples
-#' \dontrun{
-#' source("R/fetch_ncbi_gene_data.R")
-#' fetch_save_table2_gene_info()
-#' }
+# Fetch and Save Table 2 Gene Info
+#
+# Extracts gene symbols from Table 2, fetches gene information from NCBI,
+# and saves the results to data/qs/.
+#
+# Args:
+#   delay: Delay in seconds between API requests. Defaults to 0.1.
+#   verbose: If TRUE, prints progress messages. Defaults to TRUE.
+#   extract_genes: If TRUE, extracts genes from Table 2 first.
+#     If FALSE, reads from existing data/txt/genes_table2.txt. Defaults to TRUE.
+#
+# Returns:
+#   Invisibly returns the gene info data frame.
 fetch_save_table2_gene_info <- function(
   delay = 0.1,
   verbose = TRUE,

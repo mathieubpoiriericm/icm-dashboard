@@ -1,30 +1,30 @@
 # fetch_omim_data.R
 # OMIM data extraction and link generation functions
 
-#' Extract Unique OMIM Numbers from Table1
-#'
-#' Extracts unique OMIM numbers from a table1 Link to Monogenic Disease column.
-#'
-#' @param monogenic_disease_col A list column of OMIM numbers.
-#'
-#' @return A character vector of unique OMIM numbers.
-#'
-#' @export
+# Extract Unique OMIM Numbers from Table1
+#
+# Extracts unique OMIM numbers from a table1 Link to Monogenic Disease column.
+#
+# Args:
+#   monogenic_disease_col: A list column of OMIM numbers.
+#
+# Returns:
+#   A character vector of unique OMIM numbers.
 extract_unique_omim_nums <- function(monogenic_disease_col) {
   omim_nums <- unique(unlist(monogenic_disease_col))
   omim_nums <- omim_nums[!is.na(omim_nums) & omim_nums != "(none found)"]
   omim_nums
 }
 
-#' Generate OMIM Link
-#'
-#' Generates an OMIM entry URL for a single OMIM number.
-#'
-#' @param omim_num A character or numeric OMIM number.
-#'
-#' @return A character string with the OMIM URL.
-#'
-#' @export
+# Generate OMIM Link
+#
+# Generates an OMIM entry URL for a single OMIM number.
+#
+# Args:
+#   omim_num: A character or numeric OMIM number.
+#
+# Returns:
+#   A character string with the OMIM URL.
 generate_omim_link <- function(omim_num) {
   paste0(
     "https://www.omim.org/entry/",
@@ -36,15 +36,15 @@ generate_omim_link <- function(omim_num) {
   )
 }
 
-#' Generate OMIM Links for Multiple Numbers
-#'
-#' Creates a data.frame with OMIM numbers and their corresponding URLs.
-#'
-#' @param omim_nums A character vector of OMIM numbers.
-#'
-#' @return A data.frame with columns: omim_nums, omim_links.
-#'
-#' @export
+# Generate OMIM Links for Multiple Numbers
+#
+# Creates a data.frame with OMIM numbers and their corresponding URLs.
+#
+# Args:
+#   omim_nums: A character vector of OMIM numbers.
+#
+# Returns:
+#   A data.frame with columns: omim_nums, omim_links.
 generate_all_omim_links <- function(omim_nums) {
   omim_links <- vapply(
     omim_nums,
@@ -60,18 +60,18 @@ generate_all_omim_links <- function(omim_nums) {
   )
 }
 
-#' Process OMIM Data from Table1
-#'
-#' Extracts OMIM numbers from table1 and generates links.
-#' Optionally exports to CSV for manual data entry.
-#'
-#' @param monogenic_disease_col A list column of OMIM numbers from table1.
-#' @param export_csv If TRUE, exports result to CSV. Defaults to FALSE.
-#' @param csv_path Path for CSV export. Defaults to "omim_numbers.csv".
-#'
-#' @return A data.frame with columns: omim_nums, omim_links.
-#'
-#' @export
+# Process OMIM Data from Table1
+#
+# Extracts OMIM numbers from table1 and generates links.
+# Optionally exports to CSV for manual data entry.
+#
+# Args:
+#   monogenic_disease_col: A list column of OMIM numbers from table1.
+#   export_csv: If TRUE, exports result to CSV. Defaults to FALSE.
+#   csv_path: Path for CSV export. Defaults to "omim_numbers.csv".
+#
+# Returns:
+#   A data.frame with columns: omim_nums, omim_links.
 process_omim_data <- function(
   monogenic_disease_col,
   export_csv = FALSE,

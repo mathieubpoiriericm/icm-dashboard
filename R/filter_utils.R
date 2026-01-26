@@ -5,30 +5,22 @@
 # filter_active_style and filter_none_style are from utils.R
 # (sourced before this file in app.R)
 
-#' Apply Column Filter
-#'
-#' A generic filter function that filters a data.table by column value.
-#' Consolidates the common filtering pattern used across the application.
-#'
-#' @param dt data.table. The data to filter.
-#' @param column Character. The column name to filter on.
-#' @param filter_value Character vector. Values to include.
-#' @param exclude_all Logical. If TRUE, skip filtering when "all" is selected.
-#'   Defaults to TRUE.
-#' @param match_type Character. Type of matching: "exact", "prefix", or "regex".
-#'   Defaults to "exact".
-#'
-#' @return Filtered data.table.
-#'
-#' @examples
-#' \dontrun{
-#' dt <- apply_column_filter(dt, "Phase", c("Phase 1", "Phase 2"))
-#' dt <- apply_column_filter(
-#'   dt, "Sponsor Type", "Industry", match_type = "prefix"
-#' )
-#' }
-#'
-#' @keywords internal
+# Apply Column Filter
+#
+# A generic filter function that filters a data.table by column value.
+# Consolidates the common filtering pattern used across the application.
+#
+# Args:
+#   dt: data.table. The data to filter.
+#   column: Character. The column name to filter on.
+#   filter_value: Character vector. Values to include.
+#   exclude_all: Logical. If TRUE, skip filtering when "all" is selected.
+#     Defaults to TRUE.
+#   match_type: Character. Type of matching: "exact", "prefix", or "regex".
+#     Defaults to "exact".
+#
+# Returns:
+#   Filtered data.table.
 apply_column_filter <- function(
   dt,
   column,
@@ -68,23 +60,22 @@ apply_column_filter <- function(
   )
 }
 
-#' Apply Index-Based Filter
-#'
-#' Filters a data.table using pre-computed row indices from a fastmap.
-#' Optimized for O(1) lookups on large datasets.
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_value Character vector. Values to look up in the index.
-#' @param index_map fastmap object. Pre-computed mapping of values to row
-#'   indices.
-#' @param row_id_column Character. Name of the row ID column. Defaults to
-#'   "original_row_num".
-#' @param exclude_all Logical. If TRUE, skip filtering when "all" is selected.
-#'   Defaults to TRUE.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
+# Apply Index-Based Filter
+#
+# Filters a data.table using pre-computed row indices from a fastmap.
+# Optimized for O(1) lookups on large datasets.
+#
+# Args:
+#   dt: data.table. The data to filter.
+#   filter_value: Character vector. Values to look up in the index.
+#   index_map: fastmap object. Pre-computed mapping of values to row indices.
+#   row_id_column: Character. Name of the row ID column. Defaults to
+#     "original_row_num".
+#   exclude_all: Logical. If TRUE, skip filtering when "all" is selected.
+#     Defaults to TRUE.
+#
+# Returns:
+#   Filtered data.table.
 apply_index_filter <- function(
   dt,
   filter_value,
@@ -119,21 +110,21 @@ apply_index_filter <- function(
   dt[get(row_id_column) %in% matching_rows]
 }
 
-#' Apply Range Filter
-#'
-#' Filters a data.table by a numeric range.
-#'
-#' @param dt data.table. The data to filter.
-#' @param column Character. The column name to filter on.
-#' @param range_value Numeric vector of length 2. c(min, max) values.
-#' @param default_min Numeric. Default minimum value. If range matches default,
-#'   filter is skipped. Defaults to NULL (no skip).
-#' @param default_max Numeric. Default maximum value. If range matches default,
-#'   filter is skipped. Defaults to NULL (no skip).
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
+# Apply Range Filter
+#
+# Filters a data.table by a numeric range.
+#
+# Args:
+#   dt: data.table. The data to filter.
+#   column: Character. The column name to filter on.
+#   range_value: Numeric vector of length 2. c(min, max) values.
+#   default_min: Numeric. Default minimum value. If range matches default,
+#     filter is skipped. Defaults to NULL (no skip).
+#   default_max: Numeric. Default maximum value. If range matches default,
+#     filter is skipped. Defaults to NULL (no skip).
+#
+# Returns:
+#   Filtered data.table.
 apply_range_filter <- function(
   dt,
   column,
@@ -173,16 +164,16 @@ apply_range_filter <- function(
   dt[get(column) >= range_value[1L] & get(column) <= range_value[2L]]
 }
 
-#' Apply Sponsor Type Filter
-#'
-#' Special filter for sponsor types that handles the Academic/Industry logic.
-#'
-#' @param dt data.table. The data to filter.
-#' @param filter_value Character vector. Sponsor type values.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
+# Apply Sponsor Type Filter
+#
+# Special filter for sponsor types that handles the Academic/Industry logic.
+#
+# Args:
+#   dt: data.table. The data to filter.
+#   filter_value: Character vector. Sponsor type values.
+#
+# Returns:
+#   Filtered data.table.
 apply_sponsor_type_filter <- function(dt, filter_value) {
   # Skip if no filter value or "all" selected
   if (
@@ -207,18 +198,18 @@ apply_sponsor_type_filter <- function(dt, filter_value) {
   dt[grepl("^Industry", get("Sponsor Type"))]
 }
 
-#' Apply Single-Value Filter
-#'
-#' Filter that only applies when exactly one value is selected.
-#' Used for binary filters like Mendelian Randomization.
-#'
-#' @param dt data.table. The data to filter.
-#' @param column Character. The column name to filter on.
-#' @param filter_value Character vector. Filter values.
-#'
-#' @return Filtered data.table.
-#'
-#' @keywords internal
+# Apply Single-Value Filter
+#
+# Filter that only applies when exactly one value is selected.
+# Used for binary filters like Mendelian Randomization.
+#
+# Args:
+#   dt: data.table. The data to filter.
+#   column: Character. The column name to filter on.
+#   filter_value: Character vector. Filter values.
+#
+# Returns:
+#   Filtered data.table.
 apply_single_value_filter <- function(dt, column, filter_value) {
   # Only apply when exactly one value is selected
   if (!is.null(filter_value) && length(filter_value) == 1L) {
@@ -231,20 +222,20 @@ apply_single_value_filter <- function(dt, column, filter_value) {
 # FILTER MESSAGE UTILITIES
 # =============================================================================
 
-#' Build Filter List from Filter Specifications
-#'
-#' Helper function to build a character vector of active filter descriptions.
-#' Used by both Table 1 and Table 2 filter message rendering.
-#'
-#' @param filter_specs List of lists, each containing:
-#'   - name: Display name for the filter
-#'   - value: Current filter value(s)
-#'   - is_single: If TRUE, only show when exactly one value selected
-#'   - exclude_all: If TRUE, exclude "all" from display
-#'
-#' @return Character vector of filter descriptions.
-#'
-#' @export
+# Build Filter List from Filter Specifications
+#
+# Helper function to build a character vector of active filter descriptions.
+# Used by both Table 1 and Table 2 filter message rendering.
+#
+# Args:
+#   filter_specs: List of lists, each containing:
+#     - name: Display name for the filter
+#     - value: Current filter value(s)
+#     - is_single: If TRUE, only show when exactly one value selected
+#     - exclude_all: If TRUE, exclude "all" from display
+#
+# Returns:
+#   Character vector of filter descriptions.
 build_filter_list <- function(filter_specs) {
   filters_applied <- character(0L)
 
@@ -275,17 +266,17 @@ build_filter_list <- function(filter_specs) {
   filters_applied
 }
 
-#' Render Filter Message HTML
-#'
-#' Creates the styled div for displaying active filter status.
-#' Used by both Table 1 and Table 2 filter message rendering.
-#' Uses CSS classes for theme support (light/dark mode).
-#'
-#' @param filters_applied Character vector of filter descriptions.
-#'
-#' @return A Shiny div element.
-#'
-#' @export
+# Render Filter Message HTML
+#
+# Creates the styled div for displaying active filter status.
+# Used by both Table 1 and Table 2 filter message rendering.
+# Uses CSS classes for theme support (light/dark mode).
+#
+# Args:
+#   filters_applied: Character vector of filter descriptions.
+#
+# Returns:
+#   A Shiny div element.
 render_filter_message <- function(filters_applied) {
   if (length(filters_applied) > 0L) {
     shiny::div(

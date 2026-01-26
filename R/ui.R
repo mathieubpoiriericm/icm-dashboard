@@ -6,11 +6,8 @@
 # BSLIB THEME DEFINITIONS
 # =============================================================================
 
-#' Light Theme
-#'
-#' Bootstrap 5 theme matching the current light appearance.
-#'
-#' @export
+# Light Theme
+# Bootstrap 5 theme matching the current light appearance.
 light_theme <- bslib::bs_theme(
   version = 5,
   bg = "#ffffff",
@@ -26,11 +23,8 @@ light_theme <- bslib::bs_theme(
   "navbar-light-color" = "#1f2937"
 )
 
-#' Dark Theme with Glassmorphism
-#'
-#' Bootstrap 5 dark theme with glassmorphism support.
-#'
-#' @export
+# Dark Theme with Glassmorphism
+# Bootstrap 5 dark theme with glassmorphism support.
 dark_theme <- bslib::bs_theme(
   version = 5,
   bg = "#121212",
@@ -46,19 +40,19 @@ dark_theme <- bslib::bs_theme(
   "navbar-dark-color" = "#e0e0e0"
 )
 
-#' Build UI Function for SVD Dashboard
-#'
-#' Creates the UI definition for the Shiny application using bslib for
-#' Bootstrap 5 theming with light/dark mode support.
-#'
-#' @param n_genes Integer. Number of unique genes in the Gene Table.
-#' @param n_drugs Integer. Number of unique drugs in the Clinical Trials Table.
-#' @param n_trials Integer. Number of unique clinical trials.
-#' @param n_pubs Integer. Number of unique publications.
-#'
-#' @return A Shiny UI object.
-#'
-#' @export
+# Build UI Function for SVD Dashboard
+#
+# Creates the UI definition for the Shiny application using bslib for
+# Bootstrap 5 theming with light/dark mode support.
+#
+# Args:
+#   n_genes: Integer. Number of unique genes in the Gene Table.
+#   n_drugs: Integer. Number of unique drugs in the Clinical Trials Table.
+#   n_trials: Integer. Number of unique clinical trials.
+#   n_pubs: Integer. Number of unique publications.
+#
+# Returns:
+#   A Shiny UI object.
 build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
   bslib::page_navbar(
     id = "tabs",

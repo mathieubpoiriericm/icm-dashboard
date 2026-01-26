@@ -2,23 +2,23 @@
 # Server logic for Table 2 (Clinical Trials Table)
 # nolint start: object_usage_linter.
 
-#' Build Table 2 Data Loader
-#'
-#' Creates a reactive that lazily loads Table 2 data only when needed.
-#' If PRELOAD_TABLE2 is TRUE, the data is preloaded at app startup and
-#' this loader simply returns the already-populated reactiveVals.
-#'
-#' @param table2_data reactiveVal. Storage for table2 data.
-#' @param table2_display_data reactiveVal. Storage for display data.
-#' @param ct_info_data reactiveVal. Storage for clinical trial info.
-#' @param registry_matches_data reactiveVal. Storage for registry matches.
-#' @param registry_rows_data reactiveVal. Storage for registry row indices.
-#' @param sample_sizes_data reactiveVal. Storage for sample sizes.
-#' @param sample_sizes_hash_data reactiveVal. Storage for pre-computed hash.
-#'
-#' @return A reactive that returns the loaded data list.
-#'
-#' @keywords internal
+# Build Table 2 Data Loader
+#
+# Creates a reactive that lazily loads Table 2 data only when needed.
+# If PRELOAD_TABLE2 is TRUE, the data is preloaded at app startup and
+# this loader simply returns the already-populated reactiveVals.
+#
+# Args:
+#   table2_data: reactiveVal. Storage for table2 data.
+#   table2_display_data: reactiveVal. Storage for display data.
+#   ct_info_data: reactiveVal. Storage for clinical trial info.
+#   registry_matches_data: reactiveVal. Storage for registry matches.
+#   registry_rows_data: reactiveVal. Storage for registry row indices.
+#   sample_sizes_data: reactiveVal. Storage for sample sizes.
+#   sample_sizes_hash_data: reactiveVal. Storage for pre-computed hash.
+#
+# Returns:
+#   A reactive that returns the loaded data list.
 build_table2_loader <- function(
   table2_data,
   table2_display_data,
@@ -67,17 +67,17 @@ build_table2_loader <- function(
   })
 }
 
-#' Build Sample Size Histogram Output
-#'
-#' Creates the renderPlot expression for the sample size histogram
-#' with filter indicator lines.
-#'
-#' @param load_table2 Reactive. The table2 data loader.
-#' @param sample_size_input Reactive. The current slider input values.
-#'
-#' @return A cached renderPlot expression.
-#'
-#' @keywords internal
+# Build Sample Size Histogram Output
+#
+# Creates the renderPlot expression for the sample size histogram
+# with filter indicator lines.
+#
+# Args:
+#   load_table2: Reactive. The table2 data loader.
+#   sample_size_input: Reactive. The current slider input values.
+#
+# Returns:
+#   A cached renderPlot expression.
 build_sample_size_histogram <- function(load_table2, sample_size_input) {
   shiny::renderCachedPlot(
     {
@@ -141,23 +141,23 @@ build_sample_size_histogram <- function(load_table2, sample_size_input) {
   )
 }
 
-#' Build Table 2 Filtered Data Reactive
-#'
-#' Creates a reactive expression that filters table2 based on multiple
-#' filter selections including genetic evidence, registry, phase,
-#' population, sponsor, and sample size.
-#'
-#' @param load_table2 Reactive. The table2 data loader.
-#' @param ge_filter Reactive. Genetic evidence filter values.
-#' @param reg_filter Reactive. Registry filter values.
-#' @param ct_filter Reactive. Clinical trial phase filter values.
-#' @param pop_filter Reactive. SVD population filter values.
-#' @param spon_filter Reactive. Sponsor type filter values.
-#' @param sample_size_filter_debounced Reactive. Debounced sample size range.
-#'
-#' @return A cached reactive expression returning filtered display data.
-#'
-#' @keywords internal
+# Build Table 2 Filtered Data Reactive
+#
+# Creates a reactive expression that filters table2 based on multiple
+# filter selections including genetic evidence, registry, phase,
+# population, sponsor, and sample size.
+#
+# Args:
+#   load_table2: Reactive. The table2 data loader.
+#   ge_filter: Reactive. Genetic evidence filter values.
+#   reg_filter: Reactive. Registry filter values.
+#   ct_filter: Reactive. Clinical trial phase filter values.
+#   pop_filter: Reactive. SVD population filter values.
+#   spon_filter: Reactive. Sponsor type filter values.
+#   sample_size_filter_debounced: Reactive. Debounced sample size range.
+#
+# Returns:
+#   A cached reactive expression returning filtered display data.
 build_table2_filtered_data <- function(
   load_table2,
   ge_filter,
@@ -278,21 +278,21 @@ build_table2_filtered_data <- function(
     )
 }
 
-#' Add Row Merge Metadata for JavaScript
-#'
-#' Pre-computes rowspan values, visibility, and color assignments for
-#' JavaScript row merging. This moves computation from client-side JS
-#' (which runs on every page draw) to server-side R (which runs once
-#' when data is filtered).
-#'
-#' @param display_df Data frame. The display data.
-#'
-#' @return Data frame with hidden metadata columns added:
-#'   - __drug_group__: Drug group index (0-indexed)
-#'   - __color_class__: Alternating color class (0 or 1)
-#'   - __rowspans__: JSON array of rowspan values for columns 0-3
-#'
-#' @keywords internal
+# Add Row Merge Metadata for JavaScript
+#
+# Pre-computes rowspan values, visibility, and color assignments for
+# JavaScript row merging. This moves computation from client-side JS
+# (which runs on every page draw) to server-side R (which runs once
+# when data is filtered).
+#
+# Args:
+#   display_df: Data frame. The display data.
+#
+# Returns:
+#   Data frame with hidden metadata columns added:
+#   - __drug_group__: Drug group index (0-indexed)
+#   - __color_class__: Alternating color class (0 or 1)
+#   - __rowspans__: JSON array of rowspan values for columns 0-3
 add_drug_group_indices <- function(display_df) {
   n_rows <- nrow(display_df)
 
@@ -365,21 +365,21 @@ add_drug_group_indices <- function(display_df) {
   display_df
 }
 
-#' Build Table 2 Filter Message UI
-#'
-#' Creates a reactive UI expression that displays active filter status
-#' for Table 2.
-#'
-#' @param ge_filter Reactive. Genetic evidence filter values.
-#' @param reg_filter Reactive. Registry filter values.
-#' @param ct_filter Reactive. Clinical trial phase filter values.
-#' @param pop_filter Reactive. SVD population filter values.
-#' @param spon_filter Reactive. Sponsor type filter values.
-#' @param sample_size_filter_debounced Reactive. Debounced sample size range.
-#'
-#' @return A cached renderUI expression.
-#'
-#' @keywords internal
+# Build Table 2 Filter Message UI
+#
+# Creates a reactive UI expression that displays active filter status
+# for Table 2.
+#
+# Args:
+#   ge_filter: Reactive. Genetic evidence filter values.
+#   reg_filter: Reactive. Registry filter values.
+#   ct_filter: Reactive. Clinical trial phase filter values.
+#   pop_filter: Reactive. SVD population filter values.
+#   spon_filter: Reactive. Sponsor type filter values.
+#   sample_size_filter_debounced: Reactive. Debounced sample size range.
+#
+# Returns:
+#   A cached renderUI expression.
 build_table2_filter_message <- function(
   ge_filter,
   reg_filter,
@@ -449,18 +449,18 @@ build_table2_filter_message <- function(
     )
 }
 
-#' Build Table 2 DataTable Output
-#'
-#' Creates the DT::renderDT expression for Table 2 with row merging.
-#' Row merging metadata (rowspans, colors) is pre-computed server-side
-#' in add_drug_group_indices() to minimize JavaScript computation on
-#' each page draw.
-#'
-#' @param filtered_data2 Reactive. The filtered display data.
-#'
-#' @return A DT::renderDT expression.
-#'
-#' @keywords internal
+# Build Table 2 DataTable Output
+#
+# Creates the DT::renderDT expression for Table 2 with row merging.
+# Row merging metadata (rowspans, colors) is pre-computed server-side
+# in add_drug_group_indices() to minimize JavaScript computation on
+# each page draw.
+#
+# Args:
+#   filtered_data2: Reactive. The filtered display data.
+#
+# Returns:
+#   A DT::renderDT expression.
 build_table2_datatable <- function(filtered_data2) {
   DT::renderDT(
     {

@@ -2,22 +2,22 @@
 # Server logic for Table 1 (Gene Table)
 # nolint start: object_usage_linter.
 
-#' Build Table 1 Filtered Data Reactive
-#'
-#' Creates a reactive expression that filters table1 based on MR, GWAS trait,
-#' and omics filter selections.
-#'
-#' @param table1 data.table. The main gene data table.
-#' @param table1_display Data frame. Pre-computed display table with tooltips.
-#' @param gwas_trait_rows fastmap. Pre-computed row indices for GWAS traits.
-#' @param omics_type_rows fastmap. Pre-computed row indices for omics types.
-#' @param mr_filter Reactive. Mendelian randomization filter values.
-#' @param gwas_trait_filter Reactive. GWAS trait filter values.
-#' @param omics_filter Reactive. Omics study filter values.
-#'
-#' @return A cached reactive expression returning filtered display data.
-#'
-#' @keywords internal
+# Build Table 1 Filtered Data Reactive
+#
+# Creates a reactive expression that filters table1 based on MR, GWAS trait,
+# and omics filter selections.
+#
+# Args:
+#   table1: data.table. The main gene data table.
+#   table1_display: Data frame. Pre-computed display table with tooltips.
+#   gwas_trait_rows: fastmap. Pre-computed row indices for GWAS traits.
+#   omics_type_rows: fastmap. Pre-computed row indices for omics types.
+#   mr_filter: Reactive. Mendelian randomization filter values.
+#   gwas_trait_filter: Reactive. GWAS trait filter values.
+#   omics_filter: Reactive. Omics study filter values.
+#
+# Returns:
+#   A cached reactive expression returning filtered display data.
 build_table1_filtered_data <- function(
   table1,
   table1_display,
@@ -80,18 +80,18 @@ build_table1_filtered_data <- function(
     )
 }
 
-#' Build Table 1 Filter Message UI
-#'
-#' Creates a reactive UI expression that displays active filter status
-#' for Table 1.
-#'
-#' @param mr_filter Reactive. Mendelian randomization filter values.
-#' @param gwas_trait_filter Reactive. GWAS trait filter values.
-#' @param omics_filter Reactive. Omics study filter values.
-#'
-#' @return A cached renderUI expression.
-#'
-#' @keywords internal
+# Build Table 1 Filter Message UI
+#
+# Creates a reactive UI expression that displays active filter status
+# for Table 1.
+#
+# Args:
+#   mr_filter: Reactive. Mendelian randomization filter values.
+#   gwas_trait_filter: Reactive. GWAS trait filter values.
+#   omics_filter: Reactive. Omics study filter values.
+#
+# Returns:
+#   A cached renderUI expression.
 build_table1_filter_message <- function(
   mr_filter,
   gwas_trait_filter,
@@ -123,16 +123,16 @@ build_table1_filter_message <- function(
     shiny::bindCache(mr_filter(), gwas_trait_filter(), omics_filter())
 }
 
-#' Build Table 1 DataTable Output
-#'
-#' Creates the DT::renderDT expression for Table 1 with custom header,
-#' column definitions, and tooltip initialization.
-#'
-#' @param filtered_data Reactive. The filtered display data.
-#'
-#' @return A DT::renderDT expression.
-#'
-#' @keywords internal
+# Build Table 1 DataTable Output
+#
+# Creates the DT::renderDT expression for Table 1 with custom header,
+# column definitions, and tooltip initialization.
+#
+# Args:
+#   filtered_data: Reactive. The filtered display data.
+#
+# Returns:
+#   A DT::renderDT expression.
 build_table1_datatable <- function(filtered_data) {
   DT::renderDT(
     {

@@ -5,23 +5,23 @@
 # Functions with_db_connection and clean_column_names are from utils.R
 # (sourced before this file in app.R)
 
-#' Clean Table 1 Data
-#'
-#' Reads and cleans the genes table from a PostgreSQL database, performing
-#' various data transformations including column renaming, NA handling,
-#' and text cleanup.
-#'
-#' @param con A DBI database connection object. If NULL, a new connection
-#'   will be created using environment variables or defaults.
-#' @param dbname Database name. Defaults to "csvd_dashboard".
-#' @param host Database host. Defaults to "localhost".
-#' @param port Database port. Defaults to 5432.
-#' @param user Database user. Defaults to Sys.getenv("DB_USER").
-#' @param password Database password. Defaults to Sys.getenv("DB_PASSWORD").
-#'
-#' @return A cleaned data.frame with processed columns ready for display.
-#'
-#' @export
+# Clean Table 1 Data
+#
+# Reads and cleans the genes table from a PostgreSQL database, performing
+# various data transformations including column renaming, NA handling,
+# and text cleanup.
+#
+# Args:
+#   con: A DBI database connection object. If NULL, a new connection
+#     will be created using environment variables or defaults.
+#   dbname: Database name. Defaults to "csvd_dashboard".
+#   host: Database host. Defaults to "localhost".
+#   port: Database port. Defaults to 5432.
+#   user: Database user. Defaults to Sys.getenv("DB_USER").
+#   password: Database password. Defaults to Sys.getenv("DB_PASSWORD").
+#
+# Returns:
+#   A cleaned data.frame with processed columns ready for display.
 clean_table1 <- function(
   con = NULL,
   dbname = "csvd_dashboard",

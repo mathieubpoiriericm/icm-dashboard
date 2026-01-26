@@ -1,17 +1,17 @@
 # mod_checkbox_filter.R
 # Shiny module for checkbox filter groups with "Show All" toggle behavior
 
-#' Checkbox Filter Module UI
-#'
-#' @param id Module namespace ID
-#' @param label Label for the checkbox group
-#' @param choices Named vector of choices
-#' @param selected Initial selected values
-#' @param has_show_all Whether to include "Show All" toggle behavior
-#'
-#' @return A checkbox group input
-#'
-#' @export
+# Checkbox Filter Module UI
+#
+# Args:
+#   id: Module namespace ID
+#   label: Label for the checkbox group
+#   choices: Named vector of choices
+#   selected: Initial selected values
+#   has_show_all: Whether to include "Show All" toggle behavior
+#
+# Returns:
+#   A checkbox group input
 checkbox_filter_ui <- function(
   id,
   label,
@@ -43,17 +43,17 @@ checkbox_filter_ui <- function(
   )
 }
 
-#' Checkbox Filter Module Server (with "Show All" toggle)
-#'
-#' Handles the toggle behavior where selecting "Show All" deselects others
-#' and selecting any other option deselects "Show All"
-#'
-#' @param id Module namespace ID
-#' @param default_selection Default selection when resetting
-#'
-#' @return Reactive containing current filter selection
-#'
-#' @export
+# Checkbox Filter Module Server (with "Show All" toggle)
+#
+# Handles the toggle behavior where selecting "Show All" deselects others
+# and selecting any other option deselects "Show All"
+#
+# Args:
+#   id: Module namespace ID
+#   default_selection: Default selection when resetting
+#
+# Returns:
+#   Reactive containing current filter selection
 checkbox_filter_server <- function(id, default_selection = "all") {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(default_selection)
@@ -112,16 +112,16 @@ checkbox_filter_server <- function(id, default_selection = "all") {
   })
 }
 
-#' Binary Checkbox Filter Module Server (Yes/No toggle)
-#'
-#' Handles binary filters where selecting only one option toggles to both
-#'
-#' @param id Module namespace ID
-#' @param choices The two choices (e.g., c("Yes", "No"))
-#'
-#' @return Reactive containing current filter selection
-#'
-#' @export
+# Binary Checkbox Filter Module Server (Yes/No toggle)
+#
+# Handles binary filters where selecting only one option toggles to both
+#
+# Args:
+#   id: Module namespace ID
+#   choices: The two choices (e.g., c("Yes", "No"))
+#
+# Returns:
+#   Reactive containing current filter selection
 binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(choices)

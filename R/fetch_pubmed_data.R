@@ -1,15 +1,15 @@
 # fetch_pubmed_data.R
 # PubMed reference fetching and cleaning functions
 
-#' Fetch Publication from PubMed
-#'
-#' Fetches publication info from PubMed for a single PMID.
-#'
-#' @param pmid A character or numeric PMID.
-#'
-#' @return A BibEntry object from RefManageR.
-#'
-#' @export
+# Fetch Publication from PubMed
+#
+# Fetches publication info from PubMed for a single PMID.
+#
+# Args:
+#   pmid: A character or numeric PMID.
+#
+# Returns:
+#   A BibEntry object from RefManageR.
 fetch_pub <- function(pmid) {
   # Check if NCBI is reachable before attempting to fetch
   ncbi_available <- tryCatch(
@@ -39,15 +39,15 @@ fetch_pub <- function(pmid) {
   ref
 }
 
-#' Parse XML Reference File
-#'
-#' Parses a MODS XML file and extracts formatted reference information.
-#'
-#' @param xml_path Path to the XML file.
-#'
-#' @return A character string with HTML-formatted reference info.
-#'
-#' @export
+# Parse XML Reference File
+#
+# Parses a MODS XML file and extracts formatted reference information.
+#
+# Args:
+#   xml_path: Path to the XML file.
+#
+# Returns:
+#   A character string with HTML-formatted reference info.
 parse_reference_xml <- function(xml_path) {
   xml_file <- xml2::read_xml(xml_path)
 
@@ -120,37 +120,37 @@ parse_reference_xml <- function(xml_path) {
   paste(authors, title, journal, pub_date, doi, sep = "<br>")
 }
 
-#' Extract Unique PMIDs from Table1
-#'
-#' Extracts and cleans unique PMIDs from a table1 References column.
-#'
-#' @param references A list column of reference PMIDs.
-#'
-#' @return A character vector of unique PMIDs.
-#'
-#' @export
+# Extract Unique PMIDs from Table1
+#
+# Extracts and cleans unique PMIDs from a table1 References column.
+#
+# Args:
+#   references: A list column of reference PMIDs.
+#
+# Returns:
+#   A character vector of unique PMIDs.
 extract_unique_pmids <- function(references) {
   pmids <- unique(unlist(references))
   pmids <- pmids[!is.na(pmids) & pmids != "(reference needed)"]
   pmids
 }
 
-#' Fetch and Process All PubMed References
-#'
-#' Fetches publication info from PubMed for multiple PMIDs,
-#' saves intermediate .bib and .xml files, and returns a
-#' data.frame with formatted reference information.
-#'
-#' @param pmids A character vector of PMIDs.
-#' @param bibentry_dir Directory to store .bib and .xml files.
-#'   Defaults to "bibentry".
-#' @param delay Delay in seconds between API requests to avoid rate limiting.
-#'   NCBI recommends no more than 3 requests per second. Defaults to 0.5.
-#' @param verbose If TRUE, prints progress messages. Defaults to FALSE.
-#'
-#' @return A data.frame with columns: pmid, formatted reference text.
-#'
-#' @export
+# Fetch and Process All PubMed References
+#
+# Fetches publication info from PubMed for multiple PMIDs,
+# saves intermediate .bib and .xml files, and returns a
+# data.frame with formatted reference information.
+#
+# Args:
+#   pmids: A character vector of PMIDs.
+#   bibentry_dir: Directory to store .bib and .xml files.
+#     Defaults to "bibentry".
+#   delay: Delay in seconds between API requests to avoid rate limiting.
+#     NCBI recommends no more than 3 requests per second. Defaults to 0.5.
+#   verbose: If TRUE, prints progress messages. Defaults to FALSE.
+#
+# Returns:
+#   A data.frame with columns: pmid, formatted reference text.
 fetch_all_pubmed_refs <- function(
   pmids,
   bibentry_dir = "bibentry",

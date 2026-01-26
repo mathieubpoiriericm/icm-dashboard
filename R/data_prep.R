@@ -2,16 +2,16 @@
 # Data loading and preprocessing
 # nolint start: object_usage_linter.
 
-#' Safely read a serialized R object with error handling
-#'
-#' Reads data files using qs format (default, 3-5x faster) with automatic
-#' fallback to RDS format for backward compatibility.
-#'
-#' @param file_path Character. Path to the data file (.qs or .rds).
-#'
-#' @return The object stored in the file.
-#'
-#' @keywords internal
+# Safely read a serialized R object with error handling
+#
+# Reads data files using qs format (default, 3-5x faster) with automatic
+# fallback to RDS format for backward compatibility.
+#
+# Args:
+#   file_path: Character. Path to the data file (.qs or .rds).
+#
+# Returns:
+#   The object stored in the file.
 safe_read_data <- function(file_path) {
   # If path is .qs, try it directly
   if (grepl("\\.qs$", file_path, ignore.case = TRUE)) {
@@ -56,16 +56,16 @@ safe_read_data <- function(file_path) {
 # Alias for backward compatibility with existing code
 safe_read_rds <- safe_read_data
 
-#' Convert RDS files to qs format for faster loading
-#'
-#' Converts all RDS files to qs format based on DATA_PATHS configuration.
-#' Run this once after deployment or when data files are updated.
-#'
-#' @param overwrite Logical. Overwrite existing qs files. Defaults to FALSE.
-#'
-#' @return Invisible NULL. Prints conversion status.
-#'
-#' @export
+# Convert RDS files to qs format for faster loading
+#
+# Converts all RDS files to qs format based on DATA_PATHS configuration.
+# Run this once after deployment or when data files are updated.
+#
+# Args:
+#   overwrite: Logical. Overwrite existing qs files. Defaults to FALSE.
+#
+# Returns:
+#   Invisible NULL. Prints conversion status.
 convert_rds_to_qs <- function(overwrite = FALSE) {
   message("Converting RDS files to QS format...")
 
@@ -108,16 +108,16 @@ convert_rds_to_qs <- function(overwrite = FALSE) {
   invisible(NULL)
 }
 
-#' Safely read a CSV file with error handling
-#'
-#' Wraps data.table::fread with tryCatch to provide informative
-#' error messages when CSV files are missing or malformed.
-#'
-#' @param file_path Character. Path to the CSV file.
-#'
-#' @return A data.table containing the CSV data.
-#'
-#' @keywords internal
+# Safely read a CSV file with error handling
+#
+# Wraps data.table::fread with tryCatch to provide informative
+# error messages when CSV files are missing or malformed.
+#
+# Args:
+#   file_path: Character. Path to the CSV file.
+#
+# Returns:
+#   A data.table containing the CSV data.
 safe_read_csv <- function(file_path) {
   tryCatch(
     {
@@ -137,41 +137,34 @@ safe_read_csv <- function(file_path) {
   )
 }
 
-#' Load and prepare Table 1 data
-#'
-#' Loads pre-cleaned RDS files and external data sources, applies formatting
-#' corrections, and creates pre-computed lookup tables for efficient filtering
-#' in the Shiny application.
-#'
-#' @details
-#' This function performs the following operations:
-#' - Loads table1_clean.RDS, gene_info_results_df.RDS, prot_info_clean.RDS
-#' - Fixes empty Mendelian Randomization values
-#' - Applies title case formatting to pathway and protein names
-#' - Extracts unique GWAS traits and omics types
-#' - Pre-computes row indices for GWAS and omics filtering
-#' - Loads OMIM info and publication references
-#'
-#' @return A named list containing:
-#' \describe{
-#'   \item{table1}{Main gene data as a data.table}
-#'   \item{gene_info_results_df}{NCBI gene info with ID, protein, aliases, URL}
-#'   \item{prot_info_clean}{UniProt protein information}
-#'   \item{omics_df}{Data frame of omics types and full names}
-#'   \item{unique_gwas_traits}{Character vector of unique GWAS traits}
-#'   \item{gwas_traits_df}{Data frame of GWAS traits}
-#'   \item{gwas_trait_mapping}{Named vector mapping trait abbreviations
-#'     to full names}
-#'   \item{gwas_trait_rows}{List of row indices per GWAS trait
-#'     for fast filtering}
-#'   \item{omics_type_rows}{List of row indices per omics type
-#'     for fast filtering}
-#'   \item{omim_lookup}{fastmap for O(1) OMIM lookups by omim_num}
-#'   \item{refs}{Publication references for tooltips}
-#' }
-#'
-#' @export
-#' @seealso \code{\link{load_table2_data}} for clinical trial data
+# Load and prepare Table 1 data
+#
+# Loads pre-cleaned RDS files and external data sources, applies formatting
+# corrections, and creates pre-computed lookup tables for efficient filtering
+# in the Shiny application.
+#
+# Details:
+#   This function performs the following operations:
+#   - Loads table1_clean.RDS, gene_info_results_df.RDS, prot_info_clean.RDS
+#   - Fixes empty Mendelian Randomization values
+#   - Applies title case formatting to pathway and protein names
+#   - Extracts unique GWAS traits and omics types
+#   - Pre-computes row indices for GWAS and omics filtering
+#   - Loads OMIM info and publication references
+#
+# Returns:
+#   A named list containing:
+#   - table1: Main gene data as a data.table
+#   - gene_info_results_df: NCBI gene info with ID, protein, aliases, URL
+#   - prot_info_clean: UniProt protein information
+#   - omics_df: Data frame of omics types and full names
+#   - unique_gwas_traits: Character vector of unique GWAS traits
+#   - gwas_traits_df: Data frame of GWAS traits
+#   - gwas_trait_mapping: Named vector mapping trait abbreviations to full names
+#   - gwas_trait_rows: List of row indices per GWAS trait for fast filtering
+#   - omics_type_rows: List of row indices per omics type for fast filtering
+#   - omim_lookup: fastmap for O(1) OMIM lookups by omim_num
+#   - refs: Publication references for tooltips
 load_and_prepare_data <- function() {
   # Load required data with error handling
   message("Loading Table 1 data...")
@@ -434,34 +427,30 @@ load_and_prepare_data <- function() {
   )
 }
 
-#' Load and prepare Table 2 clinical trial data
-#'
-#' Lazily loads clinical trial data and associated gene information.
-#' Processes registry IDs, formats completion dates, and prepares
-#' trial metadata for display.
-#'
-#' @details
-#' This function performs the following operations:
-#' - Loads table2_clean.RDS and gene_info_table2.RDS
-#' - Renames gene info columns to match Table 1 format
-#' - Extracts trial name and primary outcome into ct_info
-#' - Converts completion dates to "Month Year" format
-#' - Identifies clinical trial registry types (NCT, ISRCTN, ACTRN, ChiCTR)
-#'
-#' @return A named list containing:
-#' \describe{
-#'   \item{table2}{Clinical trial data as a data.table}
-#'   \item{ct_info}{Trial name and primary outcome for tooltips}
-#'   \item{registry_matches}{Data frame of matched registry patterns}
-#'   \item{registry_rows}{Fastmap of registry pattern to row indices}
-#'   \item{gene_info_table2}{NCBI gene info for Table 2 genes}
-#'   \item{gene_symbols_table2}{Character vector of gene symbols}
-#'   \item{sample_sizes}{Numeric vector of sample sizes for histogram}
-#'   \item{sample_sizes_hash}{Pre-computed digest hash for caching}
-#' }
-#'
-#' @export
-#' @seealso \code{\link{load_and_prepare_data}} for main gene data
+# Load and prepare Table 2 clinical trial data
+#
+# Lazily loads clinical trial data and associated gene information.
+# Processes registry IDs, formats completion dates, and prepares
+# trial metadata for display.
+#
+# Details:
+#   This function performs the following operations:
+#   - Loads table2_clean.RDS and gene_info_table2.RDS
+#   - Renames gene info columns to match Table 1 format
+#   - Extracts trial name and primary outcome into ct_info
+#   - Converts completion dates to "Month Year" format
+#   - Identifies clinical trial registry types (NCT, ISRCTN, ACTRN, ChiCTR)
+#
+# Returns:
+#   A named list containing:
+#   - table2: Clinical trial data as a data.table
+#   - ct_info: Trial name and primary outcome for tooltips
+#   - registry_matches: Data frame of matched registry patterns
+#   - registry_rows: Fastmap of registry pattern to row indices
+#   - gene_info_table2: NCBI gene info for Table 2 genes
+#   - gene_symbols_table2: Character vector of gene symbols
+#   - sample_sizes: Numeric vector of sample sizes for histogram
+#   - sample_sizes_hash: Pre-computed digest hash for caching
 load_table2_data <- function() {
   message("Loading Table 2 clinical trial data...")
   table2 <- safe_read_rds(DATA_PATHS$table2_clean)
@@ -596,24 +585,22 @@ load_table2_data <- function() {
   )
 }
 
-#' Aggregate Table 2 display data by Drug
-#'
-#' Groups clinical trial data by Drug, Mechanism of Action, and Genetic
-#' Target, collapsing other columns (multiple trials per drug) into single
-#' cells with HTML line breaks.
-#'
-#' @param table2_display Data frame. The display-ready table2 with HTML
-#'   tooltips.
-#'
-#' @return Data frame. Aggregated table with merged drug rows.
-#'
-#' @details
-#' Columns are aggregated as follows:
-#' - Drug, Mechanism of Action, Genetic Target: kept as grouping keys
-#' - Other columns: unique values collapsed with <br> separators
-#'
-#' @export
-#' @seealso \code{\link{prepare_table2_display}}
+# Aggregate Table 2 display data by Drug
+#
+# Groups clinical trial data by Drug, Mechanism of Action, and Genetic
+# Target, collapsing other columns (multiple trials per drug) into single
+# cells with HTML line breaks.
+#
+# Args:
+#   table2_display: Data frame. The display-ready table2 with HTML tooltips.
+#
+# Returns:
+#   Data frame. Aggregated table with merged drug rows.
+#
+# Details:
+#   Columns are aggregated as follows:
+#   - Drug, Mechanism of Action, Genetic Target: kept as grouping keys
+#   - Other columns: unique values collapsed with <br> separators
 aggregate_table2_by_drug <- function(table2_display) {
   # Convert to data.frame if data.table
 

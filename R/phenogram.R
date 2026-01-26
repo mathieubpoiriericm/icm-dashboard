@@ -4,16 +4,16 @@
 # Import .data pronoun for tidy evaluation
 .data <- rlang::.data
 
-#' Fetch Gene Locations from Ensembl
-#'
-#' Retrieves chromosome locations for a vector of gene symbols using biomaRt.
-#'
-#' @param genes A character vector of HGNC gene symbols.
-#'
-#' @return A data.frame with columns: hgnc_symbol, chromosome_name,
-#'   start_position, end_position.
-#'
-#' @export
+# Fetch Gene Locations from Ensembl
+#
+# Retrieves chromosome locations for a vector of gene symbols using biomaRt.
+#
+# Args:
+#   genes: A character vector of HGNC gene symbols.
+#
+# Returns:
+#   A data.frame with columns: hgnc_symbol, chromosome_name,
+#   start_position, end_position.
 fetch_gene_locations <- function(genes) {
   ensembl <- biomaRt::useEnsembl(
     biomart = "genes",
@@ -38,15 +38,15 @@ fetch_gene_locations <- function(genes) {
   results
 }
 
-#' Clean Phenotype String
-#'
-#' Removes unwanted characters from phenotype/GWAS trait strings.
-#'
-#' @param x A character vector.
-#'
-#' @return A cleaned character vector.
-#'
-#' @export
+# Clean Phenotype String
+#
+# Removes unwanted characters from phenotype/GWAS trait strings.
+#
+# Args:
+#   x: A character vector.
+#
+# Returns:
+#   A cleaned character vector.
 clean_phenotype_string <- function(x) {
   x <- as.character(x)
   x <- gsub("c(", "", x, fixed = TRUE)
@@ -56,15 +56,15 @@ clean_phenotype_string <- function(x) {
   x
 }
 
-#' Apply Phenotype Title Casing
-#'
-#' Applies consistent title casing to phenotype names.
-#'
-#' @param phenotypes A character vector of phenotype names.
-#'
-#' @return A character vector with corrected casing.
-#'
-#' @export
+# Apply Phenotype Title Casing
+#
+# Applies consistent title casing to phenotype names.
+#
+# Args:
+#   phenotypes: A character vector of phenotype names.
+#
+# Returns:
+#   A character vector with corrected casing.
 fix_phenotype_casing <- function(phenotypes) {
   phenotypes <- gsub("lacunes", "Lacunes", phenotypes, fixed = TRUE)
   phenotypes <- gsub("extreme", "Extreme", phenotypes, fixed = TRUE)
@@ -79,21 +79,21 @@ fix_phenotype_casing <- function(phenotypes) {
   phenotypes
 }
 
-#' Create Phenogram Data
-#'
-#' Creates a phenogram-formatted data.frame for the Ritchie Lab PhenoGram tool.
-#'
-#' @param table1 A cleaned table1 data.frame with Gene and GWAS Trait columns.
-#' @param gene_locations Optional. Pre-fetched gene locations. If NULL,
-#'   fetches from Ensembl.
-#'
-#' @return A list containing:
-#'   - phenogram: data.frame formatted for PhenoGram
-#'     (phenotype, annotation, chr, pos)
-#'   - missing_genes: genes not found in Ensembl
-#'   - gene_locations: the gene location data used
-#'
-#' @export
+# Create Phenogram Data
+#
+# Creates a phenogram-formatted data.frame for the Ritchie Lab PhenoGram tool.
+#
+# Args:
+#   table1: A cleaned table1 data.frame with Gene and GWAS Trait columns.
+#   gene_locations: Optional. Pre-fetched gene locations. If NULL,
+#     fetches from Ensembl.
+#
+# Returns:
+#   A list containing:
+#   - phenogram: data.frame formatted for PhenoGram (phenotype, annotation,
+#     chr, pos)
+#   - missing_genes: genes not found in Ensembl
+#   - gene_locations: the gene location data used
 create_phenogram_data <- function(table1, gene_locations = NULL) {
   genes <- table1$Gene
 
@@ -155,16 +155,16 @@ create_phenogram_data <- function(table1, gene_locations = NULL) {
   )
 }
 
-#' Extract Unique Phenotypes
-#'
-#' Extracts unique phenotype values from table1 GWAS Trait column.
-#'
-#' @param table1 A cleaned table1 data.frame.
-#' @param exclude_genes Optional character vector of genes to exclude.
-#'
-#' @return A character vector of unique phenotypes.
-#'
-#' @export
+# Extract Unique Phenotypes
+#
+# Extracts unique phenotype values from table1 GWAS Trait column.
+#
+# Args:
+#   table1: A cleaned table1 data.frame.
+#   exclude_genes: Optional character vector of genes to exclude.
+#
+# Returns:
+#   A character vector of unique phenotypes.
 extract_unique_phenotypes <- function(table1, exclude_genes = NULL) {
   filtered_table <- table1
 
@@ -181,15 +181,15 @@ extract_unique_phenotypes <- function(table1, exclude_genes = NULL) {
   unique(unlist(stringr::str_split(gwas_traits, stringr::fixed(","))))
 }
 
-#' Format RGBA Values for Python Script
-#'
-#' Formats phenotype RGBA color values for use in Python visualization.
-#'
-#' @param rgba_df A data.frame with columns: phenotype, rgba_value.
-#'
-#' @return A data.frame with formatted columns for Python script.
-#'
-#' @export
+# Format RGBA Values for Python Script
+#
+# Formats phenotype RGBA color values for use in Python visualization.
+#
+# Args:
+#   rgba_df: A data.frame with columns: phenotype, rgba_value.
+#
+# Returns:
+#   A data.frame with formatted columns for Python script.
 format_rgba_for_python <- function(rgba_df) {
   rgba_df <- rgba_df[, c("rgba_value", "phenotype")]
   rgba_df$rgba_value <- paste0('"', rgba_df$rgba_value, '"')
@@ -203,14 +203,13 @@ format_rgba_for_python <- function(rgba_df) {
   rgba_df
 }
 
-#' Export Phenogram Data
-#'
-#' Exports phenogram data to a tab-separated file.
-#'
-#' @param phenogram A phenogram data.frame.
-#' @param file_path Output file path. Defaults to "phenogram.txt".
-#'
-#' @export
+# Export Phenogram Data
+#
+# Exports phenogram data to a tab-separated file.
+#
+# Args:
+#   phenogram: A phenogram data.frame.
+#   file_path: Output file path. Defaults to "phenogram.txt".
 export_phenogram <- function(phenogram, file_path = "phenogram.txt") {
   write.table(
     phenogram,
@@ -224,17 +223,17 @@ export_phenogram <- function(phenogram, file_path = "phenogram.txt") {
   message(sprintf("Exported phenogram to: %s", file_path))
 }
 
-#' Generate Complete Phenogram Output
-#'
-#' Main function that generates all phenogram-related outputs.
-#'
-#' @param table1 A cleaned table1 data.frame.
-#' @param export If TRUE, exports files. Defaults to FALSE.
-#' @param output_dir Directory for output files. Defaults to current directory.
-#'
-#' @return A list containing phenogram data and related outputs.
-#'
-#' @export
+# Generate Complete Phenogram Output
+#
+# Main function that generates all phenogram-related outputs.
+#
+# Args:
+#   table1: A cleaned table1 data.frame.
+#   export: If TRUE, exports files. Defaults to FALSE.
+#   output_dir: Directory for output files. Defaults to current directory.
+#
+# Returns:
+#   A list containing phenogram data and related outputs.
 generate_phenogram <- function(table1, export = FALSE, output_dir = ".") {
   # Create phenogram data
   result <- create_phenogram_data(table1)

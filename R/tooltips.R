@@ -6,18 +6,15 @@
 # Uses in-memory cache (faster than disk for session-scoped data)
 memo_cache <- cachem::cache_mem(max_size = MEMO_CACHE_SIZE)
 
-#' Get full cell type name from abbreviation
-#'
-#' Maps brain cell type abbreviations to their full names for tooltip display.
-#'
-#' @param cell_abbrev Character. Cell type abbreviation (e.g., "EC", "MG").
-#'
-#' @return Character. Full cell type name (e.g., "Endothelial Cells").
-#'
-#' @export
-#' @examples
-#' get_cell_type_tooltip("EC")
-#' # Returns: "Endothelial Cells"
+# Get full cell type name from abbreviation
+#
+# Maps brain cell type abbreviations to their full names for tooltip display.
+#
+# Args:
+#   cell_abbrev: Character. Cell type abbreviation (e.g., "EC", "MG").
+#
+# Returns:
+#   Character. Full cell type name (e.g., "Endothelial Cells").
 get_cell_type_tooltip <- function(cell_abbrev) {
   if (cell_abbrev %in% names(CELL_TYPE_MAP)) {
     CELL_TYPE_MAP[[cell_abbrev]]
@@ -26,20 +23,19 @@ get_cell_type_tooltip <- function(cell_abbrev) {
   }
 }
 
-#' Add tooltip HTML to cell type string
-#'
-#' Parses a cell type string containing abbreviations separated by
-#' comparison operators (< or >) and wraps each abbreviation in a
-#' Tippy.js tooltip span.
-#'
-#' @param cell_types_string Character. Cell types separated by < or >
-#'   (e.g., "EC > MG > AC").
-#' @param tooltip_class Character. CSS class name for the tooltip span.
-#'
-#' @return Character. HTML string with Tippy tooltip data attributes.
-#'
-#' @export
-#' @seealso \code{\link{get_cell_type_tooltip}}
+# Add tooltip HTML to cell type string
+#
+# Parses a cell type string containing abbreviations separated by
+# comparison operators (< or >) and wraps each abbreviation in a
+# Tippy.js tooltip span.
+#
+# Args:
+#   cell_types_string: Character. Cell types separated by < or >
+#     (e.g., "EC > MG > AC").
+#   tooltip_class: Character. CSS class name for the tooltip span.
+#
+# Returns:
+#   Character. HTML string with Tippy tooltip data attributes.
 add_cell_type_tooltip <- function(cell_types_string, tooltip_class) {
   if (
     is.na(cell_types_string) ||
@@ -88,17 +84,17 @@ add_cell_type_tooltip <- function(cell_types_string, tooltip_class) {
   }
 }
 
-#' Get reference tooltip information by PMID
-#'
-#' Looks up publication information from the refs data frame for a given PMID.
-#'
-#' @param pmid_hover Character. The PubMed ID to look up.
-#' @param refs Data frame. Reference data with PMID in column 1 and
-#'   tooltip HTML in column 2.
-#'
-#' @return Character. HTML tooltip content or "No info available".
-#'
-#' @export
+# Get reference tooltip information by PMID
+#
+# Looks up publication information from the refs data frame for a given PMID.
+#
+# Args:
+#   pmid_hover: Character. The PubMed ID to look up.
+#   refs: Data frame. Reference data with PMID in column 1 and
+#     tooltip HTML in column 2.
+#
+# Returns:
+#   Character. HTML tooltip content or "No info available".
 get_ref_tooltip_info <- function(pmid_hover, refs) {
   match_row <- refs[refs[[1L]] == pmid_hover, ]
 
@@ -109,36 +105,35 @@ get_ref_tooltip_info <- function(pmid_hover, refs) {
   }
 }
 
-#' Memoised version of get_ref_tooltip_info
-#'
-#' Caches reference tooltip lookups to avoid repeated data frame searches.
-#' The cache persists for the session lifetime.
-#'
-#' @param pmid_hover Character. The PubMed ID to look up.
-#' @param refs Data frame. Reference data with PMID in column 1 and
-#'   tooltip HTML in column 2.
-#'
-#' @return Character. HTML tooltip content or "No info available".
-#'
-#' @export
+# Memoised version of get_ref_tooltip_info
+#
+# Caches reference tooltip lookups to avoid repeated data frame searches.
+# The cache persists for the session lifetime.
+#
+# Args:
+#   pmid_hover: Character. The PubMed ID to look up.
+#   refs: Data frame. Reference data with PMID in column 1 and
+#     tooltip HTML in column 2.
+#
+# Returns:
+#   Character. HTML tooltip content or "No info available".
 get_ref_tooltip_info_memo <- memoise::memoise(
   get_ref_tooltip_info,
   cache = memo_cache
 )
 
-#' Add reference tooltip with PubMed link
-#'
-#' Creates HTML anchor tags linking to PubMed with Tippy.js tooltips
-#' showing publication details (title, journal, authors).
-#'
-#' @param split_pmid List. List containing character vector of PMIDs.
-#' @param refs Data frame. Reference data for tooltip lookup.
-#' @param tooltip_class Character. CSS class name for tooltip spans.
-#'
-#' @return Character. HTML string with linked references separated by <br>.
-#'
-#' @export
-#' @seealso \code{\link{get_ref_tooltip_info}}
+# Add reference tooltip with PubMed link
+#
+# Creates HTML anchor tags linking to PubMed with Tippy.js tooltips
+# showing publication details (title, journal, authors).
+#
+# Args:
+#   split_pmid: List. List containing character vector of PMIDs.
+#   refs: Data frame. Reference data for tooltip lookup.
+#   tooltip_class: Character. CSS class name for tooltip spans.
+#
+# Returns:
+#   Character. HTML string with linked references separated by <br>.
 add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
   split_pmid <- split_pmid[[1L]]
 
@@ -235,31 +230,30 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
   paste(html_parts, collapse = "<br>")
 }
 
-#' Prepare Table 1 display with pre-computed tooltips
-#'
-#' Transforms table1 data by adding Tippy.js tooltip HTML to all columns
-#' that require interactive tooltips: gene symbols, proteins, OMIM IDs,
-#' cell types, references, GWAS traits, and omics evidence.
-#'
-#' @param table1 Data frame or data.table. Main gene data table.
-#' @param gene_info_results_df Data frame. NCBI gene info with URL column.
-#' @param prot_info_clean Data frame. UniProt protein info with accession
-#'   and URL. Kept for backwards compatibility; use prot_info_lookup instead.
-#' @param prot_info_lookup fastmap. Pre-computed protein lookup map for O(1)
-#'   access by gene name. If NULL, falls back to prot_info_clean data frame.
-#' @param omim_lookup fastmap. Pre-computed OMIM lookup map for O(1) access.
-#' @param refs Data frame. Publication references for tooltip content.
-#' @param omics_df Data frame. Omics types with full names.
-#' @param gwas_trait_mapping Named character vector. Maps trait abbreviations
-#'   to full names.
-#' @param tooltip_class Character. CSS class name for standard tooltips.
-#' @param tooltip_class_italic Character. CSS class name for italic tooltips
-#'   (gene symbols).
-#'
-#' @return Data frame. table1 with HTML tooltip markup in display columns.
-#'
-#' @export
-#' @seealso \code{\link{prepare_table2_display}}
+# Prepare Table 1 display with pre-computed tooltips
+#
+# Transforms table1 data by adding Tippy.js tooltip HTML to all columns
+# that require interactive tooltips: gene symbols, proteins, OMIM IDs,
+# cell types, references, GWAS traits, and omics evidence.
+#
+# Args:
+#   table1: Data frame or data.table. Main gene data table.
+#   gene_info_results_df: Data frame. NCBI gene info with URL column.
+#   prot_info_clean: Data frame. UniProt protein info with accession
+#     and URL. Kept for backwards compatibility; use prot_info_lookup instead.
+#   prot_info_lookup: fastmap. Pre-computed protein lookup map for O(1)
+#     access by gene name. If NULL, falls back to prot_info_clean data frame.
+#   omim_lookup: fastmap. Pre-computed OMIM lookup map for O(1) access.
+#   refs: Data frame. Publication references for tooltip content.
+#   omics_df: Data frame. Omics types with full names.
+#   gwas_trait_mapping: Named character vector. Maps trait abbreviations
+#     to full names.
+#   tooltip_class: Character. CSS class name for standard tooltips.
+#   tooltip_class_italic: Character. CSS class name for italic tooltips
+#     (gene symbols).
+#
+# Returns:
+#   Data frame. table1 with HTML tooltip markup in display columns.
 prepare_table1_display <- function(
   table1,
   gene_info_results_df,
@@ -574,25 +568,24 @@ prepare_table1_display <- function(
   table1_display
 }
 
-#' Prepare Table 2 display with pre-computed tooltips
-#'
-#' Transforms table2 clinical trial data by adding Tippy.js tooltip HTML
-#' to registry IDs (with links to trial registries) and genetic targets
-#' (with NCBI gene info).
-#'
-#' @param table2 Data frame or data.table. Clinical trial data.
-#' @param ct_info Data frame. Trial name and primary outcome for tooltips.
-#' @param gene_info_results_df Data frame. NCBI gene info with URL column.
-#' @param gene_symbols_lookup Character vector. Gene symbols for matching.
-#' @param tooltip_class Character. CSS class name for standard tooltips.
-#'   Defaults to the global tooltip_class constant.
-#' @param tooltip_class_italic Character. CSS class name for italic tooltips
-#'   (gene symbols). Defaults to the global tooltip_class_italic constant.
-#'
-#' @return data.table. table2 with HTML tooltip markup in display columns.
-#'
-#' @export
-#' @seealso \code{\link{prepare_table1_display}}
+# Prepare Table 2 display with pre-computed tooltips
+#
+# Transforms table2 clinical trial data by adding Tippy.js tooltip HTML
+# to registry IDs (with links to trial registries) and genetic targets
+# (with NCBI gene info).
+#
+# Args:
+#   table2: Data frame or data.table. Clinical trial data.
+#   ct_info: Data frame. Trial name and primary outcome for tooltips.
+#   gene_info_results_df: Data frame. NCBI gene info with URL column.
+#   gene_symbols_lookup: Character vector. Gene symbols for matching.
+#   tooltip_class: Character. CSS class name for standard tooltips.
+#     Defaults to the global tooltip_class constant.
+#   tooltip_class_italic: Character. CSS class name for italic tooltips
+#     (gene symbols). Defaults to the global tooltip_class_italic constant.
+#
+# Returns:
+#   data.table. table2 with HTML tooltip markup in display columns.
 prepare_table2_display <- function(
   table2,
   ct_info,
