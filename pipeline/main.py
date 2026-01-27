@@ -412,6 +412,21 @@ async def run_pipeline(
         clear_gene_cache()
 
 
+async def run_external_data_sync() -> None:
+    """Sync all external data sources for dashboard refresh."""
+    from pipeline.external_data_sync import sync_all_external_data
+
+    logger.info("Starting external data sync...")
+    try:
+        result = await sync_all_external_data()
+        logger.info(LOG_SEPARATOR)
+        logger.info("External Data Sync Summary:")
+        logger.info(result.summary())
+        logger.info(LOG_SEPARATOR)
+    finally:
+        await Database.close()
+
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="SVD Dashboard data pipeline")
@@ -431,17 +446,25 @@ def main() -> None:
         action="store_true",
         help="Run without LLM extraction or database merge (for testing search/retrieval only)",
     )
+    parser.add_argument(
+        "--sync-external-data",
+        action="store_true",
+        help="Sync external data (NCBI, UniProt, PubMed) for all genes in database",
+    )
 
     args = parser.parse_args()
 
     try:
-        asyncio.run(
-            run_pipeline(
-                days_back=args.days_back,
-                dry_run=args.dry_run,
-                test_mode=args.test_mode,
+        if args.sync_external_data:
+            asyncio.run(run_external_data_sync())
+        else:
+            asyncio.run(
+                run_pipeline(
+                    days_back=args.days_back,
+                    dry_run=args.dry_run,
+                    test_mode=args.test_mode,
+                )
             )
-        )
     except ValueError as e:
         logger.error(f"Invalid argument: {e}")
         sys.exit(1)

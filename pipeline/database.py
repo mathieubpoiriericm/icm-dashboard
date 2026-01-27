@@ -28,7 +28,9 @@ DEFAULT_POOL_MAX_SIZE: Final[int] = 10
 DEFAULT_COMMAND_TIMEOUT: Final[float] = 60.0
 
 # Whitelist of allowed tables/columns for dynamic SQL (prevents SQL injection)
-ALLOWED_TABLES: Final[frozenset[str]] = frozenset({"genes", "pubmed_refs"})
+ALLOWED_TABLES: Final[frozenset[str]] = frozenset({
+    "genes", "pubmed_refs", "ncbi_gene_info", "uniprot_info", "pubmed_citations"
+})
 ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
 
 
@@ -336,3 +338,236 @@ async def record_processed_pmid(
             genes_extracted,
         )
     return True
+
+
+# =============================================================================
+# NCBI Gene Info Cache Operations
+# =============================================================================
+
+
+async def get_cached_ncbi_genes(gene_symbols: list[str]) -> dict[str, dict[str, Any]]:
+    """Get cached NCBI gene info for given symbols.
+
+    Args:
+        gene_symbols: List of gene symbols to look up.
+
+    Returns:
+        Dict mapping gene_symbol -> {ncbi_uid, description, aliases}.
+    """
+    if not gene_symbols:
+        return {}
+
+    async with Database.connection() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT gene_symbol, ncbi_uid, description, aliases
+            FROM ncbi_gene_info
+            WHERE gene_symbol = ANY($1)
+            """,
+            gene_symbols,
+        )
+        return {
+            row["gene_symbol"]: {
+                "ncbi_uid": row["ncbi_uid"],
+                "description": row["description"],
+                "aliases": row["aliases"],
+            }
+            for row in rows
+        }
+
+
+async def upsert_ncbi_genes_batch(genes: list[Any]) -> int:
+    """Batch upsert NCBI gene info.
+
+    Args:
+        genes: List of NCBIGeneInfo objects.
+
+    Returns:
+        Number of genes upserted.
+    """
+    if not genes:
+        return 0
+
+    async with Database.connection() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO ncbi_gene_info (gene_symbol, ncbi_uid, description, aliases)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (gene_symbol) DO UPDATE SET
+                ncbi_uid = EXCLUDED.ncbi_uid,
+                description = EXCLUDED.description,
+                aliases = EXCLUDED.aliases,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            [
+                (g.gene_symbol, g.ncbi_uid, g.description, g.aliases)
+                for g in genes
+            ],
+        )
+    return len(genes)
+
+
+# =============================================================================
+# UniProt Info Cache Operations
+# =============================================================================
+
+
+async def get_cached_uniprot_info(gene_symbols: list[str]) -> dict[str, dict[str, Any]]:
+    """Get cached UniProt info for given gene symbols.
+
+    Args:
+        gene_symbols: List of gene symbols to look up.
+
+    Returns:
+        Dict mapping gene_symbol -> UniProt info dict.
+    """
+    if not gene_symbols:
+        return {}
+
+    async with Database.connection() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT gene_symbol, accession, protein_name,
+                   biological_process, molecular_function, cellular_component, url
+            FROM uniprot_info
+            WHERE gene_symbol = ANY($1)
+            """,
+            gene_symbols,
+        )
+        return {
+            row["gene_symbol"]: {
+                "accession": row["accession"],
+                "protein_name": row["protein_name"],
+                "biological_process": row["biological_process"],
+                "molecular_function": row["molecular_function"],
+                "cellular_component": row["cellular_component"],
+                "url": row["url"],
+            }
+            for row in rows
+        }
+
+
+async def upsert_uniprot_batch(infos: list[Any]) -> int:
+    """Batch upsert UniProt info.
+
+    Args:
+        infos: List of UniProtInfo objects.
+
+    Returns:
+        Number of entries upserted.
+    """
+    if not infos:
+        return 0
+
+    async with Database.connection() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO uniprot_info (
+                gene_symbol, accession, protein_name,
+                biological_process, molecular_function, cellular_component, url
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (gene_symbol) DO UPDATE SET
+                accession = EXCLUDED.accession,
+                protein_name = EXCLUDED.protein_name,
+                biological_process = EXCLUDED.biological_process,
+                molecular_function = EXCLUDED.molecular_function,
+                cellular_component = EXCLUDED.cellular_component,
+                url = EXCLUDED.url,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            [
+                (
+                    i.gene_symbol,
+                    i.accession,
+                    i.protein_name,
+                    i.biological_process,
+                    i.molecular_function,
+                    i.cellular_component,
+                    i.url,
+                )
+                for i in infos
+            ],
+        )
+    return len(infos)
+
+
+# =============================================================================
+# PubMed Citations Cache Operations
+# =============================================================================
+
+
+async def get_cached_pubmed_citations(pmids: list[str]) -> dict[str, dict[str, Any]]:
+    """Get cached PubMed citations for given PMIDs.
+
+    Args:
+        pmids: List of PubMed IDs to look up.
+
+    Returns:
+        Dict mapping pmid -> citation info dict.
+    """
+    if not pmids:
+        return {}
+
+    async with Database.connection() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT pmid, authors, title, journal, publication_date, doi, formatted_ref
+            FROM pubmed_citations
+            WHERE pmid = ANY($1)
+            """,
+            pmids,
+        )
+        return {
+            row["pmid"]: {
+                "authors": row["authors"],
+                "title": row["title"],
+                "journal": row["journal"],
+                "publication_date": row["publication_date"],
+                "doi": row["doi"],
+                "formatted_ref": row["formatted_ref"],
+            }
+            for row in rows
+        }
+
+
+async def upsert_pubmed_citations_batch(citations: list[Any]) -> int:
+    """Batch upsert PubMed citations.
+
+    Args:
+        citations: List of PubMedCitation objects.
+
+    Returns:
+        Number of citations upserted.
+    """
+    if not citations:
+        return 0
+
+    async with Database.connection() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO pubmed_citations (
+                pmid, authors, title, journal, publication_date, doi, formatted_ref
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (pmid) DO UPDATE SET
+                authors = EXCLUDED.authors,
+                title = EXCLUDED.title,
+                journal = EXCLUDED.journal,
+                publication_date = EXCLUDED.publication_date,
+                doi = EXCLUDED.doi,
+                formatted_ref = EXCLUDED.formatted_ref,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            [
+                (
+                    c.pmid,
+                    c.authors,
+                    c.title,
+                    c.journal,
+                    c.publication_date,
+                    c.doi,
+                    c.formatted_ref,
+                )
+                for c in citations
+            ],
+        )
+    return len(citations)

@@ -1,6 +1,15 @@
 # trigger_update.R
-# Called after Python pipeline updates the database
-# Regenerates all QS objects used by the Shiny dashboard
+# Reads from database and generates QS files for the Shiny dashboard
+#
+# This script is called after the Python pipeline updates the database.
+# It reads cleaned data and external data cache from the database,
+# then generates QS files for fast loading by the Shiny app.
+#
+# Prerequisites:
+# 1. Run: python pipeline/main.py (to populate genes table)
+# 2. Run: python pipeline/main.py --sync-external-data
+#    (to populate cache tables)
+# 3. Run: Rscript scripts/trigger_update.R (this script)
 
 # =============================================================================
 # SETUP
@@ -14,13 +23,11 @@ if (grepl("scripts$", getwd())) {
 message("Starting dashboard data update...")
 message(sprintf("Working directory: %s", getwd()))
 
-# Source required utility functions (clean_table functions depend on these)
+# Source required utility functions
 source("R/utils.R")
 source("R/clean_table1.R")
 source("R/clean_table2.R")
-source("R/fetch_ncbi_gene_data.R")
-source("R/fetch_uniprot_data.R")
-source("R/fetch_pubmed_data.R")
+source("R/read_external_data.R")
 
 # Ensure data directories exist
 if (!dir.exists("data/qs")) {
@@ -54,60 +61,73 @@ qs::qsave(table2_clean, "data/qs/table2_clean.qs")
 message("Saved: data/qs/table2_clean.qs")
 
 # =============================================================================
-# STEP 3: Fetch and save NCBI gene info for Table 1 genes
+# STEP 3: Read NCBI gene info for Table 1 genes from database cache
 # =============================================================================
-message("\n[3/7] Fetching NCBI gene info for Table 1 genes...")
-gene_info_results_df <- fetch_all_gene_info(
-  gene_symbols_table1,
-  delay = 0.1,
-  verbose = TRUE
-)
-# Add gene symbol as first column for matching
-gene_info_results_df <- cbind(
-  name = gene_symbols_table1,
-  gene_info_results_df
-)
+message("\n[3/7] Reading NCBI gene info for Table 1 genes from database...")
+gene_info_results_df <- read_ncbi_gene_info_from_db(gene_symbols_table1)
 qs::qsave(gene_info_results_df, "data/qs/gene_info_results_df.qs")
-message("Saved: data/qs/gene_info_results_df.qs")
+message(sprintf(
+  "Saved: data/qs/gene_info_results_df.qs (%d genes)",
+  nrow(gene_info_results_df)
+))
 
 # =============================================================================
-# STEP 4: Fetch and save NCBI gene info for Table 2 genes
+# STEP 4: Read NCBI gene info for Table 2 genes from database cache
 # =============================================================================
-message("\n[4/7] Fetching NCBI gene info for Table 2 genes...")
-fetch_save_table2_gene_info(delay = 0.1, verbose = TRUE, extract_genes = TRUE)
-message("Saved: data/qs/gene_info_table2.qs")
+message("\n[4/7] Reading NCBI gene info for Table 2 genes from database...")
+gene_info_table2 <- read_table2_ncbi_info_db()
+qs::qsave(gene_info_table2, "data/qs/gene_info_table2.qs")
+message(sprintf(
+  "Saved: data/qs/gene_info_table2.qs (%d genes)",
+  nrow(gene_info_table2)
+))
 
 # =============================================================================
-# STEP 5: Fetch and save UniProt protein info
+# STEP 5: Read UniProt protein info from database cache
 # =============================================================================
-message("\n[5/7] Fetching UniProt protein info...")
-prot_info_clean <- fetch_uniprot_data(
-  gene_symbols_table1,
-  organism = "9606",
-  verbose = TRUE
-)
+message("\n[5/7] Reading UniProt protein info from database...")
+prot_info_clean <- read_uniprot_data_from_db(gene_symbols_table1)
 qs::qsave(prot_info_clean, "data/qs/prot_info_clean.qs")
-message("Saved: data/qs/prot_info_clean.qs")
+message(sprintf(
+  "Saved: data/qs/prot_info_clean.qs (%d proteins)",
+  nrow(prot_info_clean)
+))
 
 # =============================================================================
-# STEP 6: Fetch and save PubMed references
+# STEP 6: Read PubMed references from database cache
 # =============================================================================
-message("\n[6/7] Fetching PubMed references...")
+message("\n[6/7] Reading PubMed references from database...")
+
 # Extract unique PMIDs from table1 References column
+# Helper function to extract PMIDs from text
+extract_unique_pmids <- function(references_column) {
+  all_pmids <- character(0)
+  for (ref in references_column) {
+    if (!is.na(ref) && nchar(ref) > 0) {
+      # Find all 7-8 digit numbers (typical PMID format)
+      pmids <- regmatches(ref, gregexpr("\\b\\d{7,8}\\b", ref))[[1]]
+      all_pmids <- c(all_pmids, pmids)
+    }
+  }
+  unique(all_pmids)
+}
+
 pmids <- extract_unique_pmids(table1_clean$References)
-message(sprintf("Found %d unique PMIDs to fetch", length(pmids)))
+message(sprintf("Found %d unique PMIDs", length(pmids)))
 
 if (length(pmids) > 0) {
-  refs <- fetch_all_pubmed_refs(
-    pmids,
-    bibentry_dir = "bibentry",
-    delay = 0.5, # 0.5 second delay between requests to avoid NCBI rate limiting
-    verbose = TRUE
+  refs <- read_pubmed_refs_from_db(pmids)
+  qs::qsave(refs, "data/qs/refs.qs")
+  message(sprintf("Saved: data/qs/refs.qs (%d references)", nrow(refs)))
+} else {
+  # Save empty data frame
+  refs <- data.frame(
+    pmid = character(0),
+    formatted_ref = character(0),
+    stringsAsFactors = FALSE
   )
   qs::qsave(refs, "data/qs/refs.qs")
-  message("Saved: data/qs/refs.qs")
-} else {
-  message("No PMIDs found, skipping PubMed fetch")
+  message("No PMIDs found, saved empty refs.qs")
 }
 
 # =============================================================================
@@ -128,7 +148,10 @@ gwas_trait_names <- data.frame(
   stringsAsFactors = FALSE
 )
 qs::qsave(gwas_trait_names, "data/qs/gwas_trait_names.qs")
-message("Saved: data/qs/gwas_trait_names.qs")
+message(sprintf(
+  "Saved: data/qs/gwas_trait_names.qs (%d traits)",
+  nrow(gwas_trait_names)
+))
 
 # =============================================================================
 # SUMMARY
@@ -144,4 +167,5 @@ message("  - data/qs/gene_info_table2.qs")
 message("  - data/qs/prot_info_clean.qs")
 message("  - data/qs/refs.qs")
 message("  - data/qs/gwas_trait_names.qs")
-message("\nNote: OMIM data (data/csv/omim_info.csv) is managed separately.")
+message("\nNote: External data (NCBI, UniProt, PubMed) is read from DB cache.")
+message("Run 'python pipeline/main.py --sync-external-data' to refresh cache.")
