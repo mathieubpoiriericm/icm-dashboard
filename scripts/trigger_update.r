@@ -1,6 +1,6 @@
 # trigger_update.R
 # Called after Python pipeline updates the database
-# Regenerates all RDS objects used by the Shiny dashboard
+# Regenerates all QS objects used by the Shiny dashboard
 
 # =============================================================================
 # SETUP
