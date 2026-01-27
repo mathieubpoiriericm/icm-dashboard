@@ -218,23 +218,39 @@ rshiny_dashboard/
 
 ## Data Pipeline
 
-The dashboard is powered by an automated Python ETL pipeline that keeps gene and clinical trial data up-to-date by mining PubMed literature.
+The dashboard uses a two-stage data pipeline: a Python ETL pipeline that extracts gene data from PubMed literature, followed by an R script that transforms the data into optimized QS files for the Shiny app.
 
 ### Pipeline Architecture
 
-The pipeline follows a linear ETL flow with validation gates:
-
-1. **Search**: Query PubMed via Biopython Entrez for recent SVD-related genetic papers (combines disease terms + genetic terms)
-2. **Filter**: Skip already-processed PMIDs (tracked in `pubmed_refs` table)
-3. **Retrieve**: Fetch full text using fallback chain: PMC XML → Unpaywall PDF → PubMed abstract
-4. **Extract**: Use Claude Sonnet to extract structured gene data with confidence scores (Pydantic-validated)
-5. **Validate**: Verify genes against NCBI Gene database; reject entries below 0.7 confidence threshold
-6. **Load**: Batch insert/update validated genes into PostgreSQL
+```
+Stage 1: Python ETL                           Stage 2: R Transformation
+┌──────────────────────────────────────┐      ┌─────────────────────────┐
+│ 1. Search PubMed for new papers      │      │ 7. Read from PostgreSQL │
+│ 2. Filter already-processed PMIDs    │      │ 8. Generate QS files    │
+│ 3. Retrieve full text (PMC/Unpaywall)│      │    for Shiny dashboard  │
+│ 4. Extract genes via Claude LLM      │      └───────────▲─────────────┘
+│ 5. Validate against NCBI Gene        │                  │
+│ 6. Load into PostgreSQL              │      ┌───────────┴─────────────┐
+│              │                       │      │   trigger_update.R      │
+│              ▼                       │      └───────────▲─────────────┘
+│ 6a. Sync external data (optional):   │                  │
+│     NCBI Gene, UniProt, PubMed refs  │──────────────────┘
+└──────────────────────────────────────┘
+```
 
 ### Running the Pipeline
 
+**Stage 1: Python ETL**
+
 ```bash
-python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
+# Standard run (search last 7 days, extract genes)
+python pipeline/main.py
+
+# Sync external data (NCBI Gene, UniProt, PubMed citations)
+python pipeline/main.py --sync-external-data
+
+# Extended lookback (30 days)
+python pipeline/main.py --days-back 30
 ```
 
 | Argument | Default | Description |
@@ -242,17 +258,38 @@ python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
 | `--days-back` | 7 | Number of days to look back for new papers (1-3650) |
 | `--dry-run` | - | Run pipeline without writing to database |
 | `--test-mode` | - | Skip LLM extraction (test search/retrieval only) |
+| `--sync-external-data` | - | Sync NCBI Gene, UniProt, and PubMed citation data |
+
+**Stage 2: R Transformation**
+
+```bash
+Rscript scripts/trigger_update.R
+```
+
+Reads from PostgreSQL and generates QS files for the Shiny app:
+
+| QS File | Source | Description |
+|---------|--------|-------------|
+| `table1_clean.qs` | `genes` table | Cleaned gene data for Table 1 |
+| `table2_clean.qs` | `clinical_trials` table | Cleaned clinical trials for Table 2 |
+| `gene_info_results_df.qs` | `ncbi_gene_info` cache | NCBI Gene info for Table 1 |
+| `gene_info_table2.qs` | `ncbi_gene_info` cache | NCBI Gene info for Table 2 |
+| `prot_info_clean.qs` | `uniprot_info` cache | UniProt protein annotations |
+| `refs.qs` | `pubmed_citations` cache | Formatted PubMed references |
+| `gwas_trait_names.qs` | `genes` table | GWAS trait name mappings |
 
 ### Automated Updates
 
-The pipeline runs automatically every Monday at 6 AM UTC via GitHub Actions. See `.github/workflows/update_pipeline.yml` for configuration.
+The pipeline runs automatically every Monday at 6 AM UTC via GitHub Actions (`.github/workflows/update_pipeline.yml`).
 
-The workflow:
-1. Spins up a PostgreSQL 18 service container
-2. Initializes the database schema
-3. Runs the Python pipeline
-4. Regenerates QS files using R
-5. Auto-commits updated QS files to the repository
+**Workflow Steps:**
+
+1. Initialize PostgreSQL 18 service container and load schema
+2. Run Python pipeline (`main.py`) to extract new genes
+3. Generate QS files via `trigger_update.R`
+4. Auto-commit updated `data/qs/*.qs` files to the repository
+
+The QS files are committed directly to the repository, allowing the Shiny app to run without database access in production.
 
 ## Deployment
 
