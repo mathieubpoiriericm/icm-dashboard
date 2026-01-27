@@ -1,3 +1,7 @@
+# =============================================================================
+# DEPRECATED FILE - DELETE AFTER PIPELINE VALIDATION
+# =============================================================================
+
 # fetch_pubmed_data.R
 # PubMed reference fetching and cleaning functions
 
@@ -237,8 +241,11 @@ fetch_all_pubmed_refs <- function(
       parse_reference_xml(xml_path),
       error = function(e) {
         if (verbose) {
-          message(sprintf("  Error parsing XML for PMID %s: %s",
-                          successful_pmids[i], e$message))
+          message(sprintf(
+            "  Error parsing XML for PMID %s: %s",
+            successful_pmids[i],
+            e$message
+          ))
         }
         NA_character_
       }

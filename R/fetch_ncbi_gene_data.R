@@ -1,3 +1,7 @@
+# =============================================================================
+# DEPRECATED FILE - DELETE AFTER PIPELINE VALIDATION
+# =============================================================================
+
 # fetch_ncbi_gene_data.R
 # NCBI gene data fetching and cleaning functions
 

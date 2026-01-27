@@ -1,3 +1,7 @@
+# =============================================================================
+# DEPRECATED FILE - DELETE AFTER PIPELINE VALIDATION
+# =============================================================================
+
 # fetch_uniprot_data.R
 # UniProt data fetching and cleaning functions
 
@@ -196,15 +200,22 @@ generate_uniprot_urls <- function(accession_ids) {
 #
 # Returns:
 #   A data.frame with gene, accession, GO info, and URL columns.
-fetch_uniprot_data <- function(genes, organism = "9606", verbose = FALSE,
-                               delay = 0.1) {
+fetch_uniprot_data <- function(
+  genes,
+  organism = "9606",
+  verbose = FALSE,
+  delay = 0.1
+) {
   if (verbose) {
     message("Fetching UniProt accession IDs...")
   }
 
   # Fetch accession IDs
-  accession_data <- fetch_uniprot_accessions(genes, organism = organism,
-                                             delay = delay)
+  accession_data <- fetch_uniprot_accessions(
+    genes,
+    organism = organism,
+    delay = delay
+  )
 
   # Get valid accession IDs for GO lookup
   valid_accessions <- accession_data$accession[!is.na(accession_data$accession)]
