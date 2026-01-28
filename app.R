@@ -48,8 +48,7 @@
 # │   ├── validation.py          - NCBI gene validation
 # │   ├── data_merger.py         - Data transformation and DB loading
 # │   ├── database.py            - Async PostgreSQL operations
-# │   ├── quality_metrics.py     - Pipeline statistics tracking
-# │   └── requirements.txt       - Python dependencies
+# │   └── quality_metrics.py     - Pipeline statistics tracking
 # │
 # └── scripts/                   - Utility scripts
 #     └── trigger_update.R       - Regenerate QS files from database
