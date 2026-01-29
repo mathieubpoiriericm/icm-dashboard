@@ -192,28 +192,22 @@ rshiny_dashboard/
 │   ├── validation.py             # NCBI gene verification & confidence filtering
 │   ├── data_merger.py            # Data transformation & database loading
 │   ├── database.py               # Async PostgreSQL operations
-│   ├── quality_metrics.py        # Pipeline statistics tracking
-│   ├── requirements.txt          # Python dependencies
-│   └── README.md                 # Pipeline documentation
+│   └── quality_metrics.py        # Pipeline statistics tracking 
 ├── scripts/
 │   └── trigger_update.R          # Regenerate QS files from database
-├── www/
-│   ├── custom.css                # Custom styles (source)
-│   ├── custom.min.css            # Minified styles (loaded by app)
-│   ├── custom.js                 # Custom JavaScript (source)
-│   ├── custom.min.js             # Minified JavaScript (loaded by app)
-│   ├── python_plot.html          # Clinical trials visualization
-│   ├── python_plot.js            # Plot interactivity and sidepanel
-│   ├── python_plot.min.js        # Minified plot JavaScript
-│   ├── phenogram_template.html   # Interactive phenogram viewer
-│   ├── fonts/                    # Web fonts (Roboto)
-│   ├── css/                      # Tippy.js styles
-│   ├── js/                       # Popper.js and Tippy.js
-│   └── images/                   # Logo and phenogram images
-└── .github/
-    └── workflows/
-        ├── dependency-submission.yml  # Dependency graph action
-        └── update_pipeline.yml        # Automated pipeline runner
+└── www/
+    ├── custom.css                # Custom styles (source)
+    ├── custom.min.css            # Minified styles (loaded by app)
+    ├── custom.js                 # Custom JavaScript (source)
+    ├── custom.min.js             # Minified JavaScript (loaded by app)
+    ├── python_plot.html          # Clinical trials visualization
+    ├── python_plot.js            # Plot interactivity and sidepanel
+    ├── python_plot.min.js        # Minified plot JavaScript
+    ├── phenogram_template.html   # Interactive phenogram viewer
+    ├── fonts/                    # Web fonts (Roboto)
+    ├── css/                      # Tippy.js styles
+    ├── js/                       # Popper.js and Tippy.js
+    └── images/                   # Logo and phenogram images
 ```
 
 ## Data Pipeline
