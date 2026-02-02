@@ -70,7 +70,7 @@ Interactive Plotly timeline of SVD drugs tested in clinical trials.
 ### Install R Dependencies
 
 ```r
-# Install maRco package (v0.12.0 - required for data fetching/cleaning)
+# Install maRco package (v0.12.1 - required for data fetching/cleaning)
 devtools::install("maRco")
 
 # Install required CRAN packages
@@ -129,7 +129,7 @@ pip install -r pipeline/requirements.txt
    ```
 3. Initialize the schema:
    ```bash
-   psql -U csvd_user -d csvd_dashboard -f misc/sql_files/setup.sql
+   psql -U csvd_user -d csvd_dashboard -f sql/setup.sql
    ```
 
 ## Environment Variables
@@ -183,6 +183,7 @@ rshiny_dashboard/
 │   ├── fetch_omim_data.R         # OMIM data fetching
 │   ├── fetch_pubmed_data.R       # PubMed reference fetching
 │   ├── fetch_uniprot_data.R      # UniProt protein data fetching
+│   ├── read_external_data.R      # External data reading utilities
 │   └── phenogram.R               # Phenogram data generation
 ├── pipeline/
 │   ├── main.py                   # CLI entry point & pipeline orchestrator
@@ -192,7 +193,19 @@ rshiny_dashboard/
 │   ├── validation.py             # NCBI gene verification & confidence filtering
 │   ├── data_merger.py            # Data transformation & database loading
 │   ├── database.py               # Async PostgreSQL operations
-│   └── quality_metrics.py        # Pipeline statistics tracking 
+│   ├── quality_metrics.py        # Pipeline statistics tracking
+│   ├── ncbi_gene_fetch.py        # NCBI Gene data fetching
+│   ├── pubmed_citations.py       # PubMed citation handling
+│   ├── uniprot_fetch.py          # UniProt data fetching
+│   └── external_data_sync.py     # External data synchronization
+├── sql/
+│   ├── setup.sql                 # Database schema initialization
+│   ├── add_external_data_tables.sql  # External data table schemas
+│   └── common_queries.sql        # Frequently used SQL queries
+├── monitoring/
+│   └── yaml/                     # Kubernetes monitoring configs
+│       ├── monitoring-stack.yaml # Monitoring stack deployment
+│       └── victorialogs-values.yaml  # VictoriaLogs configuration
 ├── scripts/
 │   └── trigger_update.R          # Regenerate QS files from database
 └── www/
@@ -274,9 +287,9 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 
 ### Automated Updates
 
-The pipeline runs automatically every Monday at 6 AM UTC via GitHub Actions (`.github/workflows/update_pipeline.yml`).
+> **TODO**: Automated pipeline updates via GitHub Actions are planned but not currently implemented. The previous workflow (`.github/workflows/update_pipeline.yml`) has been removed. For now, run the pipeline manually using the commands above.
 
-**Workflow Steps:**
+**Planned Workflow Steps:**
 
 1. Initialize PostgreSQL 18 service container and load schema
 2. Run Python pipeline (`main.py`) to extract new genes
@@ -307,9 +320,9 @@ The app will be available at `http://localhost:3838`.
 
 ### Kubernetes
 
-See `misc/yaml_files/` for Kubernetes deployment configurations including:
-- Deployment manifests
-- nginx ingress configuration
+See `monitoring/yaml/` for Kubernetes deployment configurations including:
+- Monitoring stack deployment
+- VictoriaLogs configuration
 - Grafana monitoring integration
 
 ## Data Sources
