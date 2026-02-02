@@ -2,6 +2,112 @@
 # Data loading and preprocessing
 # nolint start: object_usage_linter.
 
+# =============================================================================
+# TESTABLE HELPER FUNCTIONS
+# =============================================================================
+
+# Normalize Mendelian Randomization Values
+#
+# Replaces NA or empty string values with "No" in the Mendelian Randomization
+# column. This ensures consistent filtering behavior.
+#
+# Args:
+#   column: Character vector. The Mendelian Randomization column values.
+#
+# Returns:
+#   Character vector with NA/"" replaced by "No".
+normalize_mr_values <- function(column) {
+  column[is.na(column) | column == ""] <- "No"
+  column
+}
+
+# Convert Month/Year Date String to Display Format
+#
+# Converts date strings in "M/YYYY" format to "Month Year" display format.
+# For example, "1/2024" becomes "January 2024".
+#
+# Args:
+#   date_string: Character vector. Date strings in "M/YYYY" or "MM/YYYY" format.
+#
+# Returns:
+#   Character vector with dates formatted as "Month Year", or NA for invalid.
+convert_month_year_date <- function(date_string) {
+  is_month_year <- grepl("^\\d{1,2}/\\d{4}$", date_string)
+  result <- rep(NA_character_, length(date_string))
+  if (any(is_month_year)) {
+    valid_dates <- date_string[is_month_year]
+    valid_dates <- paste0(valid_dates, "-01")
+    date_vals <- as.Date(valid_dates, format = "%m/%Y-%d")
+    result[is_month_year] <- format(date_vals, "%B %Y")
+  }
+  result
+}
+
+# Match Registry ID Against Known Patterns
+#
+# Matches a clinical trial registry ID against known registry patterns
+# (NCT, ISRCTN, ACTRN, ChiCTR).
+#
+# Args:
+#   registry_id: Character. A single registry ID to match.
+#   patterns: Character vector. Patterns to match against.
+#     Defaults to REGISTRY_PATTERNS constant.
+#
+# Returns:
+#   Character. The matched pattern, or NA if no match found.
+match_registry_pattern <- function(registry_id, patterns = REGISTRY_PATTERNS) {
+  matches <- vapply(
+    patterns,
+    grepl,
+    logical(1L),
+    x = registry_id,
+    ignore.case = TRUE
+  )
+  if (any(matches)) {
+    patterns[matches][1L]
+  } else {
+    NA_character_
+  }
+}
+
+# Extract Omics Type from Semicolon-Separated String
+#
+# Extracts the 4-letter omics code from a semicolon-separated string.
+# For example, "PWAS; some detail" returns "PWAS".
+#
+# Args:
+#   omics_string: Character. An omics evidence string.
+#
+# Returns:
+#   Character. The extracted omics type code, or the original string if
+#   no semicolon is present, or NA for empty/NA input.
+extract_omics_type <- function(omics_string) {
+  if (is.na(omics_string) || omics_string == "") {
+    return(NA_character_)
+  }
+
+  sub(";.*", "", omics_string)
+}
+
+# Preserve WNT Capitalization After Title Case
+#
+# Applies title case conversion while preserving "WNT" capitalization.
+# The "Wnt" pathway should always be displayed as "WNT".
+#
+# Args:
+#   pathway_string: Character vector. Pathway names to format.
+#
+# Returns:
+#   Character vector with title case applied and "WNT" preserved.
+preserve_wnt_capitalization <- function(pathway_string) {
+  # Apply title case first
+
+  result <- tools::toTitleCase(pathway_string)
+  # Restore WNT capitalization
+
+  gsub("Wnt", "WNT", result, fixed = TRUE)
+}
+
 # Safely read a serialized R object with error handling
 #
 # Reads data files using qs format (default, 3-5x faster) with automatic
