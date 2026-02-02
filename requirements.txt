@@ -1,0 +1,23 @@
+# HTTP client (async)
+httpx>=0.24.0
+
+# XML parsing
+lxml>=4.9.0
+
+# LLM API
+anthropic>=0.25.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Bioinformatics
+biopython>=1.81
+
+# Database
+asyncpg>=0.28.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# PDF extraction (optional - handles ImportError gracefully if not installed)
+PyMuPDF>=1.23.0
