@@ -12,6 +12,7 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 ## Table of Contents
 
 - [Overview](#overview)
+- [Documentation](#documentation)
 - [Quick Start](#quick-start)
 - [Technology Stack](#technology-stack)
 - [Features](#features)
@@ -37,6 +38,19 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 This dashboard provides up-to-date and standardized information on:
 - Putative cerebral SVD causal genes
 - Drugs tested in ongoing or completed cerebral SVD clinical trials
+
+---
+
+## Documentation
+
+Detailed documentation is available in the `docs/` directory:
+
+| Document | Description |
+|----------|-------------|
+| [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
+| [maRco Package Documentation](docs/marco-package-documentation.md) | Developer guide for the maRco R helper package |
+| [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
+| [Observability Stack Guide](docs/observability-stack-guide.md) | Kubernetes monitoring and logging setup |
 
 ---
 
