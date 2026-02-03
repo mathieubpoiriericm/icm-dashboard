@@ -1,12 +1,65 @@
 # Cerebral SVD Dashboard
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![R Version](https://img.shields.io/badge/R-4.5+-blue.svg)](https://cran.r-project.org/)
+[![Shiny](https://img.shields.io/badge/Shiny-Framework-blue.svg)](https://shiny.rstudio.com/)
+[![Maintained](https://img.shields.io/badge/Maintained-yes-green.svg)](mailto:mathieu.poirier@icm-institute.org)
+
 An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for Cerebral Small Vessel Disease (SVD), developed by Mathieu B. Poirier at the Paris Brain Institute (ICM).
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Technology Stack](#technology-stack)
+- [Features](#features)
+- [Installation](#installation)
+- [Environment Variables](#environment-variables)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [Data Pipeline](#data-pipeline)
+- [Deployment](#deployment)
+- [Data Sources](#data-sources)
+- [Testing](#testing)
+- [Clinical Trials Visualization](#clinical-trials-visualization)
+- [Performance Features](#performance-features)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
+- [Acknowledgments](#acknowledgments)
+
+---
 
 ## Overview
 
 This dashboard provides up-to-date and standardized information on:
 - Putative cerebral SVD causal genes
 - Drugs tested in ongoing or completed cerebral SVD clinical trials
+
+---
+
+## Quick Start
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/your-username/rshiny_dashboard.git
+cd rshiny_dashboard
+
+# 2. Install the maRco helper package
+Rscript -e 'devtools::install("maRco")'
+
+# 3. Install dependencies (see Installation for full list)
+Rscript -e 'install.packages(c("shiny", "bslib", "DT", "data.table", "qs"))'
+
+# 4. Run the app
+Rscript -e 'shiny::runApp()'
+```
+
+The dashboard will open in your browser at `http://127.0.0.1:3838`.
+
+---
 
 ## Technology Stack
 
@@ -17,6 +70,8 @@ This dashboard provides up-to-date and standardized information on:
 | Data Pipeline | Python 3.14+, asyncpg, Biopython, Anthropic API |
 | Database | PostgreSQL 18+ |
 | DevOps | GitHub Actions, Docker, Kubernetes |
+
+---
 
 ## Features
 
@@ -55,6 +110,8 @@ Interactive chromosome ideogram visualization of GWAS phenotypes.
 ### Clinical Trials Visualization
 Interactive Plotly timeline of SVD drugs tested in clinical trials.
 
+---
+
 ## Installation
 
 ### Prerequisites
@@ -72,7 +129,12 @@ Interactive Plotly timeline of SVD drugs tested in clinical trials.
 ```r
 # Install maRco package (v0.12.1 - required for data fetching/cleaning)
 devtools::install("maRco")
+```
 
+<details>
+<summary><strong>Click to expand full R package list</strong></summary>
+
+```r
 # Install required CRAN packages
 install.packages(c(
   "shiny",
@@ -113,11 +175,16 @@ if (!require("BiocManager", quietly = TRUE))
 BiocManager::install(c("biomaRt", "UniprotR"))
 ```
 
+</details>
+
 ### Install Python Dependencies (for data pipeline)
 
 ```bash
 pip install -r pipeline/requirements.txt
 ```
+
+<details>
+<summary><strong>Click to expand database setup instructions</strong></summary>
 
 ### Database Setup (for data pipeline)
 
@@ -132,7 +199,14 @@ pip install -r pipeline/requirements.txt
    psql -U csvd_user -d csvd_dashboard -f sql/setup.sql
    ```
 
+</details>
+
+---
+
 ## Environment Variables
+
+<details>
+<summary><strong>Click to expand environment variables table</strong></summary>
 
 | Variable | Description | Required For |
 |----------|-------------|--------------|
@@ -143,6 +217,10 @@ pip install -r pipeline/requirements.txt
 | `DB_PASSWORD` | Database password | Pipeline / live data |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM extraction | Pipeline only |
 | `NCBI_API_KEY` | NCBI Entrez API key | Pipeline only |
+
+</details>
+
+---
 
 ## Usage
 
@@ -158,7 +236,12 @@ Or from the command line:
 Rscript -e "shiny::runApp()"
 ```
 
+---
+
 ## Project Structure
+
+<details>
+<summary><strong>Click to expand project structure</strong></summary>
 
 ```
 rshiny_dashboard/
@@ -222,6 +305,10 @@ rshiny_dashboard/
     ├── js/                       # Popper.js and Tippy.js
     └── images/                   # Logo and phenogram images
 ```
+
+</details>
+
+---
 
 ## Data Pipeline
 
@@ -298,6 +385,8 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 
 The QS files are committed directly to the repository, allowing the Shiny app to run without database access in production.
 
+---
+
 ## Deployment
 
 ### Local Development
@@ -325,6 +414,8 @@ See `monitoring/yaml/` for Kubernetes deployment configurations including:
 - VictoriaLogs configuration
 - Grafana monitoring integration
 
+---
+
 ## Data Sources
 
 - **NCBI Gene**: Gene information and identifiers
@@ -333,6 +424,8 @@ See `monitoring/yaml/` for Kubernetes deployment configurations including:
 - **PubMed**: Publication references
 - **Clinical Trial Registries**: ClinicalTrials.gov, ISRCTN, ANZCTR, ChiCTR
 
+---
+
 ## Testing
 
 Run unit tests with:
@@ -340,6 +433,8 @@ Run unit tests with:
 ```r
 source("tests/test_all.R")
 ```
+
+---
 
 ## Clinical Trials Visualization
 
@@ -351,6 +446,8 @@ python python_plot.py
 ```
 
 This creates `www/python_plot.html` and `www/python_plot.js`.
+
+---
 
 ## Performance Features
 
@@ -382,13 +479,45 @@ This creates `www/python_plot.html` and `www/python_plot.js`.
 - **Debounced Inputs**: Slider inputs (500ms) and checkbox filters (150ms) debounced
 - **Lazy-Loaded Iframes**: Phenogram and clinical trials visualizations use browser-native `loading="lazy"` attribute
 
+---
+
+## Contributing
+
+Contributions are welcome! Here's how you can help:
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
+
+### Guidelines
+
+- Follow the existing code style and conventions
+- Add tests for new functionality
+- Update documentation as needed
+- Keep commits focused and atomic
+
+### Reporting Issues
+
+Found a bug or have a suggestion? Please [open an issue](https://github.com/your-username/rshiny_dashboard/issues) with:
+- A clear description of the problem or enhancement
+- Steps to reproduce (for bugs)
+- Expected vs actual behavior
+
+---
+
 ## License
 
 MIT License - see [LICENSE](https://opensource.org/licenses/MIT)
 
+---
+
 ## Contact
 
 **Maintenance**: mathieu.poirier@icm-institute.org
+
+---
 
 ## Acknowledgments
 
