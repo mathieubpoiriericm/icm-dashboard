@@ -55,6 +55,14 @@
 - [Chapter 14: Troubleshooting](#chapter-14-troubleshooting)
   - [Common Issues](#common-issues)
   - [Debug Tips](#debug-tips)
+- [Chapter 15: Clinical Trials Map Module](#chapter-15-clinical-trials-map-module)
+  - [Overview](#map-overview)
+  - [Data Flow](#data-flow)
+  - [API Integration](#api-integration)
+  - [Geocoding](#geocoding)
+  - [Caching Strategy](#caching-strategy)
+  - [Map Server Functions](#map-server-functions)
+  - [Popup Content Generation](#popup-content-generation)
 
 ---
 
@@ -77,24 +85,27 @@ The application follows a modular architecture with clear separation of concerns
 
 ```
 rshiny_dashboard/                            Lines
-|-- app.R                                      329
+|-- app.R                                      335
 |-- python_plot.py                           1,506
 |-- R/
-|   |-- tooltips.R                             733
-|   |-- data_prep.R                            642
-|   |-- ui.R                                   627
-|   |-- server_table2.R                        618
-|   |-- utils.R                                398
-|   |-- filter_utils.R                         304
-|   |-- server_table1.R                        288
-|   |-- phenogram.R                            265
-|   |-- fetch_pubmed_data.R                    257
-|   |-- server.R                               262
+|   |-- fetch_trial_locations.R                865  # NEW: ClinicalTrials.gov API + geocoding
+|   |-- data_prep.R                            750
+|   |-- tooltips.R                             742
+|   |-- ui.R                                   631
+|   |-- server_table2.R                        610
+|   |-- utils.R                                402
+|   |-- filter_utils.R                         296
+|   |-- server_table1.R                        291
+|   |-- server.R                               284
+|   |-- server_map.R                           266  # NEW: Map tab server logic
+|   |-- phenogram.R                            264
+|   |-- fetch_pubmed_data.R                    264
+|   |-- fetch_uniprot_data.R                   255
+|   |-- read_external_data.R                   251  # NEW: Database cache reader
 |   |-- clean_table1.R                         239
-|   |-- fetch_uniprot_data.R                   232
-|   |-- fetch_ncbi_gene_data.R                 178
+|   |-- fetch_ncbi_gene_data.R                 172
+|   |-- constants.R                            169
 |   |-- mod_checkbox_filter.R                  167
-|   |-- constants.R                            150
 |   |-- fetch_omim_data.R                       95
 |   +-- clean_table2.R                          61
 |-- data/
@@ -116,7 +127,7 @@ rshiny_dashboard/                            Lines
 |-- tests/
 |   +-- test_all.R               # Unit tests (20KB)
 |-- www/
-|   |-- custom.css                           2,045
+|   |-- custom.css                           2,484
 |   |-- custom.min.css           # Minified CSS (generated at startup)
 |   |-- custom.js                              372
 |   |-- custom.min.js            # Minified JS (generated at startup)
@@ -132,7 +143,7 @@ rshiny_dashboard/                            Lines
 |   |-- fonts/                   # Roboto font
 |   +-- images/                  # Logo and images (WebP + PNG)
                                  ---------------
-                                 Total:    11,268
+                                 Total:    12,377
 ```
 
 ### File Responsibilities
@@ -159,6 +170,11 @@ rshiny_dashboard/                            Lines
 | `R/fetch_omim_data.R` | Fetches phenotype data from OMIM API |
 | `R/clean_table1.R` | Cleans and preprocesses raw Table 1 (gene) data |
 | `R/clean_table2.R` | Cleans and preprocesses raw Table 2 (clinical trial) data |
+| **Map Module Files** | |
+| `R/server_map.R` | Clinical Trials Map tab server logic with lazy loading and leafletProxy |
+| `R/fetch_trial_locations.R` | ClinicalTrials.gov API v2 integration, geocoding, and caching |
+| **Database Cache Reader** | |
+| `R/read_external_data.R` | Reads NCBI, UniProt, and PubMed data from database cache |
 
 ---
 
@@ -284,7 +300,7 @@ minify_css <- function(input_path, output_path) {
 css_result <- minify_css("www/custom.css", "www/custom.min.css")
 ```
 
-The minification achieves approximately 50-60% size reduction, with `custom.css` (2,045 lines) compressed to a single line in `custom.min.css`. Similarly, `custom.js` and `python_plot.js` are minified to their `.min.js` counterparts.
+The minification achieves approximately 50-60% size reduction, with `custom.css` (2,484 lines) compressed to a single line in `custom.min.css`. Similarly, `custom.js` and `python_plot.js` are minified to their `.min.js` counterparts.
 
 ---
 
@@ -491,6 +507,15 @@ PLACEHOLDER_NONE_FOUND <- "(none found)"
 PLACEHOLDER_UNKNOWN <- "(unknown)"
 PLACEHOLDER_REFERENCE_NEEDED <- "(reference needed)"
 COMPLETION_UNPUBLISHED <- "Completed (unpublished)"
+
+# Clinical Trials Map Configuration
+MAP_CACHE_PATH <- "data/qs/geocoded_trials.qs"  # Geocoded trials cache file
+MAP_CT_API_BASE_URL <- "https://clinicaltrials.gov/api/v2/studies/"  # API v2 base URL
+MAP_API_DELAY_MS <- 100L  # API request delay (ms) to avoid rate limiting
+MAP_DEFAULT_LAT <- 30     # Default map center latitude
+MAP_DEFAULT_LNG <- 0      # Default map center longitude
+MAP_DEFAULT_ZOOM <- 2     # Default map zoom level
+MAP_HEIGHT_PX <- 700L     # Map container height in pixels
 ```
 
 ---
@@ -618,6 +643,7 @@ It returns a `fluidPage` containing:
 | Phenogram | Interactive chromosome visualization (iframe) |
 | Clinical Trials Table | Filterable DataTable of clinical trials |
 | Clinical Trials Visualization | Timeline visualization (iframe) |
+| Trials Map | Interactive Leaflet map showing clinical trial research sites (NCT IDs only) |
 
 ### Gene Table Filters
 
@@ -717,7 +743,7 @@ build_ui <- function(n_genes, n_drugs, n_trials, n_pubs) {
 
 ### Glassmorphism Design System
 
-The dark mode implements a modern glassmorphism-inspired design in `www/custom.css` (2,045 lines). This provides a visually striking interface with translucent elements and blur effects.
+The dark mode implements a modern glassmorphism-inspired design in `www/custom.css` (2,484 lines). This provides a visually striking interface with translucent elements and blur effects.
 
 #### CSS Architecture
 
@@ -765,11 +791,12 @@ For browsers that don't support `backdrop-filter`, a fallback provides solid bac
 
 ## Chapter 9: Server Logic (Modular Architecture)
 
-The server logic is split across three files for maintainability:
+The server logic is split across four files for maintainability:
 
 - `server.R` — Main orchestrator that composes the server modules
 - `server_table1.R` — Table 1 (Gene Table) filtering and rendering
 - `server_table2.R` — Table 2 (Clinical Trials) filtering, histogram, and rendering
+- `server_map.R` — Clinical Trials Map with lazy loading and leafletProxy updates
 
 ### Main Server Orchestrator (server.R)
 
@@ -860,6 +887,37 @@ filtered_data <- shiny::reactive({
 }) |> bindCache(mr_filter(), gwas_trait_filter(), omics_filter())
 ```
 
+### Map Server Module (server_map.R)
+
+The Clinical Trials Map tab uses lazy loading to defer data fetching until the user accesses the tab:
+
+```r
+# Map data loader with lazy loading and caching
+map_data_loader <- build_map_data_loader(load_table2)
+
+# Setup lazy load trigger when tab is accessed
+setup_map_lazy_load_trigger(input, map_data_loader)
+
+# Base map rendering (no markers initially)
+output$trials_map <- build_trials_map_base()
+
+# Marker updates via leafletProxy for performance
+build_map_marker_observer(map_data_loader, session)
+
+# Statistics display
+output$map_stats <- build_map_stats(map_data_loader)
+```
+
+Key functions in `server_map.R`:
+
+| Function | Purpose |
+|----------|---------|
+| `build_map_data_loader()` | Creates reactive with `reactiveVal` caching for geocoded trial locations |
+| `build_trials_map_base()` | Renders base Leaflet map with CartoDB.Positron tiles |
+| `build_map_marker_observer()` | Uses `leafletProxy()` to add markers without re-rendering entire map |
+| `build_map_stats()` | Displays count of mapped sites and unique trials |
+| `setup_map_lazy_load_trigger()` | Rate-limited observer that triggers data loading on tab access |
+
 ---
 
 ## Chapter 10: Performance Optimizations
@@ -887,6 +945,18 @@ filtered_data <- shiny::reactive({
 - **Filter Modules**: All checkbox filters are debounced (`CHECKBOX_DEBOUNCE_MS` = 150ms) to avoid rapid re-filtering
 - **Sample Size Slider**: Debounced (`SLIDER_DEBOUNCE_MS` = 500ms) to avoid filtering on every slider movement
 - **DataTable Search**: Search delay (`DATATABLE_SEARCH_DELAY` = 500ms) to prevent excessive queries
+
+### Map-Specific Optimizations
+
+- **Lazy Loading**: Map data is only fetched when the Clinical Trials Map tab is first accessed, not at application startup
+- **leafletProxy**: Markers are added/updated using `leafletProxy()` instead of re-rendering the entire map, reducing browser repaints
+- **Geocoded Data Cache**: Geocoded coordinates are cached to `data/qs/geocoded_trials.qs` with SHA256 integrity verification to avoid redundant geocoding
+- **Cache Invalidation**: Cache includes a hash of NCT IDs; when trials change, the cache is automatically invalidated
+- **Parallel API Requests**: Uses `future.apply::future_lapply()` with configurable workers for concurrent API requests
+- **Rate Limiting**: 100ms delay between API request batches and 10-second minimum interval between tab-switch triggers
+- **Exponential Backoff**: Failed API requests retry with exponential backoff (1s, 2s, 4s) up to 3 attempts
+- **Marker Clustering**: Uses Leaflet.markercluster to efficiently render many markers without overwhelming the browser
+- **Coordinate Jittering**: Duplicate coordinates are jittered in a circular pattern to prevent marker stacking
 
 ### Browser Performance Optimization
 
@@ -958,13 +1028,23 @@ covr::file_coverage("tests/test_all.R")
 
 ### Adding a New Tab
 
-1. Add `tabPanel` in `ui.R` within the `tabsetPanel`
+1. Add `bslib::nav_panel()` in `ui.R` within the `page_navbar()`
 2. Add conditional sidebar if filters are needed
 3. Create a new server module file (e.g., `server_newtab.R`) following the pattern of existing modules
 4. Source the new module in `app.R`
 5. Integrate the module in `server.R`
-6. Consider lazy loading for heavy data
+6. Consider lazy loading for heavy data (see `server_map.R` for a lazy-loading example)
 7. Add any new constants to `constants.R`
+
+**Example: Clinical Trials Map Implementation**
+
+The Clinical Trials Map tab demonstrates best practices for lazy-loaded tabs:
+
+- **UI**: Added `bslib::nav_panel()` with `leaflet::leafletOutput()` in `ui.R`
+- **Server Module**: Created `server_map.R` with `build_map_data_loader()` using `reactiveVal` caching
+- **Lazy Loading**: `setup_map_lazy_load_trigger()` observes tab changes and triggers data loading only when needed
+- **Performance**: Uses `leafletProxy()` to update markers without full map re-renders
+- **External Data**: Created `fetch_trial_locations.R` for API integration with caching
 
 ---
 
@@ -992,6 +1072,11 @@ covr::file_coverage("tests/test_all.R")
 | qs | Fast serialization (3-5x faster than RDS) |
 | promises | Async programming for reactive operations |
 | future | Parallel processing backend |
+| leaflet | Interactive maps with marker clustering |
+| tidygeocoder | Geocoding via OpenStreetMap Nominatim |
+| httr2 | HTTP requests with timeout and retry logic |
+| htmltools | HTML escaping for popup content |
+| future.apply | Parallel API requests with `future_lapply()` |
 
 ---
 
@@ -1020,6 +1105,18 @@ covr::file_coverage("tests/test_all.R")
 **High memory in multi-user deployment**
 : Verify `PRELOAD_TABLE2 = TRUE` is set to use direct references instead of per-session copies
 
+**Map not loading / showing "Loading trial location data..."**
+: Check that ClinicalTrials.gov API is accessible; verify network connectivity; check console for HTTP errors; the cache may need to be regenerated if `data/qs/geocoded_trials.qs` is corrupted
+
+**Map cache integrity check failed**
+: Delete `data/qs/geocoded_trials.qs` and `data/qs/geocoded_trials.qs.sha256` to force a fresh fetch and geocode cycle
+
+**Geocoding returning many NA coordinates**
+: OpenStreetMap Nominatim has rate limits; ensure `MAP_API_DELAY_MS` is set appropriately (default 100ms); some facility locations may not be geocodable
+
+**Map markers stacked on top of each other**
+: The jittering function should spread markers at identical coordinates in a circular pattern; if still stacked, increase the jitter radius in `jitter_duplicate_coordinates()`
+
 ### Debug Tips
 
 - Use `message()` calls to trace data loading and filtering
@@ -1028,3 +1125,184 @@ covr::file_coverage("tests/test_all.R")
 - Inspect reactive graph with `reactlog` package
 - Run the test suite: `source("tests/test_all.R")`
 - Check constants are correctly loaded: verify values from `constants.R`
+
+---
+
+## Chapter 15: Clinical Trials Map Module
+
+### Map Overview
+
+The Clinical Trials Map is an interactive visualization showing the geographic distribution of clinical trial research sites. It displays only trials registered on ClinicalTrials.gov (NCT IDs) and provides:
+
+- Interactive Leaflet map with marker clustering
+- Rich HTML popups with trial metadata and status badges
+- Color-coded status indicators (recruiting, active, completed, terminated)
+- Links to ClinicalTrials.gov trial pages
+
+### Data Flow
+
+```
+Table 2 (Clinical Trials)
+         ↓
+extract_nct_ids() → NCT IDs only
+         ↓
+fetch_all_trial_locations() → ClinicalTrials.gov API v2
+         ↓
+geocode_locations() → tidygeocoder + OpenStreetMap Nominatim
+         ↓
+prepare_map_data() → Join with Table 2 metadata, generate popups
+         ↓
+build_map_marker_observer() → Render markers via leafletProxy
+```
+
+### API Integration
+
+The `fetch_trial_locations.R` module queries the ClinicalTrials.gov API v2 to retrieve:
+
+- Facility name, city, state, country
+- Trial title (briefTitle)
+- Recruitment status (overallStatus)
+
+**API Request Configuration:**
+
+```r
+# HTTP configuration
+http_timeout_seconds <- 30L      # Request timeout
+max_retry_attempts <- 3L         # Retry count on failure
+retry_base_delay_seconds <- 1L   # Base delay for exponential backoff
+
+# Rate limiting
+MAP_API_DELAY_MS <- 100L         # Delay between batch requests
+```
+
+**Exponential Backoff:**
+
+Failed requests retry with delays of 1s, 2s, 4s (exponential backoff). Rate limiting (HTTP 429) responses respect the `Retry-After` header.
+
+**Parallel Processing:**
+
+```r
+fetch_all_trial_locations <- function(nct_ids, n_workers = 4L, chunk_delay_ms = MAP_API_DELAY_MS)
+```
+
+Uses `future.apply::future_lapply()` with configurable parallel workers. Processes NCT IDs in chunks with delays between batches.
+
+### Geocoding
+
+The `geocode_locations()` function converts city/country strings to latitude/longitude coordinates using tidygeocoder with the OpenStreetMap Nominatim service:
+
+```r
+geocoded <- tidygeocoder::geocode(
+  geocode_df,
+  address = location_string,
+  method = "osm",
+  quiet = TRUE
+)
+```
+
+- Deduplicates location strings before geocoding to avoid redundant API calls
+- Logs geocoding success rate for debugging
+- Gracefully handles missing or ungeocidable locations
+
+### Caching Strategy
+
+**Cache Structure:**
+
+```r
+cache_data <- list(
+  locations = geocoded_locations_df,
+  hash = digest::digest(sort(nct_ids)),  # For invalidation
+  timestamp = Sys.time()
+)
+```
+
+**Integrity Verification:**
+
+The cache uses SHA256 hash verification to prevent deserialization attacks:
+
+```r
+# Save with integrity hash
+save_cache_with_integrity <- function(data, cache_path) {
+  qs::qsave(data, cache_path)
+  hash <- digest::digest(file = cache_path, algo = "sha256")
+  writeLines(hash, paste0(cache_path, ".sha256"))
+}
+
+# Load with verification
+load_cache_with_integrity <- function(cache_path) {
+  # Verify hash BEFORE deserialization
+  file_hash <- digest::digest(file = cache_path, algo = "sha256")
+  if (!identical(file_hash, stored_hash)) {
+    warning("Cache integrity check failed")
+    return(NULL)
+  }
+  qs::qread(cache_path)
+}
+```
+
+**Cache Invalidation:**
+
+The cache is automatically invalidated when the set of NCT IDs changes (hash mismatch). To force a refresh, set `force_refresh = TRUE` in `load_or_fetch_geocoded_trials()`.
+
+### Map Server Functions
+
+**server_map.R** contains the following key functions:
+
+| Function | Description |
+|----------|-------------|
+| `build_map_data_loader()` | Creates a lazy-loading reactive with `reactiveVal` caching |
+| `build_trials_map_base()` | Renders the initial Leaflet map with CartoDB.Positron tiles |
+| `build_trials_map()` | Legacy wrapper that creates a complete map with markers |
+| `build_map_marker_observer()` | Uses `leafletProxy()` to efficiently update markers |
+| `build_map_stats()` | Renders statistics showing site count and trial count |
+| `setup_map_lazy_load_trigger()` | Rate-limited observer for tab-switch data loading |
+
+**Marker Cluster Configuration:**
+
+```r
+map_cluster_options <- leaflet::markerClusterOptions(
+  showCoverageOnHover = TRUE,
+  zoomToBoundsOnClick = TRUE,
+  spiderfyOnMaxZoom = TRUE,
+  removeOutsideVisibleBounds = TRUE,
+  maxClusterRadius = 50
+)
+```
+
+### Popup Content Generation
+
+The `build_popup_content_vectorized()` function generates HTML popups using vectorized operations for performance:
+
+**Popup Structure:**
+
+```html
+<div class='map-popup'>
+  <div class='popup-title'>Trial Title</div>
+  <div class='popup-status popup-status-recruiting'>Recruiting</div>
+  <div class='popup-divider'></div>
+  <div class='popup-trial-info'>
+    <div class='popup-info-row'><span class='popup-label'>Drug:</span> Drug Name</div>
+    <div class='popup-info-row'>Phase: III • Sponsor: Academic</div>
+    <div class='popup-info-row'><span class='popup-label'>Sample Size:</span> 500</div>
+  </div>
+  <div class='popup-divider'></div>
+  <div class='popup-facility'>📍 Facility Name</div>
+  <div class='popup-location'>City, State, Country</div>
+  <div class='popup-divider'></div>
+  <a href='https://clinicaltrials.gov/study/NCT...' class='popup-link'>
+    View on ClinicalTrials.gov →
+  </a>
+</div>
+```
+
+**Status Badge Colors:**
+
+| Status | CSS Class | Color |
+|--------|-----------|-------|
+| Recruiting, Enrolling by Invitation | `popup-status-recruiting` | Green |
+| Active Not Recruiting, Not Yet Recruiting | `popup-status-active` | Blue |
+| Completed | `popup-status-completed` | Gray |
+| Terminated, Withdrawn, Suspended | `popup-status-terminated` | Red |
+| Unknown | `popup-status-unknown` | Gray |
+
+All text content is HTML-escaped using `htmltools::htmlEscape()` to prevent XSS vulnerabilities in popup content.
