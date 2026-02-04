@@ -1,11 +1,11 @@
 # Cerebral SVD Dashboard
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Maintained](https://img.shields.io/badge/Maintained-yes-green.svg)](mailto:mathieu.poirier@icm-institute.org)
 [![R Version](https://img.shields.io/badge/R-4.5+-blue.svg)](https://cran.r-project.org/)
 [![Shiny](https://img.shields.io/badge/Shiny-Framework-blue.svg)](https://shiny.rstudio.com/)
-[![Maintained](https://img.shields.io/badge/Maintained-yes-green.svg)](mailto:mathieu.poirier@icm-institute.org)
-[![Python](https://img.shields.io/badge/Python-3.14+-blue.svg)](https://www.python.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-blue.svg)](https://www.postgresql.org/)
+[![Python](https://img.shields.io/badge/Python-3.14+-yellow.svg)](https://www.python.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-purple.svg)](https://www.postgresql.org/)
 
 An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for Cerebral Small Vessel Disease (SVD), developed by Mathieu B. Poirier at the Paris Brain Institute (ICM).
 
