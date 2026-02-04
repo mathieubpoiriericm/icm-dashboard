@@ -24,7 +24,10 @@
 # │   ├── fetch_omim_data.R      - OMIM link generation
 # │   ├── fetch_pubmed_data.R    - PubMed reference fetching
 # │   ├── fetch_uniprot_data.R   - UniProt protein data fetching
-# │   └── phenogram.R            - Phenogram data generation
+# │   ├── phenogram.R            - Phenogram data generation
+# │   ├── fetch_trial_locations.R - Clinical trial location geocoding
+# │   ├── server_map.R           - Clinical trials map server logic
+# │   └── read_external_data.R   - External data file loading utilities
 # │
 # ├── www/                       - Static web assets
 # │   ├── custom.css             - Custom styles (source)
@@ -76,6 +79,9 @@ library(parallel)
 library(qs)
 library(jsonlite)
 library(shinyWidgets)
+library(leaflet)
+library(tidygeocoder)
+library(htmltools)
 
 # Load Roboto font from local file (faster than font_add_google)
 font_path <- "www/fonts/Roboto-Regular.ttf"
@@ -218,6 +224,8 @@ source("R/tooltips.R")
 source("R/mod_checkbox_filter.R")
 source("R/server_table1.R")
 source("R/server_table2.R")
+source("R/fetch_trial_locations.R")
+source("R/server_map.R")
 source("R/ui.R")
 source("R/server.R")
 

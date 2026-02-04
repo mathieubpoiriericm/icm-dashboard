@@ -147,4 +147,23 @@ GWAS_TRAITS_TITLE_CASE <- c(
   "stroke",
   "lacunar stroke"
 )
+# =============================================================================
+# CLINICAL TRIALS MAP CONFIGURATION
+# =============================================================================
+# Geocoded trials cache file path
+MAP_CACHE_PATH <- "data/qs/geocoded_trials.qs"
+
+# ClinicalTrials.gov API v2 base URL
+MAP_CT_API_BASE_URL <- "https://clinicaltrials.gov/api/v2/studies/"
+
+# API request delay (milliseconds) to avoid rate limiting
+MAP_API_DELAY_MS <- 100L
+
+# Map default view (centered on Atlantic to show both Americas and Europe)
+MAP_DEFAULT_LAT <- 30
+MAP_DEFAULT_LNG <- 0
+MAP_DEFAULT_ZOOM <- 2
+
+# Map container height in pixels
+MAP_HEIGHT_PX <- 700L
 # nolint end: object_name_linter.

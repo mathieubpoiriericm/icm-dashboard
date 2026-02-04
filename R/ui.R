@@ -73,6 +73,13 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
     # Include custom CSS and JavaScript in header
     header = shiny::tagList(
       shiny::tags$head(
+        # Favicon
+        shiny::tags$link(
+          rel = "icon",
+          type = "image/png",
+          href = "images/icm_logo.png"
+        ),
+
         # External CSS (minified at startup in app.R for faster loading)
         shiny::tags$link(rel = "stylesheet", href = "custom.min.css"),
 
@@ -118,12 +125,19 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
     ),
     bslib::nav_spacer(),
     bslib::nav_item(
-      bslib::input_dark_mode(id = "dark_mode", mode = "light")
+      shiny::tags$span(
+        id = "theme-toggle-btn",
+        class = "theme-toggle-btn d-flex align-items-center gap-2",
+        bslib::input_dark_mode(id = "dark_mode", mode = "light")
+      )
     ),
 
     # About tab
     bslib::nav_panel(
-      title = "About",
+      title = shiny::tagList(
+        shiny::icon("info-circle", class = "me-1"),
+        "About"
+      ),
       value = "About",
       shiny::div(
         class = "main-container",
@@ -242,7 +256,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
 
     # Gene Table tab with sidebar
     bslib::nav_panel(
-      title = "Gene Table",
+      title = shiny::tagList(shiny::icon("dna", class = "me-1"), "Genes"),
       value = "Gene Table",
       bslib::layout_sidebar(
         sidebar = bslib::sidebar(
@@ -298,41 +312,25 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             class = "content-title",
             shiny::HTML(paste0(
               "<strong>Putative Causal Genes for ",
-              "Cerebral Small Vessel Disease (SVD)</strong>"
+              "Cerebral Small Vessel Disease</strong>"
             ))
           ),
           shiny::br(),
-          shiny::div(
-            class = "tip-row",
-            shiny::div(
-              class = "tip-box",
-              shiny::HTML(paste0(
-                "<strong>Tip:</strong> Elements with a grey background ",
-                "like this have tooltips. ",
-                "Hover over them to see additional information."
-              ))
-            ),
-            shiny::div(class = "tip-divider"),
-            shiny::div(
-              class = "tip-box",
-              shiny::HTML(paste0(
-                "<strong>Tip:</strong> Elements with a ",
-                "<span class=\"link-hint\">blue font</span> ",
-                "are clickable links that open in a new tab."
-              ))
-            ),
-            shiny::div(class = "tip-divider"),
-            shiny::div(
-              class = "tip-box",
-              shiny::HTML(paste0(
-                "<strong>Tip:</strong> Definitions for affected ",
-                "pathways are according to ",
-                "<a href=\"https://geneontology.org/docs/",
-                "ontology-documentation/\" target=\"_blank\" ",
-                # nolint next: line_length_linter.
-                "rel=\"noopener\" class=\"tip-link\">GO terminology</a>"
-              ))
-            )
+          tip_row_ui(
+            tip_box_ui(paste0(
+              "Elements with a grey background like this have tooltips. ",
+              "Hover over them to see additional information."
+            )),
+            tip_box_ui(paste0(
+              "Elements with a <span class=\"link-hint\">blue font</span> ",
+              "are clickable links that open in a new tab."
+            )),
+            tip_box_ui(paste0(
+              "Definitions for affected pathways are according to ",
+              "<a href=\"https://geneontology.org/docs/",
+              "ontology-documentation/\" target=\"_blank\" ",
+              "rel=\"noopener\" class=\"tip-link\">GO terminology</a>"
+            ))
           ),
           shiny::uiOutput("filter_message_table1"),
           # bslib table controls
@@ -340,11 +338,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             class = "dt-bslib-controls",
             shiny::div(
               class = "dt-bslib-control-group",
-              shiny::tags$label(
-                class = "dt-bslib-label",
-                `for` = "table1_page_length",
-                "Show"
-              ),
+              shiny::tags$label(class = "dt-bslib-label", "Show"),
               shiny::selectInput(
                 "table1_page_length",
                 label = NULL,
@@ -356,11 +350,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             ),
             shiny::div(
               class = "dt-bslib-control-group",
-              shiny::tags$label(
-                class = "dt-bslib-label",
-                `for` = "table1_search",
-                "Search:"
-              ),
+              shiny::tags$label(class = "dt-bslib-label", "Search:"),
               shiny::textInput(
                 "table1_search",
                 label = NULL,
@@ -375,7 +365,10 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
 
     # Phenogram tab (no sidebar)
     bslib::nav_panel(
-      title = "Phenogram",
+      title = shiny::tagList(
+        shiny::icon("project-diagram", class = "me-1"),
+        "Phenogram"
+      ),
       value = "Phenogram",
       shiny::div(
         class = "main-content phenogram-content",
@@ -384,27 +377,28 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
           class = "content-title",
           shiny::HTML("<strong>Interactive Phenogram</strong>")
         ),
-        shiny::div(
-          class = "tip-row tip-row-centered",
-          shiny::div(
-            class = "tip-box",
-            shiny::HTML(paste0(
-              "<strong>Tip:</strong> Hover over coloured elements ",
-              "(GWAS phenotypes) to view more information."
-            ))
-          )
+        tip_row_ui(
+          tip_box_ui(paste0(
+            "Hover over coloured elements ",
+            "(GWAS phenotypes) to view more information."
+          )),
+          centered = TRUE
         ),
         shiny::tags$iframe(
           src = "phenogram_template.html",
           class = "viz-iframe phenogram-iframe",
-          loading = "lazy"
+          loading = "lazy",
+          sandbox = "allow-scripts allow-same-origin"
         )
       )
     ),
 
     # Clinical Trials Table tab with sidebar
     bslib::nav_panel(
-      title = "Clinical Trials Table",
+      title = shiny::tagList(
+        shiny::icon("flask", class = "me-1"),
+        "Clinical Trials"
+      ),
       value = "Clinical Trials Table",
       bslib::layout_sidebar(
         sidebar = bslib::sidebar(
@@ -490,41 +484,26 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             shiny::HTML(paste0(
               "<strong>Drugs Used in Planned or Ongoing ",
               "Clinical Trials for Cerebral Small Vessel ",
-              "Disease (SVD)</strong>"
+              "Disease</strong>"
             ))
           ),
           shiny::br(),
-          shiny::div(
-            class = "tip-row",
-            shiny::div(
-              class = "tip-box",
-              shiny::HTML(paste0(
-                "<strong>Tip:</strong> Elements with a grey background ",
-                "like this have tooltips. ",
-                "Hover over them to see additional information."
-              ))
-            ),
-            shiny::div(class = "tip-divider"),
-            shiny::div(
-              class = "tip-box",
-              shiny::HTML(paste0(
-                "<strong>Tip:</strong> Elements with a ",
-                "<span class=\"link-hint\">blue font</span> ",
-                "are clickable links that open in a new tab."
-              ))
-            ),
-            shiny::div(class = "tip-divider"),
-            shiny::div(
-              class = "tip-box",
-              shiny::HTML(paste0(
-                "<strong>Tip:</strong> ",
-                "Definitions for genetic targets and genetic ",
-                "evidence are according to ",
-                "<a href=\"https://platform.opentargets.org/\" ",
-                "target=\"_blank\" rel=\"noopener\" class=\"tip-link\">",
-                "Open Targets</a>"
-              ))
-            )
+          tip_row_ui(
+            tip_box_ui(paste0(
+              "Elements with a grey background like this have tooltips. ",
+              "Hover over them to see additional information."
+            )),
+            tip_box_ui(paste0(
+              "Elements with a <span class=\"link-hint\">blue font</span> ",
+              "are clickable links that open in a new tab."
+            )),
+            tip_box_ui(paste0(
+              "Definitions for genetic targets and genetic ",
+              "evidence are according to ",
+              "<a href=\"https://platform.opentargets.org/\" ",
+              "target=\"_blank\" rel=\"noopener\" class=\"tip-link\">",
+              "Open Targets</a>"
+            ))
           ),
           shiny::uiOutput("filter_message_table2"),
           # bslib table controls
@@ -532,11 +511,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             class = "dt-bslib-controls",
             shiny::div(
               class = "dt-bslib-control-group",
-              shiny::tags$label(
-                class = "dt-bslib-label",
-                `for` = "table2_page_length",
-                "Show"
-              ),
+              shiny::tags$label(class = "dt-bslib-label", "Show"),
               shiny::selectInput(
                 "table2_page_length",
                 label = NULL,
@@ -548,11 +523,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             ),
             shiny::div(
               class = "dt-bslib-control-group",
-              shiny::tags$label(
-                class = "dt-bslib-label",
-                `for` = "table2_search",
-                "Search:"
-              ),
+              shiny::tags$label(class = "dt-bslib-label", "Search:"),
               shiny::textInput(
                 "table2_search",
                 label = NULL,
@@ -567,7 +538,10 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
 
     # Clinical Trials Visualization tab (no sidebar)
     bslib::nav_panel(
-      title = "Clinical Trials Visualization",
+      title = shiny::tagList(
+        shiny::icon("chart-line", class = "me-1"),
+        "Trials Timeline"
+      ),
       value = "Clinical Trials Visualization",
       shiny::div(
         class = "main-content viz-content",
@@ -575,43 +549,79 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         shiny::div(
           class = "content-title",
           shiny::HTML(paste0(
-            "<strong>SVD Drugs Tested in Planned or ",
+            "<strong>Cerebral SVD Drugs Tested in Planned or ",
             "Ongoing Clinical Trials</strong>"
           ))
         ),
-        shiny::div(
-          class = "tip-row tip-row-centered",
-          shiny::div(
-            class = "tip-box",
-            shiny::HTML(paste0(
-              "<strong>Tip:</strong> Hover over plot elements to ",
-              "display tooltips,<br>or click on a drug name or ",
-              "drug marker to display sidepanel."
-            ))
-          ),
-          shiny::div(class = "tip-divider"),
-          shiny::div(
-            class = "tip-box",
-            shiny::HTML(paste0(
-              "<strong>Visually-inspired by:</strong> Fig. 1 ",
-              "in Cummings, J. <i>et al.</i>,<br>",
-              "Alzheimer's ",
-              "disease drug ",
-              "development pipeline: 2023,<br>",
-              "<i>Alzheimer's ",
-              "Dement.</i> (May 2023) ",
+        tip_row_ui(
+          tip_box_ui(paste0(
+            "Hover over plot elements to display tooltips,<br>",
+            "or click on a drug name or drug marker to display sidepanel."
+          )),
+          tip_box_ui(
+            paste0(
+              "Fig. 1 in Cummings, J. <i>et al.</i>,<br>",
+              "Alzheimer's disease drug development pipeline: 2023,<br>",
+              "<i>Alzheimer's Dement.</i> (May 2023) ",
               "<a href=\"https://pubmed.ncbi.nlm.nih.gov/37251912/\" ",
               "target=\"_blank\" rel=\"noopener\" class=\"tip-link\">",
               "DOI: 10.1002/trc2.12385</a>"
-            ))
-          )
+            ),
+            tip_label = "Visually-inspired by:"
+          ),
+          centered = TRUE
         ),
         shiny::tags$div(
           class = "iframe-container",
           shiny::tags$iframe(
             src = "python_plot.html",
             class = "viz-iframe trials-iframe",
-            loading = "lazy"
+            loading = "lazy",
+            sandbox = "allow-scripts allow-same-origin"
+          )
+        )
+      )
+    ),
+
+    # Clinical Trials Map tab (no sidebar)
+    bslib::nav_panel(
+      title = shiny::tagList(
+        shiny::icon("globe", class = "me-1"),
+        "Trials Map"
+      ),
+      value = "Clinical Trials Map",
+      shiny::div(
+        class = "main-content map-content",
+        shiny::br(),
+        shiny::div(
+          class = "content-title",
+          shiny::HTML(paste0(
+            "<strong>Location of Cerebral SVD Clinical Trials</strong>"
+          ))
+        ),
+        tip_row_ui(
+          tip_box_ui(
+            paste0(
+              "This map shows research sites from trials registered on ",
+              "<strong>ClinicalTrials.gov (NCT IDs only)</strong>.<br>",
+              "Trials from other registries (ISRCTN, ACTRN, ChiCTR) ",
+              "are not displayed."
+            ),
+            tip_label = "Note:"
+          ),
+          tip_box_ui(paste0(
+            "Click on clusters to zoom in and reveal individual sites.<br>",
+            "Click on markers to view facility details and ",
+            "links to ClinicalTrials.gov."
+          )),
+          centered = TRUE
+        ),
+        shiny::uiOutput("map_stats"),
+        shiny::div(
+          class = "map-container",
+          leaflet::leafletOutput(
+            "trials_map",
+            height = paste0(MAP_HEIGHT_PX, "px")
           )
         )
       )

@@ -309,6 +309,67 @@ about_box_style <- create_box_style(
 # UI COMPONENT HELPERS
 # =============================================================================
 
+# Create Tip Box UI Element
+#
+# Creates a styled tip box with consistent formatting. Used for displaying
+# helpful tips and hints to users in a visually distinct container.
+#
+# Args:
+#   content: The tip content. Can be plain text or HTML (via shiny::HTML).
+#   tip_label: The label prefix. Defaults to "Tip:".
+#
+# Returns:
+#   A shiny div with the tip-box class.
+tip_box_ui <- function(content, tip_label = "Tip:") {
+  # Wrap content appropriately based on type
+  formatted_content <- if (inherits(content, "shiny.tag") ||
+                          inherits(content, "html")) {
+    shiny::tagList(shiny::tags$strong(tip_label), " ", content)
+  } else {
+    shiny::HTML(paste0("<strong>", tip_label, "</strong> ", content))
+  }
+
+  shiny::div(
+    class = "tip-box",
+    formatted_content
+  )
+}
+
+# Create Tip Row Container
+#
+# Creates a horizontal row containing multiple tip boxes separated by dividers.
+# Used for displaying multiple related tips in a single row layout.
+#
+# Args:
+#   ...: One or more tip_box_ui() elements or other content to include in the
+#     row. Dividers are automatically inserted between elements.
+#   centered: Logical. If TRUE, applies centered styling. Defaults to FALSE.
+#
+# Returns:
+#   A shiny div with the tip-row class containing all provided elements.
+tip_row_ui <- function(..., centered = FALSE) {
+  elements <- list(...)
+  if (length(elements) == 0L) {
+    return(shiny::div(class = "tip-row"))
+  }
+
+  # Build row with dividers between elements
+  row_content <- list()
+  for (i in seq_along(elements)) {
+    row_content <- c(row_content, list(elements[[i]]))
+    if (i < length(elements)) {
+      row_content <- c(row_content, list(shiny::div(class = "tip-divider")))
+    }
+  }
+
+  row_class <- if (centered) "tip-row tip-row-centered" else "tip-row"
+
+  shiny::div(
+    class = row_class,
+    row_content
+  )
+}
+
 # Create Info Card Row for About Tab
 #
 # Creates a consistent labeled card pattern used in the About tab.

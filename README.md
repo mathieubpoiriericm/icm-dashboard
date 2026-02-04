@@ -81,7 +81,8 @@ The dashboard will open in your browser at `http://127.0.0.1:3838`.
 
 | Layer | Technologies |
 |-------|-------------|
-| Frontend | R Shiny, bslib (Bootstrap 5 with dark mode), DT, Plotly, Tippy.js |
+| Frontend | R Shiny, bslib (Bootstrap 5 with dark mode), DT, Leaflet, Tippy.js |
+| Visualization | Plotly (Python-generated timeline) |
 | Backend | R 4.5+, data.table, fastmap, memoise, RPostgres |
 | Data Pipeline | Python 3.14+, asyncpg, Biopython, Anthropic API |
 | Database | PostgreSQL 18+ |
@@ -125,6 +126,17 @@ Interactive chromosome ideogram visualization of GWAS phenotypes.
 
 ### Clinical Trials Visualization
 Interactive Plotly timeline of SVD drugs tested in clinical trials.
+
+### Clinical Trials Map
+Interactive Leaflet map displaying global research sites for NCT-registered trials:
+- Fetches trial locations from ClinicalTrials.gov API v2
+- Geocodes locations using OpenStreetMap Nominatim (via tidygeocoder)
+- Marker clustering for improved performance at low zoom levels
+- Rich HTML popups with trial metadata (drug, phase, sponsor, status, sample size)
+- Color-coded status badges (recruiting, active, completed, terminated)
+- Direct links to ClinicalTrials.gov trial pages
+- Lazy loading (data fetched only when tab accessed)
+- Cached geocoded data with SHA256 integrity verification
 
 ---
 
@@ -179,10 +191,15 @@ install.packages(c(
   "RefManageR",
   "rbibutils",
   "testthat",
+  "shinytest2",
   "qs",
   "parallel",
   "jsonlite",
-  "shinyWidgets"
+  "shinyWidgets",
+  "leaflet",
+  "tidygeocoder",
+  "future",
+  "future.apply"
 ))
 
 # Install Bioconductor packages
@@ -283,7 +300,9 @@ rshiny_dashboard/
 │   ├── fetch_pubmed_data.R       # PubMed reference fetching
 │   ├── fetch_uniprot_data.R      # UniProt protein data fetching
 │   ├── read_external_data.R      # External data reading utilities
-│   └── phenogram.R               # Phenogram data generation
+│   ├── phenogram.R               # Phenogram data generation
+│   ├── fetch_trial_locations.R   # Trial location fetching and geocoding
+│   └── server_map.R              # Clinical Trials Map server logic
 ├── pipeline/
 │   ├── main.py                   # CLI entry point & pipeline orchestrator
 │   ├── pubmed_search.py          # PubMed literature search via Entrez
@@ -387,6 +406,7 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 | `prot_info_clean.qs` | `uniprot_info` cache | UniProt protein annotations |
 | `refs.qs` | `pubmed_citations` cache | Formatted PubMed references |
 | `gwas_trait_names.qs` | `genes` table | GWAS trait name mappings |
+| `geocoded_trials.qs` | ClinicalTrials.gov API | Geocoded trial locations for map |
 
 ### Automated Updates
 
@@ -494,6 +514,16 @@ This creates `www/python_plot.html` and `www/python_plot.js`.
 ### UI Responsiveness
 - **Debounced Inputs**: Slider inputs (500ms) and checkbox filters (150ms) debounced
 - **Lazy-Loaded Iframes**: Phenogram and clinical trials visualizations use browser-native `loading="lazy"` attribute
+
+### Clinical Trials Map Optimizations
+- **Lazy Loading**: Map data fetched only when Clinical Trials Map tab is first accessed
+- **Parallel API Requests**: Uses future/future.apply for concurrent ClinicalTrials.gov API calls
+- **Rate Limiting**: Configurable delay between API request batches (100ms default) to avoid rate limiting
+- **Geocoding Deduplication**: Unique locations geocoded once, then merged back to all markers
+- **Cache with Integrity Verification**: Geocoded data cached to QS file with SHA256 hash verification
+- **Marker Clustering**: Leaflet marker clusters improve rendering performance at low zoom levels
+- **Incremental Updates**: leafletProxy used to update markers without re-rendering entire map
+- **Exponential Backoff**: API failures retry with exponential backoff (1s, 2s, 4s)
 
 ---
 

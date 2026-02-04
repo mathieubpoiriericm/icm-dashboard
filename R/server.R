@@ -28,9 +28,16 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     # SESSION CLEANUP
     # =========================================================================
     session$onSessionEnded(function() {
-      # Clean up session-scoped reactive values to prevent memory accumulation
-      # in multi-user deployments
-      message(sprintf("Session ended, cleaning up resources"))
+      message("Session ended, cleaning up resources")
+
+      # Terminate any orphaned future workers from parallel API requests
+      tryCatch({
+        future::plan(future::sequential)
+        message("  Future workers terminated")
+      }, error = function(e) {
+        message(sprintf("  Warning: Failed to terminate future workers: %s",
+                        e$message))
+      })
     })
 
     # =========================================================================
@@ -138,6 +145,20 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     output$secondTable <- build_table2_datatable(filtered_data2)
 
     # =========================================================================
+    # CLINICAL TRIALS MAP SERVER LOGIC
+    # =========================================================================
+    map_data_loader <- build_map_data_loader(load_table2)
+
+    # Setup lazy loading trigger for map tab
+    setup_map_lazy_load_trigger(input, map_data_loader)
+
+    # Render map output
+    output$trials_map <- build_trials_map(map_data_loader)
+
+    # Render map statistics
+    output$map_stats <- build_map_stats(map_data_loader)
+
+    # =========================================================================
     # OUTPUT OPTIONS
     # =========================================================================
     configure_output_options(output)
@@ -200,7 +221,8 @@ setup_table2_lazy_load_trigger <- function(input, load_table2) {
   shiny::observeEvent(input$tabs, {
     if (
       input$tabs %in%
-        c("Clinical Trials Table", "Clinical Trials Visualization")
+        c("Clinical Trials Table", "Clinical Trials Visualization",
+          "Clinical Trials Map")
     ) {
       load_table2()
     }
@@ -256,5 +278,7 @@ configure_output_options <- function(output) {
     suspendWhenHidden = TRUE
   )
   shiny::outputOptions(output, "secondTable", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "trials_map", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "map_stats", suspendWhenHidden = TRUE)
 }
 # nolint end: object_usage_linter.
