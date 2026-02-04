@@ -60,8 +60,8 @@ Detailed documentation is available in the `docs/` directory:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/rshiny_dashboard.git
-cd rshiny_dashboard
+git clone https://github.com/mathieubpoiriericm/icm-dashboard.git
+cd icm-dashboard
 
 # 2. Install the maRco helper package
 Rscript -e 'devtools::install("maRco")'
@@ -217,6 +217,37 @@ pip install -r requirements.txt
 ```
 
 <details>
+<summary><strong>Click to expand Python package list</strong></summary>
+
+```txt
+# HTTP client (async)
+httpx>=0.24.0
+
+# XML parsing
+lxml>=4.9.0
+
+# LLM API
+anthropic>=0.25.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Bioinformatics
+biopython>=1.81
+
+# Database
+asyncpg>=0.28.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# PDF extraction
+PyMuPDF>=1.23.0
+```
+
+</details>
+
+<details>
 <summary><strong>Click to expand database setup instructions</strong></summary>
 
 ### Database Setup (for data pipeline)
@@ -280,8 +311,24 @@ Rscript -e "shiny::runApp()"
 rshiny_dashboard/
 ├── app.R                         # Main application entry point
 ├── python_plot.py                # Clinical trials visualization generator
+├── Dockerfile                    # Docker build configuration
 ├── LICENSE                       # MIT License
 ├── README.md                     # Project documentation
+├── bibentry/                     # PubMed reference files (XML/BIB)
+├── data/
+│   ├── csv/                      # CSV source files (table1.csv, table2.csv, etc.)
+│   ├── qs/                       # QS serialized data for Shiny app
+│   ├── txt/                      # Text data files
+│   └── xlsx/                     # Excel source files
+├── logs/                         # Pipeline execution logs
+├── makefile/
+│   └── Makevars                  # R compilation flags
+├── monitoring/
+│   ├── json/                     # Grafana dashboard configuration
+│   └── yaml/                     # Kubernetes monitoring configs
+│       ├── monitoring-stack.yaml # Monitoring stack deployment
+│       └── victorialogs-values.yaml  # VictoriaLogs configuration
+├── published_dashboard_preview/  # ShinyApps.io deployment preview
 ├── R/
 │   ├── constants.R               # Application-wide constants
 │   ├── utils.R                   # CSS styles, DB utilities, column cleaning
@@ -320,10 +367,6 @@ rshiny_dashboard/
 │   ├── setup.sql                 # Database schema initialization
 │   ├── add_external_data_tables.sql  # External data table schemas
 │   └── common_queries.sql        # Frequently used SQL queries
-├── monitoring/
-│   └── yaml/                     # Kubernetes monitoring configs
-│       ├── monitoring-stack.yaml # Monitoring stack deployment
-│       └── victorialogs-values.yaml  # VictoriaLogs configuration
 ├── scripts/
 │   └── trigger_update.R          # Regenerate QS files from database
 └── www/
@@ -459,6 +502,8 @@ See `monitoring/yaml/` for Kubernetes deployment configurations including:
 - **OMIM**: Online Mendelian Inheritance in Man
 - **PubMed**: Publication references
 - **Clinical Trial Registries**: ClinicalTrials.gov, ISRCTN, ANZCTR, ChiCTR
+- **ClinicalTrials.gov API v2**: Trial locations and metadata for the Clinical Trials Map
+- **OpenStreetMap Nominatim**: Location geocoding via tidygeocoder
 
 ---
 
@@ -546,7 +591,7 @@ Contributions are welcome! Here's how you can help:
 
 ### Reporting Issues
 
-Found a bug or have a suggestion? Please [open an issue](https://github.com/your-username/rshiny_dashboard/issues) with:
+Found a bug or have a suggestion? Please [open an issue](https://github.com/mathieubpoiriericm/icm-dashboard/issues) with:
 - A clear description of the problem or enhancement
 - Steps to reproduce (for bugs)
 - Expected vs actual behavior
