@@ -85,18 +85,18 @@ The application follows a modular architecture with clear separation of concerns
 
 ```
 rshiny_dashboard/                            Lines
-|-- app.R                                      335
+|-- app.R                                      407
 |-- python_plot.py                           1,506
 |-- R/
 |   |-- fetch_trial_locations.R                865  # NEW: ClinicalTrials.gov API + geocoding
-|   |-- data_prep.R                            750
+|   |-- data_prep.R                            826
 |   |-- tooltips.R                             742
 |   |-- ui.R                                   631
 |   |-- server_table2.R                        610
 |   |-- utils.R                                402
 |   |-- filter_utils.R                         296
 |   |-- server_table1.R                        291
-|   |-- server.R                               284
+|   |-- server.R                               275
 |   |-- server_map.R                           266  # NEW: Map tab server logic
 |   |-- phenogram.R                            264
 |   |-- fetch_pubmed_data.R                    264
@@ -202,6 +202,19 @@ library(parallel)    # Multi-threaded QS loading
 library(qs)          # Fast serialization (3-5x faster than RDS)
 library(jsonlite)    # JSON handling
 library(shinyWidgets)  # Enhanced Shiny inputs
+library(leaflet)      # Interactive maps with marker clustering
+library(tidygeocoder) # Geocoding via OpenStreetMap Nominatim
+library(htmltools)    # HTML escaping for popup content
+
+# rsconnect dependency detection
+# These explicit library() calls are wrapped in if (FALSE) {} to ensure
+# rsconnect detects all dependencies during deployment without actually
+# loading them twice.
+if (FALSE) {
+  library(shiny)
+  library(bslib)
+  # ... (all packages listed for rsconnect detection)
+}
 
 # Load Roboto font from local file (faster than font_add_google)
 font_add("Roboto", "www/fonts/Roboto-Regular.ttf")
@@ -216,6 +229,8 @@ source("R/tooltips.R")
 source("R/mod_checkbox_filter.R")
 source("R/server_table1.R")
 source("R/server_table2.R")
+source("R/fetch_trial_locations.R")
+source("R/server_map.R")
 source("R/ui.R")
 source("R/server.R")
 
@@ -226,19 +241,29 @@ table1_display <- prepare_table1_display(...)
 # Preload Table 2 if configured (eliminates tab-switch delay)
 if (PRELOAD_TABLE2) {
   table2_data <- load_table2_data()
+  table2_display <- prepare_table2_display(...)
+
+  # Store preloaded data for server
+  preloaded_table2 <- list(
+    table2 = table2_data$table2,
+    table2_display = table2_display,
+    ct_info = table2_data$ct_info,
+    registry_matches = table2_data$registry_matches,
+    registry_rows = table2_data$registry_rows,
+    sample_sizes = table2_data$sample_sizes,
+    sample_sizes_hash = table2_data$sample_sizes_hash
+  )
+} else {
+  preloaded_table2 <- NULL
 }
 
 # Compute dashboard statistics for About page
 n_genes <- length(unique(app_data$table1$Gene))
 n_publications <- length(unique(unlist(app_data$table1$References)))
-table2_stats <- qs::qread("data/qs/table2_clean.qs", nthreads = detectCores())
-n_trials <- length(unique(table2_stats$`Registry ID`))
-n_drugs <- length(unique(table2_stats$Drug))
-rm(table2_stats)  # Free memory immediately
 
 # Build and run with statistics passed to UI
 ui <- build_ui(n_genes, n_drugs, n_trials, n_publications)
-server <- build_server(app_data, table1_display, table2_data)
+server <- build_server(app_data, table1_display, preloaded_table2)
 shinyApp(ui = ui, server = server)
 ```
 
@@ -711,14 +736,18 @@ bslib::nav_item(
 ),
 ```
 
-Theme switching is handled reactively in the server (R/server.R lines 28-32):
+Theme switching is handled reactively in the server (R/server.R lines 30-38):
 
 ```r
-shiny::observe({
-  session$setCurrentTheme(
-    if (isTRUE(input$dark_mode)) dark_theme else light_theme
-  )
-})
+shiny::observeEvent(
+  input$dark_mode,
+  {
+    session$setCurrentTheme(
+      if (isTRUE(input$dark_mode)) dark_theme else light_theme
+    )
+  },
+  ignoreNULL = FALSE
+)
 ```
 
 #### Page Structure with bslib
@@ -803,24 +832,29 @@ The server logic is split across four files for maintainability:
 The `build_server()` function creates a server function that composes the table-specific modules:
 
 ```r
-build_server <- function(app_data, table1_display) {
+build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
   function(input, output, session) {
     # Extract data from app_data
     table1 <- app_data$table1
     gwas_trait_rows <- app_data$gwas_trait_rows
     omics_type_rows <- app_data$omics_type_rows
 
+    # Theme switching (bslib dark mode)
+    shiny::observeEvent(input$dark_mode, {...}, ignoreNULL = FALSE)
+
     # Python plot handler
     setup_python_plot_handler(input, session)
 
-    # Table 2 preloading setup (uses direct reference when PRELOAD_TABLE2 = TRUE)
-    table2_data <- load_table2()  # Returns reference to preloaded data
-    table2_reactive_vals <- create_table2_reactive_vals(table2_data)
-
-    # Session cleanup
-    session$onSessionEnded(function() {
-      rm(table2_reactive_vals)
-    })
+    # Table 2 data handling (preloaded or lazy loaded)
+    # When preloaded_table2 is provided, use direct reference (no copying)
+    if (!is.null(preloaded_table2)) {
+      load_table2 <- shiny::reactive({ preloaded_table2 })
+    } else {
+      # Lazy loading: create reactiveVals to track loading state
+      table2_reactive_vals <- create_table2_reactive_vals()
+      load_table2 <- build_table2_loader(...)
+      setup_table2_lazy_load_trigger(input, load_table2)
+    }
 
     # Initialize all filter modules
     filters <- initialize_filter_modules()
@@ -841,6 +875,12 @@ build_server <- function(app_data, table1_display) {
     filtered_data2 <- build_table2_filtered_data(...)
     output$filter_message_table2 <- build_table2_filter_message(...)
     output$secondTable <- build_table2_datatable(filtered_data2)
+
+    # Clinical Trials Map server logic
+    map_data_loader <- build_map_data_loader(load_table2)
+    setup_map_lazy_load_trigger(input, map_data_loader)
+    output$trials_map <- build_trials_map(map_data_loader)
+    output$map_stats <- build_map_stats(map_data_loader)
 
     # Configure output suspension
     configure_output_options(output)
@@ -898,15 +938,14 @@ map_data_loader <- build_map_data_loader(load_table2)
 # Setup lazy load trigger when tab is accessed
 setup_map_lazy_load_trigger(input, map_data_loader)
 
-# Base map rendering (no markers initially)
-output$trials_map <- build_trials_map_base()
-
-# Marker updates via leafletProxy for performance
-build_map_marker_observer(map_data_loader, session)
+# Map rendering with markers
+output$trials_map <- build_trials_map(map_data_loader)
 
 # Statistics display
 output$map_stats <- build_map_stats(map_data_loader)
 ```
+
+**Note:** The actual implementation uses `build_trials_map()` which is a legacy wrapper that creates a complete map with markers. For optimized implementations, the split pattern with `build_trials_map_base()` and `build_map_marker_observer()` using `leafletProxy()` can be used for incremental marker updates.
 
 Key functions in `server_map.R`:
 
@@ -917,6 +956,22 @@ Key functions in `server_map.R`:
 | `build_map_marker_observer()` | Uses `leafletProxy()` to add markers without re-rendering entire map |
 | `build_map_stats()` | Displays count of mapped sites and unique trials |
 | `setup_map_lazy_load_trigger()` | Rate-limited observer that triggers data loading on tab access |
+
+### Output Options Configuration
+
+The `configure_output_options()` function sets `suspendWhenHidden = TRUE` for all outputs to improve performance by suspending outputs that are not visible:
+
+```r
+configure_output_options <- function(output) {
+  shiny::outputOptions(output, "firstTable", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "filter_message_table1", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "sample_size_histogram", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "filter_message_table2", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "secondTable", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "trials_map", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "map_stats", suspendWhenHidden = TRUE)
+}
+```
 
 ---
 
