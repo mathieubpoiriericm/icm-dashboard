@@ -71,6 +71,36 @@ options(
 # Load required packages with error handling
 message("Loading R packages...")
 
+# ============================================================================
+# PACKAGE DEPENDENCIES
+# These explicit library() calls are required for rsconnect to detect
+# dependencies during deployment. The actual loading with error handling
+# happens below.
+# ============================================================================
+if (FALSE) {
+  library(shiny)
+  library(bslib)
+  library(dplyr)
+  library(purrr)
+  library(stringr)
+  library(DT)
+  library(tools)
+  library(data.table)
+  library(sysfonts)
+  library(showtext)
+  library(fastmap)
+  library(memoise)
+  library(cachem)
+  library(digest)
+  library(parallel)
+  library(qs)
+  library(jsonlite)
+  library(shinyWidgets)
+  library(leaflet)
+  library(tidygeocoder)
+  library(htmltools)
+}
+
 required_packages <- c(
   "shiny",
   "bslib",

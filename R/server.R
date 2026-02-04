@@ -25,29 +25,17 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     omics_type_rows <- app_data$omics_type_rows
 
     # =========================================================================
-    # SESSION CLEANUP
-    # =========================================================================
-    session$onSessionEnded(function() {
-      message("Session ended, cleaning up resources")
-
-      # Terminate any orphaned future workers from parallel API requests
-      tryCatch({
-        future::plan(future::sequential)
-        message("  Future workers terminated")
-      }, error = function(e) {
-        message(sprintf("  Warning: Failed to terminate future workers: %s",
-                        e$message))
-      })
-    })
-
-    # =========================================================================
     # THEME SWITCHING (BSLIB DARK MODE)
     # =========================================================================
-    shiny::observeEvent(input$dark_mode, {
-      session$setCurrentTheme(
-        if (isTRUE(input$dark_mode)) dark_theme else light_theme
-      )
-    }, ignoreNULL = FALSE)
+    shiny::observeEvent(
+      input$dark_mode,
+      {
+        session$setCurrentTheme(
+          if (isTRUE(input$dark_mode)) dark_theme else light_theme
+        )
+      },
+      ignoreNULL = FALSE
+    )
 
     # =========================================================================
     # PYTHON PLOT HANDLER
@@ -221,8 +209,11 @@ setup_table2_lazy_load_trigger <- function(input, load_table2) {
   shiny::observeEvent(input$tabs, {
     if (
       input$tabs %in%
-        c("Clinical Trials Table", "Clinical Trials Visualization",
-          "Clinical Trials Map")
+        c(
+          "Clinical Trials Table",
+          "Clinical Trials Visualization",
+          "Clinical Trials Map"
+        )
     ) {
       load_table2()
     }
