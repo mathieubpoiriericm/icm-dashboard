@@ -260,7 +260,11 @@ PyMuPDF>=1.23.0
    ```
 3. Initialize the schema:
    ```bash
+   # Initialize core schema
    psql -U csvd_user -d csvd_dashboard -f sql/setup.sql
+
+   # Add external data cache tables
+   psql -U csvd_user -d csvd_dashboard -f sql/add_external_data_tables.sql
    ```
 
 </details>
@@ -281,6 +285,7 @@ PyMuPDF>=1.23.0
 | `DB_PASSWORD` | Database password | Pipeline / live data |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM extraction | Pipeline only |
 | `NCBI_API_KEY` | NCBI Entrez API key | Pipeline only |
+| `PRELOAD_TABLE2` | Set to FALSE to disable Table 2 preloading (default: TRUE) | Docker/memory optimization |
 
 </details>
 
@@ -365,8 +370,7 @@ rshiny_dashboard/
 │   └── external_data_sync.py     # External data synchronization
 ├── sql/
 │   ├── setup.sql                 # Database schema initialization
-│   ├── add_external_data_tables.sql  # External data table schemas
-│   └── common_queries.sql        # Frequently used SQL queries
+│   └── add_external_data_tables.sql  # External data table schemas
 ├── scripts/
 │   └── trigger_update.R          # Regenerate QS files from database
 └── www/
@@ -482,6 +486,9 @@ docker build -t svd-dashboard .
 
 # Run the container
 docker run -p 3838:3838 svd-dashboard
+
+# Run with Table 2 preloading disabled (saves memory)
+docker run -p 3838:3838 -e PRELOAD_TABLE2=FALSE svd-dashboard
 ```
 
 The app will be available at `http://localhost:3838`.
