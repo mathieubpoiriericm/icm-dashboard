@@ -1,6 +1,15 @@
 # app.R
 # SVD Dashboard - Main Application Entry Point
 #
+# Enable detailed error reporting for debugging
+# Set BEFORE loading any packages to catch early failures
+#
+options(
+  shiny.sanitize.errors = FALSE,
+  shiny.fullstacktrace = TRUE,
+  warn = 1 # Print warnings as they occur
+)
+#
 # Project Structure:
 # ├── app.R                      - Main application entry point (this file)
 # ├── python_plot.py             - Python visualization for clinical trials
@@ -59,29 +68,62 @@
 # Helper functions are also available in the maRco package.
 # Install with: devtools::install("maRco")
 
-# Load required packages
-library(shiny)
-library(bslib)
-# Load only required tidyverse packages (faster than full tidyverse)
-library(dplyr)
-library(purrr)
-library(stringr)
-library(DT)
-library(tools)
-library(data.table)
-library(sysfonts)
-library(showtext)
-library(fastmap)
-library(memoise)
-library(cachem)
-library(digest)
-library(parallel)
-library(qs)
-library(jsonlite)
-library(shinyWidgets)
-library(leaflet)
-library(tidygeocoder)
-library(htmltools)
+# Load required packages with error handling
+message("Loading R packages...")
+
+required_packages <- c(
+  "shiny",
+  "bslib",
+  "dplyr",
+  "purrr",
+  "stringr",
+  "DT",
+  "tools",
+  "data.table",
+  "sysfonts",
+  "showtext",
+  "fastmap",
+  "memoise",
+  "cachem",
+  "digest",
+  "parallel",
+  "qs",
+  "jsonlite",
+  "shinyWidgets",
+  "leaflet",
+  "tidygeocoder",
+  "htmltools"
+)
+
+load_package <- function(pkg) {
+  tryCatch(
+    {
+      library(pkg, character.only = TRUE)
+      message(sprintf("  Loaded: %s", pkg))
+      TRUE
+    },
+    error = function(e) {
+      message(sprintf("  FAILED to load %s: %s", pkg, e$message))
+      FALSE
+    }
+  )
+}
+
+load_results <- sapply(required_packages, load_package)
+failed_packages <- names(load_results[!load_results])
+
+if (length(failed_packages) > 0) {
+  stop(
+    sprintf(
+      "Failed to load required packages: %s\n%s",
+      paste(failed_packages, collapse = ", "),
+      "Run 'install.packages()' to install missing packages."
+    ),
+    call. = FALSE
+  )
+}
+
+message("All packages loaded successfully.")
 
 # Load Roboto font from local file (faster than font_add_google)
 font_path <- "www/fonts/Roboto-Regular.ttf"

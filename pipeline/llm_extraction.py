@@ -47,13 +47,17 @@ class GeneEntry(BaseModel):
     causal_evidence_summary: str | None = None
 
 
-EXTRACTION_PROMPT: Final[str] = """You are an expert in cerebral small vessel disease (cSVD) research and multi-omics studies (genomics, transcriptomics, proteomics, epigenomics).
+EXTRACTION_PROMPT: Final[
+    str
+] = """You are an expert in cerebral small vessel disease (cSVD) research and multi-omics studies (genomics, transcriptomics, proteomics, epigenomics).
 
 TASK: Extract genes that are putatively causally linked to cSVD.
 
 PRIMARY CRITERION (REQUIRED):
 Include genes where the paper presents ANY evidence suggesting a putative causal relationship with cSVD or cSVD-related phenotypes:
 - White matter hyperintensities (WMH)
+- Lacune
+- White matter lesion
 - Lacunar stroke / lacunar infarcts
 - Perivascular spaces (PVS, BG-PVS, WM-PVS)
 - Small vessel stroke (SVS)
@@ -137,7 +141,7 @@ async def extract_from_paper(text: str, pmid: str) -> list[dict[str, Any]]:
             last_error = e
             if attempt < MAX_RETRIES - 1:
                 # Calculate delay with exponential backoff and jitter
-                delay = min(BASE_RETRY_DELAY * (2 ** attempt), MAX_RETRY_DELAY)
+                delay = min(BASE_RETRY_DELAY * (2**attempt), MAX_RETRY_DELAY)
                 jitter = delay * JITTER_FACTOR * random.random()
                 total_delay = delay + jitter
 

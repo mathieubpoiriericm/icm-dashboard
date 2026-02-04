@@ -56,7 +56,9 @@ DATATABLE_SERVER_SIDE <- FALSE
 # =============================================================================
 # Preload Table 2 data at app startup
 # This eliminates the delay when first accessing Clinical Trials tabs
-PRELOAD_TABLE2 <- TRUE
+# Can be disabled via environment variable for memory-constrained environments:
+#   PRELOAD_TABLE2=FALSE docker run ...
+PRELOAD_TABLE2 <- as.logical(Sys.getenv("PRELOAD_TABLE2", unset = "TRUE"))
 
 # =============================================================================
 # CACHE CONFIGURATION

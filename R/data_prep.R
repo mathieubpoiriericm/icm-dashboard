@@ -3,6 +3,79 @@
 # nolint start: object_usage_linter.
 
 # =============================================================================
+# DATA FILE VERIFICATION
+# =============================================================================
+
+# Verify Required Data Files Exist
+#
+# Checks that all required data files exist and are non-empty.
+# Logs file sizes for debugging purposes.
+#
+# Args:
+#   data_paths: Named list. File paths to verify (defaults to DATA_PATHS).
+#
+# Returns:
+#   Invisible TRUE if all files verified, stops with error otherwise.
+verify_data_files <- function(data_paths = DATA_PATHS) {
+
+  message("Verifying required data files...")
+
+  all_files <- unlist(data_paths)
+  missing_files <- character(0)
+  empty_files <- character(0)
+
+
+  for (name in names(all_files)) {
+    file_path <- all_files[[name]]
+
+    if (!file.exists(file_path)) {
+      # Check for fallback (.qs -> .rds)
+      if (grepl("\\.qs$", file_path)) {
+        rds_path <- sub("\\.qs$", ".rds", file_path)
+        if (file.exists(rds_path)) {
+          message(sprintf("  %s: using RDS fallback", name))
+          next
+        }
+      }
+      missing_files <- c(missing_files, file_path)
+      message(sprintf("  MISSING: %s", file_path))
+      next
+    }
+
+    file_info <- file.info(file_path)
+    if (is.na(file_info$size) || file_info$size == 0) {
+      empty_files <- c(empty_files, file_path)
+      message(sprintf("  EMPTY: %s", file_path))
+      next
+    }
+
+    message(sprintf(
+      "  OK: %s (%.1f KB)", basename(file_path), file_info$size / 1024
+    ))
+  }
+
+  if (length(missing_files) > 0 || length(empty_files) > 0) {
+    error_msg <- character(0)
+    if (length(missing_files) > 0) {
+      error_msg <- c(
+        error_msg,
+        sprintf("Missing files: %s", paste(missing_files, collapse = ", "))
+      )
+    }
+    if (length(empty_files) > 0) {
+      error_msg <- c(
+        error_msg,
+        sprintf("Empty files: %s", paste(empty_files, collapse = ", "))
+      )
+    }
+    stop(paste(error_msg, collapse = "\n"), call. = FALSE)
+  }
+
+  message("All data files verified successfully.")
+  invisible(TRUE)
+}
+
+# =============================================================================
 # TESTABLE HELPER FUNCTIONS
 # =============================================================================
 
@@ -272,6 +345,9 @@ safe_read_csv <- function(file_path) {
 #   - omim_lookup: fastmap for O(1) OMIM lookups by omim_num
 #   - refs: Publication references for tooltips
 load_and_prepare_data <- function() {
+  # Verify all data files exist before attempting to load
+  verify_data_files()
+
   # Load required data with error handling
   message("Loading Table 1 data...")
   table1 <- safe_read_rds(DATA_PATHS$table1_clean)
