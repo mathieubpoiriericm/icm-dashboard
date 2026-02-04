@@ -1,0 +1,59 @@
+# VictoriaLogs configuration
+
+server:
+  # Keep logs for 30 days
+  retentionPeriod: 30d
+
+  # Storage configuration
+  persistentVolume:
+    enabled: true
+    size: 50Gi
+    storageClass: "" # Uses default; change if needed
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# Enable Vector log collector
+vector:
+  enabled: true
+
+  customConfig:
+    sources:
+      kubernetes_logs:
+        type: kubernetes_logs
+
+    transforms:
+      parse_nginx:
+        type: remap
+        inputs: ["kubernetes_logs"]
+        source: |
+          parsed, err = parse_json(.message)
+          if err == null {
+            .client_ip = parsed.remote_addr
+            .request_uri = parsed.request_uri
+            .status = parsed.status
+            .http_method = parsed.method
+          }
+
+    sinks:
+      vlogs:
+        type: elasticsearch
+        inputs: ["parse_nginx"]
+        endpoints:
+          - "http://victoria-logs-victoria-logs-single-server:9428/insert/elasticsearch"
+        mode: bulk
+        api_version: v8
+        compression: gzip
+        healthcheck:
+          enabled: false
+        request:
+          headers:
+            VL-Stream-Fields: "kubernetes_pod_namespace,kubernetes_pod_name,kubernetes_container_name"
+            VL-Msg-Field: message
+            VL-Time-Field: timestamp
