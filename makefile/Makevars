@@ -1,0 +1,27 @@
+# ~/.R/Makevars for macOS Apple Silicon with OpenMP support
+
+# Homebrew LLVM paths
+LLVM_LOC = /opt/homebrew/opt/llvm
+LIBOMP_LOC = /opt/homebrew/opt/libomp
+GETTEXT_LOC = /opt/homebrew/opt/gettext
+
+# Compiler settings - use Homebrew's clang
+CC = $(LLVM_LOC)/bin/clang
+CXX = $(LLVM_LOC)/bin/clang++
+CXX11 = $(LLVM_LOC)/bin/clang++
+CXX14 = $(LLVM_LOC)/bin/clang++
+CXX17 = $(LLVM_LOC)/bin/clang++
+CXX20 = $(LLVM_LOC)/bin/clang++
+
+# OpenMP and gettext flags
+CPPFLAGS += -I$(LIBOMP_LOC)/include -I$(GETTEXT_LOC)/include -Xclang -fopenmp
+LDFLAGS += -L$(LIBOMP_LOC)/lib -L$(GETTEXT_LOC)/lib -lomp -lintl -Wl,-rpath,$(LIBOMP_LOC)/lib
+
+# Compiler optimization flags (optional but recommended)
+CFLAGS += -O3 -arch arm64
+CXXFLAGS += -O3 -arch arm64
+
+# Fortran compiler (if needed for other packages)
+FC = /opt/homebrew/bin/gfortran
+F77 = /opt/homebrew/bin/gfortran
+FLIBS = -L/opt/homebrew/lib/gcc/current -lgfortran -lquadmath -lm
