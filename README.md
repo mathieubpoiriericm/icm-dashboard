@@ -213,7 +213,7 @@ BiocManager::install(c("biomaRt", "UniprotR"))
 ### Install Python Dependencies (for data pipeline)
 
 ```bash
-pip install -r pipeline/requirements.txt
+pip install -r requirements.txt
 ```
 
 <details>
