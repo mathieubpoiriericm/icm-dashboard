@@ -9,31 +9,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any
 
 import httpx
 
+from pipeline.config import VALID_GWAS_TRAITS, PipelineConfig
+
 logger = logging.getLogger(__name__)
-
-# --- Constants ---
-CONFIDENCE_THRESHOLD: Final[float] = 0.7
-
-# Valid GWAS traits from cSVD literature
-VALID_GWAS_TRAITS: Final[frozenset[str]] = frozenset({
-    "WMH",       # White matter hyperintensities
-    "SVS",       # Small vessel stroke
-    "BG-PVS",    # Basal ganglia perivascular spaces
-    "WM-PVS",    # White matter perivascular spaces
-    "HIP-PVS",   # Hippocampal perivascular spaces
-    "PSMD",      # Peak width of skeletonized mean diffusivity
-    "extreme-cSVD",
-    "FA",        # Fractional anisotropy
-    "lacunes",
-    "stroke",
-})
-
-# Rate limiting for NCBI (3 req/sec without API key, 10 with)
-NCBI_RATE_LIMIT: Final[int] = 10
 
 
 @dataclass(slots=True)
@@ -72,7 +54,16 @@ async def close_validation_client() -> None:
 # --- Gene cache for NCBI lookups ---
 _gene_cache: dict[str, dict[str, Any] | None] = {}
 _cache_lock = asyncio.Lock()
-_ncbi_semaphore = asyncio.Semaphore(NCBI_RATE_LIMIT)
+_ncbi_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
+    """Get or create the NCBI rate-limit semaphore."""
+    global _ncbi_semaphore
+    if _ncbi_semaphore is None:
+        limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
+        _ncbi_semaphore = asyncio.Semaphore(limit)
+    return _ncbi_semaphore
 
 
 def clear_gene_cache() -> None:
@@ -81,7 +72,10 @@ def clear_gene_cache() -> None:
     _gene_cache = {}
 
 
-async def validate_gene_entry(entry: dict[str, Any]) -> ValidationResult:
+async def validate_gene_entry(
+    entry: dict[str, Any],
+    config: PipelineConfig | None = None,
+) -> ValidationResult:
     """Multi-stage gene validation.
 
     Validation stages (fail-fast on critical errors):
@@ -92,10 +86,14 @@ async def validate_gene_entry(entry: dict[str, Any]) -> ValidationResult:
 
     Args:
         entry: Gene entry dictionary from LLM extraction.
+        config: Pipeline configuration (uses defaults if None).
 
     Returns:
         ValidationResult with validation status and normalized data.
     """
+    if config is None:
+        config = PipelineConfig()
+
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -115,8 +113,9 @@ async def validate_gene_entry(entry: dict[str, Any]) -> ValidationResult:
         errors.append(f"Invalid confidence type: {type(confidence).__name__}")
         return ValidationResult(False, errors, warnings, None)
 
-    if confidence < CONFIDENCE_THRESHOLD:
-        errors.append(f"Low confidence: {confidence:.2f} < {CONFIDENCE_THRESHOLD}")
+    threshold = config.confidence_threshold
+    if confidence < threshold:
+        errors.append(f"Low confidence: {confidence:.2f} < {threshold}")
         return ValidationResult(False, errors, warnings, None)
 
     # Stage 2: NCBI Gene validation - ensures gene symbol is real
@@ -162,7 +161,7 @@ async def verify_ncbi_gene(symbol: str) -> dict[str, Any] | None:
         if symbol_upper in _gene_cache:
             return _gene_cache[symbol_upper]
 
-        async with _ncbi_semaphore:  # Rate limiting
+        async with _get_ncbi_semaphore():  # Rate limiting
             result = await _fetch_ncbi_gene_uncached(symbol)
             _gene_cache[symbol_upper] = result
             return result

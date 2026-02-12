@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -38,23 +37,20 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+from pipeline.config import PipelineConfig  # noqa: E402
 from pipeline.pubmed_search import search_recent_papers, filter_new_pmids  # noqa: E402
 from pipeline.pdf_retrieval import get_fulltext, close_http_client  # noqa: E402
 from pipeline.llm_extraction import extract_from_paper  # noqa: E402
 from pipeline.validation import validate_gene_entry, close_validation_client, clear_gene_cache  # noqa: E402
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
 from pipeline.database import Database, get_existing_pmids, record_processed_pmid, reset_sequence  # noqa: E402
-from pipeline.quality_metrics import PipelineMetrics  # noqa: E402
+from pipeline.quality_metrics import PipelineMetrics, TokenUsage  # noqa: E402
+from pipeline.rate_limiter import AsyncRateLimiter  # noqa: E402
+
+import os  # noqa: E402
 
 # --- Constants ---
-# With 30k tokens/minute rate limit and ~15k tokens per paper (text + prompt),
-# we can only process ~2 papers per minute. Keep concurrency low to avoid
-# constant rate limit retries.
-MAX_CONCURRENT_PAPERS: Final[int] = 2
-TEST_MODE_PREVIEW_COUNT: Final[int] = 10
 LOG_SEPARATOR: Final[str] = "=" * 50
-MIN_DAYS_BACK: Final[int] = 1
-MAX_DAYS_BACK: Final[int] = 365 * 10
 PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
 
 # Configure logging
@@ -94,6 +90,7 @@ class PaperResult:
     fulltext: bool = False
     source: str = "none"
     error: str | None = None
+    token_usage: TokenUsage = field(default_factory=TokenUsage)
 
     @property
     def succeeded(self) -> bool:
@@ -172,12 +169,19 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
         return {"pmid": pmid, "doi": None}
 
 
-async def process_paper(pmid: str, metrics: PipelineMetrics) -> PaperProcessResult:
+async def process_paper(
+    pmid: str,
+    metrics: PipelineMetrics,
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter | None = None,
+) -> PaperProcessResult:
     """Process a single paper: fetch text, extract data, validate.
 
     Args:
         pmid: PubMed ID.
         metrics: Metrics accumulator.
+        config: Pipeline configuration.
+        rate_limiter: Optional rate limiter for LLM calls.
 
     Returns:
         PaperProcessResult with genes, fulltext flag, and source.
@@ -204,15 +208,20 @@ async def process_paper(pmid: str, metrics: PipelineMetrics) -> PaperProcessResu
         logger.warning(f"  No text available for PMID {pmid}, skipping")
         return {"genes": [], "fulltext": False, "source": "none"}
 
-    # Extract structured data using LLM (now async)
-    genes = await extract_from_paper(text, pmid)
+    # Extract structured data using LLM
+    genes, token_usage = await extract_from_paper(
+        text, pmid, config=config, rate_limiter=rate_limiter
+    )
     metrics.genes_extracted += len(genes)
+    metrics.token_usage += token_usage
 
     logger.info(f"  Extracted {len(genes)} genes")
 
     # Validate genes concurrently
     validated_genes: list[dict[str, Any]] = []
-    validation_tasks = [validate_gene_entry({**gene, "pmid": pmid}) for gene in genes]
+    validation_tasks = [
+        validate_gene_entry({**gene, "pmid": pmid}, config=config) for gene in genes
+    ]
     results = await asyncio.gather(*validation_tasks, return_exceptions=True)
 
     for gene, result in zip(genes, results):
@@ -238,14 +247,18 @@ async def process_paper_safe(
     metrics: PipelineMetrics,
     semaphore: asyncio.Semaphore,
     progress: dict[str, int],
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter | None = None,
 ) -> PaperResult:
     """Process a single paper with error handling and concurrency control.
 
     Args:
         pmid: PubMed ID.
         metrics: Metrics accumulator.
-        semaphore: Semaphore for rate limiting.
+        semaphore: Semaphore for concurrency control.
         progress: Shared dict with 'current' counter and 'total' count.
+        config: Pipeline configuration.
+        rate_limiter: Optional rate limiter for LLM calls.
 
     Returns:
         PaperResult with processing outcome.
@@ -256,7 +269,9 @@ async def process_paper_safe(
         total = progress["total"]
         logger.info(f"[{current}/{total}] Starting PMID {pmid}")
         try:
-            result = await process_paper(pmid, metrics)
+            result = await process_paper(
+                pmid, metrics, config=config, rate_limiter=rate_limiter
+            )
             return PaperResult(
                 pmid=pmid,
                 genes=result["genes"],
@@ -271,22 +286,31 @@ async def process_paper_safe(
 async def process_papers_concurrently(
     pmids: list[str],
     metrics: PipelineMetrics,
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter | None = None,
 ) -> list[PaperResult]:
     """Process multiple papers concurrently with bounded concurrency.
 
     Args:
         pmids: List of PubMed IDs.
         metrics: Metrics accumulator.
+        config: Pipeline configuration.
+        rate_limiter: Optional rate limiter for LLM calls.
 
     Returns:
         List of PaperResult for each paper.
     """
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_PAPERS)
+    semaphore = asyncio.Semaphore(config.max_concurrent_papers)
     progress = {"current": 0, "total": len(pmids)}
 
     async with asyncio.TaskGroup() as tg:
         tasks = [
-            tg.create_task(process_paper_safe(pmid, metrics, semaphore, progress))
+            tg.create_task(
+                process_paper_safe(
+                    pmid, metrics, semaphore, progress,
+                    config=config, rate_limiter=rate_limiter,
+                )
+            )
             for pmid in pmids
         ]
 
@@ -297,6 +321,7 @@ async def run_pipeline(
     days_back: int = 7,
     dry_run: bool = False,
     test_mode: bool = False,
+    config: PipelineConfig | None = None,
 ) -> PipelineMetrics:
     """Run the complete data pipeline.
 
@@ -304,6 +329,7 @@ async def run_pipeline(
         days_back: Number of days to look back (1-3650).
         dry_run: If True, skip database writes.
         test_mode: If True, skip LLM extraction.
+        config: Pipeline configuration (uses defaults if None).
 
     Returns:
         PipelineMetrics with run statistics.
@@ -311,16 +337,29 @@ async def run_pipeline(
     Raises:
         ValueError: If days_back is out of valid range.
     """
+    if config is None:
+        config = PipelineConfig()
+
     # Input validation
-    if not MIN_DAYS_BACK <= days_back <= MAX_DAYS_BACK:
+    if not config.min_days_back <= days_back <= config.max_days_back:
         raise ValueError(
-            f"days_back must be between {MIN_DAYS_BACK} and {MAX_DAYS_BACK}, "
+            f"days_back must be between {config.min_days_back} and {config.max_days_back}, "
             f"got {days_back}"
         )
 
     metrics = PipelineMetrics()
 
+    # Set up database config
+    Database.set_config(config)
+
+    # Set up rate limiter
+    rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
+
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
+    logger.info(
+        f"Config: model={config.llm_model}, concurrency={config.max_concurrent_papers}, "
+        f"RPM={config.rpm_limit}, TPM={config.tpm_limit}"
+    )
 
     try:
         # Step 1: Search PubMed for recent papers
@@ -352,15 +391,17 @@ async def run_pipeline(
         if test_mode:
             logger.info("Test mode enabled - skipping LLM extraction and database merge")
             logger.info(f"  Would process {len(new_pmids)} papers:")
-            for pmid in new_pmids[:TEST_MODE_PREVIEW_COUNT]:
+            for pmid in new_pmids[:config.test_mode_preview_count]:
                 logger.info(f"    PMID: {pmid}")
-            if len(new_pmids) > TEST_MODE_PREVIEW_COUNT:
-                logger.info(f"    ... and {len(new_pmids) - TEST_MODE_PREVIEW_COUNT} more")
+            if len(new_pmids) > config.test_mode_preview_count:
+                logger.info(f"    ... and {len(new_pmids) - config.test_mode_preview_count} more")
             return metrics
 
         # Step 3: Process papers concurrently
         logger.info("Step 3: Processing papers concurrently...")
-        results = await process_papers_concurrently(new_pmids, metrics)
+        results = await process_papers_concurrently(
+            new_pmids, metrics, config=config, rate_limiter=rate_limiter
+        )
 
         all_genes: list[dict[str, Any]] = []
         for result in results:
@@ -381,6 +422,15 @@ async def run_pipeline(
 
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
+            logger.info(LOG_SEPARATOR)
+            logger.info("Pipeline Summary:")
+            logger.info(metrics.summary())
+            logger.info(LOG_SEPARATOR)
+
+            # Write JSON report even in dry-run mode
+            report_path = metrics.write_json_report(LOG_DIR)
+            logger.info(f"JSON report written to: {report_path}")
+
             return metrics
 
         # Step 4: Merge into database
@@ -400,6 +450,10 @@ async def run_pipeline(
         logger.info("Pipeline Summary:")
         logger.info(metrics.summary())
         logger.info(LOG_SEPARATOR)
+
+        # Write JSON report
+        report_path = metrics.write_json_report(LOG_DIR)
+        logger.info(f"JSON report written to: {report_path}")
 
         return metrics
 
@@ -454,6 +508,8 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    config = PipelineConfig()
+
     try:
         if args.sync_external_data:
             asyncio.run(run_external_data_sync())
@@ -463,6 +519,7 @@ def main() -> None:
                     days_back=args.days_back,
                     dry_run=args.dry_run,
                     test_mode=args.test_mode,
+                    config=config,
                 )
             )
     except ValueError as e:

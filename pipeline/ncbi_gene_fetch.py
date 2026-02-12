@@ -9,14 +9,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from pipeline.config import PipelineConfig
 
-# Rate limiting for NCBI (3 req/sec without API key, 10 with)
-NCBI_RATE_LIMIT: Final[int] = 10
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -43,7 +42,16 @@ class SyncResult:
 _http_client: httpx.AsyncClient | None = None
 _gene_cache: dict[str, NCBIGeneInfo | None] = {}
 _cache_lock = asyncio.Lock()
-_ncbi_semaphore = asyncio.Semaphore(NCBI_RATE_LIMIT)
+_ncbi_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
+    """Get or create the NCBI rate-limit semaphore."""
+    global _ncbi_semaphore
+    if _ncbi_semaphore is None:
+        limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
+        _ncbi_semaphore = asyncio.Semaphore(limit)
+    return _ncbi_semaphore
 
 
 async def _get_http_client() -> httpx.AsyncClient:
@@ -93,7 +101,7 @@ async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
         if symbol_upper in _gene_cache:
             return _gene_cache[symbol_upper]
 
-        async with _ncbi_semaphore:
+        async with _get_ncbi_semaphore():
             result = await _fetch_ncbi_gene_uncached(gene_symbol)
             _gene_cache[symbol_upper] = result
             return result

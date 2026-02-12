@@ -14,10 +14,9 @@ from typing import Any, Final
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from pipeline.config import PipelineConfig
 
-# Rate limiting for UniProt
-UNIPROT_RATE_LIMIT: Final[int] = 5
+logger = logging.getLogger(__name__)
 UNIPROT_BASE_URL: Final[str] = "https://rest.uniprot.org/uniprotkb/search"
 
 
@@ -48,7 +47,16 @@ class SyncResult:
 _http_client: httpx.AsyncClient | None = None
 _uniprot_cache: dict[str, UniProtInfo | None] = {}
 _cache_lock = asyncio.Lock()
-_uniprot_semaphore = asyncio.Semaphore(UNIPROT_RATE_LIMIT)
+_uniprot_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_uniprot_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
+    """Get or create the UniProt rate-limit semaphore."""
+    global _uniprot_semaphore
+    if _uniprot_semaphore is None:
+        limit = config.uniprot_rate_limit if config else PipelineConfig().uniprot_rate_limit
+        _uniprot_semaphore = asyncio.Semaphore(limit)
+    return _uniprot_semaphore
 
 
 async def _get_http_client() -> httpx.AsyncClient:
@@ -249,7 +257,7 @@ async def fetch_uniprot_info(gene_symbol: str) -> UniProtInfo | None:
         if symbol_upper in _uniprot_cache:
             return _uniprot_cache[symbol_upper]
 
-        async with _uniprot_semaphore:
+        async with _get_uniprot_semaphore():
             result = await _fetch_uniprot_uncached(gene_symbol)
             _uniprot_cache[symbol_upper] = result
             return result

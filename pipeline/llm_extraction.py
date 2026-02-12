@@ -2,6 +2,12 @@
 
 Extracts genes with putative causal links to cSVD from research papers
 using the Anthropic Claude API.
+
+Features:
+- Prompt caching (system + static instructions cached across calls)
+- Token-bucket rate limiting (proactive, not reactive)
+- Separate retry budgets for rate-limit vs parse/API errors
+- Token usage tracking for cost visibility
 """
 
 from __future__ import annotations
@@ -9,25 +15,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import random
 import re
-from typing import Any, Final
+from typing import Any
 
 import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
+from pipeline.config import PipelineConfig
+from pipeline.prompts import build_extraction_messages
+from pipeline.quality_metrics import TokenUsage, accumulate_usage
+from pipeline.rate_limiter import AsyncRateLimiter
+
 logger = logging.getLogger(__name__)
-
-# --- Constants ---
-MAX_PAPER_TEXT_CHARS: Final[int] = 50_000  # Claude context limit buffer for extraction
-DEFAULT_MODEL: Final[str] = "claude-sonnet-4-20250514"
-DEFAULT_MAX_TOKENS: Final[int] = 4096
-
-# Rate limiting and retry configuration
-MAX_RETRIES: Final[int] = 5
-BASE_RETRY_DELAY: Final[float] = 60.0  # Start with 60 second delay on rate limit
-MAX_RETRY_DELAY: Final[float] = 300.0  # Cap at 5 minutes
-JITTER_FACTOR: Final[float] = 0.25  # Add up to 25% random jitter
 
 
 class GeneEntry(BaseModel):
@@ -47,42 +46,6 @@ class GeneEntry(BaseModel):
     causal_evidence_summary: str | None = None
 
 
-EXTRACTION_PROMPT: Final[
-    str
-] = """You are an expert in cerebral small vessel disease (cSVD) research and multi-omics studies (genomics, transcriptomics, proteomics, epigenomics).
-
-TASK: Extract genes that are putatively causally linked to cSVD.
-
-PRIMARY CRITERION (REQUIRED):
-Include genes where the paper presents ANY evidence suggesting a putative causal relationship with cSVD or cSVD-related phenotypes:
-- White matter hyperintensities (WMH)
-- Lacune
-- White matter lesion
-- Lacunar stroke / lacunar infarcts
-- Perivascular spaces (PVS, BG-PVS, WM-PVS)
-- Small vessel stroke (SVS)
-- Cerebral microbleeds
-- PSMD (peak width of skeletonized mean diffusivity)
-- Other cSVD imaging markers
-
-Putative causal evidence includes: GWAS associations, fine-mapping, colocalization, Mendelian randomization, functional studies, expression QTLs, animal/cell models, or any mechanistic evidence linking the gene to cSVD pathology.
-
-OPTIONAL SUPPORTING EVIDENCE (record if present, but NOT required):
-- gwas_trait: Specific GWAS phenotype associations
-- mendelian_randomization: Whether MR evidence supports causality
-- omics_evidence: Results from TWAS, PWAS, EWAS, or other omics studies
-
-For each gene, provide a brief causal_evidence_summary explaining WHY it is considered causally linked.
-
-CONFIDENCE SCORING:
-- 1.0: Direct causal evidence explicitly stated
-- 0.7-0.9: Strong causal implication with supporting context
-- 0.4-0.6: Mentioned in causal context but evidence is weak
-- <0.4: Tangential mention, no clear causal implication
-
-Return valid JSON with a "genes" array. If no causally-linked genes found, return {"genes": []}."""
-
-
 # --- Async client singleton ---
 _async_client: anthropic.AsyncAnthropic | None = None
 
@@ -95,77 +58,140 @@ def _get_async_client() -> anthropic.AsyncAnthropic:
     return _async_client
 
 
-async def extract_from_paper(text: str, pmid: str) -> list[dict[str, Any]]:
-    """Extract genes using Claude API asynchronously with rate limit handling.
+def _parse_retry_after_delay(
+    e: anthropic.RateLimitError, backoff_delay: float
+) -> tuple[float, str]:
+    """Parse the retry-after header from a 429 response, falling back to backoff."""
+    retry_after = e.response.headers.get("retry-after") if e.response else None
+    if retry_after:
+        try:
+            return min(float(retry_after), 64.0), f"retry-after={retry_after}s"
+        except ValueError:
+            return backoff_delay, "backoff (retry-after parse failed)"
+    return backoff_delay, "backoff"
 
-    Implements exponential backoff retry for rate limit errors. When a rate
-    limit is hit, waits with increasing delays before retrying.
+
+async def extract_from_paper(
+    text: str,
+    pmid: str,
+    config: PipelineConfig | None = None,
+    rate_limiter: AsyncRateLimiter | None = None,
+) -> tuple[list[dict[str, Any]], TokenUsage]:
+    """Extract genes using Claude API with rate limiting and retry handling.
+
+    Uses prompt caching (system prompt + instructions are cached), separate
+    retry budgets for rate-limit vs parse/API errors, and proactive rate
+    limiting via the token-bucket ``rate_limiter``.
 
     Args:
         text: Full text content of the paper.
         pmid: PubMed ID for context.
+        config: Pipeline configuration (uses defaults if None).
+        rate_limiter: Optional rate limiter for coordinated throttling.
 
     Returns:
-        List of gene entries extracted from the paper.
-
-    Raises:
-        anthropic.RateLimitError: If API rate limit exceeded after all retries.
+        Tuple of (gene_entries, token_usage).
     """
+    if config is None:
+        config = PipelineConfig()
+
+    usage = TokenUsage()
+
     if not text or not text.strip():
         logger.warning(f"Empty text provided for PMID {pmid}")
-        return []
+        return [], usage
 
     client = _get_async_client()
-    last_error: anthropic.RateLimitError | None = None
 
-    for attempt in range(MAX_RETRIES):
+    # Build cached prompt structure
+    system_blocks, messages = build_extraction_messages(
+        paper_text=text,
+        pmid=pmid,
+        max_chars=config.max_paper_text_chars,
+    )
+
+    attempt = 0
+    rate_limit_retries = 0
+
+    while attempt < config.max_retries:
+        attempt += 1
         try:
+            # Proactive rate limiting
+            if rate_limiter is not None:
+                await rate_limiter.acquire(
+                    estimated_tokens=config.estimated_tokens_per_call
+                )
+
             response = await client.messages.create(
-                model=DEFAULT_MODEL,
-                max_tokens=DEFAULT_MAX_TOKENS,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"{EXTRACTION_PROMPT}\n\n---\nPMID: {pmid}\n\n{text[:MAX_PAPER_TEXT_CHARS]}",
-                    }
-                ],
+                model=config.llm_model,
+                max_tokens=config.llm_max_tokens,
+                temperature=config.llm_temperature,
+                system=system_blocks,
+                messages=messages,
             )
+
+            # Track token usage
+            accumulate_usage(usage, response)
+
+            # Correct rate limiter estimate with actual usage
+            if rate_limiter is not None and hasattr(response, "usage") and response.usage:
+                actual = response.usage.input_tokens + response.usage.output_tokens
+                await rate_limiter.record_actual_usage(
+                    config.estimated_tokens_per_call, actual
+                )
 
             if not response.content:
                 logger.warning(f"Empty response from Claude for PMID {pmid}")
-                return []
+                return [], usage
 
-            return parse_llm_response(response.content[0].text)
+            first_block = response.content[0]
+            if not hasattr(first_block, "text"):
+                logger.warning(f"No text in response for PMID {pmid}")
+                continue
+
+            parsed = parse_llm_response(first_block.text)
+            if parsed is None:
+                logger.warning(
+                    f"Failed to parse JSON for PMID {pmid} (attempt {attempt})"
+                )
+                continue
+
+            return parsed, usage
 
         except anthropic.RateLimitError as e:
-            last_error = e
-            if attempt < MAX_RETRIES - 1:
-                # Calculate delay with exponential backoff and jitter
-                delay = min(BASE_RETRY_DELAY * (2**attempt), MAX_RETRY_DELAY)
-                jitter = delay * JITTER_FACTOR * random.random()
-                total_delay = delay + jitter
-
-                logger.warning(
-                    f"Rate limit hit for PMID {pmid} (attempt {attempt + 1}/{MAX_RETRIES}). "
-                    f"Waiting {total_delay:.1f}s before retry..."
-                )
-                await asyncio.sleep(total_delay)
-            else:
+            rate_limit_retries += 1
+            if rate_limit_retries > config.max_rate_limit_retries:
                 logger.error(
-                    f"Rate limit exceeded for PMID {pmid} after {MAX_RETRIES} attempts"
+                    f"Rate limit retries exhausted for PMID {pmid} "
+                    f"({rate_limit_retries}/{config.max_rate_limit_retries})"
                 )
+                return [], usage
+
+            backoff_delay = min(
+                config.rate_limit_retry_delay * (2 ** (rate_limit_retries - 1)), 64.0
+            )
+            delay, delay_source = _parse_retry_after_delay(e, backoff_delay)
+            logger.warning(
+                f"Rate limited on PMID {pmid}. Waiting {delay:.1f}s ({delay_source}) "
+                f"(rate limit retry {rate_limit_retries}/{config.max_rate_limit_retries})..."
+            )
+            if rate_limiter is not None:
+                rate_limiter.signal_rate_limit(delay)
+            await asyncio.sleep(delay)
+            # Don't consume parse/validation retry budget on rate limits
+            attempt -= 1
 
         except anthropic.APIError as e:
             logger.error(f"Claude API error for PMID {pmid}: {e}")
-            return []
+            if attempt == config.max_retries:
+                return [], usage
+            delay = config.retry_delay * (2 ** (attempt - 1))
+            await asyncio.sleep(delay)
 
-    # All retries exhausted
-    if last_error:
-        raise last_error
-    return []
+    return [], usage
 
 
-def parse_llm_response(text: str) -> list[dict[str, Any]]:
+def parse_llm_response(text: str) -> list[dict[str, Any]] | None:
     """Parse the LLM response JSON into gene entries.
 
     Handles various response formats:
@@ -177,13 +203,12 @@ def parse_llm_response(text: str) -> list[dict[str, Any]]:
         text: Raw text response from LLM.
 
     Returns:
-        List of gene entries (empty list if parsing fails).
+        List of gene entries, or None if parsing fails entirely.
     """
     if not text or not text.strip():
-        return []
+        return None
 
     # 4-tier fallback strategy for parsing LLM JSON output
-    # Needed because LLMs sometimes wrap JSON in markdown or include extra text
 
     # Tier 1: Extract JSON from markdown code blocks (```json ... ```)
     json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
@@ -217,4 +242,4 @@ def parse_llm_response(text: str) -> list[dict[str, Any]]:
             pass
 
     logger.warning("Failed to parse LLM response as JSON")
-    return []
+    return None

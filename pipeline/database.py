@@ -9,29 +9,13 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, Final
+from typing import Any
 
 import asyncpg
 
+from pipeline.config import ALLOWED_COLUMNS, ALLOWED_TABLES, PipelineConfig
+
 logger = logging.getLogger(__name__)
-
-# --- Configuration ---
-DB_HOST: Final[str | None] = os.getenv("DB_HOST")
-DB_NAME: Final[str | None] = os.getenv("DB_NAME")
-DB_USER: Final[str | None] = os.getenv("DB_USER")
-DB_PORT: Final[int] = int(os.getenv("DB_PORT", "5432"))
-DB_PASSWORD: Final[str | None] = os.getenv("DB_PASSWORD")
-
-# Pool settings
-DEFAULT_POOL_MIN_SIZE: Final[int] = 2
-DEFAULT_POOL_MAX_SIZE: Final[int] = 10
-DEFAULT_COMMAND_TIMEOUT: Final[float] = 60.0
-
-# Whitelist of allowed tables/columns for dynamic SQL (prevents SQL injection)
-ALLOWED_TABLES: Final[frozenset[str]] = frozenset({
-    "genes", "pubmed_refs", "ncbi_gene_info", "uniprot_info", "pubmed_citations"
-})
-ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
 
 
 class DatabaseConfigError(Exception):
@@ -43,6 +27,12 @@ class Database:
 
     __slots__ = ()
     _pool: asyncpg.Pool | None = None
+    _config: PipelineConfig | None = None
+
+    @classmethod
+    def set_config(cls, config: PipelineConfig) -> None:
+        """Set the pipeline config for pool sizing parameters."""
+        cls._config = config
 
     @classmethod
     async def get_pool(cls) -> asyncpg.Pool:
@@ -56,14 +46,20 @@ class Database:
             asyncpg.PostgresError: If connection fails.
         """
         if cls._pool is None:
+            db_host = os.getenv("DB_HOST")
+            db_name = os.getenv("DB_NAME")
+            db_user = os.getenv("DB_USER")
+            db_password = os.getenv("DB_PASSWORD")
+            db_port = int(os.getenv("DB_PORT", "5432"))
+
             # Validate required config
             missing = [
                 name
                 for name, val in [
-                    ("DB_HOST", DB_HOST),
-                    ("DB_NAME", DB_NAME),
-                    ("DB_USER", DB_USER),
-                    ("DB_PASSWORD", DB_PASSWORD),
+                    ("DB_HOST", db_host),
+                    ("DB_NAME", db_name),
+                    ("DB_USER", db_user),
+                    ("DB_PASSWORD", db_password),
                 ]
                 if not val
             ]
@@ -72,15 +68,17 @@ class Database:
                     f"Missing required database environment variables: {missing}"
                 )
 
+            cfg = cls._config or PipelineConfig()
+
             cls._pool = await asyncpg.create_pool(
-                host=DB_HOST,
-                port=DB_PORT,
-                user=DB_USER,
-                password=DB_PASSWORD,
-                database=DB_NAME,
-                min_size=DEFAULT_POOL_MIN_SIZE,
-                max_size=DEFAULT_POOL_MAX_SIZE,
-                command_timeout=DEFAULT_COMMAND_TIMEOUT,
+                host=db_host,
+                port=db_port,
+                user=db_user,
+                password=db_password,
+                database=db_name,
+                min_size=cfg.db_pool_min_size,
+                max_size=cfg.db_pool_max_size,
+                command_timeout=cfg.db_command_timeout,
             )
         return cls._pool
 

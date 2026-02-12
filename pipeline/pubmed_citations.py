@@ -15,10 +15,9 @@ from typing import Any, Final
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
-logger = logging.getLogger(__name__)
+from pipeline.config import PipelineConfig
 
-# Rate limiting for NCBI (3 req/sec without API key, 10 with)
-NCBI_RATE_LIMIT: Final[int] = 3
+logger = logging.getLogger(__name__)
 NCBI_EFETCH_URL: Final[str] = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 
 
@@ -49,7 +48,16 @@ class SyncResult:
 _http_client: httpx.AsyncClient | None = None
 _citation_cache: dict[str, PubMedCitation | None] = {}
 _cache_lock = asyncio.Lock()
-_ncbi_semaphore = asyncio.Semaphore(NCBI_RATE_LIMIT)
+_ncbi_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
+    """Get or create the NCBI rate-limit semaphore."""
+    global _ncbi_semaphore
+    if _ncbi_semaphore is None:
+        limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
+        _ncbi_semaphore = asyncio.Semaphore(limit)
+    return _ncbi_semaphore
 
 
 async def _get_http_client() -> httpx.AsyncClient:
@@ -157,7 +165,7 @@ async def fetch_pubmed_citation(pmid: str) -> PubMedCitation | None:
         if pmid in _citation_cache:
             return _citation_cache[pmid]
 
-        async with _ncbi_semaphore:
+        async with _get_ncbi_semaphore():
             result = await _fetch_pubmed_uncached(pmid)
             _citation_cache[pmid] = result
             return result
