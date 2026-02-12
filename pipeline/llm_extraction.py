@@ -61,10 +61,19 @@ _async_client: Any = None
 
 
 def _get_async_client() -> Any:
-    """Get or create shared Instructor-wrapped async Anthropic client."""
+    """Get or create shared Instructor-wrapped async Anthropic client.
+
+    Uses ANTHROPIC_JSON mode (not ANTHROPIC_TOOLS) because the default
+    tool mode sets ``tool_choice`` to force a specific tool, which the
+    Anthropic API rejects when extended thinking is enabled.  JSON mode
+    embeds the schema in the prompt instead and parses the text response.
+    """
     global _async_client
     if _async_client is None:
-        _async_client = instructor.from_anthropic(anthropic.AsyncAnthropic())
+        _async_client = instructor.from_anthropic(
+            anthropic.AsyncAnthropic(),
+            mode=instructor.Mode.ANTHROPIC_JSON,
+        )
     return _async_client
 
 
