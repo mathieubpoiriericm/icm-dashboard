@@ -17,7 +17,7 @@ import logging
 from collections import Counter
 
 import pandas as pd
-import pandera as pa
+import pandera.pandas as pa
 
 from pipeline.llm_extraction import GeneEntry
 

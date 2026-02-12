@@ -59,13 +59,25 @@ PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
+
+from rich.logging import RichHandler  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(message)s",
+    datefmt="[%X]",
     handlers=[
-        logging.StreamHandler(sys.stdout),
+        RichHandler(
+            rich_tracebacks=True,
+            markup=True,
+            show_path=False,
+        ),
         logging.FileHandler(LOG_FILE),
     ],
+)
+# Keep file handler plain-text (no ANSI codes)
+logging.getLogger().handlers[1].setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 )
 logger = logging.getLogger(__name__)
 
