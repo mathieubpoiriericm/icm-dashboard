@@ -122,13 +122,21 @@ async def extract_from_paper(
                     estimated_tokens=config.estimated_tokens_per_call
                 )
 
-            response = await client.messages.create(
-                model=config.llm_model,
-                max_tokens=config.llm_max_tokens,
-                temperature=config.llm_temperature,
-                system=system_blocks,
-                messages=messages,
-            )
+            # Build API call kwargs — enable extended thinking when configured
+            create_kwargs: dict[str, Any] = {
+                "model": config.llm_model,
+                "max_tokens": config.llm_max_tokens,
+                "temperature": config.llm_temperature,
+                "system": system_blocks,
+                "messages": messages,
+            }
+            if config.thinking_budget_tokens > 0:
+                create_kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": config.thinking_budget_tokens,
+                }
+
+            response = await client.messages.create(**create_kwargs)
 
             # Track token usage
             accumulate_usage(usage, response)
@@ -144,12 +152,19 @@ async def extract_from_paper(
                 logger.warning(f"Empty response from Claude for PMID {pmid}")
                 return [], usage
 
-            first_block = response.content[0]
-            if not hasattr(first_block, "text"):
-                logger.warning(f"No text in response for PMID {pmid}")
+            # With extended thinking, response contains thinking + text blocks.
+            # Find the first text block (skip thinking blocks).
+            text_content: str | None = None
+            for block in response.content:
+                if hasattr(block, "text") and getattr(block, "type", None) != "thinking":
+                    text_content = block.text
+                    break
+
+            if text_content is None:
+                logger.warning(f"No text block in response for PMID {pmid}")
                 continue
 
-            parsed = parse_llm_response(first_block.text)
+            parsed = parse_llm_response(text_content)
             if parsed is None:
                 logger.warning(
                     f"Failed to parse JSON for PMID {pmid} (attempt {attempt})"
