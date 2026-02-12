@@ -155,6 +155,111 @@ async def reset_sequence(table: str, column: str = "id") -> None:
         """)
 
 
+async def merge_genes_transactional(
+    to_insert: list[dict[str, Any]],
+    to_update: list[dict[str, Any]],
+) -> tuple[int, int]:
+    """Atomically insert and update genes in a single transaction.
+
+    If any operation fails, the entire batch is rolled back, preventing
+    inconsistent state from partial writes.
+
+    Args:
+        to_insert: List of gene data dictionaries to insert.
+        to_update: List of gene data dictionaries to update.
+
+    Returns:
+        Tuple of (inserted_count, updated_count).
+    """
+    if not to_insert and not to_update:
+        return 0, 0
+
+    async with Database.connection() as conn:
+        async with conn.transaction():
+            if to_insert:
+                await conn.executemany(
+                    """
+                    INSERT INTO genes (
+                        protein, gene, chromosomal_location, gwas_trait,
+                        mendelian_randomization, evidence_from_other_omics_studies,
+                        link_to_monogenetic_disease, brain_cell_types,
+                        affected_pathway, "references"
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    """,
+                    [
+                        (
+                            g.get("protein"),
+                            g.get("gene"),
+                            g.get("chromosomal_location"),
+                            g.get("gwas_trait"),
+                            g.get("mendelian_randomization"),
+                            g.get("evidence_from_other_omics_studies"),
+                            g.get("link_to_monogenetic_disease"),
+                            g.get("brain_cell_types"),
+                            g.get("affected_pathway"),
+                            g.get("references"),
+                        )
+                        for g in to_insert
+                    ],
+                )
+            if to_update:
+                await conn.executemany(
+                    """
+                    UPDATE genes SET
+                        gwas_trait = $1,
+                        evidence_from_other_omics_studies = $2,
+                        "references" = CASE
+                            WHEN "references" LIKE '%' || $3 || '%' THEN "references"
+                            ELSE "references" || '; ' || $3
+                        END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE UPPER(gene) = UPPER($4)
+                    """,
+                    [
+                        (
+                            g.get("gwas_trait"),
+                            g.get("evidence_from_other_omics_studies"),
+                            g.get("references"),
+                            g.get("gene"),
+                        )
+                        for g in to_update
+                    ],
+                )
+
+    return len(to_insert), len(to_update)
+
+
+async def record_processed_pmids_batch(
+    records: list[tuple[str, bool, str, int]],
+) -> int:
+    """Batch record processed PMIDs to avoid reprocessing.
+
+    Args:
+        records: List of (pmid, fulltext_available, source, genes_extracted) tuples.
+
+    Returns:
+        Number of PMIDs recorded.
+    """
+    if not records:
+        return 0
+
+    async with Database.connection() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO pubmed_refs (
+                pmid, fulltext_available, source, genes_extracted
+            ) VALUES ($1, $2, $3, $4)
+            ON CONFLICT (pmid) DO UPDATE SET
+                fulltext_available = EXCLUDED.fulltext_available,
+                source = EXCLUDED.source,
+                genes_extracted = EXCLUDED.genes_extracted,
+                processed_at = CURRENT_TIMESTAMP
+            """,
+            records,
+        )
+    return len(records)
+
+
 async def insert_gene(gene_data: dict[str, Any]) -> bool:
     """Insert a new gene entry.
 

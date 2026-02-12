@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from pipeline.config import VALID_GWAS_TRAITS, PipelineConfig
+from pipeline.llm_extraction import GeneEntry
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class ValidationResult:
     is_valid: bool
     errors: list[str]
     warnings: list[str]
-    normalized_data: dict[str, Any] | None
+    normalized_data: GeneEntry | None
 
 
 # --- Module-level shared HTTP client ---
@@ -73,19 +74,21 @@ def clear_gene_cache() -> None:
 
 
 async def validate_gene_entry(
-    entry: dict[str, Any],
+    entry: GeneEntry,
     config: PipelineConfig | None = None,
 ) -> ValidationResult:
     """Multi-stage gene validation.
 
     Validation stages (fail-fast on critical errors):
-    1. Required field validation - ensures entry has necessary fields
-    2. Confidence threshold - reject low-confidence LLM extractions
-    3. NCBI Gene lookup - verify gene exists in human genome
-    4. GWAS trait check - warn on unrecognized phenotypes (non-blocking)
+    1. Confidence threshold - reject low-confidence LLM extractions
+    2. NCBI Gene lookup - verify gene exists in human genome
+    3. GWAS trait check - warn on unrecognized phenotypes (non-blocking)
+
+    Note: Required field validation (Stage 0 in prior versions) is now
+    handled by Pydantic via Instructor at extraction time.
 
     Args:
-        entry: Gene entry dictionary from LLM extraction.
+        entry: Gene entry from LLM extraction (Pydantic-validated).
         config: Pipeline configuration (uses defaults if None).
 
     Returns:
@@ -97,44 +100,29 @@ async def validate_gene_entry(
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Stage 0: Required field validation
-    if "gene_symbol" not in entry:
-        errors.append("Missing required field: gene_symbol")
-        return ValidationResult(False, errors, warnings, None)
-
-    gene_symbol = entry["gene_symbol"]
-    if not isinstance(gene_symbol, str) or not gene_symbol.strip():
-        errors.append("gene_symbol must be a non-empty string")
-        return ValidationResult(False, errors, warnings, None)
-
     # Stage 1: Confidence threshold - filters out LLM hallucinations
-    confidence = entry.get("confidence", 0.0)
-    if not isinstance(confidence, (int, float)):
-        errors.append(f"Invalid confidence type: {type(confidence).__name__}")
-        return ValidationResult(False, errors, warnings, None)
-
-    threshold = config.confidence_threshold
-    if confidence < threshold:
-        errors.append(f"Low confidence: {confidence:.2f} < {threshold}")
+    if entry.confidence < config.confidence_threshold:
+        errors.append(
+            f"Low confidence: {entry.confidence:.2f} < {config.confidence_threshold}"
+        )
         return ValidationResult(False, errors, warnings, None)
 
     # Stage 2: NCBI Gene validation - ensures gene symbol is real
-    ncbi_info = await verify_ncbi_gene(gene_symbol)
+    ncbi_info = await verify_ncbi_gene(entry.gene_symbol)
 
     if not ncbi_info:
-        errors.append(f"Gene '{gene_symbol}' not found in NCBI Gene")
+        errors.append(f"Gene '{entry.gene_symbol}' not found in NCBI Gene")
         return ValidationResult(False, errors, warnings, None)
 
     # Normalize gene symbol to official NCBI symbol (handles aliases)
-    if ncbi_info["symbol"] != gene_symbol:
-        warnings.append(f"Normalized '{gene_symbol}' -> '{ncbi_info['symbol']}'")
-        entry["gene_symbol"] = ncbi_info["symbol"]
+    if ncbi_info["symbol"] != entry.gene_symbol:
+        warnings.append(f"Normalized '{entry.gene_symbol}' -> '{ncbi_info['symbol']}'")
+        entry.gene_symbol = ncbi_info["symbol"]
 
     # Stage 3: GWAS trait validation (warnings only - unknown traits allowed)
-    if gwas_traits := entry.get("gwas_trait"):
-        for trait in gwas_traits:
-            if trait not in VALID_GWAS_TRAITS:
-                warnings.append(f"Unknown GWAS trait: {trait}")
+    for trait in entry.gwas_trait:
+        if trait not in VALID_GWAS_TRAITS:
+            warnings.append(f"Unknown GWAS trait: {trait}")
 
     return ValidationResult(True, errors, warnings, entry)
 

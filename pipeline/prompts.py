@@ -43,19 +43,7 @@ CONFIDENCE SCORING:
 - 0.4-0.6: Mentioned in causal context but evidence is weak
 - <0.4: Tangential mention, no clear causal implication
 
-Return valid JSON with a "genes" array. If no causally-linked genes found, return {"genes": []}."""
-
-# Pre-built schema description (for potential future structured output)
-GENE_ENTRY_SCHEMA_STR: Final[str] = """\
-{
-  "gene_symbol": "string (required)",
-  "protein_name": "string | null",
-  "gwas_trait": ["string"],
-  "mendelian_randomization": "boolean",
-  "omics_evidence": ["string"],
-  "confidence": "float 0.0-1.0",
-  "causal_evidence_summary": "string | null"
-}"""
+If no causally-linked genes are found, return an empty list for genes."""
 
 
 def build_extraction_messages(

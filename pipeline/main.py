@@ -7,7 +7,8 @@ This script orchestrates:
 2. Full-text/abstract retrieval
 3. LLM-based gene data extraction using Claude
 4. Validation against external databases
-5. Merging validated data into PostgreSQL
+5. Batch quality checks (Pandera)
+6. Merging validated data into PostgreSQL
 
 Usage:
     python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
@@ -23,7 +24,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Final, TypedDict
+from typing import Final, TypedDict
 
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
@@ -40,12 +41,13 @@ load_dotenv(PROJECT_ROOT / ".env")
 from pipeline.config import PipelineConfig  # noqa: E402
 from pipeline.pubmed_search import search_recent_papers, filter_new_pmids  # noqa: E402
 from pipeline.pdf_retrieval import get_fulltext, close_http_client  # noqa: E402
-from pipeline.llm_extraction import extract_from_paper  # noqa: E402
+from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
 from pipeline.validation import validate_gene_entry, close_validation_client, clear_gene_cache  # noqa: E402
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
-from pipeline.database import Database, get_existing_pmids, record_processed_pmid, reset_sequence  # noqa: E402
+from pipeline.database import Database, get_existing_pmids, record_processed_pmids_batch, reset_sequence  # noqa: E402
 from pipeline.quality_metrics import PipelineMetrics, TokenUsage  # noqa: E402
 from pipeline.rate_limiter import AsyncRateLimiter  # noqa: E402
+from pipeline.batch_validation import batch_validate  # noqa: E402
 
 import os  # noqa: E402
 
@@ -77,7 +79,7 @@ class MetadataResult(TypedDict):
 
 class PaperProcessResult(TypedDict):
     """Result from processing a single paper."""
-    genes: list[dict[str, Any]]
+    genes: list[GeneEntry]
     fulltext: bool
     source: str
 
@@ -86,7 +88,7 @@ class PaperProcessResult(TypedDict):
 class PaperResult:
     """Result from processing a single paper with error handling."""
     pmid: str
-    genes: list[dict[str, Any]] = field(default_factory=list)
+    genes: list[GeneEntry] = field(default_factory=list)
     fulltext: bool = False
     source: str = "none"
     error: str | None = None
@@ -208,7 +210,7 @@ async def process_paper(
         logger.warning(f"  No text available for PMID {pmid}, skipping")
         return {"genes": [], "fulltext": False, "source": "none"}
 
-    # Extract structured data using LLM
+    # Extract structured data using LLM (returns typed GeneEntry instances)
     genes, token_usage = await extract_from_paper(
         text, pmid, config=config, rate_limiter=rate_limiter
     )
@@ -217,16 +219,20 @@ async def process_paper(
 
     logger.info(f"  Extracted {len(genes)} genes")
 
+    # Set pmid on each gene for downstream tracking
+    for gene in genes:
+        gene.pmid = pmid
+
     # Validate genes concurrently
-    validated_genes: list[dict[str, Any]] = []
+    validated_genes: list[GeneEntry] = []
     validation_tasks = [
-        validate_gene_entry({**gene, "pmid": pmid}, config=config) for gene in genes
+        validate_gene_entry(gene, config=config) for gene in genes
     ]
     results = await asyncio.gather(*validation_tasks, return_exceptions=True)
 
     for gene, result in zip(genes, results):
         if isinstance(result, Exception):
-            logger.error(f"  Validation error for gene {gene.get('gene_symbol')}: {result}")
+            logger.error(f"  Validation error for gene {gene.gene_symbol}: {result}")
             metrics.genes_rejected += 1
         elif result.is_valid:
             validated_genes.append(result.normalized_data)
@@ -403,22 +409,22 @@ async def run_pipeline(
             new_pmids, metrics, config=config, rate_limiter=rate_limiter
         )
 
-        all_genes: list[dict[str, Any]] = []
+        all_genes: list[GeneEntry] = []
+        successful_results: list[PaperResult] = []
         for result in results:
             if result.succeeded:
                 all_genes.extend(result.genes)
                 metrics.papers_processed += 1
-
-                # Record processed PMID
-                await record_processed_pmid(
-                    pmid=result.pmid,
-                    fulltext_available=result.fulltext,
-                    source=result.source,
-                    genes_extracted=len(result.genes),
-                )
+                successful_results.append(result)
 
         logger.info(f"  Processed {metrics.papers_processed} papers")
         logger.info(f"  Validated: {metrics.genes_validated} genes")
+
+        # Step 3.5: Batch validation (warning-only quality checks)
+        if all_genes:
+            batch_warnings = batch_validate(all_genes)
+            for warning in batch_warnings:
+                logger.warning(f"  Batch check: {warning}")
 
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
@@ -444,6 +450,16 @@ async def run_pipeline(
             logger.info(
                 f"  Genes: {gene_result['inserted']} inserted, {gene_result['updated']} updated"
             )
+
+        # Step 5: Record processed PMIDs AFTER successful merge
+        # This ensures PMIDs are only marked processed when genes are
+        # actually written, preventing data loss on merge failure.
+        pmid_records = [
+            (r.pmid, r.fulltext, r.source, len(r.genes))
+            for r in successful_results
+        ]
+        recorded = await record_processed_pmids_batch(pmid_records)
+        logger.info(f"  Recorded {recorded} processed PMIDs")
 
         # Summary
         logger.info(LOG_SEPARATOR)

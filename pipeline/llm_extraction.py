@@ -1,12 +1,14 @@
-"""LLM-based gene extraction using Claude API.
+"""LLM-based gene extraction using Claude API with Instructor.
 
 Extracts genes with putative causal links to cSVD from research papers
-using the Anthropic Claude API.
+using the Anthropic Claude API, with Pydantic-validated structured output
+via Instructor.
 
 Features:
+- Instructor-enforced Pydantic schema for structured extraction
 - Prompt caching (system + static instructions cached across calls)
 - Token-bucket rate limiting (proactive, not reactive)
-- Separate retry budgets for rate-limit vs parse/API errors
+- Separate retry budgets for rate-limit vs validation errors
 - Token usage tracking for cost visibility
 """
 
@@ -19,6 +21,7 @@ import re
 from typing import Any
 
 import anthropic
+import instructor
 from pydantic import BaseModel, ConfigDict, Field
 
 from pipeline.config import PipelineConfig
@@ -44,17 +47,24 @@ class GeneEntry(BaseModel):
     omics_evidence: list[str] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
     causal_evidence_summary: str | None = None
+    pmid: str = ""
 
 
-# --- Async client singleton ---
-_async_client: anthropic.AsyncAnthropic | None = None
+class ExtractionResult(BaseModel):
+    """Wrapper model for Instructor structured extraction."""
+
+    genes: list[GeneEntry] = Field(default_factory=list)
 
 
-def _get_async_client() -> anthropic.AsyncAnthropic:
-    """Get or create shared async Anthropic client."""
+# --- Async client singleton (Instructor-wrapped) ---
+_async_client: Any = None
+
+
+def _get_async_client() -> Any:
+    """Get or create shared Instructor-wrapped async Anthropic client."""
     global _async_client
     if _async_client is None:
-        _async_client = anthropic.AsyncAnthropic()
+        _async_client = instructor.from_anthropic(anthropic.AsyncAnthropic())
     return _async_client
 
 
@@ -76,12 +86,12 @@ async def extract_from_paper(
     pmid: str,
     config: PipelineConfig | None = None,
     rate_limiter: AsyncRateLimiter | None = None,
-) -> tuple[list[dict[str, Any]], TokenUsage]:
-    """Extract genes using Claude API with rate limiting and retry handling.
+) -> tuple[list[GeneEntry], TokenUsage]:
+    """Extract genes using Claude API with Instructor for structured output.
 
-    Uses prompt caching (system prompt + instructions are cached), separate
-    retry budgets for rate-limit vs parse/API errors, and proactive rate
-    limiting via the token-bucket ``rate_limiter``.
+    Uses Instructor to enforce the ExtractionResult Pydantic schema as the
+    response format, with auto-retry on validation failure. Prompt caching
+    and proactive rate limiting are preserved.
 
     Args:
         text: Full text content of the paper.
@@ -110,11 +120,9 @@ async def extract_from_paper(
         max_chars=config.max_paper_text_chars,
     )
 
-    attempt = 0
     rate_limit_retries = 0
 
-    while attempt < config.max_retries:
-        attempt += 1
+    while True:
         try:
             # Proactive rate limiting
             if rate_limiter is not None:
@@ -122,13 +130,15 @@ async def extract_from_paper(
                     estimated_tokens=config.estimated_tokens_per_call
                 )
 
-            # Build API call kwargs — enable extended thinking when configured
+            # Build API call kwargs — Instructor handles schema enforcement
             create_kwargs: dict[str, Any] = {
                 "model": config.llm_model,
                 "max_tokens": config.llm_max_tokens,
                 "temperature": config.llm_temperature,
                 "system": system_blocks,
                 "messages": messages,
+                "response_model": ExtractionResult,
+                "max_retries": config.max_retries,
             }
             if config.thinking_budget_tokens > 0:
                 create_kwargs["thinking"] = {
@@ -136,42 +146,21 @@ async def extract_from_paper(
                     "budget_tokens": config.thinking_budget_tokens,
                 }
 
-            response = await client.messages.create(**create_kwargs)
+            result, completion = await client.messages.create_with_completion(
+                **create_kwargs
+            )
 
-            # Track token usage
-            accumulate_usage(usage, response)
+            # Track token usage from raw completion
+            accumulate_usage(usage, completion)
 
             # Correct rate limiter estimate with actual usage
-            if rate_limiter is not None and hasattr(response, "usage") and response.usage:
-                actual = response.usage.input_tokens + response.usage.output_tokens
+            if rate_limiter is not None and hasattr(completion, "usage") and completion.usage:
+                actual = completion.usage.input_tokens + completion.usage.output_tokens
                 await rate_limiter.record_actual_usage(
                     config.estimated_tokens_per_call, actual
                 )
 
-            if not response.content:
-                logger.warning(f"Empty response from Claude for PMID {pmid}")
-                return [], usage
-
-            # With extended thinking, response contains thinking + text blocks.
-            # Find the first text block (skip thinking blocks).
-            text_content: str | None = None
-            for block in response.content:
-                if hasattr(block, "text") and getattr(block, "type", None) != "thinking":
-                    text_content = block.text
-                    break
-
-            if text_content is None:
-                logger.warning(f"No text block in response for PMID {pmid}")
-                continue
-
-            parsed = parse_llm_response(text_content)
-            if parsed is None:
-                logger.warning(
-                    f"Failed to parse JSON for PMID {pmid} (attempt {attempt})"
-                )
-                continue
-
-            return parsed, usage
+            return result.genes, usage
 
         except anthropic.RateLimitError as e:
             rate_limit_retries += 1
@@ -193,44 +182,38 @@ async def extract_from_paper(
             if rate_limiter is not None:
                 rate_limiter.signal_rate_limit(delay)
             await asyncio.sleep(delay)
-            # Don't consume parse/validation retry budget on rate limits
-            attempt -= 1
 
         except anthropic.APIError as e:
             logger.error(f"Claude API error for PMID {pmid}: {e}")
-            if attempt == config.max_retries:
-                return [], usage
-            delay = config.retry_delay * (2 ** (attempt - 1))
-            await asyncio.sleep(delay)
+            return [], usage
 
-    return [], usage
+        except Exception as e:
+            # Catches Instructor validation exhaustion and unexpected errors
+            logger.error(f"Extraction failed for PMID {pmid}: {e}")
+            return [], usage
+
+
+# ---------------------------------------------------------------------------
+# DEPRECATED: parse_llm_response
+# Kept for one run cycle as a safety net. Will be removed after the
+# Instructor integration is verified in production.
+# ---------------------------------------------------------------------------
 
 
 def parse_llm_response(text: str) -> list[dict[str, Any]] | None:
     """Parse the LLM response JSON into gene entries.
 
-    Handles various response formats:
-    - Direct JSON object
-    - JSON wrapped in markdown code blocks
-    - Partial/malformed JSON with recovery
-
-    Args:
-        text: Raw text response from LLM.
-
-    Returns:
-        List of gene entries, or None if parsing fails entirely.
+    .. deprecated::
+        Superseded by Instructor structured extraction. Kept temporarily
+        as a rollback safety net.
     """
     if not text or not text.strip():
         return None
 
-    # 4-tier fallback strategy for parsing LLM JSON output
-
-    # Tier 1: Extract JSON from markdown code blocks (```json ... ```)
     json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
     if json_match:
         text = json_match.group(1)
 
-    # Tier 2: Direct JSON parsing (cleanest case)
     try:
         parsed = json.loads(text.strip())
         if isinstance(parsed, dict):
@@ -238,7 +221,6 @@ def parse_llm_response(text: str) -> list[dict[str, Any]] | None:
     except json.JSONDecodeError:
         pass
 
-    # Tier 3: Find JSON object anywhere in text (handles preamble/postamble)
     json_obj_match = re.search(r"\{[\s\S]*\}", text)
     if json_obj_match:
         try:
@@ -248,7 +230,6 @@ def parse_llm_response(text: str) -> list[dict[str, Any]] | None:
         except json.JSONDecodeError:
             pass
 
-    # Tier 4: Extract genes array directly (handles malformed outer object)
     genes_match = re.search(r'"genes"\s*:\s*(\[[\s\S]*?\])', text)
     if genes_match:
         try:
