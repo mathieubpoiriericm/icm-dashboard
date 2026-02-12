@@ -1,12 +1,15 @@
-"""LLM-based gene extraction using Claude API with Instructor.
+"""LLM-based gene extraction using Claude API with streaming.
 
 Extracts genes with putative causal links to cSVD from research papers
-using the Anthropic Claude API, with Pydantic-validated structured output
-via Instructor.
+using the Anthropic Claude API, with Pydantic-validated structured output.
+
+Uses the streaming API (required for adaptive thinking on Opus 4.6 when
+requests may exceed 10 minutes) with JSON schema prompting and Pydantic
+validation — replacing the previous Instructor-based approach.
 
 Features:
-- Instructor-enforced Pydantic schema for structured extraction
-- Adaptive thinking (Claude dynamically allocates reasoning depth)
+- Streaming API for long-running adaptive thinking requests
+- Pydantic schema enforcement via JSON mode prompting
 - Prompt caching (system + static instructions cached across calls)
 - Token-bucket rate limiting (proactive, not reactive)
 - Separate retry budgets for rate-limit vs validation errors
@@ -22,8 +25,7 @@ import re
 from typing import Any
 
 import anthropic
-import instructor
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from pipeline.config import PipelineConfig
 from pipeline.prompts import build_extraction_messages
@@ -52,29 +54,39 @@ class GeneEntry(BaseModel):
 
 
 class ExtractionResult(BaseModel):
-    """Wrapper model for Instructor structured extraction."""
+    """Wrapper model for structured extraction."""
 
     genes: list[GeneEntry] = Field(default_factory=list)
 
 
-# --- Async client singleton (Instructor-wrapped) ---
-_async_client: Any = None
+# Pre-compute the JSON schema instruction (identical across all calls).
+_EXTRACTION_SCHEMA: str = json.dumps(
+    ExtractionResult.model_json_schema(), indent=2
+)
+_JSON_SCHEMA_INSTRUCTION: str = (
+    "As a structured data extraction expert, your task is to understand the "
+    "content and provide the parsed objects in JSON that match the following "
+    "JSON schema:\n\n"
+    f"{_EXTRACTION_SCHEMA}\n\n"
+    "Return an instance of the JSON, not the schema itself. "
+    "Return ONLY valid JSON with no markdown code fences or surrounding text."
+)
 
 
-def _get_async_client() -> Any:
-    """Get or create shared Instructor-wrapped async Anthropic client.
+# --- Async client singleton ---
+_async_client: anthropic.AsyncAnthropic | None = None
 
-    Uses ANTHROPIC_JSON mode (not ANTHROPIC_TOOLS) because the default
-    tool mode sets ``tool_choice`` to force a specific tool, which the
-    Anthropic API rejects when thinking is enabled.  JSON mode embeds
-    the schema in the prompt instead and parses the text response.
+
+def _get_async_client() -> anthropic.AsyncAnthropic:
+    """Get or create shared async Anthropic client.
+
+    Returns the raw AsyncAnthropic client (not Instructor-wrapped) to
+    support streaming, which is required for adaptive thinking requests
+    that may exceed 10 minutes.
     """
     global _async_client
     if _async_client is None:
-        _async_client = instructor.from_anthropic(
-            anthropic.AsyncAnthropic(),
-            mode=instructor.Mode.ANTHROPIC_JSON,
-        )
+        _async_client = anthropic.AsyncAnthropic()
     return _async_client
 
 
@@ -91,17 +103,50 @@ def _parse_retry_after_delay(
     return backoff_delay, "backoff"
 
 
+def _parse_extraction_response(text: str) -> ExtractionResult:
+    """Parse LLM text response into ExtractionResult.
+
+    Handles JSON extraction from text that may include markdown fences
+    or surrounding commentary.
+
+    Raises:
+        ValueError: If no valid JSON can be extracted.
+        ValidationError: If JSON doesn't match ExtractionResult schema.
+    """
+    text = text.strip()
+
+    # Strip markdown code fences if present
+    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if json_match:
+        text = json_match.group(1).strip()
+
+    # Try direct parse
+    try:
+        data = json.loads(text)
+        return ExtractionResult.model_validate(data)
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: find the outermost JSON object
+    obj_match = re.search(r"\{[\s\S]*\}", text)
+    if obj_match:
+        data = json.loads(obj_match.group())
+        return ExtractionResult.model_validate(data)
+
+    raise ValueError(f"No valid JSON found in LLM response: {text[:200]}")
+
+
 async def extract_from_paper(
     text: str,
     pmid: str,
     config: PipelineConfig | None = None,
     rate_limiter: AsyncRateLimiter | None = None,
 ) -> tuple[list[GeneEntry], TokenUsage]:
-    """Extract genes using Claude API with Instructor for structured output.
+    """Extract genes using Claude API with streaming and Pydantic validation.
 
-    Uses Instructor to enforce the ExtractionResult Pydantic schema as the
-    response format, with auto-retry on validation failure. Prompt caching
-    and proactive rate limiting are preserved.
+    Uses the Anthropic streaming API (required for adaptive thinking on
+    Opus 4.6 when requests may exceed 10 minutes) with JSON schema
+    prompting and Pydantic validation.
 
     Args:
         text: Full text content of the paper.
@@ -130,7 +175,17 @@ async def extract_from_paper(
         max_chars=config.max_paper_text_chars,
     )
 
+    # Inject JSON schema instruction between cached extraction instructions
+    # and dynamic paper text, so it benefits from prompt caching.
+    user_blocks = messages[0]["content"]
+    user_blocks.insert(1, {
+        "type": "text",
+        "text": _JSON_SCHEMA_INSTRUCTION,
+        "cache_control": {"type": "ephemeral"},
+    })
+
     rate_limit_retries = 0
+    validation_retries = 0
 
     while True:
         try:
@@ -140,36 +195,44 @@ async def extract_from_paper(
                     estimated_tokens=config.estimated_tokens_per_call
                 )
 
-            # Build API call kwargs — Instructor handles schema enforcement.
-            # Adaptive thinking lets Claude dynamically allocate reasoning
-            # depth per request; effort controls the baseline reasoning level.
-            create_kwargs: dict[str, Any] = {
+            # Build streaming kwargs — adaptive thinking dynamically
+            # allocates reasoning depth per request.
+            stream_kwargs: dict[str, Any] = {
                 "model": config.llm_model,
                 "max_tokens": config.llm_max_tokens,
                 "system": system_blocks,
                 "messages": messages,
-                "response_model": ExtractionResult,
-                "max_retries": config.max_retries,
                 "thinking": {"type": "adaptive"},
             }
             if config.llm_effort != "high":
                 # "high" is the API default — only send when overridden
-                create_kwargs["output"] = {"effort": config.llm_effort}
+                stream_kwargs["output"] = {"effort": config.llm_effort}
 
-            result, completion = await client.messages.create_with_completion(
-                **create_kwargs
-            )
+            async with client.messages.stream(**stream_kwargs) as stream:
+                response = await stream.get_final_message()
 
-            # Track token usage from raw completion
-            accumulate_usage(usage, completion)
+            # Track token usage from final message
+            accumulate_usage(usage, response)
 
             # Correct rate limiter estimate with actual usage
-            if rate_limiter is not None and hasattr(completion, "usage") and completion.usage:
-                actual = completion.usage.input_tokens + completion.usage.output_tokens
+            if rate_limiter is not None and hasattr(response, "usage") and response.usage:
+                actual = response.usage.input_tokens + response.usage.output_tokens
                 await rate_limiter.record_actual_usage(
                     config.estimated_tokens_per_call, actual
                 )
 
+            # Extract text content from response blocks (skip thinking blocks)
+            text_content = ""
+            for block in response.content:
+                if hasattr(block, "type") and block.type == "text":
+                    text_content += block.text
+
+            if not text_content.strip():
+                logger.warning(f"Empty text response for PMID {pmid}")
+                return [], usage
+
+            # Parse and validate
+            result = _parse_extraction_response(text_content)
             return result.genes, usage
 
         except anthropic.RateLimitError as e:
@@ -193,12 +256,24 @@ async def extract_from_paper(
                 rate_limiter.signal_rate_limit(delay)
             await asyncio.sleep(delay)
 
+        except (json.JSONDecodeError, ValidationError, ValueError) as e:
+            validation_retries += 1
+            if validation_retries >= config.max_retries:
+                logger.error(
+                    f"Validation retries exhausted for PMID {pmid} "
+                    f"({validation_retries}/{config.max_retries}): {e}"
+                )
+                return [], usage
+            logger.warning(
+                f"Validation retry {validation_retries}/{config.max_retries} "
+                f"for PMID {pmid}: {e}"
+            )
+
         except anthropic.APIError as e:
             logger.error(f"Claude API error for PMID {pmid}: {e}")
             return [], usage
 
         except Exception as e:
-            # Catches Instructor validation exhaustion and unexpected errors
             logger.error(f"Extraction failed for PMID {pmid}: {e}")
             return [], usage
 
