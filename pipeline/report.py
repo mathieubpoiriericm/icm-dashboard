@@ -133,7 +133,8 @@ def build_run_data(
             "days_back": days_back,
             "dry_run": dry_run,
             "confidence_threshold": config.confidence_threshold,
-            "thinking_budget_tokens": config.thinking_budget_tokens,
+            "thinking_mode": "adaptive",
+            "effort": config.llm_effort,
         },
         "search": {
             "pmids_found": total_pmids_found,

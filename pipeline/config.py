@@ -72,16 +72,12 @@ class PipelineConfig:
         )
     )
     llm_max_tokens: int = field(
-        default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 16000)
+        default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 32000)
     )
-    # Extended thinking requires temperature=1.
-    llm_temperature: float = field(
-        default_factory=lambda: _env_float("PIPELINE_LLM_TEMPERATURE", 1.0)
-    )
-    # Token budget for extended thinking (reasoning before answering).
-    # Set to 0 to disable extended thinking.
-    thinking_budget_tokens: int = field(
-        default_factory=lambda: _env_int("PIPELINE_THINKING_BUDGET_TOKENS", 10000)
+    # Effort level for adaptive thinking: "high" (default), "low", or "max".
+    # Higher effort = deeper reasoning but more output tokens.
+    llm_effort: str = field(
+        default_factory=lambda: _env_str("PIPELINE_LLM_EFFORT", "high")
     )
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
@@ -111,9 +107,9 @@ class PipelineConfig:
     )
 
     # Estimated total tokens per LLM call (for rate limiter TPM tracking).
-    # With Opus 4.6 extended thinking, each call uses ~15K input + ~10K thinking + ~4K output.
+    # With Opus 4.6 adaptive thinking at high effort: ~15K input + variable thinking + ~4K output.
     estimated_tokens_per_call: int = field(
-        default_factory=lambda: _env_int("PIPELINE_ESTIMATED_TOKENS_PER_CALL", 30_000)
+        default_factory=lambda: _env_int("PIPELINE_ESTIMATED_TOKENS_PER_CALL", 40_000)
     )
 
     # --- Rate limiter (RPM / TPM) ---

@@ -6,6 +6,7 @@ via Instructor.
 
 Features:
 - Instructor-enforced Pydantic schema for structured extraction
+- Adaptive thinking (Claude dynamically allocates reasoning depth)
 - Prompt caching (system + static instructions cached across calls)
 - Token-bucket rate limiting (proactive, not reactive)
 - Separate retry budgets for rate-limit vs validation errors
@@ -65,8 +66,8 @@ def _get_async_client() -> Any:
 
     Uses ANTHROPIC_JSON mode (not ANTHROPIC_TOOLS) because the default
     tool mode sets ``tool_choice`` to force a specific tool, which the
-    Anthropic API rejects when extended thinking is enabled.  JSON mode
-    embeds the schema in the prompt instead and parses the text response.
+    Anthropic API rejects when thinking is enabled.  JSON mode embeds
+    the schema in the prompt instead and parses the text response.
     """
     global _async_client
     if _async_client is None:
@@ -139,21 +140,21 @@ async def extract_from_paper(
                     estimated_tokens=config.estimated_tokens_per_call
                 )
 
-            # Build API call kwargs — Instructor handles schema enforcement
+            # Build API call kwargs — Instructor handles schema enforcement.
+            # Adaptive thinking lets Claude dynamically allocate reasoning
+            # depth per request; effort controls the baseline reasoning level.
             create_kwargs: dict[str, Any] = {
                 "model": config.llm_model,
                 "max_tokens": config.llm_max_tokens,
-                "temperature": config.llm_temperature,
                 "system": system_blocks,
                 "messages": messages,
                 "response_model": ExtractionResult,
                 "max_retries": config.max_retries,
+                "thinking": {"type": "adaptive"},
             }
-            if config.thinking_budget_tokens > 0:
-                create_kwargs["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": config.thinking_budget_tokens,
-                }
+            if config.llm_effort != "high":
+                # "high" is the API default — only send when overridden
+                create_kwargs["output"] = {"effort": config.llm_effort}
 
             result, completion = await client.messages.create_with_completion(
                 **create_kwargs
