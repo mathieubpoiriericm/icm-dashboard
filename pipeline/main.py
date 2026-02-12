@@ -48,6 +48,7 @@ from pipeline.database import Database, get_existing_pmids, record_processed_pmi
 from pipeline.quality_metrics import PipelineMetrics, TokenUsage  # noqa: E402
 from pipeline.rate_limiter import AsyncRateLimiter  # noqa: E402
 from pipeline.batch_validation import batch_validate  # noqa: E402
+from pipeline.report import build_run_data, write_comprehensive_report, print_rich_summary  # noqa: E402
 
 import os  # noqa: E402
 
@@ -433,6 +434,7 @@ async def run_pipeline(
         logger.info(f"  Validated: {metrics.genes_validated} genes")
 
         # Step 3.5: Batch validation (warning-only quality checks)
+        batch_warnings: list[str] = []
         if all_genes:
             batch_warnings = batch_validate(all_genes)
             for warning in batch_warnings:
@@ -440,14 +442,14 @@ async def run_pipeline(
 
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
-            logger.info(LOG_SEPARATOR)
-            logger.info("Pipeline Summary:")
-            logger.info(metrics.summary())
-            logger.info(LOG_SEPARATOR)
 
-            # Write JSON report even in dry-run mode
-            report_path = metrics.write_json_report(LOG_DIR)
+            run_data = build_run_data(
+                metrics, results, all_genes, None, batch_warnings,
+                config, days_back, dry_run, len(all_pmids), len(new_pmids),
+            )
+            report_path = write_comprehensive_report(run_data, LOG_DIR)
             logger.info(f"JSON report written to: {report_path}")
+            print_rich_summary(run_data)
 
             return metrics
 
@@ -457,6 +459,7 @@ async def run_pipeline(
         # Reset sequences to avoid primary key conflicts
         await reset_sequence("genes")
 
+        gene_result: dict[str, int] | None = None
         if all_genes:
             gene_result = await merge_gene_entries(all_genes)
             logger.info(
@@ -473,15 +476,14 @@ async def run_pipeline(
         recorded = await record_processed_pmids_batch(pmid_records)
         logger.info(f"  Recorded {recorded} processed PMIDs")
 
-        # Summary
-        logger.info(LOG_SEPARATOR)
-        logger.info("Pipeline Summary:")
-        logger.info(metrics.summary())
-        logger.info(LOG_SEPARATOR)
-
-        # Write JSON report
-        report_path = metrics.write_json_report(LOG_DIR)
+        # Comprehensive report + rich summary
+        run_data = build_run_data(
+            metrics, results, all_genes, gene_result, batch_warnings,
+            config, days_back, dry_run, len(all_pmids), len(new_pmids),
+        )
+        report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")
+        print_rich_summary(run_data)
 
         return metrics
 
