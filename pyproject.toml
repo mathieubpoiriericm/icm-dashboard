@@ -1,5 +1,5 @@
 [tool.ruff]
-target-version = "py310"
+target-version = "py314"
 line-length = 88
 src = ["pipeline"]
 extend-exclude = ["pipeline/alembic"]
@@ -19,7 +19,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 known-first-party = ["pipeline"]
 
 [tool.ty.environment]
-python-version = "3.11"
+python-version = "3.14"
 
 [tool.ty.rules]
 # Third-party packages may not have type stubs available

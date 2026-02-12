@@ -7,7 +7,7 @@ report structure used for both the JSON file and terminal output.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -132,7 +132,7 @@ def build_run_data(
     failed_count = sum(1 for r in results if not r.succeeded)
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "pipeline_config": {
             "model": config.llm_model,
             "days_back": days_back,

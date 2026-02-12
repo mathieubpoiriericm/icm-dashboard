@@ -47,7 +47,7 @@ def ensure_list(value: T | list[T] | None) -> list[Any]:
             return [value]
 
 
-def dedupe_list(items: Sequence[T]) -> list[T]:
+def dedupe_list[T](items: Sequence[T]) -> list[T]:
     """Remove duplicates from sequence while preserving order.
 
     Args:
