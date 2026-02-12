@@ -49,7 +49,9 @@ def accumulate_usage(usage: TokenUsage, response: Any) -> None:
     usage.input_tokens += response.usage.input_tokens
     usage.output_tokens += response.usage.output_tokens
     if hasattr(response.usage, "cache_creation_input_tokens"):
-        usage.cache_creation_input_tokens += response.usage.cache_creation_input_tokens or 0
+        usage.cache_creation_input_tokens += (
+            response.usage.cache_creation_input_tokens or 0
+        )
     if hasattr(response.usage, "cache_read_input_tokens"):
         usage.cache_read_input_tokens += response.usage.cache_read_input_tokens or 0
 

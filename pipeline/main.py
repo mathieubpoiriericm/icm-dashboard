@@ -38,19 +38,32 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+import os  # noqa: E402
+
+from pipeline.batch_validation import batch_validate  # noqa: E402
 from pipeline.config import PipelineConfig  # noqa: E402
-from pipeline.pubmed_search import search_recent_papers, filter_new_pmids  # noqa: E402
-from pipeline.pdf_retrieval import get_fulltext, close_http_client  # noqa: E402
-from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
-from pipeline.validation import validate_gene_entry, close_validation_client, clear_gene_cache  # noqa: E402
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
-from pipeline.database import Database, get_existing_pmids, record_processed_pmids_batch, reset_sequence  # noqa: E402
+from pipeline.database import (  # noqa: E402
+    Database,
+    get_existing_pmids,
+    record_processed_pmids_batch,
+    reset_sequence,
+)
+from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
+from pipeline.pdf_retrieval import close_http_client, get_fulltext  # noqa: E402
+from pipeline.pubmed_search import filter_new_pmids, search_recent_papers  # noqa: E402
 from pipeline.quality_metrics import PipelineMetrics, TokenUsage  # noqa: E402
 from pipeline.rate_limiter import AsyncRateLimiter  # noqa: E402
-from pipeline.batch_validation import batch_validate  # noqa: E402
-from pipeline.report import build_run_data, write_comprehensive_report, print_rich_summary  # noqa: E402
-
-import os  # noqa: E402
+from pipeline.report import (  # noqa: E402
+    build_run_data,
+    print_rich_summary,
+    write_comprehensive_report,
+)
+from pipeline.validation import (  # noqa: E402
+    clear_gene_cache,
+    close_validation_client,
+    validate_gene_entry,
+)
 
 # --- Constants ---
 LOG_SEPARATOR: Final[str] = "=" * 50
@@ -86,12 +99,14 @@ logger = logging.getLogger(__name__)
 # --- Type definitions ---
 class MetadataResult(TypedDict):
     """Result from metadata fetch."""
+
     pmid: str
     doi: str | None
 
 
 class PaperProcessResult(TypedDict):
     """Result from processing a single paper."""
+
     genes: list[GeneEntry]
     fulltext: bool
     source: str
@@ -100,6 +115,7 @@ class PaperProcessResult(TypedDict):
 @dataclass(slots=True)
 class PaperResult:
     """Result from processing a single paper with error handling."""
+
     pmid: str
     genes: list[GeneEntry] = field(default_factory=list)
     fulltext: bool = False
@@ -238,12 +254,10 @@ async def process_paper(
 
     # Validate genes concurrently
     validated_genes: list[GeneEntry] = []
-    validation_tasks = [
-        validate_gene_entry(gene, config=config) for gene in genes
-    ]
+    validation_tasks = [validate_gene_entry(gene, config=config) for gene in genes]
     results = await asyncio.gather(*validation_tasks, return_exceptions=True)
 
-    for gene, result in zip(genes, results):
+    for gene, result in zip(genes, results, strict=True):
         if isinstance(result, Exception):
             logger.error(f"  Validation error for gene {gene.gene_symbol}: {result}")
             metrics.genes_rejected += 1
@@ -326,8 +340,12 @@ async def process_papers_concurrently(
         tasks = [
             tg.create_task(
                 process_paper_safe(
-                    pmid, metrics, semaphore, progress,
-                    config=config, rate_limiter=rate_limiter,
+                    pmid,
+                    metrics,
+                    semaphore,
+                    progress,
+                    config=config,
+                    rate_limiter=rate_limiter,
                 )
             )
             for pmid in pmids
@@ -362,8 +380,8 @@ async def run_pipeline(
     # Input validation
     if not config.min_days_back <= days_back <= config.max_days_back:
         raise ValueError(
-            f"days_back must be between {config.min_days_back} and {config.max_days_back}, "
-            f"got {days_back}"
+            f"days_back must be between {config.min_days_back} "
+            f"and {config.max_days_back}, got {days_back}"
         )
 
     metrics = PipelineMetrics()
@@ -376,7 +394,8 @@ async def run_pipeline(
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
     logger.info(
-        f"Config: model={config.llm_model}, concurrency={config.max_concurrent_papers}, "
+        f"Config: model={config.llm_model}, "
+        f"concurrency={config.max_concurrent_papers}, "
         f"RPM={config.rpm_limit}, TPM={config.tpm_limit}"
     )
 
@@ -408,12 +427,18 @@ async def run_pipeline(
 
         # Test mode: skip LLM extraction and database merge
         if test_mode:
-            logger.info("Test mode enabled - skipping LLM extraction and database merge")
+            logger.info(
+                "Test mode enabled - skipping LLM extraction and database merge"
+            )
             logger.info(f"  Would process {len(new_pmids)} papers:")
-            for pmid in new_pmids[:config.test_mode_preview_count]:
+            for pmid in new_pmids[: config.test_mode_preview_count]:
                 logger.info(f"    PMID: {pmid}")
             if len(new_pmids) > config.test_mode_preview_count:
-                logger.info(f"    ... and {len(new_pmids) - config.test_mode_preview_count} more")
+                logger.info(
+                    f"    ... and "
+                    f"{len(new_pmids) - config.test_mode_preview_count}"
+                    f" more"
+                )
             return metrics
 
         # Step 3: Process papers concurrently
@@ -444,8 +469,16 @@ async def run_pipeline(
             logger.info("Dry run mode - skipping database merge")
 
             run_data = build_run_data(
-                metrics, results, all_genes, None, batch_warnings,
-                config, days_back, dry_run, len(all_pmids), len(new_pmids),
+                metrics,
+                results,
+                all_genes,
+                None,
+                batch_warnings,
+                config,
+                days_back,
+                dry_run,
+                len(all_pmids),
+                len(new_pmids),
             )
             report_path = write_comprehensive_report(run_data, LOG_DIR)
             logger.info(f"JSON report written to: {report_path}")
@@ -459,27 +492,35 @@ async def run_pipeline(
         # Reset sequences to avoid primary key conflicts
         await reset_sequence("genes")
 
-        gene_result: dict[str, int] | None = None
+        gene_result = None
         if all_genes:
             gene_result = await merge_gene_entries(all_genes)
             logger.info(
-                f"  Genes: {gene_result['inserted']} inserted, {gene_result['updated']} updated"
+                f"  Genes: {gene_result['inserted']} inserted, "
+                f"{gene_result['updated']} updated"
             )
 
         # Step 5: Record processed PMIDs AFTER successful merge
         # This ensures PMIDs are only marked processed when genes are
         # actually written, preventing data loss on merge failure.
         pmid_records = [
-            (r.pmid, r.fulltext, r.source, len(r.genes))
-            for r in successful_results
+            (r.pmid, r.fulltext, r.source, len(r.genes)) for r in successful_results
         ]
         recorded = await record_processed_pmids_batch(pmid_records)
         logger.info(f"  Recorded {recorded} processed PMIDs")
 
         # Comprehensive report + rich summary
         run_data = build_run_data(
-            metrics, results, all_genes, gene_result, batch_warnings,
-            config, days_back, dry_run, len(all_pmids), len(new_pmids),
+            metrics,
+            results,
+            all_genes,
+            gene_result,
+            batch_warnings,
+            config,
+            days_back,
+            dry_run,
+            len(all_pmids),
+            len(new_pmids),
         )
         report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")
@@ -528,7 +569,10 @@ def main() -> None:
     parser.add_argument(
         "--test-mode",
         action="store_true",
-        help="Run without LLM extraction or database merge (for testing search/retrieval only)",
+        help=(
+            "Run without LLM extraction or database merge"
+            " (for testing search/retrieval only)"
+        ),
     )
     parser.add_argument(
         "--sync-external-data",

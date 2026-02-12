@@ -18,7 +18,9 @@ from lxml import etree  # type: ignore[import-untyped]
 from pipeline.config import PipelineConfig
 
 logger = logging.getLogger(__name__)
-NCBI_EFETCH_URL: Final[str] = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+NCBI_EFETCH_URL: Final[str] = (
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+)
 
 
 @dataclass(slots=True)
@@ -338,7 +340,10 @@ async def sync_pubmed_citations(pmids: list[str]) -> SyncResult:
     Returns:
         SyncResult with counts of fetched, cached, and failed citations.
     """
-    from pipeline.database import get_cached_pubmed_citations, upsert_pubmed_citations_batch
+    from pipeline.database import (
+        get_cached_pubmed_citations,
+        upsert_pubmed_citations_batch,
+    )
 
     # Deduplicate PMIDs
     unique_pmids = list(dict.fromkeys(pmids))

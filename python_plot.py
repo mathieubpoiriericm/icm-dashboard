@@ -708,7 +708,7 @@ svg_parts.append(
     f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
 )
 # Shadows for all mechanism circles
-for i, mech in enumerate(mechanisms):
+for i, _mech in enumerate(mechanisms):
     y = legend_moa_y + 16 + i * 36
     svg_parts.append(
         f'<circle cx="{legend_moa_x + SHADOW_OFFSET_X}" cy="{y + SHADOW_OFFSET_Y}" r="9" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'

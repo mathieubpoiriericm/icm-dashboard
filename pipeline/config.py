@@ -35,23 +35,31 @@ def _env_str(name: str, default: str) -> str:
 
 
 # Valid GWAS traits from cSVD literature (immutable reference data)
-VALID_GWAS_TRAITS: Final[frozenset[str]] = frozenset({
-    "WMH",       # White matter hyperintensities
-    "SVS",       # Small vessel stroke
-    "BG-PVS",    # Basal ganglia perivascular spaces
-    "WM-PVS",    # White matter perivascular spaces
-    "HIP-PVS",   # Hippocampal perivascular spaces
-    "PSMD",      # Peak width of skeletonized mean diffusivity
-    "extreme-cSVD",
-    "FA",        # Fractional anisotropy
-    "lacunes",
-    "stroke",
-})
+VALID_GWAS_TRAITS: Final[frozenset[str]] = frozenset(
+    {
+        "WMH",  # White matter hyperintensities
+        "SVS",  # Small vessel stroke
+        "BG-PVS",  # Basal ganglia perivascular spaces
+        "WM-PVS",  # White matter perivascular spaces
+        "HIP-PVS",  # Hippocampal perivascular spaces
+        "PSMD",  # Peak width of skeletonized mean diffusivity
+        "extreme-cSVD",
+        "FA",  # Fractional anisotropy
+        "lacunes",
+        "stroke",
+    }
+)
 
 # Whitelist of allowed tables/columns for dynamic SQL (prevents SQL injection)
-ALLOWED_TABLES: Final[frozenset[str]] = frozenset({
-    "genes", "pubmed_refs", "ncbi_gene_info", "uniprot_info", "pubmed_citations",
-})
+ALLOWED_TABLES: Final[frozenset[str]] = frozenset(
+    {
+        "genes",
+        "pubmed_refs",
+        "ncbi_gene_info",
+        "uniprot_info",
+        "pubmed_citations",
+    }
+)
 ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
@@ -67,9 +75,7 @@ class PipelineConfig:
 
     # --- LLM settings ---
     llm_model: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_LLM_MODEL", "claude-opus-4-6"
-        )
+        default_factory=lambda: _env_str("PIPELINE_LLM_MODEL", "claude-opus-4-6")
     )
     llm_max_tokens: int = field(
         default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 32000)
@@ -107,15 +113,14 @@ class PipelineConfig:
     )
 
     # Estimated total tokens per LLM call (for rate limiter TPM tracking).
-    # With Opus 4.6 adaptive thinking at high effort: ~15K input + variable thinking + ~4K output.
+    # With Opus 4.6 adaptive thinking at high effort:
+    # ~15K input + variable thinking + ~4K output.
     estimated_tokens_per_call: int = field(
         default_factory=lambda: _env_int("PIPELINE_ESTIMATED_TOKENS_PER_CALL", 40_000)
     )
 
     # --- Rate limiter (RPM / TPM) ---
-    rpm_limit: int = field(
-        default_factory=lambda: _env_int("PIPELINE_RPM_LIMIT", 50)
-    )
+    rpm_limit: int = field(default_factory=lambda: _env_int("PIPELINE_RPM_LIMIT", 50))
     tpm_limit: int = field(
         default_factory=lambda: _env_int("PIPELINE_TPM_LIMIT", 100_000)
     )

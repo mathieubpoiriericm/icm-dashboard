@@ -55,7 +55,10 @@ class AsyncRateLimiter:
                         self._token_total -= pruned_tokens
 
                     rpm_ok = self._rpm == 0 or len(self._request_times) < self._rpm
-                    tpm_ok = self._tpm == 0 or (self._token_total + estimated_tokens) <= self._tpm
+                    tpm_ok = (
+                        self._tpm == 0
+                        or (self._token_total + estimated_tokens) <= self._tpm
+                    )
 
                     if rpm_ok and tpm_ok:
                         self._request_times.append(now)
@@ -72,8 +75,10 @@ class AsyncRateLimiter:
 
             await asyncio.sleep(sleep_time)
 
-    async def record_actual_usage(self, estimated_tokens: int, actual_tokens: int) -> None:
-        """Correct the pre-estimated token count with actual usage from the API response.
+    async def record_actual_usage(
+        self, estimated_tokens: int, actual_tokens: int
+    ) -> None:
+        """Correct the pre-estimated token count with actual usage.
 
         Finds the most recent token log entry matching *estimated_tokens* and replaces
         it with *actual_tokens*. This improves TPM tracking accuracy for subsequent

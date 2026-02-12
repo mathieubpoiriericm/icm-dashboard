@@ -135,9 +135,10 @@ async def get_fulltext(pmid: str, doi: str | None) -> FulltextResult:
     if doi:
         try:
             doi = _validate_doi(doi)
-            if oa_url := await check_unpaywall(doi):
-                if pdf_text := await download_and_parse_pdf(oa_url):
-                    return {"text": pdf_text, "source": "unpaywall", "fulltext": True}
+            if (oa_url := await check_unpaywall(doi)) and (
+                pdf_text := await download_and_parse_pdf(oa_url)
+            ):
+                return {"text": pdf_text, "source": "unpaywall", "fulltext": True}
         except ValueError:
             logger.debug(f"Invalid DOI format for PMID {pmid}: {doi}")
 
@@ -207,7 +208,9 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
         resp = await client.get(convert_url, params=params)
 
         if resp.status_code != 200:
-            logger.debug(f"PMC ID conversion failed for PMID {pmid}: {resp.status_code}")
+            logger.debug(
+                f"PMC ID conversion failed for PMID {pmid}: {resp.status_code}"
+            )
             return None
 
         data = resp.json()
@@ -324,12 +327,14 @@ async def fetch_abstract(pmid: str) -> str | None:
         Abstract text if available, None otherwise.
     """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params = _get_ncbi_params({
-        "db": "pubmed",
-        "id": pmid,
-        "rettype": "abstract",
-        "retmode": "xml",
-    })
+    params = _get_ncbi_params(
+        {
+            "db": "pubmed",
+            "id": pmid,
+            "rettype": "abstract",
+            "retmode": "xml",
+        }
+    )
 
     try:
         client = await _get_http_client()

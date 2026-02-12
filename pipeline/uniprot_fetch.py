@@ -54,7 +54,9 @@ def _get_uniprot_semaphore(config: PipelineConfig | None = None) -> asyncio.Sema
     """Get or create the UniProt rate-limit semaphore."""
     global _uniprot_semaphore
     if _uniprot_semaphore is None:
-        limit = config.uniprot_rate_limit if config else PipelineConfig().uniprot_rate_limit
+        limit = (
+            config.uniprot_rate_limit if config else PipelineConfig().uniprot_rate_limit
+        )
         _uniprot_semaphore = asyncio.Semaphore(limit)
     return _uniprot_semaphore
 
@@ -122,7 +124,9 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
         resp = await client.get(UNIPROT_BASE_URL, params=params)
 
         if resp.status_code != 200:
-            logger.warning(f"UniProt search failed for {gene_symbol}: {resp.status_code}")
+            logger.warning(
+                f"UniProt search failed for {gene_symbol}: {resp.status_code}"
+            )
             return None, None
 
         lines = resp.text.strip().split("\n")
@@ -143,7 +147,11 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
         # Prefer exact primary gene match, otherwise take first result
         header = lines[0].split("\t")
         accession_idx = header.index("Entry") if "Entry" in header else 0
-        gene_idx = header.index("Gene Names (primary)") if "Gene Names (primary)" in header else 1
+        gene_idx = (
+            header.index("Gene Names (primary)")
+            if "Gene Names (primary)" in header
+            else 1
+        )
         protein_idx = header.index("Protein names") if "Protein names" in header else 3
 
         best_accession = None
@@ -197,7 +205,9 @@ async def fetch_uniprot_go_info(accession: str) -> dict[str, str | None]:
         resp = await client.get(url, params=params)
 
         if resp.status_code != 200:
-            logger.warning(f"UniProt GO fetch failed for {accession}: {resp.status_code}")
+            logger.warning(
+                f"UniProt GO fetch failed for {accession}: {resp.status_code}"
+            )
             return {
                 "biological_process": None,
                 "molecular_function": None,

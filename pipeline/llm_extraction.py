@@ -60,9 +60,7 @@ class ExtractionResult(BaseModel):
 
 
 # Pre-compute the JSON schema instruction (identical across all calls).
-_EXTRACTION_SCHEMA: str = json.dumps(
-    ExtractionResult.model_json_schema(), indent=2
-)
+_EXTRACTION_SCHEMA: str = json.dumps(ExtractionResult.model_json_schema(), indent=2)
 _JSON_SCHEMA_INSTRUCTION: str = (
     "As a structured data extraction expert, your task is to understand the "
     "content and provide the parsed objects in JSON that match the following "
@@ -178,11 +176,14 @@ async def extract_from_paper(
     # Inject JSON schema instruction between cached extraction instructions
     # and dynamic paper text, so it benefits from prompt caching.
     user_blocks = messages[0]["content"]
-    user_blocks.insert(1, {
-        "type": "text",
-        "text": _JSON_SCHEMA_INSTRUCTION,
-        "cache_control": {"type": "ephemeral"},
-    })
+    user_blocks.insert(
+        1,
+        {
+            "type": "text",
+            "text": _JSON_SCHEMA_INSTRUCTION,
+            "cache_control": {"type": "ephemeral"},
+        },
+    )
 
     rate_limit_retries = 0
     validation_retries = 0
@@ -215,7 +216,11 @@ async def extract_from_paper(
             accumulate_usage(usage, response)
 
             # Correct rate limiter estimate with actual usage
-            if rate_limiter is not None and hasattr(response, "usage") and response.usage:
+            if (
+                rate_limiter is not None
+                and hasattr(response, "usage")
+                and response.usage
+            ):
                 actual = response.usage.input_tokens + response.usage.output_tokens
                 await rate_limiter.record_actual_usage(
                     config.estimated_tokens_per_call, actual
@@ -249,8 +254,10 @@ async def extract_from_paper(
             )
             delay, delay_source = _parse_retry_after_delay(e, backoff_delay)
             logger.warning(
-                f"Rate limited on PMID {pmid}. Waiting {delay:.1f}s ({delay_source}) "
-                f"(rate limit retry {rate_limit_retries}/{config.max_rate_limit_retries})..."
+                f"Rate limited on PMID {pmid}. "
+                f"Waiting {delay:.1f}s ({delay_source}) "
+                f"(rate limit retry "
+                f"{rate_limit_retries}/{config.max_rate_limit_retries})..."
             )
             if rate_limiter is not None:
                 rate_limiter.signal_rate_limit(delay)

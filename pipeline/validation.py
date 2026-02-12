@@ -211,7 +211,9 @@ async def fetch_gene_details(gene_id: str) -> dict[str, Any] | None:
         resp = await client.get(url, params=params)
 
         if resp.status_code != 200:
-            logger.warning(f"NCBI esummary failed for gene_id {gene_id}: {resp.status_code}")
+            logger.warning(
+                f"NCBI esummary failed for gene_id {gene_id}: {resp.status_code}"
+            )
             return None
 
         data = resp.json()
@@ -236,7 +238,9 @@ async def fetch_gene_details(gene_id: str) -> dict[str, Any] | None:
     except httpx.TimeoutException:
         logger.warning(f"Timeout fetching gene details for gene_id {gene_id}")
     except httpx.RequestError as e:
-        logger.warning(f"Request error fetching gene details for gene_id {gene_id}: {e}")
+        logger.warning(
+            f"Request error fetching gene details for gene_id {gene_id}: {e}"
+        )
     except (KeyError, ValueError) as e:
         logger.warning(f"Failed to parse NCBI response for gene_id {gene_id}: {e}")
 

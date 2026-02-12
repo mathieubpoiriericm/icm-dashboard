@@ -12,20 +12,20 @@ from dataclasses import dataclass, field
 
 from pipeline.database import Database
 from pipeline.ncbi_gene_fetch import (
-    sync_ncbi_gene_info,
-    close_ncbi_client,
     clear_ncbi_cache,
-)
-from pipeline.uniprot_fetch import (
-    sync_uniprot_info,
-    close_uniprot_client,
-    clear_uniprot_cache,
+    close_ncbi_client,
+    sync_ncbi_gene_info,
 )
 from pipeline.pubmed_citations import (
-    sync_pubmed_citations,
-    close_pubmed_client,
     clear_pubmed_cache,
+    close_pubmed_client,
     extract_pmids_from_text,
+    sync_pubmed_citations,
+)
+from pipeline.uniprot_fetch import (
+    clear_uniprot_cache,
+    close_uniprot_client,
+    sync_uniprot_info,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,16 +49,24 @@ class ExternalDataSyncResult:
     def summary(self) -> str:
         """Return human-readable summary."""
         return (
-            f"NCBI: {self.ncbi_fetched} fetched, {self.ncbi_cached} cached, {self.ncbi_failed} failed\n"
-            f"UniProt: {self.uniprot_fetched} fetched, {self.uniprot_cached} cached, {self.uniprot_failed} failed\n"
-            f"PubMed: {self.pubmed_fetched} fetched, {self.pubmed_cached} cached, {self.pubmed_failed} failed"
+            f"NCBI: {self.ncbi_fetched} fetched, "
+            f"{self.ncbi_cached} cached, "
+            f"{self.ncbi_failed} failed\n"
+            f"UniProt: {self.uniprot_fetched} fetched, "
+            f"{self.uniprot_cached} cached, "
+            f"{self.uniprot_failed} failed\n"
+            f"PubMed: {self.pubmed_fetched} fetched, "
+            f"{self.pubmed_cached} cached, "
+            f"{self.pubmed_failed} failed"
         )
 
 
 async def get_table1_gene_symbols() -> list[str]:
     """Get unique gene symbols from the genes table (Table 1)."""
     async with Database.connection() as conn:
-        rows = await conn.fetch("SELECT DISTINCT gene FROM genes WHERE gene IS NOT NULL")
+        rows = await conn.fetch(
+            "SELECT DISTINCT gene FROM genes WHERE gene IS NOT NULL"
+        )
         return [row["gene"] for row in rows]
 
 
@@ -69,7 +77,9 @@ async def get_table2_gene_symbols() -> list[str]:
     """
     async with Database.connection() as conn:
         rows = await conn.fetch(
-            "SELECT DISTINCT genetic_target FROM clinical_trials WHERE genetic_target IS NOT NULL"
+            "SELECT DISTINCT genetic_target "
+            "FROM clinical_trials "
+            "WHERE genetic_target IS NOT NULL"
         )
 
     # Extract individual genes from comma-separated lists

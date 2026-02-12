@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.text import Text
 
 from pipeline.config import PipelineConfig
+from pipeline.data_merger import MergeResult
 from pipeline.llm_extraction import GeneEntry
 from pipeline.quality_metrics import PipelineMetrics
 
@@ -49,7 +50,7 @@ class PipelineRunData(TypedDict, total=False):
     papers: dict[str, Any]
     genes: dict[str, Any]
     token_usage: dict[str, Any]
-    database: dict[str, int] | None
+    database: MergeResult | None
     batch_validation_warnings: list[str]
     papers_detail: list[PaperSummary]
 
@@ -57,6 +58,7 @@ class PipelineRunData(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float | None:
     """Estimate USD cost from token counts and model pricing.
@@ -77,14 +79,16 @@ def _paper_results_to_summaries(
     summaries: list[PaperSummary] = []
     for r in results:
         genes_data = [g.model_dump() for g in r.genes] if r.genes else []
-        summaries.append({
-            "pmid": r.pmid,
-            "fulltext": r.fulltext,
-            "source": r.source,
-            "error": r.error,
-            "gene_count": len(r.genes),
-            "genes": genes_data,
-        })
+        summaries.append(
+            {
+                "pmid": r.pmid,
+                "fulltext": r.fulltext,
+                "source": r.source,
+                "error": r.error,
+                "gene_count": len(r.genes),
+                "genes": genes_data,
+            }
+        )
     return summaries
 
 
@@ -92,11 +96,12 @@ def _paper_results_to_summaries(
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def build_run_data(
     metrics: PipelineMetrics,
     results: list[Any],
     all_genes: list[GeneEntry],
-    gene_result: dict[str, int] | None,
+    gene_result: MergeResult | None,
     batch_warnings: list[str],
     config: PipelineConfig,
     days_back: int,
@@ -208,18 +213,19 @@ def print_rich_summary(data: PipelineRunData) -> None:
         f"[bold]PMIDs found:[/bold] {search.get('pmids_found', 0)} "
         f"({search.get('pmids_new', 0)} new, {search.get('pmids_skipped', 0)} skipped)",
         f"[bold]Papers processed:[/bold] {papers.get('processed', 0)} "
-        f"({papers.get('fulltext', 0)} fulltext, {papers.get('abstract_only', 0)} abstract)",
+        f"({papers.get('fulltext', 0)} fulltext, "
+        f"{papers.get('abstract_only', 0)} abstract)",
     ]
     if papers.get("failed", 0) > 0:
-        overview_lines.append(
-            f"[bold red]Papers failed:[/bold red] {papers['failed']}"
-        )
+        overview_lines.append(f"[bold red]Papers failed:[/bold red] {papers['failed']}")
 
-    console.print(Panel(
-        "\n".join(overview_lines),
-        title="[bold cyan]Pipeline Overview[/bold cyan]",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            "\n".join(overview_lines),
+            title="[bold cyan]Pipeline Overview[/bold cyan]",
+            border_style="cyan",
+        )
+    )
 
     # --- Papers table ---
     papers_detail = data.get("papers_detail", [])
@@ -235,9 +241,10 @@ def print_rich_summary(data: PipelineRunData) -> None:
         papers_table.add_column("Status")
 
         for p in papers_detail:
-            if p.get("error"):
+            error_msg = p.get("error")
+            if error_msg:
                 style = "red"
-                status = Text(p["error"][:60], style="red")
+                status = Text(error_msg[:60], style="red")
             elif p["gene_count"] > 0:
                 style = "green"
                 status = Text("OK", style="green")
@@ -306,15 +313,19 @@ def print_rich_summary(data: PipelineRunData) -> None:
     batch_warnings = data.get("batch_validation_warnings", [])
     if batch_warnings:
         validation_lines.append("")
-        validation_lines.append(f"[bold yellow]Batch warnings ({len(batch_warnings)}):[/bold yellow]")
+        validation_lines.append(
+            f"[bold yellow]Batch warnings ({len(batch_warnings)}):[/bold yellow]"
+        )
         for w in batch_warnings:
             validation_lines.append(f"  [yellow]- {w}[/yellow]")
 
-    console.print(Panel(
-        "\n".join(validation_lines),
-        title="[bold magenta]Validation[/bold magenta]",
-        border_style="magenta",
-    ))
+    console.print(
+        Panel(
+            "\n".join(validation_lines),
+            title="[bold magenta]Validation[/bold magenta]",
+            border_style="magenta",
+        )
+    )
 
     # --- Token & cost panel ---
     tu = data.get("token_usage", {})
@@ -332,11 +343,13 @@ def print_rich_summary(data: PipelineRunData) -> None:
             f"[bold]Total:[/bold] {total:,}",
             f"[bold]Estimated cost:[/bold] {cost_str}",
         ]
-        console.print(Panel(
-            "\n".join(token_lines),
-            title="[bold blue]Tokens & Cost[/bold blue]",
-            border_style="blue",
-        ))
+        console.print(
+            Panel(
+                "\n".join(token_lines),
+                title="[bold blue]Tokens & Cost[/bold blue]",
+                border_style="blue",
+            )
+        )
 
     # --- Database panel ---
     db = data.get("database")
@@ -348,9 +361,11 @@ def print_rich_summary(data: PipelineRunData) -> None:
     else:
         db_lines = ["[dim]Dry run — no database writes[/dim]"]
 
-    console.print(Panel(
-        "\n".join(db_lines),
-        title="[bold green]Database[/bold green]",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            "\n".join(db_lines),
+            title="[bold green]Database[/bold green]",
+            border_style="green",
+        )
+    )
     console.print()

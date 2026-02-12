@@ -14,7 +14,6 @@ Checks:
 from __future__ import annotations
 
 import logging
-from collections import Counter
 
 import pandas as pd
 import pandera.pandas as pa
@@ -91,9 +90,7 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # extracting the same gene in one batch may indicate over-extraction.
     if "pmid" in df.columns and df["pmid"].notna().any():
         gene_paper_counts = (
-            df[df["pmid"] != ""]
-            .groupby("gene_symbol")["pmid"]
-            .nunique()
+            df[df["pmid"] != ""].groupby("gene_symbol")["pmid"].nunique()
         )
         for symbol, count in gene_paper_counts.items():
             if count > 3:

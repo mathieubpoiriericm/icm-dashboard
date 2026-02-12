@@ -146,7 +146,9 @@ async def reset_sequence(table: str, column: str = "id") -> None:
         # Use quote_ident for defense-in-depth (even after whitelist validation)
         safe_table = await conn.fetchval("SELECT quote_ident($1)", table)
         safe_column = await conn.fetchval("SELECT quote_ident($1)", column)
-        safe_seq = await conn.fetchval("SELECT quote_literal($1)", f"{table}_{column}_seq")
+        safe_seq = await conn.fetchval(
+            "SELECT quote_literal($1)", f"{table}_{column}_seq"
+        )
 
         await conn.execute(f"""
             SELECT setval({safe_seq}, COALESCE(
@@ -174,11 +176,10 @@ async def merge_genes_transactional(
     if not to_insert and not to_update:
         return 0, 0
 
-    async with Database.connection() as conn:
-        async with conn.transaction():
-            if to_insert:
-                await conn.executemany(
-                    """
+    async with Database.connection() as conn, conn.transaction():
+        if to_insert:
+            await conn.executemany(
+                """
                     INSERT INTO genes (
                         protein, gene, chromosomal_location, gwas_trait,
                         mendelian_randomization, evidence_from_other_omics_studies,
@@ -186,25 +187,25 @@ async def merge_genes_transactional(
                         affected_pathway, "references"
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     """,
-                    [
-                        (
-                            g.get("protein"),
-                            g.get("gene"),
-                            g.get("chromosomal_location"),
-                            g.get("gwas_trait"),
-                            g.get("mendelian_randomization"),
-                            g.get("evidence_from_other_omics_studies"),
-                            g.get("link_to_monogenetic_disease"),
-                            g.get("brain_cell_types"),
-                            g.get("affected_pathway"),
-                            g.get("references"),
-                        )
-                        for g in to_insert
-                    ],
-                )
-            if to_update:
-                await conn.executemany(
-                    """
+                [
+                    (
+                        g.get("protein"),
+                        g.get("gene"),
+                        g.get("chromosomal_location"),
+                        g.get("gwas_trait"),
+                        g.get("mendelian_randomization"),
+                        g.get("evidence_from_other_omics_studies"),
+                        g.get("link_to_monogenetic_disease"),
+                        g.get("brain_cell_types"),
+                        g.get("affected_pathway"),
+                        g.get("references"),
+                    )
+                    for g in to_insert
+                ],
+            )
+        if to_update:
+            await conn.executemany(
+                """
                     UPDATE genes SET
                         gwas_trait = $1,
                         evidence_from_other_omics_studies = $2,
@@ -215,16 +216,16 @@ async def merge_genes_transactional(
                         updated_at = CURRENT_TIMESTAMP
                     WHERE UPPER(gene) = UPPER($4)
                     """,
-                    [
-                        (
-                            g.get("gwas_trait"),
-                            g.get("evidence_from_other_omics_studies"),
-                            g.get("references"),
-                            g.get("gene"),
-                        )
-                        for g in to_update
-                    ],
-                )
+                [
+                    (
+                        g.get("gwas_trait"),
+                        g.get("evidence_from_other_omics_studies"),
+                        g.get("references"),
+                        g.get("gene"),
+                    )
+                    for g in to_update
+                ],
+            )
 
     return len(to_insert), len(to_update)
 
@@ -502,10 +503,7 @@ async def upsert_ncbi_genes_batch(genes: list[Any]) -> int:
                 aliases = EXCLUDED.aliases,
                 updated_at = CURRENT_TIMESTAMP
             """,
-            [
-                (g.gene_symbol, g.ncbi_uid, g.description, g.aliases)
-                for g in genes
-            ],
+            [(g.gene_symbol, g.ncbi_uid, g.description, g.aliases) for g in genes],
         )
     return len(genes)
 

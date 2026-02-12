@@ -7,14 +7,14 @@ lxml>=4.9.0
 # LLM API
 anthropic>=0.25.0
 
-# Structured LLM extraction
-instructor>=1.7.0
-
 # Data validation
 pydantic>=2.0.0
 
 # Batch validation
 pandera>=0.18.0
+
+# DataFrame operations
+pandas>=2.0.0
 
 # Bioinformatics
 biopython>=1.81
@@ -25,9 +25,17 @@ asyncpg>=0.28.0
 # Database migrations
 alembic>=1.15.0
 psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
 
 # Environment variables
 python-dotenv>=1.0.0
 
+# CLI output formatting
+rich>=13.0.0
+
 # PDF extraction (optional - handles ImportError gracefully if not installed)
 PyMuPDF>=1.23.0
+
+# Dev tools — linting & type-checking
+ruff>=0.9.0
+ty>=0.0.1a0
