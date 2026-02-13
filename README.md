@@ -7,6 +7,21 @@
 [![Python](https://img.shields.io/badge/Python-3.14+-yellow.svg)](https://www.python.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-purple.svg)](https://www.postgresql.org/)
 
+[![R Tests: 119](https://img.shields.io/badge/R_Tests-119_passing-green.svg)](#testing)
+[![filter_utils](https://img.shields.io/badge/filter__utils-37_tests-brightgreen.svg)](#testing)
+[![data_prep](https://img.shields.io/badge/data__prep-30_tests-brightgreen.svg)](#testing)
+[![utils](https://img.shields.io/badge/utils-18_tests-brightgreen.svg)](#testing)
+[![tooltips](https://img.shields.io/badge/tooltips-15_tests-brightgreen.svg)](#testing)
+[![Edge Cases](https://img.shields.io/badge/Edge_Cases-14_tests-brightgreen.svg)](#testing)
+[![shinytest2](https://img.shields.io/badge/shinytest2-5_tests-brightgreen.svg)](#testing)
+
+[![Pipeline Tests: 290](https://img.shields.io/badge/Pipeline_Tests-290_passing-green.svg)](#testing)
+[![Infrastructure](https://img.shields.io/badge/Infrastructure-85_tests-brightgreen.svg)](#testing)
+[![LLM Extraction](https://img.shields.io/badge/LLM_Extraction-77_tests-brightgreen.svg)](#testing)
+[![Data Processing](https://img.shields.io/badge/Data_Processing-59_tests-brightgreen.svg)](#testing)
+[![Paper Retrieval](https://img.shields.io/badge/Paper_Retrieval-46_tests-brightgreen.svg)](#testing)
+[![Orchestration](https://img.shields.io/badge/Orchestration-23_tests-brightgreen.svg)](#testing)
+
 An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for Cerebral Small Vessel Disease (SVD), developed by Mathieu B. Poirier at the Paris Brain Institute (ICM).
 
 ---
@@ -615,7 +630,7 @@ See `monitoring/yaml/` for Kubernetes deployment configurations including:
 
 ### R Tests
 
-Run the R test suite (~100 testthat + shinytest2 tests):
+Run the R test suite (119 testthat + shinytest2 tests):
 
 ```bash
 Rscript -e 'testthat::test_file("tests/test_all.R")'
@@ -623,7 +638,7 @@ Rscript -e 'testthat::test_file("tests/test_all.R")'
 
 ### Python Tests
 
-Run the pipeline test suite (14 pytest files):
+Run the pipeline test suite (13 pytest files, 290 tests):
 
 ```bash
 # Run all pipeline tests
