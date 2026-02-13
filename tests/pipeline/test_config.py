@@ -32,7 +32,7 @@ class TestPipelineConfigDefaults:
 
     def test_default_max_retries(self):
         cfg = PipelineConfig()
-        assert cfg.max_retries == 3
+        assert cfg.max_retries == 1
 
     def test_default_retry_delay(self):
         cfg = PipelineConfig()

@@ -26,8 +26,8 @@ from pipeline.report import (
 class TestEstimateCost:
     def test_opus_pricing(self):
         cost = _estimate_cost("claude-opus-4-6", 1_000_000, 100_000)
-        # $15/M input + $75/M output -> 15 + 7.5 = 22.5
-        assert cost == pytest.approx(22.5)
+        # $5/M input + $25/M output -> 5 + 2.5 = 7.5
+        assert cost == pytest.approx(7.5)
 
     def test_sonnet_pricing(self):
         cost = _estimate_cost("claude-sonnet-4-5-20250929", 1_000_000, 100_000)
