@@ -23,11 +23,19 @@ from pipeline.quality_metrics import PipelineMetrics
 
 # Pricing per 1M tokens (input, output) — update when models change.
 _MODEL_PRICING: dict[str, tuple[float, float]] = {
-    "claude-opus-4-6": (15.0, 75.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-opus-4-5-20251101": (5.0, 25.0),
+    "claude-opus-4-1-20250805": (15.0, 75.0),
     "claude-opus-4-20250514": (15.0, 75.0),
-    "claude-sonnet-4-20250514": (3.0, 15.0),
     "claude-sonnet-4-5-20250929": (3.0, 15.0),
+    "claude-sonnet-4-20250514": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
 }
+
+# Prompt-caching multipliers applied to the base input price.
+# The pipeline uses 1h TTL caches (see prompts.py), so writes cost 2x base.
+_CACHE_WRITE_MULTIPLIER: float = 2.0  # 1h TTL
+_CACHE_READ_MULTIPLIER: float = 0.1
 
 
 class PaperSummary(TypedDict):
@@ -60,8 +68,17 @@ class PipelineRunData(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 
 
-def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float | None:
+def _estimate_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
+) -> float | None:
     """Estimate USD cost from token counts and model pricing.
+
+    Accounts for prompt-caching: cache writes are charged at 2x the base
+    input price (1h TTL) and cache reads at 0.1x.
 
     Returns None if the model is not in the pricing table.
     """
@@ -69,7 +86,12 @@ def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float |
     if pricing is None:
         return None
     input_price, output_price = pricing
-    return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
+    return (
+        input_tokens * input_price
+        + cache_creation_input_tokens * input_price * _CACHE_WRITE_MULTIPLIER
+        + cache_read_input_tokens * input_price * _CACHE_READ_MULTIPLIER
+        + output_tokens * output_price
+    ) / 1_000_000
 
 
 def _paper_results_to_summaries(
@@ -127,7 +149,13 @@ def build_run_data(
         PipelineRunData dict.
     """
     tu = metrics.token_usage
-    cost = _estimate_cost(config.llm_model, tu.input_tokens, tu.output_tokens)
+    cost = _estimate_cost(
+        config.llm_model,
+        tu.input_tokens,
+        tu.output_tokens,
+        tu.cache_creation_input_tokens,
+        tu.cache_read_input_tokens,
+    )
 
     failed_count = sum(1 for r in results if not r.succeeded)
 
@@ -198,7 +226,13 @@ def build_local_pdf_run_data(
         PipelineRunData dict with mode="local_pdf".
     """
     tu = metrics.token_usage
-    cost = _estimate_cost(config.llm_model, tu.input_tokens, tu.output_tokens)
+    cost = _estimate_cost(
+        config.llm_model,
+        tu.input_tokens,
+        tu.output_tokens,
+        tu.cache_creation_input_tokens,
+        tu.cache_read_input_tokens,
+    )
 
     failed_count = sum(1 for r in results if not r.succeeded)
 
