@@ -70,6 +70,9 @@ Detailed documentation is available in the `docs/` directory:
 | [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
 | [Observability Stack Guide](docs/observability-stack-guide.md) | Kubernetes monitoring and logging setup |
 
+> [!CAUTION]
+> The **Dashboard Technical Documentation**, **maRco Package Documentation**, and **Automated Research Pipeline** are currently outdated and do not reflect the latest codebase. Please wait for updated versions before referencing them.
+
 ---
 
 ## Quick Start
