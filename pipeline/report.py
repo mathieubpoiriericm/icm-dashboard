@@ -425,9 +425,9 @@ def print_rich_summary(data: PipelineRunData) -> None:
     # --- Validation panel ---
     genes_info = data.get("genes", {})
     validation_lines = [
-        f"[bold]Extracted Genes:[/bold] {genes_info.get('extracted', 0)}",
-        f"[bold]Validated Genes:[/bold] {genes_info.get('validated', 0)}",
-        f"[bold]Rejected Genes:[/bold] {genes_info.get('rejected', 0)}",
+        f"[bold]Extracted genes:[/bold] {genes_info.get('extracted', 0)}",
+        f"[bold]Validated genes:[/bold] {genes_info.get('validated', 0)}",
+        f"[bold]Rejected genes:[/bold] {genes_info.get('rejected', 0)}",
         f"[bold]Acceptance rate:[/bold] {genes_info.get('acceptance_rate', 0):.1%}",
         f"[bold]Fulltext rate:[/bold] {papers.get('fulltext_rate', 0):.1%}",
     ]
@@ -456,12 +456,12 @@ def print_rich_summary(data: PipelineRunData) -> None:
         cost_str = f"${_round_cost(cost):.2f} USD" if cost is not None else "N/A"
 
         token_lines = [
-            f"[bold]Input Tokens:[/bold] {tu.get('input_tokens', 0):,}",
-            f"[bold]Output Tokens:[/bold] {tu.get('output_tokens', 0):,}",
+            f"[bold]Input tokens:[/bold] {tu.get('input_tokens', 0):,}",
+            f"[bold]Output tokens:[/bold] {tu.get('output_tokens', 0):,}",
             f"[bold]Cache read:[/bold] {tu.get('cache_read_input_tokens', 0):,}",
             f"[bold]Cache created:[/bold] {tu.get('cache_creation_input_tokens', 0):,}",
             f"[bold]Cache hit rate:[/bold] {tu.get('cache_hit_rate', 0):.1%}",
-            f"[bold]Total Tokens Used:[/bold] {total:,}",
+            f"[bold]Total tokens used:[/bold] {total:,}",
             f"[bold]Estimated cost:[/bold] {cost_str}",
         ]
         console.print(
