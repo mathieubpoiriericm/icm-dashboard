@@ -7,8 +7,8 @@ report structure used for both the JSON file and terminal output.
 from __future__ import annotations
 
 import json
-import math
 from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -93,6 +93,11 @@ def _estimate_cost(
         + cache_read_input_tokens * input_price * _CACHE_READ_MULTIPLIER
         + output_tokens * output_price
     ) / 1_000_000
+
+
+def _round_cost(cost: float) -> float:
+    """Round cost to 2 decimal places using round-half-up."""
+    return float(Decimal(str(cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _paper_results_to_summaries(
@@ -195,7 +200,7 @@ def build_run_data(
             "cache_read_input_tokens": tu.cache_read_input_tokens,
             "total_tokens": tu.total_tokens,
             "cache_hit_rate": round(tu.cache_hit_rate, 4),
-            "estimated_cost_usd": round(cost, 4) if cost is not None else None,
+            "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
         },
         "database": gene_result,
         "batch_validation_warnings": batch_warnings,
@@ -269,7 +274,7 @@ def build_local_pdf_run_data(
             "cache_read_input_tokens": tu.cache_read_input_tokens,
             "total_tokens": tu.total_tokens,
             "cache_hit_rate": round(tu.cache_hit_rate, 4),
-            "estimated_cost_usd": round(cost, 4) if cost is not None else None,
+            "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
         },
         "batch_validation_warnings": batch_warnings,
         "papers_detail": _paper_results_to_summaries(results),
@@ -448,9 +453,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
     total = tu.get("total_tokens", 0)
     if total > 0:
         cost = tu.get("estimated_cost_usd")
-        cost_str = (
-            f"${math.ceil(cost * 100) / 100:.2f} USD" if cost is not None else "N/A"
-        )
+        cost_str = f"${_round_cost(cost):.2f} USD" if cost is not None else "N/A"
 
         token_lines = [
             f"[bold]Input Tokens:[/bold] {tu.get('input_tokens', 0):,}",
