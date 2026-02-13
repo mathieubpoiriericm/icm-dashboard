@@ -281,6 +281,79 @@ def build_local_pdf_run_data(
     }
 
 
+def build_pmid_run_data(
+    metrics: PipelineMetrics,
+    results: list[Any],
+    all_genes: list[GeneEntry],
+    batch_warnings: list[str],
+    config: PipelineConfig,
+    pmid_file: Path,
+    skip_validation: bool,
+) -> PipelineRunData:
+    """Assemble run data for a PMID-list extraction run.
+
+    Args:
+        metrics: Accumulated pipeline metrics.
+        results: List of PaperResult from processing.
+        all_genes: All GeneEntry instances (validated or raw).
+        batch_warnings: Warnings from batch validation.
+        config: Pipeline configuration used for this run.
+        pmid_file: Path to the source PMID text file.
+        skip_validation: Whether NCBI validation was skipped.
+
+    Returns:
+        PipelineRunData dict with mode="pmid_list".
+    """
+    tu = metrics.token_usage
+    cost = _estimate_cost(
+        config.llm_model,
+        tu.input_tokens,
+        tu.output_tokens,
+        tu.cache_creation_input_tokens,
+        tu.cache_read_input_tokens,
+    )
+
+    failed_count = sum(1 for r in results if not r.succeeded)
+
+    return {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "pipeline_config": {
+            "mode": "pmid_list",
+            "model": config.llm_model,
+            "pmid_file": str(pmid_file),
+            "skip_validation": skip_validation,
+            "confidence_threshold": config.confidence_threshold,
+            "thinking_mode": "adaptive",
+            "effort": config.llm_effort,
+        },
+        "papers": {
+            "total": failed_count + metrics.papers_processed,
+            "processed": metrics.papers_processed,
+            "fulltext": metrics.fulltext_retrieved,
+            "abstract_only": metrics.abstract_only,
+            "fulltext_rate": round(metrics.fulltext_rate, 4),
+            "failed": failed_count,
+        },
+        "genes": {
+            "extracted": metrics.genes_extracted,
+            "validated": metrics.genes_validated,
+            "rejected": metrics.genes_rejected,
+            "acceptance_rate": round(metrics.gene_acceptance_rate, 4),
+        },
+        "token_usage": {
+            "input_tokens": tu.input_tokens,
+            "output_tokens": tu.output_tokens,
+            "cache_creation_input_tokens": tu.cache_creation_input_tokens,
+            "cache_read_input_tokens": tu.cache_read_input_tokens,
+            "total_tokens": tu.total_tokens,
+            "cache_hit_rate": round(tu.cache_hit_rate, 4),
+            "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
+        },
+        "batch_validation_warnings": batch_warnings,
+        "papers_detail": _paper_results_to_summaries(results),
+    }
+
+
 def write_comprehensive_report(data: PipelineRunData, log_dir: Path) -> Path:
     """Write the full run data as JSON.
 
@@ -310,9 +383,10 @@ def print_rich_summary(data: PipelineRunData) -> None:
     # --- Overview panel ---
     cfg = data.get("pipeline_config", {})
     papers = data.get("papers", {})
-    is_local_pdf = cfg.get("mode") == "local_pdf"
+    run_mode = cfg.get("mode")
+    is_offline_mode = run_mode in ("local_pdf", "pmid_list")
 
-    if is_local_pdf:
+    if run_mode == "local_pdf":
         overview_lines = [
             f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
             "[bold]Mode:[/bold] LOCAL PDF",
@@ -321,6 +395,18 @@ def print_rich_summary(data: PipelineRunData) -> None:
             f"{'skipped' if cfg.get('skip_validation') else 'enabled'}",
             f"[bold]PDFs processed:[/bold] {papers.get('processed', 0)} "
             f"/ {papers.get('total', 0)}",
+        ]
+    elif run_mode == "pmid_list":
+        overview_lines = [
+            f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
+            "[bold]Mode:[/bold] PMID LIST",
+            f"[bold]File:[/bold] {cfg.get('pmid_file', 'N/A')}",
+            f"[bold]Validation:[/bold] "
+            f"{'skipped' if cfg.get('skip_validation') else 'enabled'}",
+            f"[bold]Papers processed:[/bold] {papers.get('processed', 0)} "
+            f"/ {papers.get('total', 0)}"
+            f" ({papers.get('fulltext', 0)} fulltext, "
+            f"{papers.get('abstract_only', 0)} abstract)",
         ]
     else:
         search = data.get("search", {})
@@ -356,7 +442,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
             show_lines=True,
             title_style="bold",
         )
-        papers_table.add_column("File" if is_local_pdf else "PMID", style="bold")
+        papers_table.add_column("File" if run_mode == "local_pdf" else "PMID", style="bold")
         papers_table.add_column("Source")
         papers_table.add_column("Genes", justify="right")
         papers_table.add_column("Status")
@@ -472,8 +558,8 @@ def print_rich_summary(data: PipelineRunData) -> None:
             )
         )
 
-    # --- Database panel (skip for local-PDF mode) ---
-    if not is_local_pdf:
+    # --- Database panel (skip for offline modes) ---
+    if not is_offline_mode:
         db = data.get("database")
         if db is not None:
             db_lines = [

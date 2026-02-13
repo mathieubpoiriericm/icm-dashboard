@@ -14,6 +14,7 @@ This script orchestrates:
 Usage:
     python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
     python pipeline/main.py --local-pdfs PATH [--skip-validation]
+    python pipeline/main.py --pmids FILE [--skip-validation]
 """
 
 from __future__ import annotations
@@ -58,9 +59,15 @@ def _build_parser() -> argparse.ArgumentParser:
         " (no PubMed search or database)",
     )
     parser.add_argument(
+        "--pmids",
+        type=Path,
+        metavar="FILE",
+        help="Process specific PMIDs from a text file (one per line, no database)",
+    )
+    parser.add_argument(
         "--skip-validation",
         action="store_true",
-        help="Skip NCBI gene validation (only valid with --local-pdfs)",
+        help="Skip NCBI gene validation (only valid with --local-pdfs or --pmids)",
     )
     return parser
 
@@ -117,6 +124,7 @@ from pipeline.quality_metrics import PipelineMetrics, TokenUsage  # noqa: E402
 from pipeline.rate_limiter import AsyncRateLimiter  # noqa: E402
 from pipeline.report import (  # noqa: E402
     build_local_pdf_run_data,
+    build_pmid_run_data,
     build_run_data,
     print_rich_summary,
     write_comprehensive_report,
@@ -742,6 +750,183 @@ async def run_local_pdf_pipeline(
         clear_gene_cache()
 
 
+async def run_pmid_pipeline(
+    pmid_file: Path,
+    skip_validation: bool = False,
+    config: PipelineConfig | None = None,
+) -> None:
+    """Run LLM extraction on specific PMIDs from a text file (no database).
+
+    Reads PMIDs from a plain text file (one per line, blank lines and
+    ``#`` comment lines ignored), fetches fulltext via PubMed/Unpaywall,
+    runs LLM extraction + optional NCBI validation, and writes a JSON
+    report with a rich console summary.
+
+    Args:
+        pmid_file: Path to a text file containing one PMID per line.
+        skip_validation: If True, skip NCBI gene validation.
+        config: Pipeline configuration (uses defaults if None).
+
+    Raises:
+        FileNotFoundError: If pmid_file does not exist.
+        ValueError: If the file contains no valid PMIDs.
+    """
+    if config is None:
+        config = PipelineConfig()
+
+    if not pmid_file.exists():
+        raise FileNotFoundError(f"PMID file not found: {pmid_file}")
+
+    # Parse PMIDs: skip blank lines and # comments, validate format, dedupe
+    raw_lines = pmid_file.read_text().splitlines()
+    seen: set[str] = set()
+    pmids: list[str] = []
+    for line in raw_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        try:
+            pmid = _validate_pmid(stripped)
+        except ValueError:
+            logger.warning(f"Skipping invalid PMID: {stripped!r}")
+            continue
+        if pmid not in seen:
+            seen.add(pmid)
+            pmids.append(pmid)
+
+    if not pmids:
+        raise ValueError(f"No valid PMIDs found in {pmid_file}")
+
+    metrics = PipelineMetrics()
+    rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
+
+    logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")
+    logger.info(
+        f"Config: model={config.llm_model}, "
+        f"validation={'disabled' if skip_validation else 'enabled'}"
+    )
+
+    results: list[PaperResult] = []
+    all_genes: list[GeneEntry] = []
+
+    try:
+        semaphore = asyncio.Semaphore(config.max_concurrent_papers)
+
+        async def _process_one(idx: int, pmid: str) -> PaperResult:
+            async with semaphore:
+                logger.info(f"[{idx}/{len(pmids)}] Processing PMID {pmid}")
+                try:
+                    # Fetch metadata (DOI) and fulltext
+                    metadata = await fetch_paper_metadata(pmid)
+                    doi = metadata.get("doi")
+                    text_result = await get_fulltext(pmid, doi)
+
+                    text = text_result.get("text")
+                    if not text:
+                        logger.warning(f"  No text available for PMID {pmid}")
+                        return PaperResult(pmid=pmid, error="no text available")
+
+                    is_fulltext = text_result["fulltext"]
+                    source = text_result["source"]
+                    if is_fulltext:
+                        logger.info(f"  Retrieved full text from {source}")
+                    else:
+                        logger.info("  Using abstract only")
+
+                    # LLM extraction
+                    genes, token_usage = await extract_from_paper(
+                        text, pmid, config=config, rate_limiter=rate_limiter
+                    )
+                    metrics.genes_extracted += len(genes)
+                    metrics.token_usage += token_usage
+
+                    for gene in genes:
+                        gene.pmid = pmid
+
+                    logger.info(f"  Extracted {len(genes)} genes")
+
+                    # Validation
+                    if skip_validation:
+                        validated_genes = genes
+                        metrics.genes_validated += len(genes)
+                    else:
+                        validated_genes = []
+                        validation_tasks = [
+                            validate_gene_entry(gene, config=config) for gene in genes
+                        ]
+                        val_results = await asyncio.gather(
+                            *validation_tasks, return_exceptions=True
+                        )
+                        for gene, result in zip(genes, val_results, strict=True):
+                            if isinstance(result, Exception):
+                                logger.error(
+                                    f"  Validation error for "
+                                    f"{gene.gene_symbol}: {result}"
+                                )
+                                metrics.genes_rejected += 1
+                            elif result.is_valid:
+                                validated_genes.append(result.normalized_data)
+                                metrics.genes_validated += 1
+                            else:
+                                metrics.genes_rejected += 1
+                                logger.debug(f"  Gene rejected: {result.errors}")
+
+                    if is_fulltext:
+                        metrics.fulltext_retrieved += 1
+                    else:
+                        metrics.abstract_only += 1
+                    metrics.papers_processed += 1
+
+                    return PaperResult(
+                        pmid=pmid,
+                        genes=validated_genes,
+                        fulltext=is_fulltext,
+                        source=source,
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing PMID {pmid}: {e}")
+                    return PaperResult(pmid=pmid, error=str(e))
+
+        # Process all PMIDs concurrently
+        async with asyncio.TaskGroup() as tg:
+            tasks = [
+                tg.create_task(_process_one(idx, pmid))
+                for idx, pmid in enumerate(pmids, 1)
+            ]
+        results = [task.result() for task in tasks]
+
+        for result in results:
+            if result.succeeded:
+                all_genes.extend(result.genes)
+
+        # Batch validation (warning-only)
+        batch_warnings: list[str] = []
+        if all_genes:
+            batch_warnings = batch_validate(all_genes)
+            for warning in batch_warnings:
+                logger.warning(f"  Batch check: {warning}")
+
+        # Report
+        run_data = build_pmid_run_data(
+            metrics,
+            results,
+            all_genes,
+            batch_warnings,
+            config,
+            pmid_file,
+            skip_validation,
+        )
+        report_path = write_comprehensive_report(run_data, LOG_DIR)
+        logger.info(f"JSON report written to: {report_path}")
+        print_rich_summary(run_data)
+
+    finally:
+        await _close_metadata_client()
+        await close_http_client()
+        await close_validation_client()
+        clear_gene_cache()
+
+
 async def run_external_data_sync() -> None:
     """Sync all external data sources for dashboard refresh."""
     from pipeline.external_data_sync import sync_all_external_data
@@ -770,9 +955,19 @@ def main() -> None:
             parser.error("--local-pdfs cannot be combined with --test-mode")
         if args.days_back != 7:
             parser.error("--local-pdfs cannot be combined with --days-back")
+        if args.pmids:
+            parser.error("--local-pdfs cannot be combined with --pmids")
 
-    if args.skip_validation and not args.local_pdfs:
-        parser.error("--skip-validation requires --local-pdfs")
+    if args.pmids:
+        if args.sync_external_data:
+            parser.error("--pmids cannot be combined with --sync-external-data")
+        if args.test_mode:
+            parser.error("--pmids cannot be combined with --test-mode")
+        if args.days_back != 7:
+            parser.error("--pmids cannot be combined with --days-back")
+
+    if args.skip_validation and not (args.local_pdfs or args.pmids):
+        parser.error("--skip-validation requires --local-pdfs or --pmids")
 
     config = PipelineConfig()
 
@@ -781,6 +976,14 @@ def main() -> None:
             asyncio.run(
                 run_local_pdf_pipeline(
                     pdf_dir=args.local_pdfs,
+                    skip_validation=args.skip_validation,
+                    config=config,
+                )
+            )
+        elif args.pmids:
+            asyncio.run(
+                run_pmid_pipeline(
+                    pmid_file=args.pmids,
                     skip_validation=args.skip_validation,
                     config=config,
                 )
