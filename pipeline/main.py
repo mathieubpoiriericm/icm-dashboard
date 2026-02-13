@@ -13,7 +13,7 @@ This script orchestrates:
 
 Usage:
     python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
-    python pipeline/main.py --local-pdfs DIR [--skip-validation]
+    python pipeline/main.py --local-pdfs PATH [--skip-validation]
 """
 
 from __future__ import annotations
@@ -53,8 +53,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--local-pdfs",
         type=Path,
-        metavar="DIR",
-        help="Extract genes from local PDF files (no PubMed search or database)",
+        metavar="PATH",
+        help="Extract genes from a local PDF file or directory of PDFs"
+        " (no PubMed search or database)",
     )
     parser.add_argument(
         "--skip-validation",
@@ -608,21 +609,26 @@ async def run_local_pdf_pipeline(
     Results are written as a JSON report and printed as a rich console summary.
 
     Args:
-        pdf_dir: Directory containing .pdf files.
+        pdf_dir: Path to a single .pdf file or a directory containing .pdf files.
         skip_validation: If True, skip NCBI gene validation.
         config: Pipeline configuration (uses defaults if None).
 
     Raises:
         FileNotFoundError: If pdf_dir does not exist.
-        ValueError: If pdf_dir contains no .pdf files.
+        ValueError: If path is not a .pdf file, or directory contains no .pdf files.
     """
     if config is None:
         config = PipelineConfig()
 
-    if not pdf_dir.is_dir():
-        raise FileNotFoundError(f"Directory not found: {pdf_dir}")
-
-    pdf_files = sorted(pdf_dir.glob("*.pdf"))
+    if pdf_dir.is_file():
+        if pdf_dir.suffix.lower() != ".pdf":
+            raise ValueError(f"Not a PDF file: {pdf_dir}")
+        pdf_files = [pdf_dir]
+        pdf_dir = pdf_dir.parent
+    elif pdf_dir.is_dir():
+        pdf_files = sorted(pdf_dir.glob("*.pdf"))
+    else:
+        raise FileNotFoundError(f"Path not found: {pdf_dir}")
     if not pdf_files:
         raise ValueError(f"No .pdf files found in {pdf_dir}")
 
