@@ -48,24 +48,38 @@ class TestExtractionInstructions:
 
     def test_has_examples(self):
         assert "<examples>" in EXTRACTION_INSTRUCTIONS
-        assert 'type="include"' in EXTRACTION_INSTRUCTIONS
-        assert 'type="exclude"' in EXTRACTION_INSTRUCTIONS
+        assert 'type="include_validated"' in EXTRACTION_INSTRUCTIONS
+        assert 'type="include_high_confidence"' in EXTRACTION_INSTRUCTIONS
+        assert 'type="exclude_general_stroke"' in EXTRACTION_INSTRUCTIONS
+        assert 'type="exclude_pathway_only"' in EXTRACTION_INSTRUCTIONS
+        assert 'type="exclude_background_monogenic"' in EXTRACTION_INSTRUCTIONS
 
     def test_gwas_trait_vocabulary(self):
         """GWAS traits in prompt should use canonical abbreviations."""
         assert "WMH" in EXTRACTION_INSTRUCTIONS
+        assert "DWMH" in EXTRACTION_INSTRUCTIONS
+        assert "PVWMH" in EXTRACTION_INSTRUCTIONS
         assert "SVS" in EXTRACTION_INSTRUCTIONS
         assert "BG-PVS" in EXTRACTION_INSTRUCTIONS
         assert "WM-PVS" in EXTRACTION_INSTRUCTIONS
         assert "HIP-PVS" in EXTRACTION_INSTRUCTIONS
         assert "PSMD" in EXTRACTION_INSTRUCTIONS
+        assert "MD" in EXTRACTION_INSTRUCTIONS
         assert "extreme-cSVD" in EXTRACTION_INSTRUCTIONS
         assert "FA" in EXTRACTION_INSTRUCTIONS
+        assert "ICH-lobar" in EXTRACTION_INSTRUCTIONS
+        assert "ICH-non-lobar" in EXTRACTION_INSTRUCTIONS
+        assert "DTI-ALPS" in EXTRACTION_INSTRUCTIONS
+        assert "ICVF" in EXTRACTION_INSTRUCTIONS
+        assert "ISOVF" in EXTRACTION_INSTRUCTIONS
+        assert "WMH-cortical-atrophy" in EXTRACTION_INSTRUCTIONS
+        assert "WM-BAG" in EXTRACTION_INSTRUCTIONS
+        assert "retinal-vessels" in EXTRACTION_INSTRUCTIONS
 
     def test_grounding_instruction(self):
-        """Should instruct the model to locate evidence before extracting."""
-        assert "identify all passages" in EXTRACTION_INSTRUCTIONS
-        assert "locate" in EXTRACTION_INSTRUCTIONS
+        """Should instruct the model to verify evidence before extracting."""
+        assert "Identify all passages" in EXTRACTION_INSTRUCTIONS
+        assert "Verify" in EXTRACTION_INSTRUCTIONS
 
 
 class TestBuildExtractionMessages:

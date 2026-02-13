@@ -38,15 +38,28 @@ def _env_str(name: str, default: str) -> str:
 VALID_GWAS_TRAITS: Final[frozenset[str]] = frozenset(
     {
         "WMH",  # White matter hyperintensities
+        "DWMH",  # Deep WMH
+        "PVWMH",  # Periventricular WMH
         "SVS",  # Small vessel stroke
         "BG-PVS",  # Basal ganglia perivascular spaces
         "WM-PVS",  # White matter perivascular spaces
         "HIP-PVS",  # Hippocampal perivascular spaces
         "PSMD",  # Peak width of skeletonized mean diffusivity
+        "MD",  # Mean diffusivity
         "extreme-cSVD",
         "FA",  # Fractional anisotropy
         "lacunes",
         "stroke",
+        "cerebral-microbleeds",
+        "ICH-lobar",  # Lobar intracerebral hemorrhage
+        "ICH-non-lobar",  # Non-lobar intracerebral hemorrhage
+        "DTI-ALPS",  # Glymphatic function marker
+        "ICVF",  # Neurite density (NODDI)
+        "ISOVF",  # Free-water volume fraction (NODDI)
+        "OD",  # Orientation dispersion (NODDI)
+        "WMH-cortical-atrophy",  # WMH-associated cortical atrophy
+        "WM-BAG",  # White matter brain age gap
+        "retinal-vessels",  # Retinal vessel phenotypes
     }
 )
 
