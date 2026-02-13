@@ -41,6 +41,7 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 - [LLM Configuration](#llm-configuration)
 - [Data Sources](#data-sources)
 - [Clinical Trials Visualization](#clinical-trials-visualization)
+- [Clinical Trials Map](#clinical-trials-map)
 - [Testing](#testing)
 - [Performance Features](#performance-features)
 - [Documentation](#documentation)
@@ -720,6 +721,33 @@ python scripts/python_plot.py
 ```
 
 This creates `www/python_plot.html` and `www/python_plot.js`.
+
+---
+
+## Clinical Trials Map
+
+An interactive Leaflet map showing global research sites for NCT-registered clinical trials. Only trials registered on ClinicalTrials.gov are mapped — other registries (ISRCTN, ANZCTR, ChiCTR, etc.) are excluded because they lack a comparable location API.
+
+### Data pipeline
+
+1. **NCT ID extraction** — `extract_nct_ids()` filters Table 2 for IDs matching the `NCT` + 8-digit pattern
+2. **API fetch** — `fetch_all_trial_locations()` queries the ClinicalTrials.gov API v2 in parallel (4 workers via `future.apply`) with exponential-backoff retries
+3. **Geocoding** — `geocode_locations()` resolves city/country strings to coordinates using `tidygeocoder` with the OpenStreetMap Nominatim provider
+4. **Caching** — Results are saved to `data/qs/geocoded_trials.qs` with a companion `.sha256` integrity hash; the cache is invalidated automatically when the set of NCT IDs changes
+
+### Map features
+
+- **Marker clustering** with spiderfication on zoom, plus coordinate jittering for co-located facilities
+- **HTML popups** with trial metadata: drug name, phase, sponsor, recruitment status, sample size, and estimated completion date
+- **Color-coded status badges** (recruiting, active, completed, terminated)
+- **Direct links** to each trial's ClinicalTrials.gov page
+
+### Source files
+
+| File | Role |
+|------|------|
+| `R/fetch_trial_locations.R` | API fetching, geocoding, caching |
+| `R/server_map.R` | Leaflet rendering, popups, clustering |
 
 ---
 
