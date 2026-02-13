@@ -38,6 +38,7 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 - [Usage](#usage)
 - [Project Structure](#project-structure)
 - [Data Pipeline](#data-pipeline)
+- [LLM Configuration](#llm-configuration)
 - [Deployment](#deployment)
 - [Data Sources](#data-sources)
 - [Testing](#testing)
@@ -579,6 +580,111 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 4. Auto-commit updated `data/qs/*.qs` files to the repository
 
 The QS files are committed directly to the repository, allowing the Shiny app to run without database access in production.
+
+---
+
+## LLM Configuration
+
+### What the LLM Does
+
+Claude reads full-text cSVD research papers and extracts genes with putative causal links, outputting structured JSON with gene symbol, GWAS traits, evidence types (TWAS, PWAS, colocalization, etc.), a calibrated confidence score, and a causal evidence summary. This replaces manual curation — the LLM performs the role of a systematic reviewer, processing papers that would otherwise require domain-expert reading and data entry.
+
+### Prompt Design
+
+The prompt uses a two-part architecture defined in `pipeline/prompts.py`: a system prompt for role assignment and extraction instructions for the task specification.
+
+**System prompt** (`SYSTEM_PROMPT`) — Assigns Claude the role of "a systematic reviewer specializing in cerebral small vessel disease (cSVD) genetics." The [system prompts documentation](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) recommends using the `system` parameter for role assignment, noting it provides "enhanced accuracy" in complex domain scenarios. The highly specific role follows the documentation's advice that more specific roles yield better results.
+
+**Extraction instructions** (`EXTRACTION_INSTRUCTIONS`) — An XML-tagged structure with these components:
+
+| Component | Purpose | Documentation Rationale |
+|-----------|---------|------------------------|
+| `<task>` | Clear task definition | [Be clear and direct](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct): provide explicit, unambiguous instructions |
+| `<inclusion_criteria>` | Enumerates evidence types (GWAS, MR, colocalization, etc.) and canonical cSVD phenotype abbreviations (WMH, SVS, BG-PVS, etc.) | Reduces ambiguity by defining the exact vocabulary the model should use |
+| `<extraction_strategy>` | "Identify passages first, then extract" grounding pattern | [Long context tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/long-context-tips): "Ground responses in quotes... ask Claude to quote relevant parts first before carrying out its task." Prevents hallucination on 50K-char papers |
+| `<field_guidance>` | Maps each output field to extraction rules | [Be clear and direct](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct): use numbered/sequential steps to ensure correct execution |
+| `<confidence_scoring>` | 4-tier rubric with anchored examples (1.0 = functional validation, 0.7–0.9 = GWAS + supporting data, etc.) | Calibrates LLM scoring with concrete anchors rather than vague guidance |
+| `<examples>` | 3 few-shot examples (2 include, 1 exclude) | [Multishot prompting](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/multishot-prompting): "dramatically improve accuracy, consistency, and quality"; recommends 3–5 diverse examples wrapped in `<example>` tags. The exclude example (APOE as covariate) teaches the critical inclusion boundary |
+
+**Why XML tags throughout**: The [XML tags documentation](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags) recommends using XML tags to "clearly separate different parts of your prompt" for improved clarity, accuracy, and flexibility. Combining XML tags with multishot prompting (`<examples>`) produces "super-structured, high-performance prompts."
+
+**User message** — Paper text wrapped in `<document source="PubMed" pmid="...">` tags followed by a short extraction query. The [long context tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/long-context-tips) recommend wrapping documents in `<document>` tags with metadata, and placing long content at the top with the query at the end — noting this "can improve response quality by up to 30%." User messages are not cached (unique per paper), while system blocks above are cached.
+
+### API Configuration
+
+| Decision | Configuration | Rationale |
+|----------|--------------|-----------|
+| Model | `claude-opus-4-6` | Most capable model for complex multi-evidence gene extraction requiring domain expertise |
+| Streaming | `client.messages.stream()` | Required for adaptive thinking requests that may exceed 10 minutes; raw `AsyncAnthropic` used instead of Instructor because Instructor doesn't support streaming |
+| Adaptive thinking | `thinking: {"type": "adaptive"}` | [Adaptive thinking](https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking): "reliably drives better performance than extended thinking with a fixed `budget_tokens`"; dynamically allocates reasoning depth per paper |
+| Effort level | `"high"` (default) | Balances reasoning depth with token cost. Only sent to API when overridden (since `"high"` is the API default) |
+| Structured outputs | `output_config` with JSON schema | [Structured outputs](https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs): constrained decoding "guarantees schema-compliant responses" — always valid JSON, type-safe, no retries needed for schema violations. Schema auto-converted from Pydantic via `transform_schema()` |
+| Max output tokens | 32,000 | Accommodates variable adaptive thinking tokens + structured JSON output for papers with many genes |
+| Prompt caching | 1h ephemeral TTL on system blocks | [Prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching): cache reads cost only 10% of base input price. 1h TTL chosen because paper processing intervals may exceed the 5-min default. System blocks cached; per-paper user messages are not |
+
+### Output Schema
+
+The extraction output is defined by two Pydantic models in `pipeline/llm_extraction.py`:
+
+```python
+class GeneEntry(BaseModel):
+    gene_symbol: str                              # Official HGNC symbol
+    protein_name: str | None = None               # Protein name if mentioned
+    gwas_trait: list[str] = []                     # Canonical abbreviations (WMH, SVS, etc.)
+    mendelian_randomization: bool = False          # MR evidence in this paper
+    omics_evidence: list[str] = []                 # e.g. ["TWAS", "colocalization"]
+    confidence: float = Field(ge=0.0, le=1.0)     # Calibrated score per rubric
+    causal_evidence_summary: str | None = None     # 1-3 sentence justification
+    pmid: str = ""                                 # Set post-extraction by pipeline
+
+class ExtractionResult(BaseModel):
+    genes: list[GeneEntry] = []                    # Wrapper for structured output
+```
+
+- `confidence` is constrained to [0.0, 1.0] via `Field(ge=0.0, le=1.0)`
+- `gwas_trait` and `omics_evidence` are lists (multiple per gene)
+- `pmid` is initialized to empty string and assigned post-extraction by the pipeline
+- The schema is auto-converted via `transform_schema()` for structured outputs (cached by the API for 24h after first use)
+
+### Post-Extraction Validation
+
+LLM output feeds into a 3-stage validation pipeline (`pipeline/validation.py`):
+
+1. **Confidence threshold** — genes below 0.7 (default) are rejected
+2. **NCBI Gene lookup** — verifies the symbol exists in the human genome and normalizes to the official HGNC symbol
+3. **GWAS trait check** — warns on unrecognized phenotypes (non-blocking)
+
+### Cost & Rate Limiting
+
+**Pricing** (from `pipeline/report.py`):
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| Claude Opus 4.6 | $5.00 | $25.00 |
+
+**Prompt caching multipliers**: cache writes at 2x base input price ($10.00/MTok), cache reads at 0.1x ($0.50/MTok). After the first paper, subsequent papers in the same 1-hour window benefit from cached system blocks.
+
+**Cost formula**: `(input_tokens × input_price + cache_write_tokens × input_price × 2.0 + cache_read_tokens × input_price × 0.1 + output_tokens × output_price) / 1,000,000`
+
+**Rate limiting**: A proactive token-bucket rate limiter (`pipeline/rate_limiter.py`) gates requests before they hit the API, preventing 429 errors. On 429, exponential backoff with retry-after header parsing. Up to 5 papers processed concurrently via `asyncio.Semaphore`.
+
+### Configuration Reference
+
+All LLM-related environment variables (from `pipeline/config.py`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PIPELINE_LLM_MODEL` | `claude-opus-4-6` | Model identifier |
+| `PIPELINE_LLM_MAX_TOKENS` | `32000` | Max output tokens |
+| `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort (`low` / `high` / `max`) |
+| `PIPELINE_MAX_PAPER_TEXT_CHARS` | `50000` | Paper text truncation limit (chars) |
+| `PIPELINE_CONFIDENCE_THRESHOLD` | `0.7` | Minimum confidence to keep a gene |
+| `PIPELINE_MAX_RETRIES` | `1` | Validation error retry budget |
+| `PIPELINE_MAX_RATE_LIMIT_RETRIES` | `6` | Rate limit (429) retry budget |
+| `PIPELINE_ESTIMATED_TOKENS_PER_CALL` | `40000` | Token estimate for rate limiter (~15K input + thinking + ~4K output) |
+| `PIPELINE_RPM_LIMIT` | `50` | Requests per minute |
+| `PIPELINE_TPM_LIMIT` | `100000` | Tokens per minute |
+| `PIPELINE_MAX_CONCURRENT_PAPERS` | `5` | Parallel paper processing |
 
 ---
 
