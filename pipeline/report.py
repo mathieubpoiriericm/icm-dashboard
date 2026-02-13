@@ -417,7 +417,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
                 g.get("pmid", ""),
                 Text(f"{conf:.2f}", style=conf_style),
                 ", ".join(g.get("gwas_trait", [])),
-                "Y" if g.get("mendelian_randomization") else "",
+                Text("✓", style="green") if g.get("mendelian_randomization") else Text("✗", style="red"),
                 ", ".join(g.get("omics_evidence", [])),
             )
         console.print(genes_table)
