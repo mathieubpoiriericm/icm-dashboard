@@ -93,7 +93,7 @@ class PipelineConfig:
 
     # --- Retry settings (parse / API errors) ---
     max_retries: int = field(
-        default_factory=lambda: _env_int("PIPELINE_MAX_RETRIES", 3)
+        default_factory=lambda: _env_int("PIPELINE_MAX_RETRIES", 1)
     )
     retry_delay: float = field(
         default_factory=lambda: _env_float("PIPELINE_RETRY_DELAY", 2.0)

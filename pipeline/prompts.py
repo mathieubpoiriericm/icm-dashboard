@@ -38,6 +38,7 @@ OPTIONAL SUPPORTING EVIDENCE (record if present, but NOT required):
 For each gene, provide a brief causal_evidence_summary explaining WHY it is considered causally linked.
 
 CONFIDENCE SCORING:
+- Confidence must be a number between 0.0 and 1.0 inclusive.
 - 1.0: Direct causal evidence explicitly stated
 - 0.7-0.9: Strong causal implication with supporting context
 - 0.4-0.6: Mentioned in causal context but evidence is weak
@@ -63,7 +64,7 @@ def build_extraction_messages(
         {
             "type": "text",
             "text": SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
         },
     ]
 
@@ -72,7 +73,7 @@ def build_extraction_messages(
         {
             "type": "text",
             "text": EXTRACTION_INSTRUCTIONS,
-            "cache_control": {"type": "ephemeral"},
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
         },
         {
             "type": "text",

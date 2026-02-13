@@ -10,7 +10,6 @@ import pytest
 from pydantic import ValidationError
 
 from pipeline.llm_extraction import (
-    _JSON_SCHEMA_INSTRUCTION,
     ExtractionResult,
     GeneEntry,
     _parse_extraction_response,
@@ -118,26 +117,8 @@ class TestParseExtractionResponse:
         result = _parse_extraction_response('{"genes": []}')
         assert result.genes == []
 
-    def test_markdown_fences(self):
-        text = '```json\n{"genes": [{"gene_symbol": "X", "confidence": 0.8}]}\n```'
-        result = _parse_extraction_response(text)
-        assert len(result.genes) == 1
-
-    def test_markdown_fences_no_language(self):
-        text = '```\n{"genes": []}\n```'
-        result = _parse_extraction_response(text)
-        assert result.genes == []
-
-    def test_surrounding_text(self):
-        text = (
-            'Here is the result: '
-            '{"genes": [{"gene_symbol": "Y", "confidence": 0.7}]} end'
-        )
-        result = _parse_extraction_response(text)
-        assert len(result.genes) == 1
-
     def test_no_json_raises(self):
-        with pytest.raises(ValueError, match="No valid JSON"):
+        with pytest.raises(json.JSONDecodeError):
             _parse_extraction_response("no json here at all")
 
     def test_invalid_schema_returns_empty(self):
@@ -162,18 +143,10 @@ class TestParseExtractionResponse:
         result = _parse_extraction_response(json.dumps(data))
         assert len(result.genes) == 3
 
-
-# ---------------------------------------------------------------------------
-# JSON schema instruction
-# ---------------------------------------------------------------------------
-
-
-class TestJsonSchemaInstruction:
-    def test_contains_schema_keyword(self):
-        assert "JSON schema" in _JSON_SCHEMA_INSTRUCTION
-
-    def test_contains_valid_json(self):
-        assert "Return ONLY valid JSON" in _JSON_SCHEMA_INSTRUCTION
+    def test_confidence_out_of_range_raises(self):
+        text = '{"genes": [{"gene_symbol": "X", "confidence": 1.5}]}'
+        with pytest.raises(ValidationError):
+            _parse_extraction_response(text)
 
 
 # ---------------------------------------------------------------------------
@@ -300,11 +273,13 @@ class TestExtractFromPaper:
         )
         rate_limiter.acquire.assert_awaited_once()
 
-    async def test_validation_retry_on_bad_json(
+    async def test_validation_retry_on_bad_confidence(
         self, mocker, mock_anthropic_response
     ):
-        """First response is bad JSON, second is valid — should retry."""
-        bad_response = mock_anthropic_response(text="not json at all !!!")
+        """First response has out-of-range confidence, second is valid — should retry."""
+        bad_response = mock_anthropic_response(
+            text='{"genes": [{"gene_symbol": "X", "confidence": 1.5}]}'
+        )
         good_response = mock_anthropic_response(text='{"genes": []}')
 
         bad_stream = AsyncMock()
@@ -328,7 +303,7 @@ class TestExtractFromPaper:
 
         from pipeline.config import PipelineConfig
 
-        cfg = PipelineConfig(max_retries=3)
+        cfg = PipelineConfig(max_retries=2)
         genes, _ = await extract_from_paper("Paper text", "12345678", config=cfg)
         assert genes == []  # Second call should succeed with empty genes
         assert mock_client.messages.stream.call_count == 2

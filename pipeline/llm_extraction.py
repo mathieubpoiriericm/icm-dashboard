@@ -1,15 +1,16 @@
 """LLM-based gene extraction using Claude API with streaming.
 
 Extracts genes with putative causal links to cSVD from research papers
-using the Anthropic Claude API, with Pydantic-validated structured output.
+using the Anthropic Claude API, with structured output validation.
 
 Uses the streaming API (required for adaptive thinking on Opus 4.6 when
-requests may exceed 10 minutes) with JSON schema prompting and Pydantic
-validation — replacing the previous Instructor-based approach.
+requests may exceed 10 minutes) with structured outputs (constrained
+decoding) for guaranteed valid JSON — replacing the previous manual JSON
+schema prompting approach.
 
 Features:
 - Streaming API for long-running adaptive thinking requests
-- Pydantic schema enforcement via JSON mode prompting
+- Structured outputs via output_config for guaranteed valid JSON
 - Prompt caching (system + static instructions cached across calls)
 - Token-bucket rate limiting (proactive, not reactive)
 - Separate retry budgets for rate-limit vs validation errors
@@ -21,10 +22,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from typing import Any
 
 import anthropic
+from anthropic import transform_schema
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from pipeline.config import PipelineConfig
@@ -59,16 +60,13 @@ class ExtractionResult(BaseModel):
     genes: list[GeneEntry] = Field(default_factory=list)
 
 
-# Pre-compute the JSON schema instruction (identical across all calls).
-_EXTRACTION_SCHEMA: str = json.dumps(ExtractionResult.model_json_schema(), indent=2)
-_JSON_SCHEMA_INSTRUCTION: str = (
-    "As a structured data extraction expert, your task is to understand the "
-    "content and provide the parsed objects in JSON that match the following "
-    "JSON schema:\n\n"
-    f"{_EXTRACTION_SCHEMA}\n\n"
-    "Return an instance of the JSON, not the schema itself. "
-    "Return ONLY valid JSON with no markdown code fences or surrounding text."
-)
+# Pre-computed structured output config (schema cached by API for 24h after first use).
+_OUTPUT_CONFIG: dict[str, Any] = {
+    "format": {
+        "type": "json_schema",
+        "schema": transform_schema(ExtractionResult),
+    }
+}
 
 
 # --- Async client singleton ---
@@ -102,36 +100,18 @@ def _parse_retry_after_delay(
 
 
 def _parse_extraction_response(text: str) -> ExtractionResult:
-    """Parse LLM text response into ExtractionResult.
+    """Parse structured output JSON into ExtractionResult.
 
-    Handles JSON extraction from text that may include markdown fences
-    or surrounding commentary.
+    With structured outputs (constrained decoding), the response is
+    guaranteed valid JSON matching the schema. Only Pydantic validation
+    (e.g. confidence range) can fail.
 
     Raises:
-        ValueError: If no valid JSON can be extracted.
-        ValidationError: If JSON doesn't match ExtractionResult schema.
+        json.JSONDecodeError: If response is not valid JSON (shouldn't happen).
+        ValidationError: If JSON doesn't satisfy Pydantic constraints.
     """
-    text = text.strip()
-
-    # Strip markdown code fences if present
-    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if json_match:
-        text = json_match.group(1).strip()
-
-    # Try direct parse
-    try:
-        data = json.loads(text)
-        return ExtractionResult.model_validate(data)
-    except json.JSONDecodeError:
-        pass
-
-    # Fallback: find the outermost JSON object
-    obj_match = re.search(r"\{[\s\S]*\}", text)
-    if obj_match:
-        data = json.loads(obj_match.group())
-        return ExtractionResult.model_validate(data)
-
-    raise ValueError(f"No valid JSON found in LLM response: {text[:200]}")
+    data = json.loads(text.strip())
+    return ExtractionResult.model_validate(data)
 
 
 async def extract_from_paper(
@@ -173,18 +153,6 @@ async def extract_from_paper(
         max_chars=config.max_paper_text_chars,
     )
 
-    # Inject JSON schema instruction between cached extraction instructions
-    # and dynamic paper text, so it benefits from prompt caching.
-    user_blocks = messages[0]["content"]
-    user_blocks.insert(
-        1,
-        {
-            "type": "text",
-            "text": _JSON_SCHEMA_INSTRUCTION,
-            "cache_control": {"type": "ephemeral"},
-        },
-    )
-
     rate_limit_retries = 0
     validation_retries = 0
 
@@ -198,16 +166,19 @@ async def extract_from_paper(
 
             # Build streaming kwargs — adaptive thinking dynamically
             # allocates reasoning depth per request.
+            output_config = dict(_OUTPUT_CONFIG)
+            if config.llm_effort != "high":
+                # "high" is the API default — only send when overridden
+                output_config["effort"] = config.llm_effort
+
             stream_kwargs: dict[str, Any] = {
                 "model": config.llm_model,
                 "max_tokens": config.llm_max_tokens,
                 "system": system_blocks,
                 "messages": messages,
                 "thinking": {"type": "adaptive"},
+                "output_config": output_config,
             }
-            if config.llm_effort != "high":
-                # "high" is the API default — only send when overridden
-                stream_kwargs["output"] = {"effort": config.llm_effort}
 
             async with client.messages.stream(**stream_kwargs) as stream:
                 response = await stream.get_final_message()
