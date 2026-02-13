@@ -86,7 +86,6 @@ The application follows a modular architecture with clear separation of concerns
 ```
 rshiny_dashboard/                            Lines
 |-- app.R                                      407
-|-- python_plot.py                           1,506
 |-- R/
 |   |-- fetch_trial_locations.R                865  # NEW: ClinicalTrials.gov API + geocoding
 |   |-- data_prep.R                            826
@@ -118,6 +117,7 @@ rshiny_dashboard/                            Lines
 |   |-- pubmed_search.py                        32
 |   +-- quality_metrics.py                      20
 |-- scripts/
+|   |-- python_plot.py           # Clinical trials visualization generator
 |   +-- trigger_update.R         # Regenerate QS from database
 |-- tests/
 |   +-- test_all.R               # Unit tests (20KB)

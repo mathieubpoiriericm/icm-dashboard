@@ -11,7 +11,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 # SVG string literals make short lines impractical
-"python_plot.py" = ["E501", "SIM108"]
+"scripts/python_plot.py" = ["E501", "SIM108"]
 # LLM prompt strings — line wrapping breaks readability
 "pipeline/prompts.py" = ["E501"]
 
