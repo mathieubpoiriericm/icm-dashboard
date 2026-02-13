@@ -163,7 +163,7 @@ Explore drugs in clinical trials with filters for:
 Interactive chromosome ideogram visualization of GWAS phenotypes.
 
 ### Clinical Trials Visualization
-Interactive Plotly timeline of SVD drugs tested in clinical trials.
+Interactive SVG sunburst visualization of SVD drugs tested in clinical trials.
 
 ### Clinical Trials Map
 Interactive Leaflet map displaying global research sites for NCT-registered trials:
@@ -193,7 +193,7 @@ Interactive Leaflet map displaying global research sites for NCT-registered tria
 ### Install R Dependencies
 
 ```r
-# Install maRco package (v0.12.1 - required for data fetching/cleaning)
+# Install maRco package (required for data fetching/cleaning)
 devtools::install("maRco")
 ```
 
@@ -270,17 +270,38 @@ anthropic>=0.25.0
 # Data validation
 pydantic>=2.0.0
 
+# Batch validation
+pandera>=0.18.0
+
+# DataFrame operations
+pandas>=2.0.0
+
 # Bioinformatics
 biopython>=1.81
 
 # Database
 asyncpg>=0.28.0
 
+# Database migrations
+alembic>=1.15.0
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+
 # Environment variables
 python-dotenv>=1.0.0
 
+# CLI tab-completion
+argcomplete>=3.0.0
+
+# CLI output formatting
+rich>=13.0.0
+
 # PDF extraction
 PyMuPDF>=1.23.0
+
+# Dev tools — linting & type-checking
+ruff>=0.9.0
+ty>=0.0.1a0
 ```
 
 </details>
@@ -323,6 +344,9 @@ PyMuPDF>=1.23.0
 | `DB_PASSWORD` | Database password | Pipeline / live data |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM extraction | Pipeline only |
 | `NCBI_API_KEY` | NCBI Entrez API key | Pipeline only |
+| `ENTREZ_EMAIL` | Email for NCBI Entrez API (required by NCBI policy) | Pipeline only |
+| `UNPAYWALL_EMAIL` | Email for Unpaywall open-access PDF API | Pipeline only |
+| `PIPELINE_*` | Override any pipeline config parameter (e.g. `PIPELINE_LLM_MODEL`) | Pipeline only |
 | `PRELOAD_TABLE2` | Set to FALSE to disable Table 2 preloading (default: TRUE) | Docker/memory optimization |
 
 </details>
@@ -395,20 +419,50 @@ rshiny_dashboard/
 │   └── server_map.R              # Clinical Trials Map server logic
 ├── pipeline/
 │   ├── main.py                   # CLI entry point & pipeline orchestrator
+│   ├── config.py                 # Centralized configuration with env overrides
+│   ├── prompts.py                # LLM prompt templates with prompt caching
 │   ├── pubmed_search.py          # PubMed literature search via Entrez
 │   ├── pdf_retrieval.py          # Multi-source text retrieval (PMC/Unpaywall/Abstract)
 │   ├── llm_extraction.py         # LLM-based gene extraction (Anthropic Claude)
 │   ├── validation.py             # NCBI gene verification & confidence filtering
+│   ├── batch_validation.py       # Pandera batch quality checks
 │   ├── data_merger.py            # Data transformation & database loading
 │   ├── database.py               # Async PostgreSQL operations
+│   ├── rate_limiter.py           # Token-bucket rate limiter (RPM/TPM)
 │   ├── quality_metrics.py        # Pipeline statistics tracking
+│   ├── report.py                 # JSON/Rich CLI report generation
 │   ├── ncbi_gene_fetch.py        # NCBI Gene data fetching
 │   ├── pubmed_citations.py       # PubMed citation handling
 │   ├── uniprot_fetch.py          # UniProt data fetching
-│   └── external_data_sync.py     # External data synchronization
+│   ├── external_data_sync.py     # External data synchronization
+│   └── alembic/                  # Database migrations (Alembic)
+│       ├── env.py
+│       ├── script.py.mako
+│       └── versions/
+│           └── 001_baseline_schema.py
 ├── sql/
 │   ├── setup.sql                 # Database schema initialization
 │   └── add_external_data_tables.sql  # External data table schemas
+├── tests/
+│   ├── test_all.R                # R test suite (testthat + shinytest2)
+│   └── pipeline/                 # Python test suite (pytest)
+│       ├── conftest.py           # Shared fixtures
+│       ├── test_config.py
+│       ├── test_prompts.py
+│       ├── test_pubmed_search.py
+│       ├── test_pdf_retrieval.py
+│       ├── test_llm_extraction.py
+│       ├── test_validation.py
+│       ├── test_batch_validation.py
+│       ├── test_data_merger.py
+│       ├── test_database.py
+│       ├── test_rate_limiter.py
+│       ├── test_quality_metrics.py
+│       ├── test_report.py
+│       └── test_main.py
+├── docs/
+│   ├── *.md                      # Primary documentation
+│   └── other/                    # Additional docs (ETL overview, etc.)
 ├── scripts/
 │   └── trigger_update.R          # Regenerate QS files from database
 └── www/
@@ -473,6 +527,10 @@ python pipeline/main.py --days-back 30
 | `--dry-run` | - | Run pipeline without writing to database |
 | `--test-mode` | - | Skip LLM extraction (test search/retrieval only) |
 | `--sync-external-data` | - | Sync NCBI Gene, UniProt, and PubMed citation data |
+| `--local-pdfs PATH` | - | Extract genes from local PDF file(s) without PubMed search |
+| `--skip-validation` | - | Skip NCBI Gene validation (only with `--local-pdfs`) |
+
+> **Tab-completion**: `eval "$(python pipeline/main.py --complete bash)"` (also supports `zsh` and `fish`)
 
 **Stage 2: R Transformation**
 
@@ -492,6 +550,7 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 | `refs.qs` | `pubmed_citations` cache | Formatted PubMed references |
 | `gwas_trait_names.qs` | `genes` table | GWAS trait name mappings |
 | `geocoded_trials.qs` | ClinicalTrials.gov API | Geocoded trial locations for map |
+| `geocoded_trials.qs.sha256` | — | SHA256 integrity checksum for geocoded data |
 
 ### Automated Updates
 
@@ -554,17 +613,33 @@ See `monitoring/yaml/` for Kubernetes deployment configurations including:
 
 ## Testing
 
-Run unit tests with:
+### R Tests
 
-```r
-source("tests/test_all.R")
+Run the R test suite (~100 testthat + shinytest2 tests):
+
+```bash
+Rscript -e 'testthat::test_file("tests/test_all.R")'
 ```
+
+### Python Tests
+
+Run the pipeline test suite (14 pytest files):
+
+```bash
+# Run all pipeline tests
+pytest tests/pipeline/
+
+# Verbose with stop-on-first-failure
+pytest tests/pipeline/ -x -v
+```
+
+Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`, `@pytest.mark.integration`.
 
 ---
 
 ## Clinical Trials Visualization
 
-The clinical trials timeline plot is generated by `python_plot.py` using Plotly.
+The clinical trials visualization is generated by `python_plot.py` as a pure SVG sunburst chart.
 To regenerate the visualization:
 
 ```bash
