@@ -29,21 +29,21 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 ## Table of Contents
 
 - [Overview](#overview)
-- [Documentation](#documentation)
-- [Quick Start](#quick-start)
-- [Technology Stack](#technology-stack)
 - [Features](#features)
+- [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Environment Variables](#environment-variables)
 - [Usage](#usage)
+- [Deployment](#deployment)
+- [Technology Stack](#technology-stack)
 - [Project Structure](#project-structure)
 - [Data Pipeline](#data-pipeline)
 - [LLM Configuration](#llm-configuration)
-- [Deployment](#deployment)
 - [Data Sources](#data-sources)
-- [Testing](#testing)
 - [Clinical Trials Visualization](#clinical-trials-visualization)
+- [Testing](#testing)
 - [Performance Features](#performance-features)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 - [Contact](#contact)
@@ -56,94 +56,6 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 This dashboard provides up-to-date and standardized information on:
 - Putative cerebral SVD causal genes
 - Drugs tested in ongoing or completed cerebral SVD clinical trials
-
----
-
-## Documentation
-
-Detailed documentation is available in the `docs/` directory:
-
-> [!CAUTION]
-> The **Dashboard Technical Documentation**, **maRco Package Documentation**, and **Automated Research Pipeline** are currently outdated and do not reflect the latest codebase. Please wait for updated versions before referencing them.
-
-| Document | Description |
-|----------|-------------|
-| [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
-| [maRco Package Documentation](docs/marco-package-documentation.md) | Developer guide for the maRco R helper package |
-| [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
-| [Observability Stack Guide](docs/observability-stack-guide.md) | Kubernetes monitoring and logging setup |
-
----
-
-## Quick Start
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/mathieubpoiriericm/icm-dashboard.git
-cd icm-dashboard
-
-# 2. Install the maRco helper package
-Rscript -e 'devtools::install("maRco")'
-
-# 3. Install dependencies (see Installation for full list)
-Rscript -e 'install.packages(c("shiny", "bslib", "DT", "data.table", "qs"))'
-
-# 4. Run the app
-Rscript -e 'shiny::runApp()'
-```
-
-The dashboard will open in your browser at `http://127.0.0.1:3838`.
-
----
-
-## Technology Stack
-
-<p align="center">
-<a href="https://www.r-project.org/"><img src="https://img.shields.io/badge/-R-276DC3?logo=r&logoColor=white" alt="R" /></a>
-<a href="https://github.com/rstudio/shiny"><img src="https://img.shields.io/badge/-Shiny-276DC3?logoColor=white" alt="Shiny" /></a>
-<a href="https://www.python.org/"><img src="https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white" alt="Python" /></a>
-<a href="https://github.com/twbs/bootstrap"><img src="https://img.shields.io/badge/-Bootstrap%205-7952B3?logo=bootstrap&logoColor=white" alt="Bootstrap 5" /></a>
-<a href="https://github.com/Rdatatable/data.table"><img src="https://img.shields.io/badge/-data.table-333333?logoColor=white" alt="data.table" /></a>
-<a href="https://github.com/rstudio/DT"><img src="https://img.shields.io/badge/-DT-333333?logoColor=white" alt="DT" /></a>
-<a href="https://github.com/rstudio/leaflet"><img src="https://img.shields.io/badge/-Leaflet-199900?logo=leaflet&logoColor=white" alt="Leaflet" /></a>
-<a href="https://github.com/atomiks/tippyjs"><img src="https://img.shields.io/badge/-Tippy.js-333333?logoColor=white" alt="Tippy.js" /></a>
-<a href="https://www.anthropic.com/claude"><img src="https://img.shields.io/badge/-Claude-191919?logo=anthropic&logoColor=white" alt="Claude" /></a>
-<a href="https://github.com/pydantic/pydantic"><img src="https://img.shields.io/badge/-Pydantic-E92063?logo=pydantic&logoColor=white" alt="Pydantic" /></a>
-<a href="https://github.com/unionai-oss/pandera"><img src="https://img.shields.io/badge/-Pandera-333333?logoColor=white" alt="Pandera" /></a>
-<a href="https://github.com/pandas-dev/pandas"><img src="https://img.shields.io/badge/-pandas-150458?logo=pandas&logoColor=white" alt="pandas" /></a>
-<a href="https://github.com/encode/httpx"><img src="https://img.shields.io/badge/-httpx-333333?logoColor=white" alt="httpx" /></a>
-<a href="https://github.com/biopython/biopython"><img src="https://img.shields.io/badge/-Biopython-333333?logoColor=white" alt="Biopython" /></a>
-<a href="https://github.com/pymupdf/PyMuPDF"><img src="https://img.shields.io/badge/-PyMuPDF-333333?logoColor=white" alt="PyMuPDF" /></a>
-<a href="https://github.com/MagicStack/asyncpg"><img src="https://img.shields.io/badge/-asyncpg-333333?logoColor=white" alt="asyncpg" /></a>
-<a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/-PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" /></a>
-<a href="https://github.com/sqlalchemy/alembic"><img src="https://img.shields.io/badge/-Alembic-333333?logoColor=white" alt="Alembic" /></a>
-<a href="https://www.docker.com/"><img src="https://img.shields.io/badge/-Docker-2496ED?logo=docker&logoColor=white" alt="Docker" /></a>
-<a href="https://kubernetes.io/"><img src="https://img.shields.io/badge/-Kubernetes-326CE5?logo=kubernetes&logoColor=white" alt="Kubernetes" /></a>
-<a href="https://github.com/grafana/grafana"><img src="https://img.shields.io/badge/-Grafana-F46800?logo=grafana&logoColor=white" alt="Grafana" /></a>
-<a href="https://github.com/Textualize/rich"><img src="https://img.shields.io/badge/-Rich-333333?logoColor=white" alt="Rich" /></a>
-<a href="https://github.com/r-lib/testthat"><img src="https://img.shields.io/badge/-testthat-333333?logoColor=white" alt="testthat" /></a>
-<a href="https://github.com/pytest-dev/pytest"><img src="https://img.shields.io/badge/-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest" /></a>
-<a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/-Ruff-D7FF64?logo=ruff&logoColor=black" alt="Ruff" /></a>
-<a href="https://github.com/astral-sh/ty"><img src="https://img.shields.io/badge/-ty-261230?logo=astral&logoColor=white" alt="ty" /></a>
-<a href="https://github.com/r-lib/lintr"><img src="https://img.shields.io/badge/-lintr-333333?logoColor=white" alt="lintr" /></a>
-</p>
-
-| Layer | Technology |
-|-------|-----------|
-| Dashboard Framework | [R 4.5+](https://www.r-project.org/), [Shiny](https://github.com/rstudio/shiny), [bslib](https://github.com/rstudio/bslib) (Bootstrap 5 with dark mode) |
-| Frontend UI | [DT](https://github.com/rstudio/DT) (DataTables), [shinyWidgets](https://github.com/dreamRs/shinyWidgets), [Tippy.js](https://github.com/atomiks/tippyjs), [Popper.js](https://github.com/floating-ui/floating-ui) |
-| Mapping | [Leaflet](https://github.com/rstudio/leaflet), [tidygeocoder](https://github.com/jessecambon/tidygeocoder) (OpenStreetMap Nominatim) |
-| Visualization | Custom SVG ([python_plot.py](scripts/python_plot.py)), [Leaflet](https://github.com/rstudio/leaflet) marker clusters |
-| Data Processing (R) | [data.table](https://github.com/Rdatatable/data.table), [fastmap](https://github.com/r-lib/fastmap), [memoise](https://github.com/r-lib/memoise), [cachem](https://github.com/r-lib/cachem), [qs](https://github.com/qsbase/qs) |
-| Data Processing (Python) | [pandas](https://github.com/pandas-dev/pandas), [Pydantic v2](https://github.com/pydantic/pydantic), [Pandera](https://github.com/unionai-oss/pandera) |
-| LLM Extraction | [Anthropic Claude](https://www.anthropic.com/claude) (streaming with adaptive thinking) |
-| ETL Pipeline | [Python 3.14+](https://www.python.org/), [httpx](https://github.com/encode/httpx), [Biopython](https://github.com/biopython/biopython), [lxml](https://github.com/lxml/lxml), [PyMuPDF](https://github.com/pymupdf/PyMuPDF), [Rich](https://github.com/Textualize/rich) |
-| Bioinformatics (R) | [biomaRt](https://bioconductor.org/packages/biomaRt/), [UniprotR](https://github.com/Proteomicslab57357/UniprotR), [rentrez](https://github.com/ropensci/rentrez), [RefManageR](https://github.com/ropensci/RefManageR) |
-| Database | [PostgreSQL 18+](https://www.postgresql.org/), [asyncpg](https://github.com/MagicStack/asyncpg), [RPostgres](https://github.com/r-dbi/RPostgres), [Alembic](https://github.com/sqlalchemy/alembic) |
-| Containerization | [Docker](https://www.docker.com/) ([rocker/shiny](https://github.com/rocker-org/rocker-versioned2)) |
-| Orchestration & Monitoring | [Kubernetes](https://kubernetes.io/), [NGINX Ingress](https://github.com/kubernetes/ingress-nginx), [Grafana](https://github.com/grafana/grafana), [VictoriaLogs](https://github.com/VictoriaMetrics/VictoriaMetrics) |
-| Testing | [testthat](https://github.com/r-lib/testthat), [shinytest2](https://github.com/rstudio/shinytest2), [pytest](https://github.com/pytest-dev/pytest) |
-| Linting & Type Checking | [Ruff](https://github.com/astral-sh/ruff), [ty](https://github.com/astral-sh/ty), [lintr](https://github.com/r-lib/lintr) |
 
 ---
 
@@ -194,6 +106,27 @@ Interactive Leaflet map displaying global research sites for NCT-registered tria
 - Direct links to ClinicalTrials.gov trial pages
 - Lazy loading (data fetched only when tab accessed)
 - Cached geocoded data with SHA256 integrity verification
+
+---
+
+## Quick Start
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/mathieubpoiriericm/icm-dashboard.git
+cd icm-dashboard
+
+# 2. Install the maRco helper package
+Rscript -e 'devtools::install("maRco")'
+
+# 3. Install dependencies (see Installation for full list)
+Rscript -e 'install.packages(c("shiny", "bslib", "DT", "data.table", "qs"))'
+
+# 4. Run the app
+Rscript -e 'shiny::runApp()'
+```
+
+The dashboard will open in your browser at `http://127.0.0.1:3838`.
 
 ---
 
@@ -385,6 +318,89 @@ Or from the command line:
 ```bash
 Rscript -e "shiny::runApp()"
 ```
+
+---
+
+## Deployment
+
+### Local Development
+
+```r
+shiny::runApp()
+```
+
+### Docker
+
+```bash
+# Build the image
+docker build -t svd-dashboard .
+
+# Run the container
+docker run -p 3838:3838 svd-dashboard
+
+# Run with Table 2 preloading disabled (saves memory)
+docker run -p 3838:3838 -e PRELOAD_TABLE2=FALSE svd-dashboard
+```
+
+The app will be available at `http://localhost:3838`.
+
+### Kubernetes
+
+See `monitoring/yaml/` for Kubernetes deployment configurations including:
+- Monitoring stack deployment
+- VictoriaLogs configuration
+- Grafana monitoring integration
+
+---
+
+## Technology Stack
+
+<p align="center">
+<a href="https://www.r-project.org/"><img src="https://img.shields.io/badge/-R-276DC3?logo=r&logoColor=white" alt="R" /></a>
+<a href="https://github.com/rstudio/shiny"><img src="https://img.shields.io/badge/-Shiny-276DC3?logoColor=white" alt="Shiny" /></a>
+<a href="https://www.python.org/"><img src="https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white" alt="Python" /></a>
+<a href="https://github.com/twbs/bootstrap"><img src="https://img.shields.io/badge/-Bootstrap%205-7952B3?logo=bootstrap&logoColor=white" alt="Bootstrap 5" /></a>
+<a href="https://github.com/Rdatatable/data.table"><img src="https://img.shields.io/badge/-data.table-333333?logoColor=white" alt="data.table" /></a>
+<a href="https://github.com/rstudio/DT"><img src="https://img.shields.io/badge/-DT-333333?logoColor=white" alt="DT" /></a>
+<a href="https://github.com/rstudio/leaflet"><img src="https://img.shields.io/badge/-Leaflet-199900?logo=leaflet&logoColor=white" alt="Leaflet" /></a>
+<a href="https://github.com/atomiks/tippyjs"><img src="https://img.shields.io/badge/-Tippy.js-333333?logoColor=white" alt="Tippy.js" /></a>
+<a href="https://www.anthropic.com/claude"><img src="https://img.shields.io/badge/-Claude-191919?logo=anthropic&logoColor=white" alt="Claude" /></a>
+<a href="https://github.com/pydantic/pydantic"><img src="https://img.shields.io/badge/-Pydantic-E92063?logo=pydantic&logoColor=white" alt="Pydantic" /></a>
+<a href="https://github.com/unionai-oss/pandera"><img src="https://img.shields.io/badge/-Pandera-333333?logoColor=white" alt="Pandera" /></a>
+<a href="https://github.com/pandas-dev/pandas"><img src="https://img.shields.io/badge/-pandas-150458?logo=pandas&logoColor=white" alt="pandas" /></a>
+<a href="https://github.com/encode/httpx"><img src="https://img.shields.io/badge/-httpx-333333?logoColor=white" alt="httpx" /></a>
+<a href="https://github.com/biopython/biopython"><img src="https://img.shields.io/badge/-Biopython-333333?logoColor=white" alt="Biopython" /></a>
+<a href="https://github.com/pymupdf/PyMuPDF"><img src="https://img.shields.io/badge/-PyMuPDF-333333?logoColor=white" alt="PyMuPDF" /></a>
+<a href="https://github.com/MagicStack/asyncpg"><img src="https://img.shields.io/badge/-asyncpg-333333?logoColor=white" alt="asyncpg" /></a>
+<a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/-PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" /></a>
+<a href="https://github.com/sqlalchemy/alembic"><img src="https://img.shields.io/badge/-Alembic-333333?logoColor=white" alt="Alembic" /></a>
+<a href="https://www.docker.com/"><img src="https://img.shields.io/badge/-Docker-2496ED?logo=docker&logoColor=white" alt="Docker" /></a>
+<a href="https://kubernetes.io/"><img src="https://img.shields.io/badge/-Kubernetes-326CE5?logo=kubernetes&logoColor=white" alt="Kubernetes" /></a>
+<a href="https://github.com/grafana/grafana"><img src="https://img.shields.io/badge/-Grafana-F46800?logo=grafana&logoColor=white" alt="Grafana" /></a>
+<a href="https://github.com/Textualize/rich"><img src="https://img.shields.io/badge/-Rich-333333?logoColor=white" alt="Rich" /></a>
+<a href="https://github.com/r-lib/testthat"><img src="https://img.shields.io/badge/-testthat-333333?logoColor=white" alt="testthat" /></a>
+<a href="https://github.com/pytest-dev/pytest"><img src="https://img.shields.io/badge/-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest" /></a>
+<a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/-Ruff-D7FF64?logo=ruff&logoColor=black" alt="Ruff" /></a>
+<a href="https://github.com/astral-sh/ty"><img src="https://img.shields.io/badge/-ty-261230?logo=astral&logoColor=white" alt="ty" /></a>
+<a href="https://github.com/r-lib/lintr"><img src="https://img.shields.io/badge/-lintr-333333?logoColor=white" alt="lintr" /></a>
+</p>
+
+| Layer | Technology |
+|-------|-----------|
+| Dashboard Framework | [R 4.5+](https://www.r-project.org/), [Shiny](https://github.com/rstudio/shiny), [bslib](https://github.com/rstudio/bslib) (Bootstrap 5 with dark mode) |
+| Frontend UI | [DT](https://github.com/rstudio/DT) (DataTables), [shinyWidgets](https://github.com/dreamRs/shinyWidgets), [Tippy.js](https://github.com/atomiks/tippyjs), [Popper.js](https://github.com/floating-ui/floating-ui) |
+| Mapping | [Leaflet](https://github.com/rstudio/leaflet), [tidygeocoder](https://github.com/jessecambon/tidygeocoder) (OpenStreetMap Nominatim) |
+| Visualization | Custom SVG ([python_plot.py](scripts/python_plot.py)), [Leaflet](https://github.com/rstudio/leaflet) marker clusters |
+| Data Processing (R) | [data.table](https://github.com/Rdatatable/data.table), [fastmap](https://github.com/r-lib/fastmap), [memoise](https://github.com/r-lib/memoise), [cachem](https://github.com/r-lib/cachem), [qs](https://github.com/qsbase/qs) |
+| Data Processing (Python) | [pandas](https://github.com/pandas-dev/pandas), [Pydantic v2](https://github.com/pydantic/pydantic), [Pandera](https://github.com/unionai-oss/pandera) |
+| LLM Extraction | [Anthropic Claude](https://www.anthropic.com/claude) (streaming with adaptive thinking) |
+| ETL Pipeline | [Python 3.14+](https://www.python.org/), [httpx](https://github.com/encode/httpx), [Biopython](https://github.com/biopython/biopython), [lxml](https://github.com/lxml/lxml), [PyMuPDF](https://github.com/pymupdf/PyMuPDF), [Rich](https://github.com/Textualize/rich) |
+| Bioinformatics (R) | [biomaRt](https://bioconductor.org/packages/biomaRt/), [UniprotR](https://github.com/Proteomicslab57357/UniprotR), [rentrez](https://github.com/ropensci/rentrez), [RefManageR](https://github.com/ropensci/RefManageR) |
+| Database | [PostgreSQL 18+](https://www.postgresql.org/), [asyncpg](https://github.com/MagicStack/asyncpg), [RPostgres](https://github.com/r-dbi/RPostgres), [Alembic](https://github.com/sqlalchemy/alembic) |
+| Containerization | [Docker](https://www.docker.com/) ([rocker/shiny](https://github.com/rocker-org/rocker-versioned2)) |
+| Orchestration & Monitoring | [Kubernetes](https://kubernetes.io/), [NGINX Ingress](https://github.com/kubernetes/ingress-nginx), [Grafana](https://github.com/grafana/grafana), [VictoriaLogs](https://github.com/VictoriaMetrics/VictoriaMetrics) |
+| Testing | [testthat](https://github.com/r-lib/testthat), [shinytest2](https://github.com/rstudio/shinytest2), [pytest](https://github.com/pytest-dev/pytest) |
+| Linting & Type Checking | [Ruff](https://github.com/astral-sh/ruff), [ty](https://github.com/astral-sh/ty), [lintr](https://github.com/r-lib/lintr) |
 
 ---
 
@@ -682,38 +698,6 @@ All LLM-related environment variables (from `pipeline/config.py`):
 
 ---
 
-## Deployment
-
-### Local Development
-
-```r
-shiny::runApp()
-```
-
-### Docker
-
-```bash
-# Build the image
-docker build -t svd-dashboard .
-
-# Run the container
-docker run -p 3838:3838 svd-dashboard
-
-# Run with Table 2 preloading disabled (saves memory)
-docker run -p 3838:3838 -e PRELOAD_TABLE2=FALSE svd-dashboard
-```
-
-The app will be available at `http://localhost:3838`.
-
-### Kubernetes
-
-See `monitoring/yaml/` for Kubernetes deployment configurations including:
-- Monitoring stack deployment
-- VictoriaLogs configuration
-- Grafana monitoring integration
-
----
-
 ## Data Sources
 
 - **NCBI Gene**: Gene information and identifiers
@@ -723,6 +707,19 @@ See `monitoring/yaml/` for Kubernetes deployment configurations including:
 - **Clinical Trial Registries**: ClinicalTrials.gov, ISRCTN, ANZCTR, ChiCTR
 - **ClinicalTrials.gov API v2**: Trial locations and metadata for the Clinical Trials Map
 - **OpenStreetMap Nominatim**: Location geocoding via tidygeocoder
+
+---
+
+## Clinical Trials Visualization
+
+The clinical trials visualization is generated by `scripts/python_plot.py` as a pure SVG sunburst chart.
+To regenerate the visualization:
+
+```bash
+python scripts/python_plot.py
+```
+
+This creates `www/python_plot.html` and `www/python_plot.js`.
 
 ---
 
@@ -749,19 +746,6 @@ pytest tests/pipeline/ -x -v
 ```
 
 Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`, `@pytest.mark.integration`.
-
----
-
-## Clinical Trials Visualization
-
-The clinical trials visualization is generated by `scripts/python_plot.py` as a pure SVG sunburst chart.
-To regenerate the visualization:
-
-```bash
-python scripts/python_plot.py
-```
-
-This creates `www/python_plot.html` and `www/python_plot.js`.
 
 ---
 
@@ -804,6 +788,22 @@ This creates `www/python_plot.html` and `www/python_plot.js`.
 - **Marker Clustering**: Leaflet marker clusters improve rendering performance at low zoom levels
 - **Incremental Updates**: leafletProxy used to update markers without re-rendering entire map
 - **Exponential Backoff**: API failures retry with exponential backoff (1s, 2s, 4s)
+
+---
+
+## Documentation
+
+Detailed documentation is available in the `docs/` directory:
+
+> [!CAUTION]
+> The **Dashboard Technical Documentation**, **maRco Package Documentation**, and **Automated Research Pipeline** are currently outdated and do not reflect the latest codebase. Please wait for updated versions before referencing them.
+
+| Document | Description |
+|----------|-------------|
+| [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
+| [maRco Package Documentation](docs/marco-package-documentation.md) | Developer guide for the maRco R helper package |
+| [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
+| [Observability Stack Guide](docs/observability-stack-guide.md) | Kubernetes monitoring and logging setup |
 
 ---
 
