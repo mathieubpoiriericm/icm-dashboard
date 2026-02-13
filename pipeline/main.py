@@ -473,12 +473,16 @@ async def run_pipeline(
 
         # Step 2: Filter out already-processed papers
         logger.info("Step 2: Filtering already-processed papers...")
-        try:
-            existing_pmids = await get_existing_pmids()
-        except Exception as e:
-            # Table might not exist yet, treat as empty
-            logger.warning(f"  Could not fetch existing PMIDs: {e}")
-            existing_pmids = set()
+        if dry_run or test_mode:
+            existing_pmids: set[str] = set()
+            logger.info("  Skipping PMID deduplication (dry-run/test mode)")
+        else:
+            try:
+                existing_pmids = await get_existing_pmids()
+            except Exception as e:
+                # Table might not exist yet, treat as empty
+                logger.warning(f"  Could not fetch existing PMIDs: {e}")
+                existing_pmids = set()
 
         new_pmids = filter_new_pmids(all_pmids, existing_pmids)
         logger.info(f"  {len(new_pmids)} new papers to process")
