@@ -425,12 +425,7 @@ rshiny_dashboard/
 │   ├── ui.R                      # UI definition with Bootstrap 5
 │   ├── clean_table1.R            # Table 1 data cleaning
 │   ├── clean_table2.R            # Table 2 data cleaning
-│   ├── fetch_ncbi_gene_data.R    # NCBI gene data fetching
-│   ├── fetch_omim_data.R         # OMIM data fetching
-│   ├── fetch_pubmed_data.R       # PubMed reference fetching
-│   ├── fetch_uniprot_data.R      # UniProt protein data fetching
-│   ├── read_external_data.R      # External data reading utilities
-│   ├── phenogram.R               # Phenogram data generation
+│   ├── read_external_data.R      # External data reading from database cache
 │   ├── fetch_trial_locations.R   # Trial location fetching and geocoding
 │   └── server_map.R              # Clinical Trials Map server logic
 ├── pipeline/

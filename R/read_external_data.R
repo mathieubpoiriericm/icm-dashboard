@@ -1,9 +1,5 @@
 # read_external_data.R
 # Functions to read external data (NCBI, UniProt, PubMed) from database cache
-# These replace the API-calling functions that were previously in:
-# - fetch_ncbi_gene_data.R
-# - fetch_uniprot_data.R
-# - fetch_pubmed_data.R
 
 # Note: with_db_connection is defined in utils.R and sourced at runtime
 

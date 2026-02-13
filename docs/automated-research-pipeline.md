@@ -147,12 +147,7 @@ rshiny_dashboard/
 │   ├── ui.R                 # UI definition
 │   ├── clean_table1.R       # Table 1 data cleaning
 │   ├── clean_table2.R       # Table 2 data cleaning
-│   ├── read_external_data.R # Read from DB cache tables
-│   ├── fetch_ncbi_gene_data.R   # NCBI gene data (legacy)
-│   ├── fetch_omim_data.R        # OMIM data
-│   ├── fetch_pubmed_data.R      # PubMed references
-│   ├── fetch_uniprot_data.R     # UniProt protein data
-│   └── phenogram.R              # Phenogram generation
+│   └── read_external_data.R # Read from DB cache tables
 ├── pipeline/                # Python ETL pipeline
 ├── scripts/                 # Utility scripts
 ├── misc/
@@ -1175,14 +1170,7 @@ clean_table2 <- function(con = NULL, dbname = "csvd_dashboard",
 
 The `R/read_external_data.R` module provides functions to read cached external data from PostgreSQL instead of making live API calls. These functions replace the legacy API-calling functions.
 
-> **Note: Migration**
->
-> The following legacy R files made live API calls during data regeneration:
-> - `fetch_ncbi_gene_data.R` → replaced by `read_ncbi_gene_info_from_db()`
-> - `fetch_uniprot_data.R` → replaced by `read_uniprot_data_from_db()`
-> - `fetch_pubmed_data.R` → replaced by `read_pubmed_refs_from_db()`
->
-> The Python pipeline now handles all API calls via `--sync-external-data`, storing results in PostgreSQL cache tables for R to read.
+> **Note:** The Python pipeline handles all external API calls via `--sync-external-data`, storing results in PostgreSQL cache tables. The R functions below read from these cache tables.
 
 ```r
 # read_external_data.R

@@ -98,15 +98,10 @@ rshiny_dashboard/                            Lines
 |   |-- server_table1.R                        291
 |   |-- server.R                               275
 |   |-- server_map.R                           266  # NEW: Map tab server logic
-|   |-- phenogram.R                            264
-|   |-- fetch_pubmed_data.R                    264
-|   |-- fetch_uniprot_data.R                   255
-|   |-- read_external_data.R                   251  # NEW: Database cache reader
+|   |-- read_external_data.R                   251  # Database cache reader
 |   |-- clean_table1.R                         239
-|   |-- fetch_ncbi_gene_data.R                 172
 |   |-- constants.R                            169
 |   |-- mod_checkbox_filter.R                  167
-|   |-- fetch_omim_data.R                       95
 |   +-- clean_table2.R                          61
 |-- data/
 |   |-- csv/                     # CSV data files
@@ -163,11 +158,6 @@ rshiny_dashboard/                            Lines
 | `R/filter_utils.R` | Unified filter utilities for data.table filtering with `apply_column_filter()` and filter message rendering |
 | `R/utils.R` | Reusable CSS style strings, database connection utilities, and column cleaning helpers |
 | **Data Fetching/Cleaning Scripts** | |
-| `R/phenogram.R` | Generates phenogram visualization data and SVG output |
-| `R/fetch_uniprot_data.R` | Fetches protein information from UniProt API |
-| `R/fetch_pubmed_data.R` | Fetches publication references from PubMed API |
-| `R/fetch_ncbi_gene_data.R` | Fetches gene information from NCBI Gene API |
-| `R/fetch_omim_data.R` | Fetches phenotype data from OMIM API |
 | `R/clean_table1.R` | Cleans and preprocesses raw Table 1 (gene) data |
 | `R/clean_table2.R` | Cleans and preprocesses raw Table 2 (clinical trial) data |
 | **Map Module Files** | |
