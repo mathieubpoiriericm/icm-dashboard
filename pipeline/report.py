@@ -7,6 +7,7 @@ report structure used for both the JSON file and terminal output.
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
@@ -419,9 +420,9 @@ def print_rich_summary(data: PipelineRunData) -> None:
     # --- Validation panel ---
     genes_info = data.get("genes", {})
     validation_lines = [
-        f"[bold]Extracted:[/bold] {genes_info.get('extracted', 0)}",
-        f"[bold]Validated:[/bold] {genes_info.get('validated', 0)}",
-        f"[bold]Rejected:[/bold] {genes_info.get('rejected', 0)}",
+        f"[bold]Extracted Genes:[/bold] {genes_info.get('extracted', 0)}",
+        f"[bold]Validated Genes:[/bold] {genes_info.get('validated', 0)}",
+        f"[bold]Rejected Genes:[/bold] {genes_info.get('rejected', 0)}",
         f"[bold]Acceptance rate:[/bold] {genes_info.get('acceptance_rate', 0):.1%}",
         f"[bold]Fulltext rate:[/bold] {papers.get('fulltext_rate', 0):.1%}",
     ]
@@ -447,15 +448,17 @@ def print_rich_summary(data: PipelineRunData) -> None:
     total = tu.get("total_tokens", 0)
     if total > 0:
         cost = tu.get("estimated_cost_usd")
-        cost_str = f"${cost:.4f}" if cost is not None else "N/A"
+        cost_str = (
+            f"${math.ceil(cost * 100) / 100:.2f} USD" if cost is not None else "N/A"
+        )
 
         token_lines = [
-            f"[bold]Input:[/bold] {tu.get('input_tokens', 0):,}",
-            f"[bold]Output:[/bold] {tu.get('output_tokens', 0):,}",
+            f"[bold]Input Tokens:[/bold] {tu.get('input_tokens', 0):,}",
+            f"[bold]Output Tokens:[/bold] {tu.get('output_tokens', 0):,}",
             f"[bold]Cache read:[/bold] {tu.get('cache_read_input_tokens', 0):,}",
             f"[bold]Cache created:[/bold] {tu.get('cache_creation_input_tokens', 0):,}",
             f"[bold]Cache hit rate:[/bold] {tu.get('cache_hit_rate', 0):.1%}",
-            f"[bold]Total:[/bold] {total:,}",
+            f"[bold]Total Tokens Used:[/bold] {total:,}",
             f"[bold]Estimated cost:[/bold] {cost_str}",
         ]
         console.print(
