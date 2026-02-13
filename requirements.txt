@@ -30,6 +30,9 @@ sqlalchemy>=2.0.0
 # Environment variables
 python-dotenv>=1.0.0
 
+# CLI tab-completion
+argcomplete>=3.0.0
+
 # CLI output formatting
 rich>=13.0.0
 

@@ -27,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Final, TypedDict
 
+import argcomplete
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
@@ -731,6 +732,7 @@ def main() -> None:
         help="Skip NCBI gene validation (only valid with --local-pdfs)",
     )
 
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     # Mutual exclusivity checks
