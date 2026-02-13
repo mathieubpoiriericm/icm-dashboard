@@ -1,4 +1,5 @@
 #!/Library/Frameworks/Python.framework/Versions/3.14/bin/python3
+# PYTHON_ARGCOMPLETE_OK
 """
 Main entry point for the SVD Dashboard data pipeline.
 
@@ -18,18 +19,71 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import asyncio
-import logging
-import re
 import sys
-from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Final, TypedDict
 
-import argcomplete
-import httpx
-from lxml import etree  # type: ignore[import-untyped]
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser (stdlib-only, no heavy imports)."""
+    parser = argparse.ArgumentParser(description="SVD Dashboard data pipeline")
+    parser.add_argument(
+        "--days-back",
+        type=int,
+        default=7,
+        help="Number of days to look back for new papers (default: 7)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run without writing to database",
+    )
+    parser.add_argument(
+        "--test-mode",
+        action="store_true",
+        help=(
+            "Run without LLM extraction or database merge"
+            " (for testing search/retrieval only)"
+        ),
+    )
+    parser.add_argument(
+        "--sync-external-data",
+        action="store_true",
+        help="Sync external data (NCBI, UniProt, PubMed) for all genes in database",
+    )
+    parser.add_argument(
+        "--local-pdfs",
+        type=Path,
+        metavar="DIR",
+        help="Extract genes from local PDF files (no PubMed search or database)",
+    )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip NCBI gene validation (only valid with --local-pdfs)",
+    )
+    return parser
+
+
+# --- Fast path for tab-completion ---
+# argcomplete.autocomplete() calls sys.exit() during completion,
+# so heavy imports below never load. This keeps <TAB> instant.
+if __name__ == "__main__":
+    import argcomplete
+
+    _parser = _build_parser()
+    argcomplete.autocomplete(_parser)
+    del _parser
+# --- End fast path ---
+
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+import re  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from datetime import datetime  # noqa: E402
+from typing import Final, TypedDict  # noqa: E402
+
+import httpx  # noqa: E402
+from lxml import etree  # type: ignore[import-untyped]  # noqa: E402
 
 # Add project root to path for imports when running as script
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -695,44 +749,7 @@ async def run_external_data_sync() -> None:
 
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="SVD Dashboard data pipeline")
-    parser.add_argument(
-        "--days-back",
-        type=int,
-        default=7,
-        help="Number of days to look back for new papers (default: 7)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Run without writing to database",
-    )
-    parser.add_argument(
-        "--test-mode",
-        action="store_true",
-        help=(
-            "Run without LLM extraction or database merge"
-            " (for testing search/retrieval only)"
-        ),
-    )
-    parser.add_argument(
-        "--sync-external-data",
-        action="store_true",
-        help="Sync external data (NCBI, UniProt, PubMed) for all genes in database",
-    )
-    parser.add_argument(
-        "--local-pdfs",
-        type=Path,
-        metavar="DIR",
-        help="Extract genes from local PDF files (no PubMed search or database)",
-    )
-    parser.add_argument(
-        "--skip-validation",
-        action="store_true",
-        help="Skip NCBI gene validation (only valid with --local-pdfs)",
-    )
-
-    argcomplete.autocomplete(parser)
+    parser = _build_parser()
     args = parser.parse_args()
 
     # Mutual exclusivity checks
