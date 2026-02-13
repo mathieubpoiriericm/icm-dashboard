@@ -5,10 +5,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
+import pytest
 
 from pipeline.config import PipelineConfig
 from pipeline.validation import (
     _fetch_ncbi_gene_uncached,
+    _ncbi_get_with_retry,
     clear_gene_cache,
     fetch_gene_details,
     validate_gene_entry,
@@ -357,3 +359,126 @@ class TestFetchGeneDetails:
         result = await fetch_gene_details("4854")
         assert result is not None
         assert result["aliases"] == []
+
+
+# ---------------------------------------------------------------------------
+# _ncbi_get_with_retry — 429 retry behavior
+# ---------------------------------------------------------------------------
+
+
+class TestNcbiRetryOn429:
+    async def test_429_then_200_succeeds(self, mocker):
+        """First request returns 429, retry returns 200 — success."""
+        mock_client = AsyncMock()
+
+        resp_429 = MagicMock()
+        resp_429.status_code = 429
+        resp_429.headers = {"retry-after": "0.01"}
+
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.json.return_value = {"ok": True}
+
+        mock_client.get = AsyncMock(side_effect=[resp_429, resp_200])
+        mocker.patch(
+            "pipeline.validation._get_http_client",
+            return_value=mock_client,
+        )
+        mocker.patch("pipeline.validation.asyncio.sleep", new_callable=AsyncMock)
+
+        cfg = PipelineConfig(max_rate_limit_retries=3, rate_limit_retry_delay=0.01)
+        result = await _ncbi_get_with_retry(
+            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+            {"db": "gene", "term": "test", "retmode": "json"},
+            config=cfg,
+            context="test",
+        )
+
+        assert result is not None
+        assert result.status_code == 200
+        assert mock_client.get.call_count == 2
+
+    async def test_all_retries_exhausted_returns_none(self, mocker):
+        """All attempts return 429 — returns None."""
+        mock_client = AsyncMock()
+
+        resp_429 = MagicMock()
+        resp_429.status_code = 429
+        resp_429.headers = {}
+
+        mock_client.get = AsyncMock(return_value=resp_429)
+        mocker.patch(
+            "pipeline.validation._get_http_client",
+            return_value=mock_client,
+        )
+        mocker.patch("pipeline.validation.asyncio.sleep", new_callable=AsyncMock)
+
+        cfg = PipelineConfig(max_rate_limit_retries=2, rate_limit_retry_delay=0.01)
+        result = await _ncbi_get_with_retry(
+            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+            {"db": "gene", "term": "test", "retmode": "json"},
+            config=cfg,
+            context="test",
+        )
+
+        assert result is None
+        assert mock_client.get.call_count == 2
+
+    async def test_api_key_included_in_params(self, mocker):
+        """When NCBI_API_KEY is set, api_key is injected into request params."""
+        mock_client = AsyncMock()
+
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+
+        mock_client.get = AsyncMock(return_value=resp_200)
+        mocker.patch(
+            "pipeline.validation._get_http_client",
+            return_value=mock_client,
+        )
+        mocker.patch("pipeline.validation.NCBI_API_KEY", "test-key-123")
+
+        await _ncbi_get_with_retry(
+            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+            {"db": "gene", "term": "test", "retmode": "json"},
+            context="test",
+        )
+
+        call_kwargs = mock_client.get.call_args
+        params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params")
+        assert params["api_key"] == "test-key-123"
+
+    async def test_retry_after_header_respected(self, mocker):
+        """Retry-after header value is used as the sleep duration."""
+        mock_client = AsyncMock()
+
+        resp_429 = MagicMock()
+        resp_429.status_code = 429
+        resp_429.headers = {"retry-after": "2.5"}
+
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+
+        mock_client.get = AsyncMock(side_effect=[resp_429, resp_200])
+        mocker.patch(
+            "pipeline.validation._get_http_client",
+            return_value=mock_client,
+        )
+        mock_sleep = mocker.patch(
+            "pipeline.validation.asyncio.sleep", new_callable=AsyncMock
+        )
+
+        cfg = PipelineConfig(max_rate_limit_retries=3, rate_limit_retry_delay=1.0)
+        await _ncbi_get_with_retry(
+            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+            {"db": "gene", "term": "test", "retmode": "json"},
+            config=cfg,
+            context="test",
+        )
+
+        # asyncio.sleep is called by both _throttle and the retry logic.
+        # Find the retry sleep call (2.5s from retry-after header).
+        retry_sleep_calls = [
+            c for c in mock_sleep.call_args_list if c.args[0] == pytest.approx(2.5)
+        ]
+        assert len(retry_sleep_calls) == 1

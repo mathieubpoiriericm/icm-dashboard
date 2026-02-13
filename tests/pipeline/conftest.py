@@ -257,12 +257,14 @@ def _reset_llm_client():
 
 @pytest.fixture(autouse=True)
 def _reset_validation_client():
-    """Clear the shared validation HTTP client after each test."""
+    """Clear the shared validation HTTP client and throttle state after each test."""
     yield
     import pipeline.validation as val
 
     val._http_client = None
     val._ncbi_semaphore = None
+    val._last_request_time = 0.0
+    val._throttle_lock = asyncio.Lock()
 
 
 @pytest.fixture(autouse=True)

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 import httpx
 
@@ -17,6 +19,16 @@ from pipeline.config import VALID_GWAS_TRAITS, PipelineConfig
 from pipeline.llm_extraction import GeneEntry
 
 logger = logging.getLogger(__name__)
+
+# --- NCBI API key and throttling ---
+NCBI_API_KEY: Final[str | None] = os.getenv("NCBI_API_KEY")
+
+# With API key: 10 req/s → 0.1s minimum interval
+# Without API key: 3 req/s → 0.34s minimum interval
+_MIN_REQUEST_INTERVAL: Final[float] = 0.1 if NCBI_API_KEY else 0.34
+
+_last_request_time: float = 0.0
+_throttle_lock: asyncio.Lock = asyncio.Lock()
 
 
 @dataclass(slots=True)
@@ -73,6 +85,92 @@ def clear_gene_cache() -> None:
     _gene_cache = {}
 
 
+def _get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
+    """Add NCBI API key to params if available."""
+    if NCBI_API_KEY:
+        return {**base_params, "api_key": NCBI_API_KEY}
+    return base_params
+
+
+async def _throttle() -> None:
+    """Enforce minimum interval between NCBI requests."""
+    global _last_request_time
+    async with _throttle_lock:
+        now = time.monotonic()
+        elapsed = now - _last_request_time
+        if elapsed < _MIN_REQUEST_INTERVAL:
+            await asyncio.sleep(_MIN_REQUEST_INTERVAL - elapsed)
+        _last_request_time = time.monotonic()
+
+
+async def _ncbi_get_with_retry(
+    url: str,
+    params: dict[str, str],
+    *,
+    config: PipelineConfig | None = None,
+    context: str = "",
+) -> httpx.Response | None:
+    """HTTP GET with automatic API key injection, throttle, and 429 retry.
+
+    Args:
+        url: NCBI E-utility URL.
+        params: Query parameters (api_key added automatically).
+        config: Pipeline config for retry settings.
+        context: Description for log messages (e.g. "esearch for NOTCH3").
+
+    Returns:
+        httpx.Response on success, None on exhausted retries or error.
+    """
+    if config is None:
+        config = PipelineConfig()
+
+    full_params = _get_ncbi_params(params)
+    client = await _get_http_client()
+
+    for attempt in range(1, config.max_rate_limit_retries + 1):
+        await _throttle()
+        try:
+            resp = await client.get(url, params=full_params)
+        except httpx.TimeoutException:
+            logger.warning(f"Timeout on NCBI request ({context})")
+            return None
+        except httpx.RequestError as e:
+            logger.warning(f"Request error on NCBI request ({context}): {e}")
+            return None
+
+        if resp.status_code != 429:
+            return resp
+
+        # 429 — rate limited, retry with backoff
+        if attempt >= config.max_rate_limit_retries:
+            logger.warning(
+                f"NCBI rate limit retries exhausted ({context}): "
+                f"{attempt}/{config.max_rate_limit_retries}"
+            )
+            return None
+
+        backoff = min(config.rate_limit_retry_delay * (2 ** (attempt - 1)), 64.0)
+        retry_after = resp.headers.get("retry-after")
+        if retry_after:
+            try:
+                delay = min(float(retry_after), 64.0)
+                delay_source = f"retry-after={retry_after}s"
+            except ValueError:
+                delay = backoff
+                delay_source = "backoff (retry-after parse failed)"
+        else:
+            delay = backoff
+            delay_source = "backoff"
+
+        logger.warning(
+            f"NCBI 429 ({context}). Waiting {delay:.1f}s ({delay_source}) "
+            f"(attempt {attempt}/{config.max_rate_limit_retries})..."
+        )
+        await asyncio.sleep(delay)
+
+    return None
+
+
 async def validate_gene_entry(
     entry: GeneEntry,
     config: PipelineConfig | None = None,
@@ -108,7 +206,7 @@ async def validate_gene_entry(
         return ValidationResult(False, errors, warnings, None)
 
     # Stage 2: NCBI Gene validation - ensures gene symbol is real
-    ncbi_info = await verify_ncbi_gene(entry.gene_symbol)
+    ncbi_info = await verify_ncbi_gene(entry.gene_symbol, config=config)
 
     if not ncbi_info:
         errors.append(f"Gene '{entry.gene_symbol}' not found in NCBI Gene")
@@ -127,39 +225,45 @@ async def validate_gene_entry(
     return ValidationResult(True, errors, warnings, entry)
 
 
-async def verify_ncbi_gene(symbol: str) -> dict[str, Any] | None:
+async def verify_ncbi_gene(
+    symbol: str, *, config: PipelineConfig | None = None
+) -> dict[str, Any] | None:
     """Query NCBI Gene database to verify gene symbol.
 
     Results are cached to avoid redundant API calls for repeated gene symbols.
 
     Args:
         symbol: Gene symbol to verify.
+        config: Pipeline configuration for retry settings.
 
     Returns:
         Gene info dict if found, None otherwise.
     """
     symbol_upper = symbol.upper()
 
-    # Check cache first (without lock for read)
-    if symbol_upper in _gene_cache:
-        return _gene_cache[symbol_upper]
-
+    # Check cache (brief lock for dict access only)
     async with _cache_lock:
-        # Double-check after acquiring lock
         if symbol_upper in _gene_cache:
             return _gene_cache[symbol_upper]
 
-        async with _get_ncbi_semaphore():  # Rate limiting
-            result = await _fetch_ncbi_gene_uncached(symbol)
-            _gene_cache[symbol_upper] = result
-            return result
+    # Semaphore controls concurrent NCBI requests; throttle enforces inter-request delay
+    async with _get_ncbi_semaphore(config):
+        result = await _fetch_ncbi_gene_uncached(symbol, config=config)
+
+    async with _cache_lock:
+        _gene_cache[symbol_upper] = result
+
+    return result
 
 
-async def _fetch_ncbi_gene_uncached(symbol: str) -> dict[str, Any] | None:
+async def _fetch_ncbi_gene_uncached(
+    symbol: str, *, config: PipelineConfig | None = None
+) -> dict[str, Any] | None:
     """Internal: fetch gene from NCBI without caching.
 
     Args:
         symbol: Gene symbol to look up.
+        config: Pipeline configuration for retry settings.
 
     Returns:
         Gene info dict if found, None otherwise.
@@ -171,34 +275,33 @@ async def _fetch_ncbi_gene_uncached(symbol: str) -> dict[str, Any] | None:
         "retmode": "json",
     }
 
-    try:
-        client = await _get_http_client()
-        resp = await client.get(url, params=params)
-
-        if resp.status_code != 200:
+    resp = await _ncbi_get_with_retry(
+        url, params, config=config, context=f"esearch for {symbol}"
+    )
+    if resp is None or resp.status_code != 200:
+        if resp is not None:
             logger.warning(f"NCBI esearch failed for {symbol}: {resp.status_code}")
-            return None
+        return None
 
+    try:
         data = resp.json()
         if data["esearchresult"]["count"] != "0":
             gene_id = data["esearchresult"]["idlist"][0]
-            return await fetch_gene_details(gene_id)
-
-    except httpx.TimeoutException:
-        logger.warning(f"Timeout querying NCBI for gene {symbol}")
-    except httpx.RequestError as e:
-        logger.warning(f"Request error querying NCBI for gene {symbol}: {e}")
+            return await fetch_gene_details(gene_id, config=config)
     except (KeyError, IndexError) as e:
         logger.warning(f"Unexpected NCBI response format for gene {symbol}: {e}")
 
     return None
 
 
-async def fetch_gene_details(gene_id: str) -> dict[str, Any] | None:
+async def fetch_gene_details(
+    gene_id: str, *, config: PipelineConfig | None = None
+) -> dict[str, Any] | None:
     """Fetch gene details from NCBI using esummary.
 
     Args:
         gene_id: NCBI Gene ID.
+        config: Pipeline configuration for retry settings.
 
     Returns:
         Gene metadata dict if successful, None otherwise.
@@ -206,16 +309,17 @@ async def fetch_gene_details(gene_id: str) -> dict[str, Any] | None:
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params = {"db": "gene", "id": gene_id, "retmode": "json"}
 
-    try:
-        client = await _get_http_client()
-        resp = await client.get(url, params=params)
-
-        if resp.status_code != 200:
+    resp = await _ncbi_get_with_retry(
+        url, params, config=config, context=f"esummary for gene_id {gene_id}"
+    )
+    if resp is None or resp.status_code != 200:
+        if resp is not None:
             logger.warning(
                 f"NCBI esummary failed for gene_id {gene_id}: {resp.status_code}"
             )
-            return None
+        return None
 
+    try:
         data = resp.json()
         result = data.get("result", {})
         gene_data = result.get(gene_id, {})
@@ -234,13 +338,6 @@ async def fetch_gene_details(gene_id: str) -> dict[str, Any] | None:
                 else []
             ),
         }
-
-    except httpx.TimeoutException:
-        logger.warning(f"Timeout fetching gene details for gene_id {gene_id}")
-    except httpx.RequestError as e:
-        logger.warning(
-            f"Request error fetching gene details for gene_id {gene_id}: {e}"
-        )
     except (KeyError, ValueError) as e:
         logger.warning(f"Failed to parse NCBI response for gene_id {gene_id}: {e}")
 
