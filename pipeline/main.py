@@ -12,6 +12,7 @@ This script orchestrates:
 
 Usage:
     python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
+    python pipeline/main.py --local-pdfs DIR [--skip-validation]
 """
 
 from __future__ import annotations
@@ -50,11 +51,16 @@ from pipeline.database import (  # noqa: E402
     reset_sequence,
 )
 from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
-from pipeline.pdf_retrieval import close_http_client, get_fulltext  # noqa: E402
+from pipeline.pdf_retrieval import (  # noqa: E402
+    close_http_client,
+    get_fulltext,
+    parse_local_pdf,
+)
 from pipeline.pubmed_search import filter_new_pmids, search_recent_papers  # noqa: E402
 from pipeline.quality_metrics import PipelineMetrics, TokenUsage  # noqa: E402
 from pipeline.rate_limiter import AsyncRateLimiter  # noqa: E402
 from pipeline.report import (  # noqa: E402
+    build_local_pdf_run_data,
     build_run_data,
     print_rich_summary,
     write_comprehensive_report,
@@ -537,6 +543,140 @@ async def run_pipeline(
         clear_gene_cache()
 
 
+async def run_local_pdf_pipeline(
+    pdf_dir: Path,
+    skip_validation: bool = False,
+    config: PipelineConfig | None = None,
+) -> None:
+    """Run LLM extraction on local PDF files (no database, no PubMed search).
+
+    Results are written as a JSON report and printed as a rich console summary.
+
+    Args:
+        pdf_dir: Directory containing .pdf files.
+        skip_validation: If True, skip NCBI gene validation.
+        config: Pipeline configuration (uses defaults if None).
+
+    Raises:
+        FileNotFoundError: If pdf_dir does not exist.
+        ValueError: If pdf_dir contains no .pdf files.
+    """
+    if config is None:
+        config = PipelineConfig()
+
+    if not pdf_dir.is_dir():
+        raise FileNotFoundError(f"Directory not found: {pdf_dir}")
+
+    pdf_files = sorted(pdf_dir.glob("*.pdf"))
+    if not pdf_files:
+        raise ValueError(f"No .pdf files found in {pdf_dir}")
+
+    metrics = PipelineMetrics()
+    rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
+
+    logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
+    logger.info(
+        f"Config: model={config.llm_model}, "
+        f"validation={'disabled' if skip_validation else 'enabled'}"
+    )
+
+    results: list[PaperResult] = []
+    all_genes: list[GeneEntry] = []
+
+    try:
+        for idx, pdf_path in enumerate(pdf_files, 1):
+            file_id = pdf_path.stem
+            logger.info(f"[{idx}/{len(pdf_files)}] Processing {pdf_path.name}")
+
+            # Extract text from PDF
+            text = parse_local_pdf(pdf_path)
+            if not text:
+                logger.warning(f"  No text extracted from {pdf_path.name}")
+                results.append(PaperResult(pmid=file_id, error="empty or corrupt PDF"))
+                continue
+
+            # LLM extraction
+            try:
+                genes, token_usage = await extract_from_paper(
+                    text, file_id, config=config, rate_limiter=rate_limiter
+                )
+                metrics.genes_extracted += len(genes)
+                metrics.token_usage += token_usage
+            except Exception as e:
+                logger.error(f"  LLM extraction failed for {pdf_path.name}: {e}")
+                results.append(PaperResult(pmid=file_id, error=str(e)))
+                continue
+
+            # Set identifier on each gene
+            for gene in genes:
+                gene.pmid = file_id
+
+            logger.info(f"  Extracted {len(genes)} genes")
+
+            # Validate genes against NCBI (unless skipped)
+            if skip_validation:
+                validated_genes = genes
+                metrics.genes_validated += len(genes)
+            else:
+                validated_genes = []
+                validation_tasks = [
+                    validate_gene_entry(gene, config=config) for gene in genes
+                ]
+                val_results = await asyncio.gather(
+                    *validation_tasks, return_exceptions=True
+                )
+                for gene, result in zip(genes, val_results, strict=True):
+                    if isinstance(result, Exception):
+                        logger.error(
+                            f"  Validation error for {gene.gene_symbol}: {result}"
+                        )
+                        metrics.genes_rejected += 1
+                    elif result.is_valid:
+                        validated_genes.append(result.normalized_data)
+                        metrics.genes_validated += 1
+                    else:
+                        metrics.genes_rejected += 1
+                        logger.debug(f"  Gene rejected: {result.errors}")
+
+            all_genes.extend(validated_genes)
+            metrics.papers_processed += 1
+            metrics.fulltext_retrieved += 1
+
+            results.append(
+                PaperResult(
+                    pmid=file_id,
+                    genes=validated_genes,
+                    fulltext=True,
+                    source="local_pdf",
+                )
+            )
+
+        # Batch validation (warning-only)
+        batch_warnings: list[str] = []
+        if all_genes:
+            batch_warnings = batch_validate(all_genes)
+            for warning in batch_warnings:
+                logger.warning(f"  Batch check: {warning}")
+
+        # Report
+        run_data = build_local_pdf_run_data(
+            metrics,
+            results,
+            all_genes,
+            batch_warnings,
+            config,
+            pdf_dir,
+            skip_validation,
+        )
+        report_path = write_comprehensive_report(run_data, LOG_DIR)
+        logger.info(f"JSON report written to: {report_path}")
+        print_rich_summary(run_data)
+
+    finally:
+        await close_validation_client()
+        clear_gene_cache()
+
+
 async def run_external_data_sync() -> None:
     """Sync all external data sources for dashboard refresh."""
     from pipeline.external_data_sync import sync_all_external_data
@@ -579,13 +719,44 @@ def main() -> None:
         action="store_true",
         help="Sync external data (NCBI, UniProt, PubMed) for all genes in database",
     )
+    parser.add_argument(
+        "--local-pdfs",
+        type=Path,
+        metavar="DIR",
+        help="Extract genes from local PDF files (no PubMed search or database)",
+    )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip NCBI gene validation (only valid with --local-pdfs)",
+    )
 
     args = parser.parse_args()
+
+    # Mutual exclusivity checks
+    if args.local_pdfs:
+        if args.sync_external_data:
+            parser.error("--local-pdfs cannot be combined with --sync-external-data")
+        if args.test_mode:
+            parser.error("--local-pdfs cannot be combined with --test-mode")
+        if args.days_back != 7:
+            parser.error("--local-pdfs cannot be combined with --days-back")
+
+    if args.skip_validation and not args.local_pdfs:
+        parser.error("--skip-validation requires --local-pdfs")
 
     config = PipelineConfig()
 
     try:
-        if args.sync_external_data:
+        if args.local_pdfs:
+            asyncio.run(
+                run_local_pdf_pipeline(
+                    pdf_dir=args.local_pdfs,
+                    skip_validation=args.skip_validation,
+                    config=config,
+                )
+            )
+        elif args.sync_external_data:
             asyncio.run(run_external_data_sync())
         else:
             asyncio.run(
@@ -596,7 +767,7 @@ def main() -> None:
                     config=config,
                 )
             )
-    except ValueError as e:
+    except (ValueError, FileNotFoundError) as e:
         logger.error(f"Invalid argument: {e}")
         sys.exit(1)
     except KeyboardInterrupt:

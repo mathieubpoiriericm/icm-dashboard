@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Final, Literal, TypedDict
 
 import httpx
@@ -314,6 +315,46 @@ async def download_and_parse_pdf(url: str) -> str | None:
     except Exception as e:
         # PyMuPDF can raise various exceptions for corrupt PDFs
         logger.warning(f"PDF parsing failed for {url}: {e}")
+        return None
+
+
+def parse_local_pdf(path: Path) -> str | None:
+    """Extract text from a local PDF file using PyMuPDF (fitz).
+
+    Args:
+        path: Path to the PDF file.
+
+    Returns:
+        Extracted text content if successful, None for empty/corrupt PDFs.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"PDF not found: {path}")
+
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.error("PyMuPDF not available — install with: pip install pymupdf")
+        return None
+
+    try:
+        doc = fitz.open(str(path))
+
+        text_parts = []
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text()
+            if text.strip():
+                text_parts.append(text.strip())
+
+        doc.close()
+
+        return "\n\n".join(text_parts) if text_parts else None
+
+    except Exception as e:
+        logger.warning(f"PDF parsing failed for {path.name}: {e}")
         return None
 
 

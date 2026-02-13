@@ -174,6 +174,73 @@ def build_run_data(
     }
 
 
+def build_local_pdf_run_data(
+    metrics: PipelineMetrics,
+    results: list[Any],
+    all_genes: list[GeneEntry],
+    batch_warnings: list[str],
+    config: PipelineConfig,
+    pdf_dir: Path,
+    skip_validation: bool,
+) -> PipelineRunData:
+    """Assemble run data for a local-PDF extraction run.
+
+    Args:
+        metrics: Accumulated pipeline metrics.
+        results: List of PaperResult from processing.
+        all_genes: All GeneEntry instances (validated or raw).
+        batch_warnings: Warnings from batch validation.
+        config: Pipeline configuration used for this run.
+        pdf_dir: Directory containing the source PDFs.
+        skip_validation: Whether NCBI validation was skipped.
+
+    Returns:
+        PipelineRunData dict with mode="local_pdf".
+    """
+    tu = metrics.token_usage
+    cost = _estimate_cost(config.llm_model, tu.input_tokens, tu.output_tokens)
+
+    failed_count = sum(1 for r in results if not r.succeeded)
+
+    return {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "pipeline_config": {
+            "mode": "local_pdf",
+            "model": config.llm_model,
+            "pdf_directory": str(pdf_dir),
+            "skip_validation": skip_validation,
+            "confidence_threshold": config.confidence_threshold,
+            "thinking_mode": "adaptive",
+            "effort": config.llm_effort,
+        },
+        "papers": {
+            "total": failed_count + metrics.papers_processed,
+            "processed": metrics.papers_processed,
+            "fulltext": metrics.fulltext_retrieved,
+            "abstract_only": metrics.abstract_only,
+            "fulltext_rate": round(metrics.fulltext_rate, 4),
+            "failed": failed_count,
+        },
+        "genes": {
+            "extracted": metrics.genes_extracted,
+            "validated": metrics.genes_validated,
+            "rejected": metrics.genes_rejected,
+            "acceptance_rate": round(metrics.gene_acceptance_rate, 4),
+        },
+        "token_usage": {
+            "input_tokens": tu.input_tokens,
+            "output_tokens": tu.output_tokens,
+            "cache_creation_input_tokens": tu.cache_creation_input_tokens,
+            "cache_read_input_tokens": tu.cache_read_input_tokens,
+            "total_tokens": tu.total_tokens,
+            "cache_hit_rate": round(tu.cache_hit_rate, 4),
+            "estimated_cost_usd": round(cost, 4) if cost is not None else None,
+        },
+        "batch_validation_warnings": batch_warnings,
+        "papers_detail": _paper_results_to_summaries(results),
+    }
+
+
 def write_comprehensive_report(data: PipelineRunData, log_dir: Path) -> Path:
     """Write the full run data as JSON.
 
@@ -202,20 +269,34 @@ def print_rich_summary(data: PipelineRunData) -> None:
 
     # --- Overview panel ---
     cfg = data.get("pipeline_config", {})
-    search = data.get("search", {})
     papers = data.get("papers", {})
-    mode = "DRY RUN" if cfg.get("dry_run") else "LIVE"
+    is_local_pdf = cfg.get("mode") == "local_pdf"
 
-    overview_lines = [
-        f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
-        f"[bold]Mode:[/bold] {mode}",
-        f"[bold]Days back:[/bold] {cfg.get('days_back', 'N/A')}",
-        f"[bold]PMIDs found:[/bold] {search.get('pmids_found', 0)} "
-        f"({search.get('pmids_new', 0)} new, {search.get('pmids_skipped', 0)} skipped)",
-        f"[bold]Papers processed:[/bold] {papers.get('processed', 0)} "
-        f"({papers.get('fulltext', 0)} fulltext, "
-        f"{papers.get('abstract_only', 0)} abstract)",
-    ]
+    if is_local_pdf:
+        overview_lines = [
+            f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
+            "[bold]Mode:[/bold] LOCAL PDF",
+            f"[bold]Directory:[/bold] {cfg.get('pdf_directory', 'N/A')}",
+            f"[bold]Validation:[/bold] "
+            f"{'skipped' if cfg.get('skip_validation') else 'enabled'}",
+            f"[bold]PDFs processed:[/bold] {papers.get('processed', 0)} "
+            f"/ {papers.get('total', 0)}",
+        ]
+    else:
+        search = data.get("search", {})
+        mode = "DRY RUN" if cfg.get("dry_run") else "LIVE"
+        overview_lines = [
+            f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
+            f"[bold]Mode:[/bold] {mode}",
+            f"[bold]Days back:[/bold] {cfg.get('days_back', 'N/A')}",
+            f"[bold]PMIDs found:[/bold] {search.get('pmids_found', 0)} "
+            f"({search.get('pmids_new', 0)} new, "
+            f"{search.get('pmids_skipped', 0)} skipped)",
+            f"[bold]Papers processed:[/bold] {papers.get('processed', 0)} "
+            f"({papers.get('fulltext', 0)} fulltext, "
+            f"{papers.get('abstract_only', 0)} abstract)",
+        ]
+
     if papers.get("failed", 0) > 0:
         overview_lines.append(f"[bold red]Papers failed:[/bold red] {papers['failed']}")
 
@@ -235,7 +316,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
             show_lines=True,
             title_style="bold",
         )
-        papers_table.add_column("PMID", style="bold")
+        papers_table.add_column("File" if is_local_pdf else "PMID", style="bold")
         papers_table.add_column("Source")
         papers_table.add_column("Genes", justify="right")
         papers_table.add_column("Status")
@@ -351,21 +432,22 @@ def print_rich_summary(data: PipelineRunData) -> None:
             )
         )
 
-    # --- Database panel ---
-    db = data.get("database")
-    if db is not None:
-        db_lines = [
-            f"[bold]Inserted:[/bold] {db.get('inserted', 0)}",
-            f"[bold]Updated:[/bold] {db.get('updated', 0)}",
-        ]
-    else:
-        db_lines = ["[dim]Dry run — no database writes[/dim]"]
+    # --- Database panel (skip for local-PDF mode) ---
+    if not is_local_pdf:
+        db = data.get("database")
+        if db is not None:
+            db_lines = [
+                f"[bold]Inserted:[/bold] {db.get('inserted', 0)}",
+                f"[bold]Updated:[/bold] {db.get('updated', 0)}",
+            ]
+        else:
+            db_lines = ["[dim]Dry run — no database writes[/dim]"]
 
-    console.print(
-        Panel(
-            "\n".join(db_lines),
-            title="[bold green]Database[/bold green]",
-            border_style="green",
+        console.print(
+            Panel(
+                "\n".join(db_lines),
+                title="[bold green]Database[/bold green]",
+                border_style="green",
+            )
         )
-    )
     console.print()
