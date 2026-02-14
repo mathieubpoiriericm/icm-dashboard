@@ -56,7 +56,7 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 
 This dashboard provides up-to-date and standardized information on:
 - Putative cerebral SVD causal genes
-- Drugs tested in ongoing or completed cerebral SVD clinical trials
+- Drugs tested in planned or ongoing cerebral SVD clinical trials
 
 ---
 
