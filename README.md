@@ -7,8 +7,9 @@
 [![Python](https://img.shields.io/badge/Python-3.14+-yellow.svg)](https://www.python.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-purple.svg)](https://www.postgresql.org/)
 
-| [![R Tests: 119](https://img.shields.io/badge/R_Tests-119_passing-green.svg)](#testing) | [![Pipeline Tests: 422](https://img.shields.io/badge/Pipeline_Tests-422_passing-green.svg)](#testing) |
+| R Tests | Pipeline Tests |
 |:--|:--|
+| [![R Tests: 119](https://img.shields.io/badge/R_Tests-119_passing-green.svg)](#testing) | [![Pipeline Tests: 422](https://img.shields.io/badge/Pipeline_Tests-422_passing-green.svg)](#testing) |
 | [![filter_utils](https://img.shields.io/badge/filter__utils-37_tests-brightgreen.svg)](#testing) | [![Infrastructure](https://img.shields.io/badge/Infrastructure-111_tests-brightgreen.svg)](#testing) |
 | [![data_prep](https://img.shields.io/badge/data__prep-30_tests-brightgreen.svg)](#testing) | [![External Data](https://img.shields.io/badge/External_Data-102_tests-brightgreen.svg)](#testing) |
 | [![utils](https://img.shields.io/badge/utils-18_tests-brightgreen.svg)](#testing) | [![Data Processing](https://img.shields.io/badge/Data_Processing-72_tests-brightgreen.svg)](#testing) |
