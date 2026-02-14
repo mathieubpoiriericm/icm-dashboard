@@ -13,6 +13,8 @@ from pipeline.quality_metrics import PipelineMetrics, TokenUsage
 from pipeline.report import (
     _estimate_cost,
     _paper_results_to_summaries,
+    build_local_pdf_run_data,
+    build_pmid_run_data,
     build_run_data,
     print_rich_summary,
     write_comprehensive_report,
@@ -292,3 +294,121 @@ class TestPrintRichSummary:
             "papers_detail": [],
         }
         print_rich_summary(data)
+
+
+# ---------------------------------------------------------------------------
+# build_local_pdf_run_data
+# ---------------------------------------------------------------------------
+
+
+class TestBuildLocalPdfRunData:
+    def _build(self, **kwargs):
+        from pathlib import Path
+
+        defaults = {
+            "metrics": PipelineMetrics(
+                papers_processed=3,
+                fulltext_retrieved=3,
+                abstract_only=0,
+                genes_extracted=5,
+                genes_validated=4,
+                genes_rejected=1,
+                token_usage=TokenUsage(input_tokens=3000, output_tokens=1000),
+            ),
+            "results": [],
+            "all_genes": [],
+            "batch_warnings": [],
+            "config": PipelineConfig(),
+            "pdf_dir": Path("/tmp/test_pdfs"),
+            "skip_validation": False,
+        }
+        defaults.update(kwargs)
+        return build_local_pdf_run_data(**defaults)
+
+    def test_structure_no_search_no_database(self):
+        data = self._build()
+        assert "timestamp" in data
+        assert "pipeline_config" in data
+        assert "papers" in data
+        assert "genes" in data
+        assert "token_usage" in data
+        assert "search" not in data
+        assert "database" not in data
+
+    def test_mode_is_local_pdf(self):
+        data = self._build()
+        assert data["pipeline_config"]["mode"] == "local_pdf"
+
+    def test_pdf_directory_included(self):
+        from pathlib import Path
+
+        data = self._build(pdf_dir=Path("/data/pdfs"))
+        assert data["pipeline_config"]["pdf_directory"] == "/data/pdfs"
+
+    def test_skip_validation_flag(self):
+        data = self._build(skip_validation=True)
+        assert data["pipeline_config"]["skip_validation"] is True
+
+    def test_cost_included(self):
+        data = self._build()
+        assert "estimated_cost_usd" in data["token_usage"]
+
+    def test_json_serializable(self):
+        data = self._build()
+        serialized = json.dumps(data, default=str)
+        assert isinstance(serialized, str)
+
+
+# ---------------------------------------------------------------------------
+# build_pmid_run_data
+# ---------------------------------------------------------------------------
+
+
+class TestBuildPmidRunData:
+    def _build(self, **kwargs):
+        from pathlib import Path
+
+        defaults = {
+            "metrics": PipelineMetrics(
+                papers_processed=2,
+                fulltext_retrieved=1,
+                abstract_only=1,
+                genes_extracted=3,
+                genes_validated=2,
+                genes_rejected=1,
+                token_usage=TokenUsage(input_tokens=2000, output_tokens=800),
+            ),
+            "results": [],
+            "all_genes": [],
+            "batch_warnings": [],
+            "config": PipelineConfig(),
+            "pmid_file": Path("/tmp/pmids.txt"),
+            "skip_validation": False,
+        }
+        defaults.update(kwargs)
+        return build_pmid_run_data(**defaults)
+
+    def test_structure(self):
+        data = self._build()
+        assert "timestamp" in data
+        assert "pipeline_config" in data
+        assert "papers" in data
+        assert "genes" in data
+        assert "token_usage" in data
+        assert "search" not in data
+        assert "database" not in data
+
+    def test_mode_is_pmid_list(self):
+        data = self._build()
+        assert data["pipeline_config"]["mode"] == "pmid_list"
+
+    def test_pmid_file_included(self):
+        from pathlib import Path
+
+        data = self._build(pmid_file=Path("/data/my_pmids.txt"))
+        assert data["pipeline_config"]["pmid_file"] == "/data/my_pmids.txt"
+
+    def test_json_serializable(self):
+        data = self._build()
+        serialized = json.dumps(data, default=str)
+        assert isinstance(serialized, str)

@@ -304,6 +304,39 @@ def _reset_main_client():
     m._metadata_client = None
 
 
+@pytest.fixture(autouse=True)
+def _reset_ncbi_gene_client():
+    """Clear the shared ncbi_gene_fetch HTTP client and cache after each test."""
+    yield
+    import pipeline.ncbi_gene_fetch as ncbi
+
+    ncbi._http_client = None
+    ncbi._gene_cache = {}
+    ncbi._ncbi_semaphore = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_uniprot_client():
+    """Clear the shared uniprot_fetch HTTP client and cache after each test."""
+    yield
+    import pipeline.uniprot_fetch as uni
+
+    uni._http_client = None
+    uni._uniprot_cache = {}
+    uni._uniprot_semaphore = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_pubmed_citations_client():
+    """Clear the shared pubmed_citations HTTP client and cache after each test."""
+    yield
+    import pipeline.pubmed_citations as pc
+
+    pc._http_client = None
+    pc._citation_cache = {}
+    pc._ncbi_semaphore = None
+
+
 @pytest.fixture
 def event_loop():
     """Provide a fresh event loop for each test."""
