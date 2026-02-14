@@ -657,72 +657,94 @@ async def run_local_pdf_pipeline(
     all_genes: list[GeneEntry] = []
 
     try:
-        for idx, pdf_path in enumerate(pdf_files, 1):
+        semaphore = asyncio.Semaphore(config.max_concurrent_papers)
+        progress = {"current": 0, "total": len(pdf_files)}
+
+        async def _process_pdf(idx: int, pdf_path: Path) -> PaperResult:
             file_id = pdf_path.stem
-            logger.info(f"[{idx}/{len(pdf_files)}] Processing {pdf_path.name}")
+            async with semaphore:
+                progress["current"] += 1
+                current = progress["current"]
+                total = progress["total"]
+                logger.info(f"[{current}/{total}] Processing {pdf_path.name}")
 
-            # Extract text from PDF
-            text = parse_local_pdf(pdf_path)
-            if not text:
-                logger.warning(f"  No text extracted from {pdf_path.name}")
-                results.append(PaperResult(pmid=file_id, error="empty or corrupt PDF"))
-                continue
+                try:
+                    # Extract text
+                    # Use asyncio.to_thread to avoid blocking loop with PDF parsing
+                    text = await asyncio.to_thread(parse_local_pdf, pdf_path)
 
-            # LLM extraction
-            try:
-                genes, token_usage = await extract_from_paper(
-                    text, file_id, config=config, rate_limiter=rate_limiter
-                )
-                metrics.genes_extracted += len(genes)
-                metrics.token_usage += token_usage
-            except Exception as e:
-                logger.error(f"  LLM extraction failed for {pdf_path.name}: {e}")
-                results.append(PaperResult(pmid=file_id, error=str(e)))
-                continue
+                    if not text:
+                        logger.warning(f"  No text extracted from {pdf_path.name}")
+                        return PaperResult(pmid=file_id, error="empty or corrupt PDF")
 
-            # Set identifier on each gene
-            for gene in genes:
-                gene.pmid = file_id
+                    # LLM extraction
+                    genes, token_usage = await extract_from_paper(
+                        text, file_id, config=config, rate_limiter=rate_limiter
+                    )
 
-            logger.info(f"  Extracted {len(genes)} genes")
+                    # Update metrics safely (single-threaded event loop)
+                    metrics.genes_extracted += len(genes)
+                    metrics.token_usage += token_usage
 
-            # Validate genes against NCBI (unless skipped)
-            if skip_validation:
-                validated_genes = genes
-                metrics.genes_validated += len(genes)
-            else:
-                validated_genes = []
-                validation_tasks = [
-                    validate_gene_entry(gene, config=config) for gene in genes
-                ]
-                val_results = await asyncio.gather(
-                    *validation_tasks, return_exceptions=True
-                )
-                for gene, result in zip(genes, val_results, strict=True):
-                    if isinstance(result, Exception):
-                        logger.error(
-                            f"  Validation error for {gene.gene_symbol}: {result}"
-                        )
-                        metrics.genes_rejected += 1
-                    elif result.is_valid:
-                        validated_genes.append(result.normalized_data)
-                        metrics.genes_validated += 1
+                    # Set identifier
+                    for gene in genes:
+                        gene.pmid = file_id
+
+                    logger.info(f"  Extracted {len(genes)} genes from {pdf_path.name}")
+
+                    # Validation
+                    if skip_validation:
+                        validated_genes = genes
+                        metrics.genes_validated += len(genes)
                     else:
-                        metrics.genes_rejected += 1
-                        logger.debug(f"  Gene rejected: {result.errors}")
+                        validated_genes = []
+                        # Validate genes concurrently for this paper
+                        validation_tasks = [
+                            validate_gene_entry(gene, config=config) for gene in genes
+                        ]
+                        val_results = await asyncio.gather(
+                            *validation_tasks, return_exceptions=True
+                        )
 
-            all_genes.extend(validated_genes)
-            metrics.papers_processed += 1
-            metrics.fulltext_retrieved += 1
+                        for gene, result in zip(genes, val_results, strict=True):
+                            if isinstance(result, Exception):
+                                logger.error(
+                                    f"  Validation error for {gene.gene_symbol}: "
+                                    f"{result}"
+                                )
+                                metrics.genes_rejected += 1
+                            elif result.is_valid:
+                                validated_genes.append(result.normalized_data)
+                                metrics.genes_validated += 1
+                            else:
+                                metrics.genes_rejected += 1
+                                logger.debug(f"  Gene rejected: {result.errors}")
 
-            results.append(
-                PaperResult(
-                    pmid=file_id,
-                    genes=validated_genes,
-                    fulltext=True,
-                    source="local_pdf",
-                )
-            )
+                    metrics.papers_processed += 1
+                    metrics.fulltext_retrieved += 1
+
+                    return PaperResult(
+                        pmid=file_id,
+                        genes=validated_genes,
+                        fulltext=True,
+                        source="local_pdf",
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error processing {pdf_path.name}: {e}")
+                    return PaperResult(pmid=file_id, error=str(e))
+
+        async with asyncio.TaskGroup() as tg:
+            tasks = [
+                tg.create_task(_process_pdf(idx, pdf_path))
+                for idx, pdf_path in enumerate(pdf_files, 1)
+            ]
+
+        results = [task.result() for task in tasks]
+
+        for result in results:
+            if result.succeeded:
+                all_genes.extend(result.genes)
 
         # Batch validation (warning-only)
         batch_warnings: list[str] = []
