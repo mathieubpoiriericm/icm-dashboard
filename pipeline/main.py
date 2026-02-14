@@ -86,6 +86,7 @@ if __name__ == "__main__":
 import asyncio  # noqa: E402
 import logging  # noqa: E402
 import re  # noqa: E402
+import time  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from datetime import datetime  # noqa: E402
 from typing import Final, TypedDict  # noqa: E402
@@ -140,7 +141,7 @@ LOG_SEPARATOR: Final[str] = "=" * 50
 PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
 
 # Configure logging
-LOG_DIR = PROJECT_ROOT / "logs"
+LOG_DIR = Path(os.getenv("PIPELINE_LOG_DIR", PROJECT_ROOT / "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
 
@@ -192,6 +193,7 @@ class PaperResult:
     source: str = "none"
     error: str | None = None
     token_usage: TokenUsage = field(default_factory=TokenUsage)
+    processing_time: float = 0.0
 
     @property
     def succeeded(self) -> bool:
@@ -371,19 +373,23 @@ async def process_paper_safe(
         current = progress["current"]
         total = progress["total"]
         logger.info(f"[{current}/{total}] Starting PMID {pmid}")
+        start_time = time.monotonic()
         try:
             result = await process_paper(
                 pmid, metrics, config=config, rate_limiter=rate_limiter
             )
+            duration = time.monotonic() - start_time
             return PaperResult(
                 pmid=pmid,
                 genes=result["genes"],
                 fulltext=result["fulltext"],
                 source=result["source"],
+                processing_time=duration,
             )
         except Exception as e:
             logger.error(f"Error processing PMID {pmid}: {e}")
-            return PaperResult(pmid=pmid, error=str(e))
+            duration = time.monotonic() - start_time
+            return PaperResult(pmid=pmid, error=str(e), processing_time=duration)
 
 
 async def process_papers_concurrently(
@@ -461,6 +467,8 @@ async def run_pipeline(
 
     # Set up rate limiter
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
+
+    pipeline_start_time = time.monotonic()
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
     logger.info(
@@ -542,6 +550,7 @@ async def run_pipeline(
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
 
+            total_duration = time.monotonic() - pipeline_start_time
             run_data = build_run_data(
                 metrics,
                 results,
@@ -553,6 +562,7 @@ async def run_pipeline(
                 dry_run,
                 len(all_pmids),
                 len(new_pmids),
+                total_duration,
             )
             report_path = write_comprehensive_report(run_data, LOG_DIR)
             logger.info(f"JSON report written to: {report_path}")
@@ -584,6 +594,7 @@ async def run_pipeline(
         logger.info(f"  Recorded {recorded} processed PMIDs")
 
         # Comprehensive report + rich summary
+        total_duration = time.monotonic() - pipeline_start_time
         run_data = build_run_data(
             metrics,
             results,
@@ -595,6 +606,7 @@ async def run_pipeline(
             dry_run,
             len(all_pmids),
             len(new_pmids),
+            total_duration,
         )
         report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")
@@ -647,6 +659,8 @@ async def run_local_pdf_pipeline(
     metrics = PipelineMetrics()
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
+    pipeline_start_time = time.monotonic()
+
     logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
     logger.info(
         f"Config: model={config.llm_model}, "
@@ -668,6 +682,7 @@ async def run_local_pdf_pipeline(
                 total = progress["total"]
                 logger.info(f"[{current}/{total}] Processing {pdf_path.name}")
 
+                start_time = time.monotonic()
                 try:
                     # Extract text
                     # Use asyncio.to_thread to avoid blocking loop with PDF parsing
@@ -675,7 +690,11 @@ async def run_local_pdf_pipeline(
 
                     if not text:
                         logger.warning(f"  No text extracted from {pdf_path.name}")
-                        return PaperResult(pmid=file_id, error="empty or corrupt PDF")
+                        return PaperResult(
+                            pmid=file_id,
+                            error="empty or corrupt PDF",
+                            processing_time=time.monotonic() - start_time,
+                        )
 
                     # LLM extraction
                     genes, token_usage = await extract_from_paper(
@@ -728,11 +747,16 @@ async def run_local_pdf_pipeline(
                         genes=validated_genes,
                         fulltext=True,
                         source="local_pdf",
+                        processing_time=time.monotonic() - start_time,
                     )
 
                 except Exception as e:
                     logger.error(f"Error processing {pdf_path.name}: {e}")
-                    return PaperResult(pmid=file_id, error=str(e))
+                    return PaperResult(
+                        pmid=file_id,
+                        error=str(e),
+                        processing_time=time.monotonic() - start_time,
+                    )
 
         async with asyncio.TaskGroup() as tg:
             tasks = [
@@ -754,6 +778,7 @@ async def run_local_pdf_pipeline(
                 logger.warning(f"  Batch check: {warning}")
 
         # Report
+        total_duration = time.monotonic() - pipeline_start_time
         run_data = build_local_pdf_run_data(
             metrics,
             results,
@@ -762,6 +787,7 @@ async def run_local_pdf_pipeline(
             config,
             pdf_dir,
             skip_validation,
+            total_duration,
         )
         report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")
@@ -822,6 +848,8 @@ async def run_pmid_pipeline(
     metrics = PipelineMetrics()
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
+    pipeline_start_time = time.monotonic()
+
     logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")
     logger.info(
         f"Config: model={config.llm_model}, "
@@ -837,6 +865,7 @@ async def run_pmid_pipeline(
         async def _process_one(idx: int, pmid: str) -> PaperResult:
             async with semaphore:
                 logger.info(f"[{idx}/{len(pmids)}] Processing PMID {pmid}")
+                start_time = time.monotonic()
                 try:
                     # Fetch metadata (DOI) and fulltext
                     metadata = await fetch_paper_metadata(pmid)
@@ -846,7 +875,11 @@ async def run_pmid_pipeline(
                     text = text_result.get("text")
                     if not text:
                         logger.warning(f"  No text available for PMID {pmid}")
-                        return PaperResult(pmid=pmid, error="no text available")
+                        return PaperResult(
+                            pmid=pmid,
+                            error="no text available",
+                            processing_time=time.monotonic() - start_time,
+                        )
 
                     is_fulltext = text_result["fulltext"]
                     source = text_result["source"]
@@ -904,10 +937,15 @@ async def run_pmid_pipeline(
                         genes=validated_genes,
                         fulltext=is_fulltext,
                         source=source,
+                        processing_time=time.monotonic() - start_time,
                     )
                 except Exception as e:
                     logger.error(f"Error processing PMID {pmid}: {e}")
-                    return PaperResult(pmid=pmid, error=str(e))
+                    return PaperResult(
+                        pmid=pmid,
+                        error=str(e),
+                        processing_time=time.monotonic() - start_time,
+                    )
 
         # Process all PMIDs concurrently
         async with asyncio.TaskGroup() as tg:
@@ -929,6 +967,7 @@ async def run_pmid_pipeline(
                 logger.warning(f"  Batch check: {warning}")
 
         # Report
+        total_duration = time.monotonic() - pipeline_start_time
         run_data = build_pmid_run_data(
             metrics,
             results,
@@ -937,6 +976,7 @@ async def run_pmid_pipeline(
             config,
             pmid_file,
             skip_validation,
+            total_duration,
         )
         report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")

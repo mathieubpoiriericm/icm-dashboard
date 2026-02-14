@@ -48,12 +48,14 @@ class PaperSummary(TypedDict):
     error: str | None
     gene_count: int
     genes: list[dict[str, Any]]
+    processing_time: float
 
 
 class PipelineRunData(TypedDict, total=False):
     """Full run data used by both JSON writer and rich printer."""
 
     timestamp: str
+    total_processing_time: float
     pipeline_config: dict[str, Any]
     search: dict[str, int]
     papers: dict[str, Any]
@@ -115,6 +117,7 @@ def _paper_results_to_summaries(
                 "error": r.error,
                 "gene_count": len(r.genes),
                 "genes": genes_data,
+                "processing_time": getattr(r, "processing_time", 0.0),
             }
         )
     return summaries
@@ -136,6 +139,7 @@ def build_run_data(
     dry_run: bool,
     total_pmids_found: int,
     new_pmids_count: int,
+    total_duration: float = 0.0,
 ) -> PipelineRunData:
     """Assemble all pipeline run data into a single dict.
 
@@ -150,6 +154,7 @@ def build_run_data(
         dry_run: Whether this was a dry run.
         total_pmids_found: Total PMIDs from PubMed search.
         new_pmids_count: PMIDs after filtering already-processed.
+        total_duration: Total pipeline execution time in seconds.
 
     Returns:
         PipelineRunData dict.
@@ -167,6 +172,7 @@ def build_run_data(
 
     return {
         "timestamp": datetime.now(UTC).isoformat(),
+        "total_processing_time": total_duration,
         "pipeline_config": {
             "model": config.llm_model,
             "days_back": days_back,
@@ -216,6 +222,7 @@ def build_local_pdf_run_data(
     config: PipelineConfig,
     pdf_dir: Path,
     skip_validation: bool,
+    total_duration: float = 0.0,
 ) -> PipelineRunData:
     """Assemble run data for a local-PDF extraction run.
 
@@ -227,6 +234,7 @@ def build_local_pdf_run_data(
         config: Pipeline configuration used for this run.
         pdf_dir: Directory containing the source PDFs.
         skip_validation: Whether NCBI validation was skipped.
+        total_duration: Total pipeline execution time in seconds.
 
     Returns:
         PipelineRunData dict with mode="local_pdf".
@@ -244,6 +252,7 @@ def build_local_pdf_run_data(
 
     return {
         "timestamp": datetime.now(UTC).isoformat(),
+        "total_processing_time": total_duration,
         "pipeline_config": {
             "mode": "local_pdf",
             "model": config.llm_model,
@@ -289,6 +298,7 @@ def build_pmid_run_data(
     config: PipelineConfig,
     pmid_file: Path,
     skip_validation: bool,
+    total_duration: float = 0.0,
 ) -> PipelineRunData:
     """Assemble run data for a PMID-list extraction run.
 
@@ -300,6 +310,7 @@ def build_pmid_run_data(
         config: Pipeline configuration used for this run.
         pmid_file: Path to the source PMID text file.
         skip_validation: Whether NCBI validation was skipped.
+        total_duration: Total pipeline execution time in seconds.
 
     Returns:
         PipelineRunData dict with mode="pmid_list".
@@ -317,6 +328,7 @@ def build_pmid_run_data(
 
     return {
         "timestamp": datetime.now(UTC).isoformat(),
+        "total_processing_time": total_duration,
         "pipeline_config": {
             "mode": "pmid_list",
             "model": config.llm_model,
@@ -390,6 +402,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
         overview_lines = [
             f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
             "[bold]Mode:[/bold] LOCAL PDF",
+            f"[bold]Total time:[/bold] {data.get('total_processing_time', 0):.1f}s",
             f"[bold]Directory:[/bold] {cfg.get('pdf_directory', 'N/A')}",
             f"[bold]Validation:[/bold] "
             f"{'skipped' if cfg.get('skip_validation') else 'enabled'}",
@@ -400,6 +413,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
         overview_lines = [
             f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
             "[bold]Mode:[/bold] PMID LIST",
+            f"[bold]Total time:[/bold] {data.get('total_processing_time', 0):.1f}s",
             f"[bold]File:[/bold] {cfg.get('pmid_file', 'N/A')}",
             f"[bold]Validation:[/bold] "
             f"{'skipped' if cfg.get('skip_validation') else 'enabled'}",
@@ -414,6 +428,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
         overview_lines = [
             f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
             f"[bold]Mode:[/bold] {mode}",
+            f"[bold]Total time:[/bold] {data.get('total_processing_time', 0):.1f}s",
             f"[bold]Days back:[/bold] {cfg.get('days_back', 'N/A')}",
             f"[bold]PMIDs found:[/bold] {search.get('pmids_found', 0)} "
             f"({search.get('pmids_new', 0)} new, "
@@ -442,9 +457,12 @@ def print_rich_summary(data: PipelineRunData) -> None:
             show_lines=True,
             title_style="bold",
         )
-        papers_table.add_column("File" if run_mode == "local_pdf" else "PMID", style="bold")
+        papers_table.add_column(
+            "File" if run_mode == "local_pdf" else "PMID", style="bold"
+        )
         papers_table.add_column("Source")
         papers_table.add_column("Genes", justify="right")
+        papers_table.add_column("Time", justify="right")
         papers_table.add_column("Status")
 
         for p in papers_detail:
@@ -463,6 +481,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
                 p["pmid"],
                 p.get("source", ""),
                 str(p["gene_count"]),
+                f"{p.get('processing_time', 0):.1f}s",
                 status,
                 style=style,
             )
@@ -503,7 +522,9 @@ def print_rich_summary(data: PipelineRunData) -> None:
                 g.get("pmid", ""),
                 Text(f"{conf:.2f}", style=conf_style),
                 ", ".join(g.get("gwas_trait", [])),
-                Text("✓", style="green") if g.get("mendelian_randomization") else Text("✗", style="red"),
+                Text("✓", style="green")
+                if g.get("mendelian_randomization")
+                else Text("✗", style="red"),
                 ", ".join(g.get("omics_evidence", [])),
             )
         console.print(genes_table)
