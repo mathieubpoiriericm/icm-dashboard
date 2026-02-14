@@ -115,6 +115,7 @@ from pipeline.database import (  # noqa: E402
     reset_sequence,
 )
 from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
+from pipeline.notifications import send_missing_fulltext_email  # noqa: E402
 from pipeline.pdf_retrieval import (  # noqa: E402
     close_http_client,
     get_fulltext,
@@ -611,6 +612,9 @@ async def run_pipeline(
         report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
+
+        # Notify admin about missing full-text papers
+        send_missing_fulltext_email(run_data.get("papers_detail", []), config)
 
         return metrics
 

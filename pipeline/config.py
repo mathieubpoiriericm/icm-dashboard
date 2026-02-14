@@ -168,3 +168,27 @@ class PipelineConfig:
 
     # --- Misc ---
     test_mode_preview_count: int = 10
+
+    # --- Email Notifications ---
+    email_host: str = field(
+        default_factory=lambda: _env_str("PIPELINE_EMAIL_HOST", "")
+    )
+    email_port: int = field(
+        default_factory=lambda: _env_int("PIPELINE_EMAIL_PORT", 587)
+    )
+    email_user: str = field(
+        default_factory=lambda: _env_str("PIPELINE_EMAIL_USER", "")
+    )
+    email_password: str = field(
+        default_factory=lambda: _env_str("PIPELINE_EMAIL_PASSWORD", "")
+    )
+    email_from: str = field(
+        default_factory=lambda: _env_str(
+            "PIPELINE_EMAIL_FROM", "noreply@svd-dashboard.org"
+        )
+    )
+    email_admin: str = field(
+        default_factory=lambda: _env_str(
+            "PIPELINE_EMAIL_ADMIN", "mathieu.poirier@icm-institute.org"
+        )
+    )
