@@ -138,6 +138,21 @@ class TestPerPaperGeneCount:
         assert any("21 genes" in w and "unusual" in w for w in warnings)
 
 
+class TestLongSummary:
+    def test_normal_summary_no_warning(self):
+        genes = [_make_entry()]
+        genes[0].causal_evidence_summary = "Short summary."
+        warnings = batch_validate(genes)
+        assert not any("long summary" in w for w in warnings)
+
+    def test_long_summary_warning(self):
+        """Summary > 1000 chars should trigger warning."""
+        genes = [_make_entry()]
+        genes[0].causal_evidence_summary = "A" * 1001
+        warnings = batch_validate(genes)
+        assert any("long summary" in w and "1001 chars" in w for w in warnings)
+
+
 class TestMultipleWarnings:
     def test_accumulates_warnings(self):
         """Multiple checks can fire simultaneously."""

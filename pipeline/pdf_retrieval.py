@@ -10,7 +10,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Final, Literal, TypedDict
+from typing import Any, Final, Literal, TypedDict
 
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
@@ -262,13 +262,13 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
 
 
 async def download_and_parse_pdf(url: str) -> str | None:
-    """Download PDF from URL and extract text using PyMuPDF (fitz).
+    """Download PDF from URL and extract cleaned text using PyMuPDF (fitz).
 
     Args:
         url: URL to the PDF file.
 
     Returns:
-        Extracted text content if successful, None otherwise.
+        Extracted and cleaned text content if successful, None otherwise.
     """
     try:
         import fitz  # PyMuPDF
@@ -294,17 +294,10 @@ async def download_and_parse_pdf(url: str) -> str | None:
         # Parse PDF from bytes
         pdf_bytes = resp.content
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-
-        text_parts = []
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text()
-            if text.strip():
-                text_parts.append(text.strip())
-
+        text = _extract_clean_pdf_text(doc)
         doc.close()
 
-        return "\n\n".join(text_parts) if text_parts else None
+        return text if text.strip() else None
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout downloading PDF from {url}")
@@ -319,13 +312,13 @@ async def download_and_parse_pdf(url: str) -> str | None:
 
 
 def parse_local_pdf(path: Path) -> str | None:
-    """Extract text from a local PDF file using PyMuPDF (fitz).
+    """Extract and clean text from a local PDF file using PyMuPDF (fitz).
 
     Args:
         path: Path to the PDF file.
 
     Returns:
-        Extracted text content if successful, None for empty/corrupt PDFs.
+        Cleaned text content if successful, None for empty/corrupt PDFs.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -341,21 +334,81 @@ def parse_local_pdf(path: Path) -> str | None:
 
     try:
         doc = fitz.open(str(path))
-
-        text_parts = []
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text()
-            if text.strip():
-                text_parts.append(text.strip())
-
+        text = _extract_clean_pdf_text(doc)
         doc.close()
 
-        return "\n\n".join(text_parts) if text_parts else None
+        return text if text.strip() else None
 
     except Exception as e:
         logger.warning(f"PDF parsing failed for {path.name}: {e}")
         return None
+
+
+def _extract_clean_pdf_text(doc: Any) -> str:
+    """Internal: Extract and clean text from a PyMuPDF Document.
+
+    Performs layout-aware cleaning:
+    1. Removes headers and footers using heuristic margins.
+    2. Truncates the document at the 'References' section to avoid LLM
+       hallucinations from bibliography gene mentions.
+    """
+    text_parts = []
+
+    # Heuristic margins for typical A4/Letter papers (points)
+    TOP_MARGIN = 40
+    BOTTOM_MARGIN = 740
+
+    for page in doc:
+        # Blocks: (x0, y0, x1, y1, "text", block_no, block_type)
+        blocks = page.get_text("blocks")
+
+        page_text_parts = []
+        for b in blocks:
+            # Skip non-text blocks (type 0 is text)
+            if b[6] != 0:
+                continue
+
+            y0, y1 = b[1], b[3]
+
+            # Filter out headers and footers
+            if y0 < TOP_MARGIN or y1 > BOTTOM_MARGIN:
+                continue
+
+            text = b[4].strip()
+            if text:
+                page_text_parts.append(text)
+
+        if page_text_parts:
+            text_parts.append("\n\n".join(page_text_parts))
+
+    full_text = "\n\n".join(text_parts)
+
+    # Truncate at common "back matter" headers (References, etc.)
+    # We look for these patterns starting from 50% into the document.
+    back_matter_patterns = [
+        r"\nReferences\n",
+        r"\nREFERENCES\n",
+        r"\nBibliography\n",
+        r"\nBIBLIOGRAPHY\n",
+        r"\nMethods\n",
+        r"\nOnline content\n",
+        r"\nAcknowledgements\n",
+        r"\nData availability\n",
+    ]
+
+    earliest_pos = len(full_text)
+    search_start = len(full_text) // 2
+
+    for pattern in back_matter_patterns:
+        match = re.search(pattern, full_text[search_start:], re.IGNORECASE)
+        if match:
+            pos = match.start() + search_start
+            earliest_pos = min(earliest_pos, pos)
+
+    if earliest_pos < len(full_text):
+        full_text = full_text[:earliest_pos]
+
+    return full_text
 
 
 async def fetch_abstract(pmid: str) -> str | None:

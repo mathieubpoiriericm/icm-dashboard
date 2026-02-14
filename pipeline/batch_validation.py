@@ -68,6 +68,7 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
             "confidence": g.confidence,
             "protein_name": g.protein_name,
             "pmid": g.pmid,
+            "causal_evidence_summary": g.causal_evidence_summary,
         }
         for g in genes
     ]
@@ -130,6 +131,17 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
                     f"PMID {pmid} yielded {count} genes (>20 is unusual — "
                     f"verify extraction quality)"
                 )
+
+    # Check 5: Suspiciously long summaries
+    # LLMs sometimes hallucinate by copying large chunks of text instead of summarizing.
+    if "causal_evidence_summary" in df.columns:
+        long_summaries = df[df["causal_evidence_summary"].str.len() > 1000]
+        for _, row in long_summaries.iterrows():
+            summary_len = len(row["causal_evidence_summary"])
+            warnings.append(
+                f"Gene '{row['gene_symbol']}' in PMID {row['pmid']} has a "
+                f"suspiciously long summary ({summary_len} chars)"
+            )
 
     if warnings:
         logger.warning(f"Batch validation: {len(warnings)} warning(s) raised")

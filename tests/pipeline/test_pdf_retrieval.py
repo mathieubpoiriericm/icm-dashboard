@@ -224,3 +224,79 @@ class TestPatterns:
     def test_doi_pattern_invalid(self):
         assert not DOI_PATTERN.match("not-a-doi")
         assert not DOI_PATTERN.match("")
+
+
+# ---------------------------------------------------------------------------
+# PDF cleaning logic
+# ---------------------------------------------------------------------------
+
+
+class TestExtractCleanPdfText:
+    def test_truncation_at_references(self):
+        from pipeline.pdf_retrieval import _extract_clean_pdf_text
+
+        # Mock document with blocks that form a document long enough for the
+        # 50% search-start heuristic.
+        mock_doc = MagicMock()
+        mock_page1 = MagicMock()
+        # Page 1: Main content (will be before the 50% mark)
+        mock_page1.get_text.return_value = [
+            (50, 100, 100, 120, "This is the main body of the paper.", 0, 0)
+        ]
+
+        mock_page2 = MagicMock()
+        # Page 2: More content and then References
+        mock_page2.get_text.return_value = [
+            (50, 100, 100, 120, "Conclusion of the study.", 0, 0),
+            (50, 200, 100, 220, "References", 0, 0),
+            (50, 230, 100, 250, "1. Smith et al. 2020", 0, 0),
+        ]
+
+        mock_doc.__iter__.return_value = [mock_page1, mock_page2]
+
+        text = _extract_clean_pdf_text(mock_doc)
+
+        assert "main body" in text
+        assert "Conclusion" in text
+        # Should truncate at "\nReferences\n"
+        assert "References" not in text
+        assert "Smith et al." not in text
+
+    def test_margin_filtering(self):
+        from pipeline.pdf_retrieval import _extract_clean_pdf_text
+
+        mock_doc = MagicMock()
+        mock_page = MagicMock()
+        # Block 1: Header (y0 < 40)
+        # Block 2: Body (y0=100)
+        # Block 3: Footer (y1 > 740)
+        mock_page.get_text.return_value = [
+            (50, 10, 100, 30, "Nature Communications 2024", 0, 0),
+            (50, 100, 100, 120, "Reliable gene evidence.", 0, 0),
+            (50, 750, 100, 770, "Page 1 of 10", 0, 0),
+        ]
+
+        mock_doc.__iter__.return_value = [mock_page]
+
+        text = _extract_clean_pdf_text(mock_doc)
+
+        assert "Reliable gene evidence" in text
+        assert "Nature Communications" not in text
+        assert "Page 1" not in text
+
+    def test_non_text_blocks_skipped(self):
+        from pipeline.pdf_retrieval import _extract_clean_pdf_text
+
+        mock_doc = MagicMock()
+        mock_page = MagicMock()
+        # Block type 0 is text, 1 is image
+        mock_page.get_text.return_value = [
+            (50, 100, 100, 120, "Text content", 0, 0),
+            (50, 200, 100, 300, "Image placeholder", 0, 1),
+        ]
+
+        mock_doc.__iter__.return_value = [mock_page]
+
+        text = _extract_clean_pdf_text(mock_doc)
+        assert "Text content" in text
+        assert "Image placeholder" not in text

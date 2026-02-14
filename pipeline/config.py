@@ -101,7 +101,7 @@ class PipelineConfig:
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
     max_paper_text_chars: int = field(
-        default_factory=lambda: _env_int("PIPELINE_MAX_PAPER_TEXT_CHARS", 50_000)
+        default_factory=lambda: _env_int("PIPELINE_MAX_PAPER_TEXT_CHARS", 100_000)
     )
 
     # --- Retry settings (parse / API errors) ---

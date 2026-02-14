@@ -28,7 +28,7 @@ class TestPipelineConfigDefaults:
 
     def test_default_max_paper_text_chars(self):
         cfg = PipelineConfig()
-        assert cfg.max_paper_text_chars == 50_000
+        assert cfg.max_paper_text_chars == 100_000
 
     def test_default_max_retries(self):
         cfg = PipelineConfig()
