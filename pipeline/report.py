@@ -56,6 +56,7 @@ class PipelineRunData(TypedDict, total=False):
 
     timestamp: str
     total_processing_time: float
+    total_compute_time: float
     pipeline_config: dict[str, Any]
     search: dict[str, int]
     papers: dict[str, Any]
@@ -169,10 +170,12 @@ def build_run_data(
     )
 
     failed_count = sum(1 for r in results if not r.succeeded)
+    total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
 
     return {
         "timestamp": datetime.now(UTC).isoformat(),
         "total_processing_time": total_duration,
+        "total_compute_time": total_compute_time,
         "pipeline_config": {
             "model": config.llm_model,
             "days_back": days_back,
@@ -249,10 +252,12 @@ def build_local_pdf_run_data(
     )
 
     failed_count = sum(1 for r in results if not r.succeeded)
+    total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
 
     return {
         "timestamp": datetime.now(UTC).isoformat(),
         "total_processing_time": total_duration,
+        "total_compute_time": total_compute_time,
         "pipeline_config": {
             "mode": "local_pdf",
             "model": config.llm_model,
@@ -325,10 +330,12 @@ def build_pmid_run_data(
     )
 
     failed_count = sum(1 for r in results if not r.succeeded)
+    total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
 
     return {
         "timestamp": datetime.now(UTC).isoformat(),
         "total_processing_time": total_duration,
+        "total_compute_time": total_compute_time,
         "pipeline_config": {
             "mode": "pmid_list",
             "model": config.llm_model,
@@ -403,6 +410,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
             f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
             "[bold]Mode:[/bold] LOCAL PDF",
             f"[bold]Total time:[/bold] {data.get('total_processing_time', 0):.1f}s",
+            f"[bold]Total compute:[/bold] {data.get('total_compute_time', 0):.1f}s",
             f"[bold]Directory:[/bold] {cfg.get('pdf_directory', 'N/A')}",
             f"[bold]Validation:[/bold] "
             f"{'skipped' if cfg.get('skip_validation') else 'enabled'}",
@@ -414,6 +422,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
             f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
             "[bold]Mode:[/bold] PMID LIST",
             f"[bold]Total time:[/bold] {data.get('total_processing_time', 0):.1f}s",
+            f"[bold]Total compute:[/bold] {data.get('total_compute_time', 0):.1f}s",
             f"[bold]File:[/bold] {cfg.get('pmid_file', 'N/A')}",
             f"[bold]Validation:[/bold] "
             f"{'skipped' if cfg.get('skip_validation') else 'enabled'}",
@@ -429,6 +438,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
             f"[bold]Model:[/bold] {cfg.get('model', 'N/A')}",
             f"[bold]Mode:[/bold] {mode}",
             f"[bold]Total time:[/bold] {data.get('total_processing_time', 0):.1f}s",
+            f"[bold]Total compute:[/bold] {data.get('total_compute_time', 0):.1f}s",
             f"[bold]Days back:[/bold] {cfg.get('days_back', 'N/A')}",
             f"[bold]PMIDs found:[/bold] {search.get('pmids_found', 0)} "
             f"({search.get('pmids_new', 0)} new, "
