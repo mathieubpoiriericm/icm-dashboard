@@ -209,6 +209,7 @@ async def extract_from_paper(
 
             # Parse and validate
             result = _parse_extraction_response(text_content)
+            logger.info(f"Extracted {len(result.genes)} gene(s) from PMID {pmid}")
             return result.genes, usage
 
         except anthropic.RateLimitError as e:

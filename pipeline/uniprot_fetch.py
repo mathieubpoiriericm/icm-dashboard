@@ -15,6 +15,7 @@ from typing import Any, Final
 import httpx
 
 from pipeline.config import PipelineConfig
+from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
 UNIPROT_BASE_URL: Final[str] = "https://rest.uniprot.org/uniprotkb/search"
@@ -43,11 +44,19 @@ class SyncResult:
     errors: list[str]
 
 
-# Module-level shared HTTP client
-_http_client: httpx.AsyncClient | None = None
+# Module-level shared HTTP client (30s timeout for UniProt's slower API)
+_client_manager = AsyncHttpClientManager(timeout=30.0)
 _uniprot_cache: dict[str, UniProtInfo | None] = {}
-_cache_lock = asyncio.Lock()
+_cache_lock: asyncio.Lock | None = None
 _uniprot_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_cache_lock() -> asyncio.Lock:
+    """Lazy-init cache lock (avoids creating Lock before event loop exists)."""
+    global _cache_lock
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    return _cache_lock
 
 
 def _get_uniprot_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
@@ -61,23 +70,9 @@ def _get_uniprot_semaphore(config: PipelineConfig | None = None) -> asyncio.Sema
     return _uniprot_semaphore
 
 
-async def _get_http_client() -> httpx.AsyncClient:
-    """Get or create shared HTTP client with connection pooling."""
-    global _http_client
-    if _http_client is None:
-        _http_client = httpx.AsyncClient(
-            timeout=30.0,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
-    return _http_client
-
-
 async def close_uniprot_client() -> None:
     """Close shared HTTP client (call at shutdown)."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
+    await _client_manager.close()
 
 
 def clear_uniprot_cache() -> None:
@@ -120,7 +115,7 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
     }
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(UNIPROT_BASE_URL, params=params)
 
         if resp.status_code != 200:
@@ -201,7 +196,7 @@ async def fetch_uniprot_go_info(accession: str) -> dict[str, str | None]:
     }
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(url, params=params)
 
         if resp.status_code != 200:
@@ -262,7 +257,7 @@ async def fetch_uniprot_info(gene_symbol: str) -> UniProtInfo | None:
     if symbol_upper in _uniprot_cache:
         return _uniprot_cache[symbol_upper]
 
-    async with _cache_lock:
+    async with _get_cache_lock():
         # Double-check after acquiring lock
         if symbol_upper in _uniprot_cache:
             return _uniprot_cache[symbol_upper]

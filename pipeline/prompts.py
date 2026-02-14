@@ -6,7 +6,10 @@ iterated on without touching extraction code.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Final
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT: Final[str] = (
     "You are a systematic reviewer specializing in cerebral small vessel disease "
@@ -156,12 +159,24 @@ def build_extraction_messages(
         },
     ]
 
+    # Truncate and log if paper text exceeds max_chars
+    if len(paper_text) > max_chars:
+        logger.info(
+            f"PMID {pmid}: truncating paper text from "
+            f"{len(paper_text):,} to {max_chars:,} chars"
+        )
+        paper_text = paper_text[:max_chars]
+
+    # Escape </document> in paper text to prevent XML injection that
+    # would prematurely close the document tag and corrupt the prompt.
+    safe_text = paper_text.replace("</document>", "&lt;/document&gt;")
+
     user_blocks: list[dict[str, Any]] = [
         {
             "type": "text",
             "text": (
                 f'<document source="PubMed" pmid="{pmid}">\n'
-                f"{paper_text[:max_chars]}\n"
+                f"{safe_text}\n"
                 f"</document>\n\n"
                 "Extract all genes with putative causal links to cSVD "
                 "from the document above."

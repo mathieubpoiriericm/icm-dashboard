@@ -264,7 +264,8 @@ def _reset_validation_client():
     val._http_client = None
     val._ncbi_semaphore = None
     val._last_request_time = 0.0
-    val._throttle_lock = asyncio.Lock()
+    val._throttle_lock = None
+    val._cache_lock = None
 
 
 @pytest.fixture(autouse=True)
@@ -310,9 +311,10 @@ def _reset_ncbi_gene_client():
     yield
     import pipeline.ncbi_gene_fetch as ncbi
 
-    ncbi._http_client = None
+    ncbi._client_manager.reset()
     ncbi._gene_cache = {}
     ncbi._ncbi_semaphore = None
+    ncbi._cache_lock = None
 
 
 @pytest.fixture(autouse=True)
@@ -321,9 +323,10 @@ def _reset_uniprot_client():
     yield
     import pipeline.uniprot_fetch as uni
 
-    uni._http_client = None
+    uni._client_manager.reset()
     uni._uniprot_cache = {}
     uni._uniprot_semaphore = None
+    uni._cache_lock = None
 
 
 @pytest.fixture(autouse=True)
@@ -332,9 +335,10 @@ def _reset_pubmed_citations_client():
     yield
     import pipeline.pubmed_citations as pc
 
-    pc._http_client = None
+    pc._client_manager.reset()
     pc._citation_cache = {}
     pc._ncbi_semaphore = None
+    pc._cache_lock = None
 
 
 @pytest.fixture

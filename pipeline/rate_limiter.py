@@ -37,7 +37,7 @@ class AsyncRateLimiter:
         """Wait until both RPM and TPM budgets allow a new request."""
         while True:
             async with self._lock:
-                now = asyncio.get_event_loop().time()
+                now = asyncio.get_running_loop().time()
 
                 # Respect global backoff from 429 signals
                 if now < self._global_backoff_until:
@@ -99,7 +99,7 @@ class AsyncRateLimiter:
         Sets a global backoff deadline so concurrent tasks stop sending requests
         until the backoff expires, preventing a thundering herd.
         """
-        now = asyncio.get_event_loop().time()
+        now = asyncio.get_running_loop().time()
         new_deadline = now + backoff_seconds
         # Only extend, never shorten an existing backoff
         if new_deadline > self._global_backoff_until:

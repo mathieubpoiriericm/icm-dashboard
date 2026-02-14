@@ -85,7 +85,6 @@ if __name__ == "__main__":
 
 import asyncio  # noqa: E402
 import logging  # noqa: E402
-import re  # noqa: E402
 import time  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from datetime import datetime  # noqa: E402
@@ -106,7 +105,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 import os  # noqa: E402
 
 from pipeline.batch_validation import batch_validate  # noqa: E402
-from pipeline.config import PipelineConfig  # noqa: E402
+from pipeline.config import PMID_PATTERN, PipelineConfig  # noqa: E402
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
 from pipeline.database import (  # noqa: E402
     Database,
@@ -144,8 +143,6 @@ LOG_SEPARATOR: Final[str] = "=" * 50
 _SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
     resolve_entities=False, no_network=True
 )
-PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
-
 # Configure logging
 LOG_DIR = Path(os.getenv("PIPELINE_LOG_DIR", PROJECT_ROOT / "logs"))
 LOG_DIR.mkdir(exist_ok=True)

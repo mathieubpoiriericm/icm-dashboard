@@ -17,21 +17,10 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from pipeline.config import PipelineConfig
+from pipeline.config import MODEL_PRICING, PipelineConfig
 from pipeline.data_merger import MergeResult
 from pipeline.llm_extraction import GeneEntry
 from pipeline.quality_metrics import PipelineMetrics
-
-# Pricing per 1M tokens (input, output) — update when models change.
-_MODEL_PRICING: dict[str, tuple[float, float]] = {
-    "claude-opus-4-6": (5.0, 25.0),
-    "claude-opus-4-5-20251101": (5.0, 25.0),
-    "claude-opus-4-1-20250805": (15.0, 75.0),
-    "claude-opus-4-20250514": (15.0, 75.0),
-    "claude-sonnet-4-5-20250929": (3.0, 15.0),
-    "claude-sonnet-4-20250514": (3.0, 15.0),
-    "claude-haiku-4-5-20251001": (1.0, 5.0),
-}
 
 # Prompt-caching multipliers applied to the base input price.
 # The pipeline uses 1h TTL caches (see prompts.py), so writes cost 2x base.
@@ -86,7 +75,7 @@ def _estimate_cost(
 
     Returns None if the model is not in the pricing table.
     """
-    pricing = _MODEL_PRICING.get(model)
+    pricing = MODEL_PRICING.get(model)
     if pricing is None:
         return None
     input_price, output_price = pricing
@@ -129,6 +118,59 @@ def _paper_results_to_summaries(
 # ---------------------------------------------------------------------------
 
 
+def _build_common_run_data(
+    metrics: PipelineMetrics,
+    results: list[Any],
+    batch_warnings: list[str],
+    config: PipelineConfig,
+    total_duration: float,
+    pipeline_config: dict[str, Any],
+) -> PipelineRunData:
+    """Assemble the fields shared by all three run-data builders."""
+    tu = metrics.token_usage
+    cost = _estimate_cost(
+        config.llm_model,
+        tu.input_tokens,
+        tu.output_tokens,
+        tu.cache_creation_input_tokens,
+        tu.cache_read_input_tokens,
+    )
+
+    failed_count = sum(1 for r in results if not r.succeeded)
+    total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
+
+    return {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "total_processing_time": total_duration,
+        "total_compute_time": total_compute_time,
+        "pipeline_config": pipeline_config,
+        "papers": {
+            "processed": metrics.papers_processed,
+            "fulltext": metrics.fulltext_retrieved,
+            "abstract_only": metrics.abstract_only,
+            "fulltext_rate": round(metrics.fulltext_rate, 4),
+            "failed": failed_count,
+        },
+        "genes": {
+            "extracted": metrics.genes_extracted,
+            "validated": metrics.genes_validated,
+            "rejected": metrics.genes_rejected,
+            "acceptance_rate": round(metrics.gene_acceptance_rate, 4),
+        },
+        "token_usage": {
+            "input_tokens": tu.input_tokens,
+            "output_tokens": tu.output_tokens,
+            "cache_creation_input_tokens": tu.cache_creation_input_tokens,
+            "cache_read_input_tokens": tu.cache_read_input_tokens,
+            "total_tokens": tu.total_tokens,
+            "cache_hit_rate": round(tu.cache_hit_rate, 4),
+            "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
+        },
+        "batch_validation_warnings": batch_warnings,
+        "papers_detail": _paper_results_to_summaries(results),
+    }
+
+
 def build_run_data(
     metrics: PipelineMetrics,
     results: list[Any],
@@ -142,41 +184,14 @@ def build_run_data(
     new_pmids_count: int,
     total_duration: float = 0.0,
 ) -> PipelineRunData:
-    """Assemble all pipeline run data into a single dict.
-
-    Args:
-        metrics: Accumulated pipeline metrics.
-        results: List of PaperResult from processing.
-        all_genes: All validated GeneEntry instances.
-        gene_result: MergeResult dict (None if dry-run).
-        batch_warnings: Warnings from batch validation.
-        config: Pipeline configuration used for this run.
-        days_back: Days lookback setting.
-        dry_run: Whether this was a dry run.
-        total_pmids_found: Total PMIDs from PubMed search.
-        new_pmids_count: PMIDs after filtering already-processed.
-        total_duration: Total pipeline execution time in seconds.
-
-    Returns:
-        PipelineRunData dict.
-    """
-    tu = metrics.token_usage
-    cost = _estimate_cost(
-        config.llm_model,
-        tu.input_tokens,
-        tu.output_tokens,
-        tu.cache_creation_input_tokens,
-        tu.cache_read_input_tokens,
-    )
-
-    failed_count = sum(1 for r in results if not r.succeeded)
-    total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
-
-    return {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "total_processing_time": total_duration,
-        "total_compute_time": total_compute_time,
-        "pipeline_config": {
+    """Assemble all pipeline run data into a single dict (standard mode)."""
+    data = _build_common_run_data(
+        metrics,
+        results,
+        batch_warnings,
+        config,
+        total_duration,
+        pipeline_config={
             "model": config.llm_model,
             "days_back": days_back,
             "dry_run": dry_run,
@@ -184,37 +199,14 @@ def build_run_data(
             "thinking_mode": "adaptive",
             "effort": config.llm_effort,
         },
-        "search": {
-            "pmids_found": total_pmids_found,
-            "pmids_new": new_pmids_count,
-            "pmids_skipped": total_pmids_found - new_pmids_count,
-        },
-        "papers": {
-            "processed": metrics.papers_processed,
-            "fulltext": metrics.fulltext_retrieved,
-            "abstract_only": metrics.abstract_only,
-            "fulltext_rate": round(metrics.fulltext_rate, 4),
-            "failed": failed_count,
-        },
-        "genes": {
-            "extracted": metrics.genes_extracted,
-            "validated": metrics.genes_validated,
-            "rejected": metrics.genes_rejected,
-            "acceptance_rate": round(metrics.gene_acceptance_rate, 4),
-        },
-        "token_usage": {
-            "input_tokens": tu.input_tokens,
-            "output_tokens": tu.output_tokens,
-            "cache_creation_input_tokens": tu.cache_creation_input_tokens,
-            "cache_read_input_tokens": tu.cache_read_input_tokens,
-            "total_tokens": tu.total_tokens,
-            "cache_hit_rate": round(tu.cache_hit_rate, 4),
-            "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
-        },
-        "database": gene_result,
-        "batch_validation_warnings": batch_warnings,
-        "papers_detail": _paper_results_to_summaries(results),
+    )
+    data["search"] = {
+        "pmids_found": total_pmids_found,
+        "pmids_new": new_pmids_count,
+        "pmids_skipped": total_pmids_found - new_pmids_count,
     }
+    data["database"] = gene_result
+    return data
 
 
 def build_local_pdf_run_data(
@@ -227,38 +219,15 @@ def build_local_pdf_run_data(
     skip_validation: bool,
     total_duration: float = 0.0,
 ) -> PipelineRunData:
-    """Assemble run data for a local-PDF extraction run.
-
-    Args:
-        metrics: Accumulated pipeline metrics.
-        results: List of PaperResult from processing.
-        all_genes: All GeneEntry instances (validated or raw).
-        batch_warnings: Warnings from batch validation.
-        config: Pipeline configuration used for this run.
-        pdf_dir: Directory containing the source PDFs.
-        skip_validation: Whether NCBI validation was skipped.
-        total_duration: Total pipeline execution time in seconds.
-
-    Returns:
-        PipelineRunData dict with mode="local_pdf".
-    """
-    tu = metrics.token_usage
-    cost = _estimate_cost(
-        config.llm_model,
-        tu.input_tokens,
-        tu.output_tokens,
-        tu.cache_creation_input_tokens,
-        tu.cache_read_input_tokens,
-    )
-
+    """Assemble run data for a local-PDF extraction run."""
     failed_count = sum(1 for r in results if not r.succeeded)
-    total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
-
-    return {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "total_processing_time": total_duration,
-        "total_compute_time": total_compute_time,
-        "pipeline_config": {
+    data = _build_common_run_data(
+        metrics,
+        results,
+        batch_warnings,
+        config,
+        total_duration,
+        pipeline_config={
             "mode": "local_pdf",
             "model": config.llm_model,
             "pdf_directory": str(pdf_dir),
@@ -267,32 +236,9 @@ def build_local_pdf_run_data(
             "thinking_mode": "adaptive",
             "effort": config.llm_effort,
         },
-        "papers": {
-            "total": failed_count + metrics.papers_processed,
-            "processed": metrics.papers_processed,
-            "fulltext": metrics.fulltext_retrieved,
-            "abstract_only": metrics.abstract_only,
-            "fulltext_rate": round(metrics.fulltext_rate, 4),
-            "failed": failed_count,
-        },
-        "genes": {
-            "extracted": metrics.genes_extracted,
-            "validated": metrics.genes_validated,
-            "rejected": metrics.genes_rejected,
-            "acceptance_rate": round(metrics.gene_acceptance_rate, 4),
-        },
-        "token_usage": {
-            "input_tokens": tu.input_tokens,
-            "output_tokens": tu.output_tokens,
-            "cache_creation_input_tokens": tu.cache_creation_input_tokens,
-            "cache_read_input_tokens": tu.cache_read_input_tokens,
-            "total_tokens": tu.total_tokens,
-            "cache_hit_rate": round(tu.cache_hit_rate, 4),
-            "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
-        },
-        "batch_validation_warnings": batch_warnings,
-        "papers_detail": _paper_results_to_summaries(results),
-    }
+    )
+    data["papers"]["total"] = failed_count + metrics.papers_processed
+    return data
 
 
 def build_pmid_run_data(
@@ -305,38 +251,15 @@ def build_pmid_run_data(
     skip_validation: bool,
     total_duration: float = 0.0,
 ) -> PipelineRunData:
-    """Assemble run data for a PMID-list extraction run.
-
-    Args:
-        metrics: Accumulated pipeline metrics.
-        results: List of PaperResult from processing.
-        all_genes: All GeneEntry instances (validated or raw).
-        batch_warnings: Warnings from batch validation.
-        config: Pipeline configuration used for this run.
-        pmid_file: Path to the source PMID text file.
-        skip_validation: Whether NCBI validation was skipped.
-        total_duration: Total pipeline execution time in seconds.
-
-    Returns:
-        PipelineRunData dict with mode="pmid_list".
-    """
-    tu = metrics.token_usage
-    cost = _estimate_cost(
-        config.llm_model,
-        tu.input_tokens,
-        tu.output_tokens,
-        tu.cache_creation_input_tokens,
-        tu.cache_read_input_tokens,
-    )
-
+    """Assemble run data for a PMID-list extraction run."""
     failed_count = sum(1 for r in results if not r.succeeded)
-    total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
-
-    return {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "total_processing_time": total_duration,
-        "total_compute_time": total_compute_time,
-        "pipeline_config": {
+    data = _build_common_run_data(
+        metrics,
+        results,
+        batch_warnings,
+        config,
+        total_duration,
+        pipeline_config={
             "mode": "pmid_list",
             "model": config.llm_model,
             "pmid_file": str(pmid_file),
@@ -345,32 +268,9 @@ def build_pmid_run_data(
             "thinking_mode": "adaptive",
             "effort": config.llm_effort,
         },
-        "papers": {
-            "total": failed_count + metrics.papers_processed,
-            "processed": metrics.papers_processed,
-            "fulltext": metrics.fulltext_retrieved,
-            "abstract_only": metrics.abstract_only,
-            "fulltext_rate": round(metrics.fulltext_rate, 4),
-            "failed": failed_count,
-        },
-        "genes": {
-            "extracted": metrics.genes_extracted,
-            "validated": metrics.genes_validated,
-            "rejected": metrics.genes_rejected,
-            "acceptance_rate": round(metrics.gene_acceptance_rate, 4),
-        },
-        "token_usage": {
-            "input_tokens": tu.input_tokens,
-            "output_tokens": tu.output_tokens,
-            "cache_creation_input_tokens": tu.cache_creation_input_tokens,
-            "cache_read_input_tokens": tu.cache_read_input_tokens,
-            "total_tokens": tu.total_tokens,
-            "cache_hit_rate": round(tu.cache_hit_rate, 4),
-            "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
-        },
-        "batch_validation_warnings": batch_warnings,
-        "papers_detail": _paper_results_to_summaries(results),
-    }
+    )
+    data["papers"]["total"] = failed_count + metrics.papers_processed
+    return data
 
 
 def write_comprehensive_report(data: PipelineRunData, log_dir: Path) -> Path:

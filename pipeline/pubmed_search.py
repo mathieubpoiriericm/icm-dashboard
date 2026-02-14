@@ -122,6 +122,8 @@ def search_recent_papers(days_back: int = 7) -> list[str]:
 
     mindate = (datetime.now() - timedelta(days=days_back)).strftime("%Y/%m/%d")
 
+    logger.info(f"PubMed query (last {days_back}d): {SVD_QUERY[:120]}...")
+
     try:
         handle = Entrez.esearch(
             db="pubmed",
@@ -132,10 +134,12 @@ def search_recent_papers(days_back: int = 7) -> list[str]:
             usehistory="y",
         )
         results = Entrez.read(handle)
-    except (URLError, HTTPError, HTTPException, RuntimeError) as e:
+    except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
         raise PubMedSearchError(f"Entrez API call failed: {e}") from e
 
-    return results.get("IdList", [])
+    pmids = results.get("IdList", [])
+    logger.info(f"PubMed search returned {len(pmids)} result(s)")
+    return pmids
 
 
 def filter_new_pmids(pmids: list[str], existing: set[str]) -> list[str]:

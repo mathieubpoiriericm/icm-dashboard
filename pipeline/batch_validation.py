@@ -91,7 +91,9 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # extracting the same gene in one batch may indicate over-extraction.
     if "pmid" in df.columns and df["pmid"].notna().any():
         gene_paper_counts = (
-            df[df["pmid"] != ""].groupby("gene_symbol")["pmid"].nunique()
+            df[df["pmid"].notna() & (df["pmid"] != "")]
+            .groupby("gene_symbol")["pmid"]
+            .nunique()
         )
         for symbol, count in gene_paper_counts.items():
             if count > 3:
@@ -124,7 +126,7 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # Check 4: Per-paper gene count sanity
     # A single paper yielding >20 genes is unusual for cSVD literature.
     if "pmid" in df.columns and df["pmid"].notna().any():
-        per_paper = df[df["pmid"] != ""].groupby("pmid").size()
+        per_paper = df[df["pmid"].notna() & (df["pmid"] != "")].groupby("pmid").size()
         for pmid, count in per_paper.items():
             if count > 20:
                 warnings.append(
@@ -135,7 +137,8 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # Check 5: Suspiciously long summaries
     # LLMs sometimes hallucinate by copying large chunks of text instead of summarizing.
     if "causal_evidence_summary" in df.columns:
-        long_summaries = df[df["causal_evidence_summary"].str.len() > 1000]
+        summary_col = df["causal_evidence_summary"].dropna()
+        long_summaries = df.loc[summary_col[summary_col.str.len() > 1000].index]
         for _, row in long_summaries.iterrows():
             summary_len = len(row["causal_evidence_summary"])
             warnings.append(

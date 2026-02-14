@@ -123,7 +123,7 @@ class TestFetchNCBIGeneUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=search_resp)
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
         mocker.patch(
@@ -143,7 +143,7 @@ class TestFetchNCBIGeneUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -157,7 +157,7 @@ class TestFetchNCBIGeneUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -168,7 +168,7 @@ class TestFetchNCBIGeneUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -177,11 +177,9 @@ class TestFetchNCBIGeneUncached:
 
     async def test_request_error_returns_none(self, mocker):
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=httpx.RequestError("connection failed")
-        )
+        mock_client.get = AsyncMock(side_effect=httpx.RequestError("connection failed"))
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -193,7 +191,7 @@ class TestFetchNCBIGeneUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -222,7 +220,7 @@ class TestFetchGeneSummary:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -240,7 +238,7 @@ class TestFetchGeneSummary:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -252,7 +250,7 @@ class TestFetchGeneSummary:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -263,7 +261,7 @@ class TestFetchGeneSummary:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
-            "pipeline.ncbi_gene_fetch._get_http_client",
+            "pipeline.ncbi_gene_fetch._client_manager.get",
             return_value=mock_client,
         )
 

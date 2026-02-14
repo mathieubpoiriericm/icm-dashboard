@@ -281,7 +281,7 @@ class TestFetchPubmedUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.pubmed_citations._get_http_client",
+            "pipeline.pubmed_citations._client_manager.get",
             return_value=mock_client,
         )
 
@@ -292,7 +292,7 @@ class TestFetchPubmedUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
-            "pipeline.pubmed_citations._get_http_client",
+            "pipeline.pubmed_citations._client_manager.get",
             return_value=mock_client,
         )
 
@@ -301,11 +301,9 @@ class TestFetchPubmedUncached:
 
     async def test_request_error_returns_none(self, mocker):
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=httpx.RequestError("connection reset")
-        )
+        mock_client.get = AsyncMock(side_effect=httpx.RequestError("connection reset"))
         mocker.patch(
-            "pipeline.pubmed_citations._get_http_client",
+            "pipeline.pubmed_citations._client_manager.get",
             return_value=mock_client,
         )
 
@@ -317,7 +315,7 @@ class TestFetchPubmedUncached:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.pubmed_citations._get_http_client",
+            "pipeline.pubmed_citations._client_manager.get",
             return_value=mock_client,
         )
 
@@ -382,9 +380,7 @@ class TestSyncPubmedCitations:
         )
 
         # Even though "12345678" appears twice, it should be deduplicated
-        result = await sync_pubmed_citations(
-            ["12345678", "12345678", "12345678"]
-        )
+        result = await sync_pubmed_citations(["12345678", "12345678", "12345678"])
         assert result.cached == 1
 
     async def test_successful_vs_failed_counting(self, mocker):

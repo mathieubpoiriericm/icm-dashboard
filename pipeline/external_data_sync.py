@@ -6,6 +6,7 @@ in the database, storing results for dashboard consumption.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -130,51 +131,57 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
     result = ExternalDataSyncResult()
 
     try:
-        # Step 1: Get gene symbols
-        logger.info("Collecting gene symbols from database...")
-        table1_genes = await get_table1_gene_symbols()
-        table2_genes = await get_table2_gene_symbols()
-        all_genes = list(dict.fromkeys(table1_genes + table2_genes))  # Deduplicate
+        async with asyncio.timeout(3600):
+            # Step 1: Get gene symbols
+            logger.info("Collecting gene symbols from database...")
+            table1_genes = await get_table1_gene_symbols()
+            table2_genes = await get_table2_gene_symbols()
+            all_genes = list(dict.fromkeys(table1_genes + table2_genes))  # Deduplicate
 
-        logger.info(f"Found {len(table1_genes)} genes in Table 1")
-        logger.info(f"Found {len(table2_genes)} genes in Table 2")
-        logger.info(f"Total unique genes: {len(all_genes)}")
+            logger.info(f"Found {len(table1_genes)} genes in Table 1")
+            logger.info(f"Found {len(table2_genes)} genes in Table 2")
+            logger.info(f"Total unique genes: {len(all_genes)}")
 
-        # Step 2: Get PMIDs
-        logger.info("Extracting PMIDs from references...")
-        pmids = await get_all_pmids()
-        logger.info(f"Found {len(pmids)} unique PMIDs")
+            # Step 2: Get PMIDs
+            logger.info("Extracting PMIDs from references...")
+            pmids = await get_all_pmids()
+            logger.info(f"Found {len(pmids)} unique PMIDs")
 
-        # Step 3: Sync NCBI gene info
-        logger.info("Syncing NCBI gene info...")
-        ncbi_result = await sync_ncbi_gene_info(all_genes)
-        result.ncbi_fetched = ncbi_result.fetched
-        result.ncbi_cached = ncbi_result.cached
-        result.ncbi_failed = ncbi_result.failed
-        result.errors.extend(ncbi_result.errors[:10])  # Limit error list
+            # Step 3: Sync NCBI gene info
+            logger.info("Syncing NCBI gene info...")
+            ncbi_result = await sync_ncbi_gene_info(all_genes)
+            result.ncbi_fetched = ncbi_result.fetched
+            result.ncbi_cached = ncbi_result.cached
+            result.ncbi_failed = ncbi_result.failed
+            result.errors.extend(ncbi_result.errors[:10])  # Limit error list
 
-        # Step 4: Sync UniProt info (Table 1 genes only)
-        logger.info("Syncing UniProt info...")
-        uniprot_result = await sync_uniprot_info(table1_genes)
-        result.uniprot_fetched = uniprot_result.fetched
-        result.uniprot_cached = uniprot_result.cached
-        result.uniprot_failed = uniprot_result.failed
-        result.errors.extend(uniprot_result.errors[:10])
+            # Step 4: Sync UniProt info (Table 1 genes only)
+            logger.info("Syncing UniProt info...")
+            uniprot_result = await sync_uniprot_info(table1_genes)
+            result.uniprot_fetched = uniprot_result.fetched
+            result.uniprot_cached = uniprot_result.cached
+            result.uniprot_failed = uniprot_result.failed
+            result.errors.extend(uniprot_result.errors[:10])
 
-        # Step 5: Sync PubMed citations
-        if pmids:
-            logger.info("Syncing PubMed citations...")
-            pubmed_result = await sync_pubmed_citations(pmids)
-            result.pubmed_fetched = pubmed_result.fetched
-            result.pubmed_cached = pubmed_result.cached
-            result.pubmed_failed = pubmed_result.failed
-            result.errors.extend(pubmed_result.errors[:10])
-        else:
-            logger.info("No PMIDs to sync")
+            # Step 5: Sync PubMed citations
+            if pmids:
+                logger.info("Syncing PubMed citations...")
+                pubmed_result = await sync_pubmed_citations(pmids)
+                result.pubmed_fetched = pubmed_result.fetched
+                result.pubmed_cached = pubmed_result.cached
+                result.pubmed_failed = pubmed_result.failed
+                result.errors.extend(pubmed_result.errors[:10])
+            else:
+                logger.info("No PMIDs to sync")
 
-        logger.info("External data sync complete")
-        logger.info(result.summary())
+            logger.info("External data sync complete")
+            logger.info(result.summary())
 
+            return result
+
+    except TimeoutError:
+        logger.error("External data sync timed out after 1 hour")
+        result.errors.append("Sync timed out after 3600s")
         return result
 
     finally:

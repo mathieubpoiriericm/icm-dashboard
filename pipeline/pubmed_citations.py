@@ -16,6 +16,7 @@ import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
 from pipeline.config import PipelineConfig
+from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,19 @@ class SyncResult:
     errors: list[str]
 
 
-# Module-level shared HTTP client
-_http_client: httpx.AsyncClient | None = None
+# Module-level shared HTTP client (30s timeout for PubMed efetch XML responses)
+_client_manager = AsyncHttpClientManager(timeout=30.0)
 _citation_cache: dict[str, PubMedCitation | None] = {}
-_cache_lock = asyncio.Lock()
+_cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_cache_lock() -> asyncio.Lock:
+    """Lazy-init cache lock (avoids creating Lock before event loop exists)."""
+    global _cache_lock
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    return _cache_lock
 
 
 def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
@@ -69,23 +78,9 @@ def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semapho
     return _ncbi_semaphore
 
 
-async def _get_http_client() -> httpx.AsyncClient:
-    """Get or create shared HTTP client with connection pooling."""
-    global _http_client
-    if _http_client is None:
-        _http_client = httpx.AsyncClient(
-            timeout=30.0,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
-    return _http_client
-
-
 async def close_pubmed_client() -> None:
     """Close shared HTTP client (call at shutdown)."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
+    await _client_manager.close()
 
 
 def clear_pubmed_cache() -> None:
@@ -169,7 +164,7 @@ async def fetch_pubmed_citation(pmid: str) -> PubMedCitation | None:
     if pmid in _citation_cache:
         return _citation_cache[pmid]
 
-    async with _cache_lock:
+    async with _get_cache_lock():
         # Double-check after acquiring lock
         if pmid in _citation_cache:
             return _citation_cache[pmid]
@@ -189,7 +184,7 @@ async def _fetch_pubmed_uncached(pmid: str) -> PubMedCitation | None:
     }
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(NCBI_EFETCH_URL, params=params)
 
         if resp.status_code != 200:

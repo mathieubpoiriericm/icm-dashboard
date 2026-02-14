@@ -15,6 +15,8 @@ from typing import Any, Final, Literal, TypedDict
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
+from pipeline.config import PMID_PATTERN
+
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
@@ -23,7 +25,6 @@ logger = logging.getLogger(__name__)
 _SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
     resolve_entities=False, no_network=True
 )
-PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
 DOI_PATTERN: Final[re.Pattern[str]] = re.compile(r"^10\.\d{4,}/[^\s]+$")
 
 # Timeout configurations
@@ -295,9 +296,7 @@ async def download_and_parse_pdf(url: str) -> str | None:
         # Check content length to avoid memory exhaustion from oversized PDFs
         content_length = int(resp.headers.get("content-length", 0))
         if content_length > MAX_PDF_BYTES:
-            logger.warning(
-                f"PDF too large ({content_length} bytes), skipping: {url}"
-            )
+            logger.warning(f"PDF too large ({content_length} bytes), skipping: {url}")
             return None
 
         # Check content type
@@ -321,7 +320,8 @@ async def download_and_parse_pdf(url: str) -> str | None:
         logger.warning(f"Request error downloading PDF from {url}: {e}")
         return None
     except Exception as e:
-        # PyMuPDF can raise various exceptions for corrupt PDFs
+        # Intentionally broad: PyMuPDF (fitz) raises arbitrary C-level
+        # exceptions (RuntimeError, ValueError, etc.) for corrupt PDFs.
         logger.warning(f"PDF parsing failed for {url}: {e}")
         return None
 
@@ -355,6 +355,8 @@ def parse_local_pdf(path: Path) -> str | None:
         return text if text.strip() else None
 
     except Exception as e:
+        # Intentionally broad: PyMuPDF (fitz) raises arbitrary C-level
+        # exceptions (RuntimeError, ValueError, etc.) for corrupt PDFs.
         logger.warning(f"PDF parsing failed for {path.name}: {e}")
         return None
 

@@ -7,6 +7,7 @@ to avoid redundant API calls for repeated gene symbols.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -28,7 +29,15 @@ NCBI_API_KEY: Final[str | None] = os.getenv("NCBI_API_KEY")
 _MIN_REQUEST_INTERVAL: Final[float] = 0.1 if NCBI_API_KEY else 0.34
 
 _last_request_time: float = 0.0
-_throttle_lock: asyncio.Lock = asyncio.Lock()
+_throttle_lock: asyncio.Lock | None = None
+
+
+def _get_throttle_lock() -> asyncio.Lock:
+    """Lazy-init throttle lock (avoids creating Lock before event loop exists)."""
+    global _throttle_lock
+    if _throttle_lock is None:
+        _throttle_lock = asyncio.Lock()
+    return _throttle_lock
 
 
 @dataclass(slots=True)
@@ -49,6 +58,8 @@ async def _get_http_client() -> httpx.AsyncClient:
     """Get or create shared HTTP client with connection pooling."""
     global _http_client
     if _http_client is None:
+        # 15s timeout: NCBI esearch responses are small JSON; longer
+        # would mask network issues without improving availability.
         _http_client = httpx.AsyncClient(
             timeout=15.0,
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
@@ -66,8 +77,16 @@ async def close_validation_client() -> None:
 
 # --- Gene cache for NCBI lookups ---
 _gene_cache: dict[str, dict[str, Any] | None] = {}
-_cache_lock = asyncio.Lock()
+_cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_cache_lock() -> asyncio.Lock:
+    """Lazy-init cache lock (avoids creating Lock before event loop exists)."""
+    global _cache_lock
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    return _cache_lock
 
 
 def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
@@ -95,7 +114,7 @@ def _get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
 async def _throttle() -> None:
     """Enforce minimum interval between NCBI requests."""
     global _last_request_time
-    async with _throttle_lock:
+    async with _get_throttle_lock():
         now = time.monotonic()
         elapsed = now - _last_request_time
         if elapsed < _MIN_REQUEST_INTERVAL:
@@ -242,7 +261,7 @@ async def verify_ncbi_gene(
     symbol_upper = symbol.upper()
 
     # Check cache (brief lock for dict access only)
-    async with _cache_lock:
+    async with _get_cache_lock():
         if symbol_upper in _gene_cache:
             return _gene_cache[symbol_upper]
 
@@ -250,7 +269,7 @@ async def verify_ncbi_gene(
     async with _get_ncbi_semaphore(config):
         result = await _fetch_ncbi_gene_uncached(symbol, config=config)
 
-    async with _cache_lock:
+    async with _get_cache_lock():
         _gene_cache[symbol_upper] = result
 
     return result
@@ -338,7 +357,7 @@ async def fetch_gene_details(
                 else []
             ),
         }
-    except (KeyError, ValueError) as e:
+    except (KeyError, json.JSONDecodeError) as e:
         logger.warning(f"Failed to parse NCBI response for gene_id {gene_id}: {e}")
 
     return None

@@ -35,9 +35,7 @@ class TestCleanGoTerm:
         assert result == "apoptotic process"
 
     def test_multiple_go_ids(self):
-        result = _clean_go_term(
-            "process A [GO:0000001]; process B [GO:0000002]"
-        )
+        result = _clean_go_term("process A [GO:0000001]; process B [GO:0000002]")
         assert "[GO:" not in result
         assert "process A" in result
         assert "process B" in result
@@ -86,7 +84,7 @@ class TestFetchUniProtAccession:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -105,7 +103,7 @@ class TestFetchUniProtAccession:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=[no_results, synonym_resp])
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -123,7 +121,7 @@ class TestFetchUniProtAccession:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -136,7 +134,7 @@ class TestFetchUniProtAccession:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=no_results)
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -149,7 +147,7 @@ class TestFetchUniProtAccession:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -161,7 +159,7 @@ class TestFetchUniProtAccession:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -171,11 +169,9 @@ class TestFetchUniProtAccession:
 
     async def test_tsv_parsing_error_returns_none_none(self, mocker):
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=httpx.RequestError("connection reset")
-        )
+        mock_client.get = AsyncMock(side_effect=httpx.RequestError("connection reset"))
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -203,7 +199,7 @@ class TestFetchUniProtGoInfo:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -217,7 +213,7 @@ class TestFetchUniProtGoInfo:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -227,12 +223,12 @@ class TestFetchUniProtGoInfo:
         assert result["cellular_component"] is None
 
     async def test_fewer_columns(self, mocker):
-        tsv = "go_p\n" "process only\n"
+        tsv = "go_p\nprocess only\n"
         resp = httpx.Response(200, text=tsv)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=resp)
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 
@@ -245,7 +241,7 @@ class TestFetchUniProtGoInfo:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
-            "pipeline.uniprot_fetch._get_http_client",
+            "pipeline.uniprot_fetch._client_manager.get",
             return_value=mock_client,
         )
 

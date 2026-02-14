@@ -8,6 +8,7 @@ environment variable (prefixed with ``PIPELINE_``).  Modules accept a
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -18,7 +19,12 @@ def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None:
         return default
-    return int(raw)
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(
+            f"Environment variable {name} must be an integer, got {raw!r}"
+        ) from None
 
 
 def _env_float(name: str, default: float) -> float:
@@ -26,7 +32,12 @@ def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
     if raw is None:
         return default
-    return float(raw)
+    try:
+        return float(raw)
+    except ValueError:
+        raise ValueError(
+            f"Environment variable {name} must be a float, got {raw!r}"
+        ) from None
 
 
 def _env_str(name: str, default: str) -> str:
@@ -75,7 +86,20 @@ ALLOWED_TABLES: Final[frozenset[str]] = frozenset(
 )
 ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
 
+PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
+
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+
+# Pricing per 1M tokens (input, output) — update when models change.
+MODEL_PRICING: Final[dict[str, tuple[float, float]]] = {
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-opus-4-5-20251101": (5.0, 25.0),
+    "claude-opus-4-1-20250805": (15.0, 75.0),
+    "claude-opus-4-20250514": (15.0, 75.0),
+    "claude-sonnet-4-5-20250929": (3.0, 15.0),
+    "claude-sonnet-4-20250514": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
+}
 
 
 @dataclass
@@ -170,15 +194,11 @@ class PipelineConfig:
     test_mode_preview_count: int = 10
 
     # --- Email Notifications ---
-    email_host: str = field(
-        default_factory=lambda: _env_str("PIPELINE_EMAIL_HOST", "")
-    )
+    email_host: str = field(default_factory=lambda: _env_str("PIPELINE_EMAIL_HOST", ""))
     email_port: int = field(
         default_factory=lambda: _env_int("PIPELINE_EMAIL_PORT", 587)
     )
-    email_user: str = field(
-        default_factory=lambda: _env_str("PIPELINE_EMAIL_USER", "")
-    )
+    email_user: str = field(default_factory=lambda: _env_str("PIPELINE_EMAIL_USER", ""))
     email_password: str = field(
         default_factory=lambda: _env_str("PIPELINE_EMAIL_PASSWORD", "")
     )

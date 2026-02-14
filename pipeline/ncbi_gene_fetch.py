@@ -7,6 +7,7 @@ and stores results in PostgreSQL for dashboard consumption.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,7 @@ from typing import Any
 import httpx
 
 from pipeline.config import PipelineConfig
+from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +41,18 @@ class SyncResult:
 
 
 # Module-level shared HTTP client
-_http_client: httpx.AsyncClient | None = None
+_client_manager = AsyncHttpClientManager(timeout=15.0)
 _gene_cache: dict[str, NCBIGeneInfo | None] = {}
-_cache_lock = asyncio.Lock()
+_cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_cache_lock() -> asyncio.Lock:
+    """Lazy-init cache lock (avoids creating Lock before event loop exists)."""
+    global _cache_lock
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    return _cache_lock
 
 
 def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
@@ -54,23 +64,9 @@ def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semapho
     return _ncbi_semaphore
 
 
-async def _get_http_client() -> httpx.AsyncClient:
-    """Get or create shared HTTP client with connection pooling."""
-    global _http_client
-    if _http_client is None:
-        _http_client = httpx.AsyncClient(
-            timeout=15.0,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
-    return _http_client
-
-
 async def close_ncbi_client() -> None:
     """Close shared HTTP client (call at shutdown)."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
+    await _client_manager.close()
 
 
 def clear_ncbi_cache() -> None:
@@ -96,7 +92,7 @@ async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
     if symbol_upper in _gene_cache:
         return _gene_cache[symbol_upper]
 
-    async with _cache_lock:
+    async with _get_cache_lock():
         # Double-check after acquiring lock
         if symbol_upper in _gene_cache:
             return _gene_cache[symbol_upper]
@@ -118,7 +114,7 @@ async def _fetch_ncbi_gene_uncached(gene_symbol: str) -> NCBIGeneInfo | None:
     }
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(search_url, params=search_params)
 
         if resp.status_code != 200:
@@ -144,7 +140,7 @@ async def _fetch_ncbi_gene_uncached(gene_symbol: str) -> NCBIGeneInfo | None:
         logger.warning(f"Timeout querying NCBI for gene {gene_symbol}")
     except httpx.RequestError as e:
         logger.warning(f"Request error querying NCBI for gene {gene_symbol}: {e}")
-    except (KeyError, IndexError) as e:
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
         logger.warning(f"Unexpected NCBI response format for gene {gene_symbol}: {e}")
 
     return None
@@ -156,7 +152,7 @@ async def _fetch_gene_summary(gene_symbol: str, gene_id: str) -> NCBIGeneInfo | 
     params = {"db": "gene", "id": gene_id, "retmode": "json"}
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(url, params=params)
 
         if resp.status_code != 200:
@@ -185,7 +181,7 @@ async def _fetch_gene_summary(gene_symbol: str, gene_id: str) -> NCBIGeneInfo | 
         logger.warning(
             f"Request error fetching gene summary for gene_id {gene_id}: {e}"
         )
-    except (KeyError, ValueError) as e:
+    except (KeyError, ValueError, json.JSONDecodeError) as e:
         logger.warning(f"Failed to parse NCBI response for gene_id {gene_id}: {e}")
 
     return None
