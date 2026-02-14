@@ -53,14 +53,29 @@ spec:
       labels:
         app: grafana-image-renderer
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: renderer
-          image: grafana/grafana-image-renderer:latest
+          image: grafana/grafana-image-renderer:3.12.1
           ports:
             - containerPort: 8081
           env:
             - name: ENABLE_METRICS
               value: "true"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
 ---
 # Grafana Image Renderer Service
 apiVersion: v1
@@ -92,12 +107,20 @@ spec:
       labels:
         app: shiny
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: rshiny-dashboard
-          image: rshiny-dashboard:latest
+          image: rshiny-dashboard:1.0.0
           imagePullPolicy: Never
           ports:
             - containerPort: 3838
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
             - name: renviron
               mountPath: /srv/shiny-server/.Renviron

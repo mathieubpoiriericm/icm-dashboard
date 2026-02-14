@@ -832,6 +832,7 @@ Detailed documentation is available in the `docs/` directory:
 | ![Outdated](https://img.shields.io/badge/-Outdated-orange) [maRco Package Documentation](docs/marco-package-documentation.md) | Developer guide for the maRco R helper package |
 | ![Outdated](https://img.shields.io/badge/-Outdated-orange) [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
 | [Observability Stack Guide](docs/observability-stack-guide.md) | Kubernetes monitoring and logging setup |
+| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
 
 ---
 

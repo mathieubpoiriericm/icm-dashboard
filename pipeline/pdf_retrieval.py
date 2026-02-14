@@ -18,6 +18,11 @@ from lxml import etree  # type: ignore[import-untyped]
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
+# Defense-in-depth: disable external entity resolution and network access
+# to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
+_SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
+    resolve_entities=False, no_network=True
+)
 PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
 DOI_PATTERN: Final[re.Pattern[str]] = re.compile(r"^10\.\d{4,}/[^\s]+$")
 
@@ -30,6 +35,8 @@ PDF_TIMEOUT: Final[httpx.Timeout] = httpx.Timeout(
 )
 
 # Connection limits
+MAX_PDF_BYTES: Final[int] = 100 * 1024 * 1024  # 100 MB
+
 DEFAULT_LIMITS: Final[httpx.Limits] = httpx.Limits(
     max_keepalive_connections=10, max_connections=20
 )
@@ -232,7 +239,7 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
             return None
 
         # Parse XML and extract body text
-        root = etree.fromstring(pmc_resp.content)
+        root = etree.fromstring(pmc_resp.content, parser=_SAFE_XML_PARSER)
 
         # Extract all paragraph text from the body
         paragraphs = root.findall(".//body//p")
@@ -283,6 +290,14 @@ async def download_and_parse_pdf(url: str) -> str | None:
 
         if resp.status_code != 200:
             logger.debug(f"PDF download failed: {resp.status_code} for {url}")
+            return None
+
+        # Check content length to avoid memory exhaustion from oversized PDFs
+        content_length = int(resp.headers.get("content-length", 0))
+        if content_length > MAX_PDF_BYTES:
+            logger.warning(
+                f"PDF too large ({content_length} bytes), skipping: {url}"
+            )
             return None
 
         # Check content type
@@ -438,7 +453,7 @@ async def fetch_abstract(pmid: str) -> str | None:
             logger.debug(f"Abstract fetch failed for PMID {pmid}: {resp.status_code}")
             return None
 
-        root = etree.fromstring(resp.content)
+        root = etree.fromstring(resp.content, parser=_SAFE_XML_PARSER)
 
         # Find abstract text
         abstract_elem = root.find(".//AbstractText")

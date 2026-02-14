@@ -18,6 +18,13 @@ from lxml import etree  # type: ignore[import-untyped]
 from pipeline.config import PipelineConfig
 
 logger = logging.getLogger(__name__)
+
+# Defense-in-depth: disable external entity resolution and network access
+# to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
+_SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
+    resolve_entities=False, no_network=True
+)
+
 NCBI_EFETCH_URL: Final[str] = (
     "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 )
@@ -202,7 +209,7 @@ async def _fetch_pubmed_uncached(pmid: str) -> PubMedCitation | None:
 def _parse_pubmed_xml(pmid: str, xml_content: bytes) -> PubMedCitation | None:
     """Parse PubMed XML response to extract citation details."""
     try:
-        root = etree.fromstring(xml_content)
+        root = etree.fromstring(xml_content, parser=_SAFE_XML_PARSER)
         article = root.find(".//PubmedArticle")
 
         if article is None:

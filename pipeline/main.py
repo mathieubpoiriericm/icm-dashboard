@@ -139,6 +139,11 @@ from pipeline.validation import (  # noqa: E402
 
 # --- Constants ---
 LOG_SEPARATOR: Final[str] = "=" * 50
+# Defense-in-depth: disable external entity resolution and network access
+# to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
+_SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
+    resolve_entities=False, no_network=True
+)
 PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
 
 # Configure logging
@@ -257,7 +262,7 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
             logger.warning(f"Metadata fetch failed for PMID {pmid}: {resp.status_code}")
             return {"pmid": pmid, "doi": None}
 
-        root = etree.fromstring(resp.content)
+        root = etree.fromstring(resp.content, parser=_SAFE_XML_PARSER)
         doi_elem = root.find(".//ArticleId[@IdType='doi']")
         doi = doi_elem.text if doi_elem is not None else None
         return {"pmid": pmid, "doi": doi}
