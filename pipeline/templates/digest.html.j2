@@ -1,0 +1,115 @@
+<html>
+<head>
+<style>
+    table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f2f2f2; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    .metric-table { width: auto; }
+    .metric-table td:first-child { font-weight: bold; white-space: nowrap; }
+    h2 { color: #2d287a; margin-top: 24px; }
+    h3 { color: #667eea; }
+</style>
+</head>
+<body>
+
+{# --- Run Overview --- #}
+<h2>Run Overview</h2>
+<table class="metric-table">
+<tr><td>Mode</td><td>{{ mode_label }}</td></tr>
+<tr><td>Model</td><td>{{ model }}</td></tr>
+<tr><td>Duration</td><td>{{ duration }}</td></tr>
+<tr><td>Effort</td><td>{{ effort }}</td></tr>
+{% if show_days_back %}
+<tr><td>Days Back</td><td>{{ days_back }}</td></tr>
+{% endif %}
+{% if pdf_directory %}
+<tr><td>PDF Directory</td><td>{{ pdf_directory }}</td></tr>
+{% endif %}
+{% if pmid_file %}
+<tr><td>PMID File</td><td>{{ pmid_file }}</td></tr>
+{% endif %}
+</table>
+
+{# --- Search Results (standard mode only) --- #}
+{% if show_search %}
+<h2>Search Results</h2>
+<table class="metric-table">
+<tr><td>PMIDs Found</td><td>{{ search.pmids_found }}</td></tr>
+<tr><td>New PMIDs</td><td>{{ search.pmids_new }}</td></tr>
+<tr><td>Skipped (already processed)</td><td>{{ search.pmids_skipped }}</td></tr>
+</table>
+{% endif %}
+
+{# --- Papers --- #}
+<h2>Papers</h2>
+<table class="metric-table">
+<tr><td>Processed</td><td>{{ papers.processed }}</td></tr>
+<tr><td>Full Text</td><td>{{ papers.fulltext }}</td></tr>
+<tr><td>Abstract Only</td><td>{{ papers.abstract_only }}</td></tr>
+<tr><td>Full Text Rate</td><td>{{ "%.1f%%"|format(papers.fulltext_rate * 100) }}</td></tr>
+<tr><td>Failed</td><td>{{ papers.failed }}</td></tr>
+</table>
+
+{# --- Genes --- #}
+<h2>Genes</h2>
+<table class="metric-table">
+<tr><td>Extracted</td><td>{{ genes.extracted }}</td></tr>
+<tr><td>Validated</td><td>{{ genes.validated }}</td></tr>
+<tr><td>Rejected</td><td>{{ genes.rejected }}</td></tr>
+<tr><td>Acceptance Rate</td><td>{{ "%.1f%%"|format(genes.acceptance_rate * 100) }}</td></tr>
+</table>
+
+{# --- Token Usage --- #}
+{% if token_usage.total_tokens > 0 %}
+<h2>Token Usage</h2>
+<table class="metric-table">
+<tr><td>Input Tokens</td><td>{{ "{:,}".format(token_usage.input_tokens) }}</td></tr>
+<tr><td>Output Tokens</td><td>{{ "{:,}".format(token_usage.output_tokens) }}</td></tr>
+<tr><td>Cache Read</td><td>{{ "{:,}".format(token_usage.cache_read_input_tokens) }}</td></tr>
+<tr><td>Cache Created</td><td>{{ "{:,}".format(token_usage.cache_creation_input_tokens) }}</td></tr>
+<tr><td>Cache Hit Rate</td><td>{{ "%.1f%%"|format(token_usage.cache_hit_rate * 100) }}</td></tr>
+<tr><td>Total Tokens</td><td>{{ "{:,}".format(token_usage.total_tokens) }}</td></tr>
+<tr><td>Estimated Cost</td><td>{{ cost_str }}</td></tr>
+</table>
+{% endif %}
+
+{# --- Database --- #}
+{% if show_database %}
+<h2>Database</h2>
+<table class="metric-table">
+<tr><td>Inserted</td><td>{{ database.inserted }}</td></tr>
+<tr><td>Updated</td><td>{{ database.updated }}</td></tr>
+</table>
+{% endif %}
+
+{# --- Batch Warnings --- #}
+{% if batch_warnings %}
+<h2>Batch Validation Warnings</h2>
+<ul>
+{% for w in batch_warnings %}
+<li>{{ w }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{# --- Missing Full-Text --- #}
+{% if missing_fulltext %}
+<h2>Missing Full-Text Papers</h2>
+<table>
+<thead><tr><th>PMID</th><th>Status</th><th>Source</th></tr></thead>
+<tbody>
+{% for p in missing_fulltext %}
+<tr>
+<td><a href="https://pubmed.ncbi.nlm.nih.gov/{{ p.pmid }}/">{{ p.pmid }}</a></td>
+<td>{{ "Error: " ~ p.error if p.error else "Abstract Only" }}</td>
+<td>{{ p.source }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+<p><em>Please review these papers manually.</em></p>
+{% endif %}
+
+</body>
+</html>

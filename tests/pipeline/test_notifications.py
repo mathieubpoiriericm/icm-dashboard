@@ -1,14 +1,15 @@
 import logging
-import smtplib
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from pipeline.config import PipelineConfig
 from pipeline.notifications import (
+    _build_template_context,
     _format_duration,
-    _parse_recipients,
-    send_pipeline_summary_email,
+    _render_html,
+    _render_markdown,
+    send_pipeline_notification,
 )
 
 # ---------------------------------------------------------------------------
@@ -75,206 +76,161 @@ def _make_run_data(
 
 
 def _make_config(**overrides):
-    """Return a PipelineConfig with email settings populated."""
+    """Return a PipelineConfig with notify_urls populated."""
     config = PipelineConfig()
-    config.email_host = overrides.get("email_host", "smtp.example.com")
-    config.email_port = overrides.get("email_port", 587)
-    config.email_user = overrides.get("email_user", "user")
-    config.email_password = overrides.get("email_password", "password")
-    config.email_from = overrides.get("email_from", "sender@example.com")
-    config.email_admin = overrides.get("email_admin", "admin@example.com")
+    config.notify_urls = overrides.get("notify_urls", "json://stdout")
+    config.notify_max_retries = overrides.get("notify_max_retries", 1)
+    config.notify_retry_min_wait = overrides.get("notify_retry_min_wait", 0.1)
+    config.notify_retry_max_wait = overrides.get("notify_retry_max_wait", 0.2)
     return config
 
 
 # ---------------------------------------------------------------------------
-# Tests: send_pipeline_summary_email
+# Tests: send_pipeline_notification
 # ---------------------------------------------------------------------------
 
 
-def test_send_summary_email_no_config(caplog):
-    """Return early with warning when email host is not configured."""
+def test_send_notification_no_urls(caplog):
+    """Return early with warning when notify_urls is empty."""
     config = PipelineConfig()
-    config.email_host = ""
+    config.notify_urls = ""
 
     with caplog.at_level(logging.WARNING):
-        send_pipeline_summary_email(_make_run_data(), config)
+        send_pipeline_notification(_make_run_data(), config)
 
-    assert "Email configuration missing" in caplog.text
-
-
-def test_no_recipients(caplog):
-    """Return early with warning when email_admin is empty."""
-    config = _make_config(email_admin="")
-
-    with caplog.at_level(logging.WARNING):
-        send_pipeline_summary_email(_make_run_data(), config)
-
-    assert "No valid email recipients" in caplog.text
+    assert "Notification URLs not configured" in caplog.text
 
 
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_send_summary_email_success_port587(mock_smtp, caplog):
-    """Successfully send via port 587 with STARTTLS."""
+@patch("pipeline.notifications.apprise.Apprise")
+def test_send_notification_success(mock_apprise_cls, caplog):
+    """Successfully send via Apprise."""
+    mock_instance = MagicMock()
+    mock_instance.notify.return_value = True
+    mock_apprise_cls.return_value = mock_instance
+
     config = _make_config()
-    run_data = _make_run_data(
-        papers_detail=[
-            {
-                "pmid": "123",
-                "fulltext": False,
-                "source": "none",
-                "error": "No text",
-                "gene_count": 0,
-                "genes": [],
-                "processing_time": 1.0,
-            },
-        ],
-    )
+    run_data = _make_run_data()
 
     with caplog.at_level(logging.INFO):
-        send_pipeline_summary_email(run_data, config)
+        send_pipeline_notification(run_data, config)
 
-    assert "Pipeline summary email sent" in caplog.text
-
-    mock_smtp.assert_called_with("smtp.example.com", 587)
-    instance = mock_smtp.return_value
-    instance.starttls.assert_called()
-    instance.login.assert_called_with("user", "password")
-    instance.sendmail.assert_called_once()
-
-    # Verify sendmail args
-    call_args = instance.sendmail.call_args
-    assert call_args[0][0] == "sender@example.com"
-    assert call_args[0][1] == ["admin@example.com"]
-    body = call_args[0][2]
-    assert "Missing Full-Text" in body
-    assert "123" in body
+    assert "Pipeline notification sent successfully" in caplog.text
+    mock_instance.add.assert_called()
+    mock_instance.notify.assert_called_once()
 
 
-@patch("pipeline.notifications.smtplib.SMTP_SSL")
-def test_port465_uses_smtp_ssl(mock_smtp_ssl):
-    """Port 465 uses SMTP_SSL (implicit TLS), not plain SMTP."""
-    config = _make_config(email_port=465)
+@patch("pipeline.notifications.apprise.Apprise")
+def test_send_notification_failure_graceful(mock_apprise_cls, caplog):
+    """Apprise error is logged but does not propagate."""
+    mock_instance = MagicMock()
+    mock_instance.notify.side_effect = RuntimeError("connection failed")
+    mock_apprise_cls.return_value = mock_instance
 
-    send_pipeline_summary_email(_make_run_data(), config)
-
-    mock_smtp_ssl.assert_called_once()
-    call_args = mock_smtp_ssl.call_args
-    assert call_args[0][0] == "smtp.example.com"
-    assert call_args[0][1] == 465
-
-
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_port25_no_tls(mock_smtp):
-    """Port 25 uses plain SMTP without STARTTLS."""
-    config = _make_config(email_port=25, email_user="", email_password="")
-
-    send_pipeline_summary_email(_make_run_data(), config)
-
-    mock_smtp.assert_called_with("smtp.example.com", 25)
-    instance = mock_smtp.return_value
-    instance.starttls.assert_not_called()
-    instance.login.assert_not_called()
-    instance.sendmail.assert_called_once()
-
-
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_multiple_recipients(mock_smtp):
-    """sendmail receives a list of all recipients; To header lists both."""
-    config = _make_config(email_admin="alice@x.com, bob@y.com")
-
-    send_pipeline_summary_email(_make_run_data(), config)
-
-    instance = mock_smtp.return_value
-    call_args = instance.sendmail.call_args
-    assert call_args[0][1] == ["alice@x.com", "bob@y.com"]
-    body = call_args[0][2]
-    assert "alice@x.com" in body
-    assert "bob@y.com" in body
-
-
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_exception_graceful(mock_smtp, caplog):
-    """SMTP error is logged but does not propagate."""
-    mock_smtp.return_value.sendmail.side_effect = smtplib.SMTPException("fail")
     config = _make_config()
 
     with caplog.at_level(logging.ERROR):
-        send_pipeline_summary_email(_make_run_data(), config)
+        send_pipeline_notification(_make_run_data(), config)
 
-    assert "Failed to send pipeline summary email" in caplog.text
-
-
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_local_pdf_mode(mock_smtp):
-    """Local PDF mode includes 'Local PDF' and omits Search/Database sections."""
-    config = _make_config()
-    run_data = _make_run_data(mode="local_pdf")
-
-    send_pipeline_summary_email(run_data, config)
-
-    body = mock_smtp.return_value.sendmail.call_args[0][2]
-    assert "Local PDF" in body
-    assert "Search Results" not in body
-    assert "Database" not in body
+    assert "Failed to send pipeline notification" in caplog.text
 
 
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_standard_dryrun(mock_smtp):
-    """Dry run mode includes 'Dry Run' and omits Database section."""
-    config = _make_config()
-    run_data = _make_run_data(dry_run=True)
-
-    send_pipeline_summary_email(run_data, config)
-
-    body = mock_smtp.return_value.sendmail.call_args[0][2]
-    assert "Dry Run" in body
-    # Database section should not appear for dry-run
-    assert ">Database<" not in body
+# ---------------------------------------------------------------------------
+# Tests: template rendering
+# ---------------------------------------------------------------------------
 
 
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_standard_live_with_database(mock_smtp):
-    """Standard live mode with database result includes Database section."""
-    config = _make_config()
+def test_render_html_standard():
+    """HTML rendering includes key sections for standard mode."""
     run_data = _make_run_data(database={"inserted": 3, "updated": 1})
+    html = _render_html(run_data)
+    assert "Run Overview" in html
+    assert "Search Results" in html
+    assert "Papers" in html
+    assert "Genes" in html
+    assert "Database" in html
+    assert "Inserted" in html
 
-    send_pipeline_summary_email(run_data, config)
 
-    body = mock_smtp.return_value.sendmail.call_args[0][2]
-    assert "Database" in body
-    assert "Inserted" in body
+def test_render_html_local_pdf_excludes_search():
+    """Local PDF mode excludes Search and Database sections."""
+    html = _render_html(_make_run_data(mode="local_pdf"))
+    assert "Local PDF" in html
+    assert "Search Results" not in html
+    assert "Database" not in html
 
 
-@patch("pipeline.notifications.smtplib.SMTP")
-def test_batch_warnings_in_body(mock_smtp):
-    """Batch warnings appear in the email body."""
-    config = _make_config()
-    run_data = _make_run_data(batch_warnings=["High gene duplication detected"])
+def test_render_html_dryrun_excludes_database():
+    """Dry run mode excludes Database section."""
+    html = _render_html(_make_run_data(dry_run=True))
+    assert "Dry Run" in html
+    assert ">Database<" not in html
 
-    send_pipeline_summary_email(run_data, config)
 
-    body = mock_smtp.return_value.sendmail.call_args[0][2]
-    assert "High gene duplication detected" in body
+def test_render_html_batch_warnings():
+    """Batch warnings appear in the HTML body."""
+    html = _render_html(_make_run_data(batch_warnings=["High gene duplication"]))
+    assert "High gene duplication" in html
+
+
+def test_render_html_missing_fulltext():
+    """Missing fulltext papers appear in the HTML body."""
+    papers = [
+        {
+            "pmid": "123",
+            "fulltext": False,
+            "source": "none",
+            "error": "No text",
+            "gene_count": 0,
+            "genes": [],
+            "processing_time": 1.0,
+        },
+    ]
+    html = _render_html(_make_run_data(papers_detail=papers))
+    assert "Missing Full-Text" in html
+    assert "123" in html
+
+
+def test_render_markdown_standard():
+    """Markdown rendering includes key metrics."""
+    md = _render_markdown(_make_run_data())
+    assert "SVD Pipeline Standard" in md
+    assert "Papers:" in md
+    assert "Genes:" in md
+
+
+def test_render_markdown_local_pdf():
+    """Markdown rendering handles local PDF mode."""
+    md = _render_markdown(_make_run_data(mode="local_pdf"))
+    assert "Local PDF" in md
+    assert "Search:" not in md
 
 
 # ---------------------------------------------------------------------------
-# Tests: _parse_recipients
+# Tests: _build_template_context
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("input_str", "expected"),
-    [
-        ("alice@x.com", ["alice@x.com"]),
-        ("alice@x.com, bob@y.com", ["alice@x.com", "bob@y.com"]),
-        ("", []),
-        ("  ,  , ", []),
-        ("  alice@x.com  ", ["alice@x.com"]),
-    ],
-    ids=["single", "multiple", "empty", "whitespace-only", "padded"],
-)
-def test_parse_recipients(input_str, expected):
-    assert _parse_recipients(input_str) == expected
+def test_template_context_standard():
+    """Standard mode context has expected fields."""
+    ctx = _build_template_context(_make_run_data())
+    assert ctx["mode_label"] == "Standard"
+    assert ctx["show_search"] is True
+    assert ctx["show_database"] is False  # no database in default run_data
+
+
+def test_template_context_standard_with_db():
+    """Standard mode with database results shows database."""
+    ctx = _build_template_context(
+        _make_run_data(database={"inserted": 2, "updated": 0})
+    )
+    assert ctx["show_database"] is True
+
+
+def test_template_context_dryrun():
+    """Dry run mode label and no database."""
+    ctx = _build_template_context(_make_run_data(dry_run=True))
+    assert ctx["mode_label"] == "Standard (Dry Run)"
+    assert ctx["show_database"] is False
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,39 @@
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.17.0
+    container_name: ntfy
+    restart: unless-stopped
+    ports:
+      - "8090:80"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    environment:
+      NTFY_BASE_URL: "http://ntfy.local"
+      NTFY_CACHE_FILE: "/var/cache/ntfy/cache.db"
+      NTFY_AUTH_DEFAULT_ACCESS: "deny-all"
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_ENABLE_SIGNUP: "false"
+    command: serve
+
+  healthchecks:
+    image: healthchecks/healthchecks:latest
+    container_name: healthchecks
+    restart: unless-stopped
+    ports:
+      - "8091:8000"
+    volumes:
+      - healthchecks-data:/data
+    environment:
+      ALLOWED_HOSTS: "*"
+      APPRISE_ENABLED: "True"
+      DB: "sqlite"
+      DB_NAME: "/data/hc.sqlite"
+      DEBUG: "False"
+      DEFAULT_FROM_EMAIL: "noreply@svd-dashboard.org"
+      SECRET_KEY: "change-me-in-production"
+      SITE_NAME: "SVD Pipeline Healthchecks"
+      SITE_ROOT: "http://healthchecks.local:8091"
+
+volumes:
+  ntfy-cache:
+  healthchecks-data:

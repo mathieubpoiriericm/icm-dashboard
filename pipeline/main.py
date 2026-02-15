@@ -86,6 +86,7 @@ if __name__ == "__main__":
 import asyncio  # noqa: E402
 import logging  # noqa: E402
 import time  # noqa: E402
+import traceback  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from datetime import datetime  # noqa: E402
 from typing import Final, TypedDict  # noqa: E402
@@ -113,8 +114,10 @@ from pipeline.database import (  # noqa: E402
     record_processed_pmids_batch,
     reset_sequence,
 )
+from pipeline.event_log import EventLog  # noqa: E402
+from pipeline.healthcheck import ping_failure, ping_start, ping_success  # noqa: E402
 from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
-from pipeline.notifications import send_pipeline_summary_email  # noqa: E402
+from pipeline.notifications import send_pipeline_notification  # noqa: E402
 from pipeline.pdf_retrieval import (  # noqa: E402
     close_http_client,
     get_fulltext,
@@ -472,6 +475,7 @@ async def run_pipeline(
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
     pipeline_start_time = time.monotonic()
+    ping_start(config.healthcheck_url)
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
     logger.info(
@@ -570,7 +574,15 @@ async def run_pipeline(
             report_path = write_comprehensive_report(run_data, LOG_DIR)
             logger.info(f"JSON report written to: {report_path}")
             print_rich_summary(run_data)
-            send_pipeline_summary_email(run_data, config)
+
+            event_log = EventLog(config.event_db_path)
+            try:
+                event_id = event_log.record("pipeline_completed", run_data)
+                send_pipeline_notification(run_data, config)
+                event_log.mark_notified([event_id])
+            finally:
+                event_log.close()
+            ping_success(config.healthcheck_url)
 
             return metrics
 
@@ -616,10 +628,20 @@ async def run_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        # Notify admin with pipeline summary
-        send_pipeline_summary_email(run_data, config)
+        event_log = EventLog(config.event_db_path)
+        try:
+            event_id = event_log.record("pipeline_completed", run_data)
+            send_pipeline_notification(run_data, config)
+            event_log.mark_notified([event_id])
+        finally:
+            event_log.close()
+        ping_success(config.healthcheck_url)
 
         return metrics
+
+    except Exception:
+        ping_failure(config.healthcheck_url, traceback.format_exc())
+        raise
 
     finally:
         # Cleanup all shared resources
@@ -667,6 +689,7 @@ async def run_local_pdf_pipeline(
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
     pipeline_start_time = time.monotonic()
+    ping_start(config.healthcheck_url)
 
     logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
     logger.info(
@@ -799,7 +822,19 @@ async def run_local_pdf_pipeline(
         report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
-        send_pipeline_summary_email(run_data, config)
+
+        event_log = EventLog(config.event_db_path)
+        try:
+            event_id = event_log.record("pipeline_completed", run_data)
+            send_pipeline_notification(run_data, config)
+            event_log.mark_notified([event_id])
+        finally:
+            event_log.close()
+        ping_success(config.healthcheck_url)
+
+    except Exception:
+        ping_failure(config.healthcheck_url, traceback.format_exc())
+        raise
 
     finally:
         await close_validation_client()
@@ -857,6 +892,7 @@ async def run_pmid_pipeline(
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
     pipeline_start_time = time.monotonic()
+    ping_start(config.healthcheck_url)
 
     logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")
     logger.info(
@@ -989,7 +1025,19 @@ async def run_pmid_pipeline(
         report_path = write_comprehensive_report(run_data, LOG_DIR)
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
-        send_pipeline_summary_email(run_data, config)
+
+        event_log = EventLog(config.event_db_path)
+        try:
+            event_id = event_log.record("pipeline_completed", run_data)
+            send_pipeline_notification(run_data, config)
+            event_log.mark_notified([event_id])
+        finally:
+            event_log.close()
+        ping_success(config.healthcheck_url)
+
+    except Exception:
+        ping_failure(config.healthcheck_url, traceback.format_exc())
+        raise
 
     finally:
         await _close_metadata_client()
@@ -998,10 +1046,16 @@ async def run_pmid_pipeline(
         clear_gene_cache()
 
 
-async def run_external_data_sync() -> None:
+async def run_external_data_sync(
+    config: PipelineConfig | None = None,
+) -> None:
     """Sync all external data sources for dashboard refresh."""
     from pipeline.external_data_sync import sync_all_external_data
 
+    if config is None:
+        config = PipelineConfig()
+
+    ping_start(config.healthcheck_url)
     logger.info("Starting external data sync...")
     try:
         result = await sync_all_external_data()
@@ -1009,6 +1063,10 @@ async def run_external_data_sync() -> None:
         logger.info("External Data Sync Summary:")
         logger.info(result.summary())
         logger.info(LOG_SEPARATOR)
+        ping_success(config.healthcheck_url)
+    except Exception:
+        ping_failure(config.healthcheck_url, traceback.format_exc())
+        raise
     finally:
         await Database.close()
 
@@ -1060,7 +1118,7 @@ def main() -> None:
                 )
             )
         elif args.sync_external_data:
-            asyncio.run(run_external_data_sync())
+            asyncio.run(run_external_data_sync(config=config))
         else:
             asyncio.run(
                 run_pipeline(

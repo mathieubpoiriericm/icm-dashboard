@@ -1,0 +1,16 @@
+**SVD Pipeline {{ mode_label }}** ({{ duration }})
+Model: {{ model }} | Effort: {{ effort }}
+{% if show_search %}
+Search: {{ search.pmids_found }} found, {{ search.pmids_new }} new
+{% endif %}
+Papers: {{ papers.processed }} processed ({{ "%.0f%%"|format(papers.fulltext_rate * 100) }} fulltext)
+Genes: {{ genes.validated }}/{{ genes.extracted }} validated ({{ "%.0f%%"|format(genes.acceptance_rate * 100) }})
+{% if show_database %}
+DB: {{ database.inserted }} inserted, {{ database.updated }} updated
+{% endif %}
+{% if token_usage.total_tokens > 0 %}
+Cost: {{ cost_str }} ({{ "{:,}".format(token_usage.total_tokens) }} tokens)
+{% endif %}
+{% if batch_warnings %}
+Warnings: {{ batch_warnings | length }}
+{% endif %}

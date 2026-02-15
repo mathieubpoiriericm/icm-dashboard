@@ -193,7 +193,29 @@ class PipelineConfig:
     # --- Misc ---
     test_mode_preview_count: int = 10
 
-    # --- Email Notifications ---
+    # --- Notifications (Apprise) ---
+    notify_urls: str = field(
+        default_factory=lambda: _env_str("PIPELINE_NOTIFY_URLS", "")
+    )
+    healthcheck_url: str = field(
+        default_factory=lambda: _env_str("PIPELINE_HEALTHCHECK_URL", "")
+    )
+    event_db_path: str = field(
+        default_factory=lambda: _env_str(
+            "PIPELINE_EVENT_DB_PATH", str(PROJECT_ROOT / "logs" / "events.db")
+        )
+    )
+    notify_max_retries: int = field(
+        default_factory=lambda: _env_int("PIPELINE_NOTIFY_MAX_RETRIES", 3)
+    )
+    notify_retry_min_wait: float = field(
+        default_factory=lambda: _env_float("PIPELINE_NOTIFY_RETRY_MIN_WAIT", 4.0)
+    )
+    notify_retry_max_wait: float = field(
+        default_factory=lambda: _env_float("PIPELINE_NOTIFY_RETRY_MAX_WAIT", 30.0)
+    )
+
+    # --- Legacy email fields (deprecated — use PIPELINE_NOTIFY_URLS instead) ---
     email_host: str = field(default_factory=lambda: _env_str("PIPELINE_EMAIL_HOST", ""))
     email_port: int = field(
         default_factory=lambda: _env_int("PIPELINE_EMAIL_PORT", 587)
