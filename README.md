@@ -824,9 +824,9 @@ Detailed documentation is available in the `docs/` directory:
 
 | Document | Description |
 |----------|-------------|
-| ![:warning: Outdated](https://img.shields.io/badge/-Outdated-orange) [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
-| ![:warning: Outdated](https://img.shields.io/badge/-Outdated-orange) [maRco Package Documentation](docs/marco-package-documentation.md) | Developer guide for the maRco R helper package |
-| ![:warning: Outdated](https://img.shields.io/badge/-Outdated-orange) [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
+| ⚠️ ![Outdated](https://img.shields.io/badge/-Outdated-orange) [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
+| ⚠️ ![Outdated](https://img.shields.io/badge/-Outdated-orange) [maRco Package Documentation](docs/marco-package-documentation.md) | Developer guide for the maRco R helper package |
+| ⚠️ ![Outdated](https://img.shields.io/badge/-Outdated-orange) [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
 | [Observability Stack Guide](docs/observability-stack-guide.md) | Kubernetes monitoring and logging setup |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
 
