@@ -442,6 +442,7 @@ rshiny_dashboard/
 ├── conftest.py                   # Root pytest config (adds project root to sys.path)
 ├── Dockerfile                    # Dashboard Docker build
 ├── Dockerfile.pipeline           # Pipeline Docker build
+├── helmfile.yaml                 # Orchestrates the svd-dashboard umbrella Helm chart
 ├── LICENSE                       # MIT License
 ├── Makevars                      # R compilation flags (OpenMP/clang)
 ├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
