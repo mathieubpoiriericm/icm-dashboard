@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Pipeline source code
 COPY pipeline/ pipeline/
 COPY scripts/ scripts/
-COPY sql/ sql/
+COPY helm/svd-dashboard/sql sql/
 
 # R runtime (for trigger_update.R) + system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
