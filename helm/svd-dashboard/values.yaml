@@ -88,7 +88,7 @@ notifications:
     enabled: true
     image:
       repository: healthchecks/healthchecks
-      tag: "v4"
+      tag: "v4.0"
     resources:
       requests:
         cpu: 50m
@@ -112,7 +112,7 @@ observability:
   grafanaImageRenderer:
     image:
       repository: grafana/grafana-image-renderer
-      tag: "5.5.1"
+      tag: "v5.5.1"
   # When the prometheus subchart is disabled but Grafana is deployed
   # separately (e.g. in a 'monitoring' namespace), enable this to
   # create an ExternalName service and ingress rule for Grafana.
