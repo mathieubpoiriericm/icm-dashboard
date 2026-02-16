@@ -439,98 +439,149 @@ helm install svd helm/svd-dashboard -n svd --create-namespace \
 ```
 rshiny_dashboard/
 ├── app.R                         # Main application entry point
-├── Dockerfile                    # Docker build configuration
+├── conftest.py                   # Root pytest config (adds project root to sys.path)
+├── Dockerfile                    # Dashboard Docker build
+├── Dockerfile.pipeline           # Pipeline Docker build
 ├── LICENSE                       # MIT License
-├── README.md                     # Project documentation
-├── bibentry/                     # PubMed reference files (XML/BIB)
-├── data/
-│   ├── csv/                      # CSV source files (table1.csv, table2.csv, etc.)
-│   ├── qs/                       # QS serialized data for Shiny app
-│   ├── txt/                      # Text data files
-│   └── xlsx/                     # Excel source files
-├── logs/                         # Pipeline execution logs
 ├── Makevars                      # R compilation flags (OpenMP/clang)
-├── monitoring/
-│   ├── json/                     # Grafana dashboard configuration
-│   └── yaml/                     # Kubernetes monitoring configs
-│       ├── monitoring-stack.yaml # Monitoring stack deployment
-│       └── victorialogs-values.yaml  # VictoriaLogs configuration
-├── published_dashboard_preview/  # ShinyApps.io deployment preview
+├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
+├── README.md                     # Project documentation
+├── requirements.txt              # Python dependencies
 ├── R/
-│   ├── constants.R               # Application-wide constants
-│   ├── utils.R                   # CSS styles, DB utilities, column cleaning
-│   ├── filter_utils.R            # Unified filter utilities for data.table
-│   ├── data_prep.R               # Data loading and preprocessing
-│   ├── tooltips.R                # Tooltip generation for tables
-│   ├── mod_checkbox_filter.R     # Shiny module for checkbox filters
-│   ├── server.R                  # Main server orchestrator
-│   ├── server_table1.R           # Gene Table server logic
-│   ├── server_table2.R           # Clinical Trials Table server logic
-│   ├── ui.R                      # UI definition with Bootstrap 5
 │   ├── clean_table1.R            # Table 1 data cleaning
 │   ├── clean_table2.R            # Table 2 data cleaning
-│   ├── read_external_data.R      # External data reading from database cache
+│   ├── constants.R               # Application-wide constants
+│   ├── data_prep.R               # Data loading and preprocessing
 │   ├── fetch_trial_locations.R   # Trial location fetching and geocoding
-│   └── server_map.R              # Clinical Trials Map server logic
+│   ├── filter_utils.R            # Unified filter utilities for data.table
+│   ├── mod_checkbox_filter.R     # Shiny module for checkbox filters
+│   ├── read_external_data.R      # External data reading from database cache
+│   ├── server.R                  # Main server orchestrator
+│   ├── server_map.R              # Clinical Trials Map server logic
+│   ├── server_table1.R           # Gene Table server logic
+│   ├── server_table2.R           # Clinical Trials Table server logic
+│   ├── tooltips.R                # Tooltip generation for tables
+│   ├── ui.R                      # UI definition with Bootstrap 5
+│   └── utils.R                   # CSS styles, DB utilities, column cleaning
+├── docs/
+│   ├── dashboard-technical-documentation.md
+│   ├── python-etl-pipeline.md
+│   ├── kubernetes-cluster-overview.md
+│   └── pipeline-security.md
+├── helm/
+│   └── svd-dashboard/
+│       ├── Chart.lock
+│       ├── Chart.yaml
+│       ├── values.yaml
+│       ├── charts/
+│       │   ├── kube-prometheus-stack-82.0.0.tgz
+│       │   └── victoria-logs-single-0.11.26.tgz
+│       ├── sql/
+│       │   ├── add_external_data_tables.sql
+│       │   └── setup.sql
+│       └── templates/
+│           ├── _helpers.tpl
+│           ├── dashboard-deployment.yaml
+│           ├── dashboard-service.yaml
+│           ├── grafana-external-service.yaml
+│           ├── grafana-image-renderer-deployment.yaml
+│           ├── grafana-image-renderer-service.yaml
+│           ├── healthchecks-deployment.yaml
+│           ├── healthchecks-service.yaml
+│           ├── ingress.yaml
+│           ├── network-policies.yaml
+│           ├── ntfy-deployment.yaml
+│           ├── ntfy-service.yaml
+│           ├── pdb.yaml
+│           ├── pipeline-cronjob.yaml
+│           ├── pipeline-rbac.yaml
+│           ├── postgresql-initdb-configmap.yaml
+│           ├── postgresql-service.yaml
+│           ├── postgresql-statefulset.yaml
+│           ├── qs-data-pvc.yaml
+│           └── secrets.yaml
+├── monitoring/
+│   └── grafana/
+│       └── Combined Dashboard - RShiny & Host OS Monitoring.json
 ├── pipeline/
-│   ├── main.py                   # CLI entry point & pipeline orchestrator
-│   ├── config.py                 # Centralized configuration with env overrides
-│   ├── prompts.py                # LLM prompt templates with prompt caching
-│   ├── pubmed_search.py          # PubMed literature search via Entrez
-│   ├── pdf_retrieval.py          # Multi-source text retrieval (PMC/Unpaywall/Abstract)
-│   ├── llm_extraction.py         # LLM-based gene extraction (Anthropic Claude)
-│   ├── validation.py             # NCBI gene verification & confidence filtering
+│   ├── __init__.py               # Package marker
+│   ├── alembic.ini               # Alembic migration config
 │   ├── batch_validation.py       # Pandera batch quality checks
+│   ├── config.py                 # Centralized configuration with env overrides
 │   ├── data_merger.py            # Data transformation & database loading
 │   ├── database.py               # Async PostgreSQL operations
-│   ├── rate_limiter.py           # Token-bucket rate limiter (RPM/TPM)
-│   ├── quality_metrics.py        # Pipeline statistics tracking
-│   ├── report.py                 # JSON/Rich CLI report generation
-│   ├── ncbi_gene_fetch.py        # NCBI Gene data fetching
-│   ├── pubmed_citations.py       # PubMed citation handling
-│   ├── uniprot_fetch.py          # UniProt data fetching
+│   ├── event_log.py              # Structured event logging
 │   ├── external_data_sync.py     # External data synchronization
-│   └── alembic/                  # Database migrations (Alembic)
-│       ├── env.py
-│       ├── script.py.mako
-│       └── versions/
-│           └── 001_baseline_schema.py
-├── sql/
-│   ├── setup.sql                 # Database schema initialization
-│   └── add_external_data_tables.sql  # External data table schemas
+│   ├── healthcheck.py            # Pipeline health checks
+│   ├── http_client.py            # Shared HTTP client utilities
+│   ├── llm_extraction.py         # LLM-based gene extraction (Anthropic Claude)
+│   ├── main.py                   # CLI entry point & pipeline orchestrator
+│   ├── ncbi_gene_fetch.py        # NCBI Gene data fetching
+│   ├── notifications.py          # Pipeline notification system
+│   ├── pdf_retrieval.py          # Multi-source text retrieval (PMC/Unpaywall/Abstract)
+│   ├── prompts.py                # LLM prompt templates with prompt caching
+│   ├── pubmed_citations.py       # PubMed citation handling
+│   ├── pubmed_search.py          # PubMed literature search via Entrez
+│   ├── quality_metrics.py        # Pipeline statistics tracking
+│   ├── rate_limiter.py           # Token-bucket rate limiter (RPM/TPM)
+│   ├── report.py                 # JSON/Rich CLI report generation
+│   ├── signals.py                # Unix signal handling
+│   ├── uniprot_fetch.py          # UniProt data fetching
+│   ├── validation.py             # NCBI gene verification & confidence filtering
+│   ├── alembic/                  # Database migrations (Alembic)
+│   │   ├── env.py
+│   │   ├── script.py.mako
+│   │   └── versions/
+│   │       └── 001_baseline_schema.py
+│   └── templates/                # Jinja2 notification templates
+│       ├── digest.html.j2
+│       └── digest.md.j2
+├── scripts/
+│   ├── python_plot.py            # Clinical trials visualization generator
+│   └── trigger_update.r          # Regenerate QS files from database
 ├── tests/
 │   ├── test_all.R                # R test suite (testthat + shinytest2)
 │   └── pipeline/                 # Python test suite (pytest)
 │       ├── conftest.py           # Shared fixtures
-│       ├── test_config.py
-│       ├── test_prompts.py
-│       ├── test_pubmed_search.py
-│       ├── test_pdf_retrieval.py
-│       ├── test_llm_extraction.py
-│       ├── test_validation.py
 │       ├── test_batch_validation.py
+│       ├── test_config.py
 │       ├── test_data_merger.py
 │       ├── test_database.py
-│       ├── test_rate_limiter.py
+│       ├── test_event_log.py
+│       ├── test_external_data_sync.py
+│       ├── test_healthcheck.py
+│       ├── test_llm_extraction.py
+│       ├── test_main.py
+│       ├── test_ncbi_gene_fetch.py
+│       ├── test_notification_config.py
+│       ├── test_notifications.py
+│       ├── test_pdf_retrieval.py
+│       ├── test_prompts.py
+│       ├── test_pubmed_citations.py
+│       ├── test_pubmed_search.py
 │       ├── test_quality_metrics.py
+│       ├── test_rate_limiter.py
 │       ├── test_report.py
-│       └── test_main.py
-├── docs/
-│   ├── *.md                      # Primary documentation
-│   └── other/                    # Additional docs (ETL overview, etc.)
-├── scripts/
-│   ├── python_plot.py            # Clinical trials visualization generator
-│   └── trigger_update.R          # Regenerate QS files from database
+│       ├── test_uniprot_fetch.py
+│       └── test_validation.py
 └── www/
     ├── custom.css                # Custom styles (source)
     ├── custom.js                 # Custom JavaScript (source)
+    ├── phenogram_template.html   # Interactive phenogram viewer
     ├── python_plot.html          # Clinical trials visualization
     ├── python_plot.js            # Plot interactivity and sidepanel
-    ├── phenogram_template.html   # Interactive phenogram viewer
-    ├── fonts/                    # Web fonts (Roboto)
-    ├── css/                      # Tippy.js styles
-    ├── js/                       # Popper.js and Tippy.js
-    └── images/                   # Logo and phenogram images
+    ├── css/
+    │   └── tippy.css
+    ├── fonts/
+    │   └── Roboto-Regular.ttf
+    ├── images/
+    │   ├── icm_logo.png
+    │   ├── icm_logo.webp
+    │   ├── phenogram.png
+    │   └── phenogram.webp
+    └── js/
+        ├── popper.min.js
+        └── tippy.min.js
 ```
 
 </details>
@@ -855,6 +906,7 @@ Detailed documentation is available in the `docs/` directory:
 | Document | Description |
 |----------|-------------|
 | ⚠️ ![Outdated](https://img.shields.io/badge/-Outdated-orange) [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
+| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
 
