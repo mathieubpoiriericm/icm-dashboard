@@ -1,3 +1,7 @@
+-- SYNCED COPY: Must match the source of truth at sql/setup.sql
+-- To verify: diff sql/setup.sql helm/svd-dashboard/sql/setup.sql
+-- To sync:   cp sql/setup.sql helm/svd-dashboard/sql/setup.sql
+
 CREATE TABLE IF NOT EXISTS genes (
     id SERIAL PRIMARY KEY,
     protein VARCHAR(255),

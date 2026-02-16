@@ -1,3 +1,7 @@
+-- SYNCED COPY: Must match the source of truth at sql/add_external_data_tables.sql
+-- To verify: diff sql/add_external_data_tables.sql helm/svd-dashboard/sql/add_external_data_tables.sql
+-- To sync:   cp sql/add_external_data_tables.sql helm/svd-dashboard/sql/add_external_data_tables.sql
+
 -- Migration: Add tables for external data cache
 -- These tables store data fetched from NCBI, UniProt, and PubMed APIs
 -- to allow trigger_update.R to read from database instead of making API calls
