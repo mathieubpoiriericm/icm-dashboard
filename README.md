@@ -621,9 +621,7 @@ flowchart LR
     C --> D
 
     subgraph sync["Separate mode: sync-external-data flag"]
-        E["Sync NCBI Gene, UniProt, and
-        PubMed refs for all genes
-        already in PostgreSQL"]
+        E["Sync NCBI Gene, UniProt, and PubMed refs for all genes in PostgreSQL"]
     end
 ```
 
