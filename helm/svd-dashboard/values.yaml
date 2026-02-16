@@ -22,7 +22,7 @@ dashboard:
 postgresql:
   image:
     repository: postgres
-    tag: "17"
+    tag: "18"
   resources:
     requests:
       cpu: 100m
@@ -102,23 +102,23 @@ notifications:
     secretKey: ""
 
 # --- Observability ---
-# Disable subcharts if you already have kube-prometheus-stack and
+# Set to false if you already have kube-prometheus-stack and/or
 # victoria-logs deployed separately (e.g. in a 'monitoring' namespace).
 observability:
   prometheus:
-    enabled: false
+    enabled: true
   victoriaLogs:
-    enabled: false
+    enabled: true
   grafanaImageRenderer:
     image:
       repository: grafana/grafana-image-renderer
-      tag: "3.12.1"
+      tag: "5.5.1"
   # When the prometheus subchart is disabled but Grafana is deployed
   # separately (e.g. in a 'monitoring' namespace), enable this to
   # create an ExternalName service and ingress rule for Grafana.
   grafana:
     external:
-      enabled: true
+      enabled: false
       namespace: monitoring
       serviceName: prometheus-grafana
       port: 80
