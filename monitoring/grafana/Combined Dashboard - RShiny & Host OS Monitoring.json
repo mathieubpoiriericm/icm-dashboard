@@ -2065,7 +2065,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(ntfy_messages_published_total[5m])",
+          "expr": "rate(ntfy_messages_published_success[5m]) + rate(ntfy_messages_published_failure[5m])",
           "legendFormat": "Messages/s",
           "refId": "A"
         }
