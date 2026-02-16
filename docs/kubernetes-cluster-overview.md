@@ -357,12 +357,12 @@ graph TD
     step1 --> pg[("PostgreSQL<br/>genes, trials,<br/>pubmed_refs")]
     step2 --> pg_cache[("PostgreSQL<br/>ncbi_gene_info,<br/>uniprot_info,<br/>pubmed_citations")]
 
-    pg --> step3["generate-qs\n(Step 3)"]
+    pg --> step3["generate-qs<br/>(Step 3)"]
     pg_cache --> step3
 
     step3 --> qspvc[("QS Data PVC<br/>1Gi")]
-    qspvc --> step4["restart-dashboard\n(Step 4)"]
-    step4 --> dashboard["Dashboard\nreads QS files"]
+    qspvc --> step4["restart-dashboard<br/>(Step 4)"]
+    step4 --> dashboard["Dashboard<br/>reads QS files"]
 ```
 
 Key points:
