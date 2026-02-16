@@ -123,6 +123,19 @@ monitoring:
     labels:
       release: prometheus
     interval: 30s
+  blackboxExporter:
+    enabled: true
+    image:
+      repository: prom/blackbox-exporter
+      tag: "v0.25.0"
+    port: 9115
+    resources:
+      requests:
+        cpu: 50m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
 
 # --- Observability ---
 # Set to false if you already have kube-prometheus-stack and/or

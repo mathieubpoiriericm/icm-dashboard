@@ -1,0 +1,21 @@
+{{- if .Values.monitoring.blackboxExporter.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-blackbox-exporter
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: blackbox-exporter
+data:
+  blackbox.yml: |
+    modules:
+      http_2xx:
+        prober: http
+        timeout: 5s
+        http:
+          valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+          valid_status_codes: [200]
+          method: GET
+          follow_redirects: true
+          preferred_ip_protocol: "ip4"
+{{- end }}

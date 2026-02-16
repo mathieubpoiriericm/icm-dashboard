@@ -119,6 +119,12 @@ spec:
             matchLabels:
               {{- include "svd-dashboard.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: pipeline
+        {{- if .Values.monitoring.blackboxExporter.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "svd-dashboard.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: blackbox-exporter
+        {{- end }}
       ports:
         - protocol: TCP
           port: 8000
