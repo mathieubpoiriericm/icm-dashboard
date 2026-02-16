@@ -463,46 +463,46 @@ rshiny_dashboard/
 │   ├── tooltips.R                # Tooltip generation for tables
 │   ├── ui.R                      # UI definition with Bootstrap 5
 │   └── utils.R                   # CSS styles, DB utilities, column cleaning
-├── docs/
-│   ├── dashboard-technical-documentation.md
-│   ├── python-etl-pipeline.md
-│   ├── kubernetes-cluster-overview.md
-│   └── pipeline-security.md
-├── helm/
-│   └── svd-dashboard/
-│       ├── Chart.lock
-│       ├── Chart.yaml
-│       ├── values.yaml
-│       ├── charts/
-│       │   ├── kube-prometheus-stack-82.0.0.tgz
-│       │   └── victoria-logs-single-0.11.26.tgz
-│       ├── sql/
-│       │   ├── add_external_data_tables.sql
-│       │   └── setup.sql
-│       └── templates/
-│           ├── _helpers.tpl
-│           ├── dashboard-deployment.yaml
-│           ├── dashboard-service.yaml
-│           ├── grafana-external-service.yaml
-│           ├── grafana-image-renderer-deployment.yaml
-│           ├── grafana-image-renderer-service.yaml
-│           ├── healthchecks-deployment.yaml
-│           ├── healthchecks-service.yaml
-│           ├── ingress.yaml
-│           ├── network-policies.yaml
-│           ├── ntfy-deployment.yaml
-│           ├── ntfy-service.yaml
-│           ├── pdb.yaml
-│           ├── pipeline-cronjob.yaml
-│           ├── pipeline-rbac.yaml
-│           ├── postgresql-initdb-configmap.yaml
-│           ├── postgresql-service.yaml
-│           ├── postgresql-statefulset.yaml
-│           ├── qs-data-pvc.yaml
-│           └── secrets.yaml
-├── monitoring/
-│   └── grafana/
-│       └── Combined Dashboard - RShiny & Host OS Monitoring.json
+├── docs/                         # Technical documentation
+│   ├── dashboard-technical-documentation.md  # Dashboard architecture reference
+│   ├── python-etl-pipeline.md    # ETL pipeline documentation
+│   ├── kubernetes-cluster-overview.md  # Kubernetes deployment guide
+│   └── pipeline-security.md      # Security audit and threat model
+├── helm/                         # Helm charts for Kubernetes deployment
+│   └── svd-dashboard/            # Main Helm chart
+│       ├── Chart.lock            # Dependency lock file
+│       ├── Chart.yaml            # Chart metadata and dependencies
+│       ├── values.yaml           # Default configuration values
+│       ├── charts/               # Bundled subchart archives
+│       │   ├── kube-prometheus-stack-82.0.0.tgz  # Prometheus monitoring subchart
+│       │   └── victoria-logs-single-0.11.26.tgz  # VictoriaLogs logging subchart
+│       ├── sql/                  # Database init scripts for K8s
+│       │   ├── add_external_data_tables.sql  # Cache table schema
+│       │   └── setup.sql         # Core database schema
+│       └── templates/            # Kubernetes manifest templates
+│           ├── _helpers.tpl      # Helm template helper macros
+│           ├── dashboard-deployment.yaml      # Shiny app deployment
+│           ├── dashboard-service.yaml         # Shiny app service
+│           ├── grafana-external-service.yaml  # Grafana external access
+│           ├── grafana-image-renderer-deployment.yaml  # Grafana renderer pod
+│           ├── grafana-image-renderer-service.yaml     # Grafana renderer service
+│           ├── healthchecks-deployment.yaml   # Health check deployment
+│           ├── healthchecks-service.yaml      # Health check service
+│           ├── ingress.yaml                   # Ingress routing rules
+│           ├── network-policies.yaml          # Network access policies
+│           ├── ntfy-deployment.yaml           # Notification server deployment
+│           ├── ntfy-service.yaml              # Notification server service
+│           ├── pdb.yaml                       # Pod disruption budgets
+│           ├── pipeline-cronjob.yaml          # Scheduled pipeline execution
+│           ├── pipeline-rbac.yaml             # Pipeline role-based access
+│           ├── postgresql-initdb-configmap.yaml  # DB init SQL configmap
+│           ├── postgresql-service.yaml        # PostgreSQL service
+│           ├── postgresql-statefulset.yaml    # PostgreSQL stateful deployment
+│           ├── qs-data-pvc.yaml               # QS data persistent volume
+│           └── secrets.yaml                   # Kubernetes secrets
+├── monitoring/                   # Monitoring and observability
+│   └── grafana/                  # Grafana dashboard definitions
+│       └── Combined Dashboard - RShiny & Host OS Monitoring.json  # Host OS & app monitoring
 ├── pipeline/
 │   ├── __init__.py               # Package marker
 │   ├── alembic.ini               # Alembic migration config
@@ -529,13 +529,13 @@ rshiny_dashboard/
 │   ├── uniprot_fetch.py          # UniProt data fetching
 │   ├── validation.py             # NCBI gene verification & confidence filtering
 │   ├── alembic/                  # Database migrations (Alembic)
-│   │   ├── env.py
-│   │   ├── script.py.mako
-│   │   └── versions/
-│   │       └── 001_baseline_schema.py
+│   │   ├── env.py                # Alembic environment config
+│   │   ├── script.py.mako        # Migration script template
+│   │   └── versions/             # Migration version scripts
+│   │       └── 001_baseline_schema.py  # Initial database schema
 │   └── templates/                # Jinja2 notification templates
-│       ├── digest.html.j2
-│       └── digest.md.j2
+│       ├── digest.html.j2        # HTML notification template
+│       └── digest.md.j2          # Markdown notification template
 ├── scripts/
 │   ├── python_plot.py            # Clinical trials visualization generator
 │   └── trigger_update.r          # Regenerate QS files from database
@@ -543,45 +543,45 @@ rshiny_dashboard/
 │   ├── test_all.R                # R test suite (testthat + shinytest2)
 │   └── pipeline/                 # Python test suite (pytest)
 │       ├── conftest.py           # Shared fixtures
-│       ├── test_batch_validation.py
-│       ├── test_config.py
-│       ├── test_data_merger.py
-│       ├── test_database.py
-│       ├── test_event_log.py
-│       ├── test_external_data_sync.py
-│       ├── test_healthcheck.py
-│       ├── test_llm_extraction.py
-│       ├── test_main.py
-│       ├── test_ncbi_gene_fetch.py
-│       ├── test_notification_config.py
-│       ├── test_notifications.py
-│       ├── test_pdf_retrieval.py
-│       ├── test_prompts.py
-│       ├── test_pubmed_citations.py
-│       ├── test_pubmed_search.py
-│       ├── test_quality_metrics.py
-│       ├── test_rate_limiter.py
-│       ├── test_report.py
-│       ├── test_uniprot_fetch.py
-│       └── test_validation.py
-└── www/
+│       ├── test_batch_validation.py      # Tests for batch_validation.py
+│       ├── test_config.py                # Tests for config.py
+│       ├── test_data_merger.py           # Tests for data_merger.py
+│       ├── test_database.py              # Tests for database.py
+│       ├── test_event_log.py             # Tests for event_log.py
+│       ├── test_external_data_sync.py    # Tests for external_data_sync.py
+│       ├── test_healthcheck.py           # Tests for healthcheck.py
+│       ├── test_llm_extraction.py        # Tests for llm_extraction.py
+│       ├── test_main.py                  # Tests for main.py
+│       ├── test_ncbi_gene_fetch.py       # Tests for ncbi_gene_fetch.py
+│       ├── test_notification_config.py   # Tests for notification config
+│       ├── test_notifications.py         # Tests for notifications.py
+│       ├── test_pdf_retrieval.py         # Tests for pdf_retrieval.py
+│       ├── test_prompts.py               # Tests for prompts.py
+│       ├── test_pubmed_citations.py      # Tests for pubmed_citations.py
+│       ├── test_pubmed_search.py         # Tests for pubmed_search.py
+│       ├── test_quality_metrics.py       # Tests for quality_metrics.py
+│       ├── test_rate_limiter.py          # Tests for rate_limiter.py
+│       ├── test_report.py                # Tests for report.py
+│       ├── test_uniprot_fetch.py         # Tests for uniprot_fetch.py
+│       └── test_validation.py            # Tests for validation.py
+└── www/                          # Static web assets
     ├── custom.css                # Custom styles (source)
     ├── custom.js                 # Custom JavaScript (source)
     ├── phenogram_template.html   # Interactive phenogram viewer
     ├── python_plot.html          # Clinical trials visualization
     ├── python_plot.js            # Plot interactivity and sidepanel
-    ├── css/
-    │   └── tippy.css
-    ├── fonts/
-    │   └── Roboto-Regular.ttf
-    ├── images/
-    │   ├── icm_logo.png
-    │   ├── icm_logo.webp
-    │   ├── phenogram.png
-    │   └── phenogram.webp
-    └── js/
-        ├── popper.min.js
-        └── tippy.min.js
+    ├── css/                      # Vendor CSS
+    │   └── tippy.css             # Tooltip styles
+    ├── fonts/                    # Local web fonts
+    │   └── Roboto-Regular.ttf    # Roboto font file
+    ├── images/                   # Logos and visual assets
+    │   ├── icm_logo.png          # ICM logo (PNG)
+    │   ├── icm_logo.webp         # ICM logo (WebP)
+    │   ├── phenogram.png         # Phenogram graphic (PNG)
+    │   └── phenogram.webp        # Phenogram graphic (WebP)
+    └── js/                       # Vendor JavaScript
+        ├── popper.min.js         # Popper.js positioning library
+        └── tippy.min.js          # Tippy.js tooltip library
 ```
 
 </details>
