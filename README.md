@@ -197,7 +197,7 @@ rshiny_dashboard/
 │   ├── csv/                      # CSV exports
 │   └── qs/                       # QS serialized files (read by Shiny at runtime)
 ├── docs/                         # Technical documentation
-│   ├── dashboard-technical-documentation.md  # Dashboard architecture reference
+│   ├── dashboard-overview.md     # Dashboard architecture reference
 │   ├── python-etl-pipeline.md    # ETL pipeline documentation
 │   ├── kubernetes-cluster-overview.md  # Kubernetes deployment guide
 │   └── pipeline-security.md      # Security audit and threat model
@@ -909,15 +909,12 @@ Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`,
 
 Detailed documentation is available in the `docs/` directory:
 
-> [!CAUTION]
-> The **Dashboard Technical Documentation** is currently outdated and does not reflect the latest codebase. Please wait for the updated version.
-
 | Document | Description |
 |----------|-------------|
-| [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
+| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
+| [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
+| [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
+| [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
 
 ---
 
