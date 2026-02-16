@@ -599,20 +599,35 @@ The dashboard uses a two-stage data pipeline: a Python ETL pipeline that extract
 
 ### Pipeline Architecture
 
-```
-Stage 1: Python ETL                           Stage 2: R Transformation
-┌──────────────────────────────────────┐      ┌─────────────────────────┐
-│ 1. Search PubMed for new papers      │      │ 7. Read from PostgreSQL │
-│ 2. Filter already-processed PMIDs    │      │ 8. Generate QS files    │
-│ 3. Retrieve full text (PMC/Unpaywall)│      │    for Shiny dashboard  │
-│ 4. Extract genes via Claude LLM      │      └───────────▲─────────────┘
-│ 5. Validate against NCBI Gene        │                  │
-│ 6. Load into PostgreSQL              │      ┌───────────┴─────────────┐
-│              │                       │      │   trigger_update.R      │
-│              ▼                       │      └───────────▲─────────────┘
-│ 6a. Sync external data (optional):   │                  │
-│     NCBI Gene, UniProt, PubMed refs  │──────────────────┘
-└──────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph stage1["Stage 1: Python ETL"]
+        S1["1. Search PubMed for new papers"]
+        S2["2. Filter already-processed PMIDs"]
+        S3["3. Retrieve full text via PMC/Unpaywall"]
+        S4["4. Extract genes via Claude LLM"]
+        S5["5. Validate against NCBI Gene"]
+        S6["6. Batch quality checks with Pandera"]
+        S7["7. Merge into PostgreSQL"]
+        S8["8. Generate JSON report + summary"]
+        S9["9. Log event + send notifications"]
+        S10["10. Ping healthcheck endpoint"]
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10
+    end
+
+    subgraph stage2["Stage 2: R Transformation"]
+        T1["trigger_update.R"]
+        T2["Read from PostgreSQL"]
+        T3["Generate QS files for Shiny dashboard"]
+        T1 --> T2 --> T3
+    end
+
+    S10 --> T1
+
+    subgraph sync["Separate mode: --sync-external-data"]
+        E1["Sync NCBI Gene, UniProt, PubMed refs
+        for all genes already in PostgreSQL"]
+    end
 ```
 
 ### Running the Pipeline
@@ -637,7 +652,8 @@ python pipeline/main.py --days-back 30
 | `--test-mode` | - | Skip LLM extraction (test search/retrieval only) |
 | `--sync-external-data` | - | Sync NCBI Gene, UniProt, and PubMed citation data |
 | `--local-pdfs PATH` | - | Extract genes from local PDF file(s) without PubMed search |
-| `--skip-validation` | - | Skip NCBI Gene validation (only with `--local-pdfs`) |
+| `--pmids FILE` | - | Process specific PMIDs from text file (one per line, no database) |
+| `--skip-validation` | - | Skip NCBI Gene validation (only with `--local-pdfs` or `--pmids`) |
 
 > **Tab-completion**: `eval "$(python pipeline/main.py --complete bash)"` (also supports `zsh` and `fish`)
 
@@ -658,21 +674,12 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 | `prot_info_clean.qs` | `uniprot_info` cache | UniProt protein annotations |
 | `refs.qs` | `pubmed_citations` cache | Formatted PubMed references |
 | `gwas_trait_names.qs` | `genes` table | GWAS trait name mappings |
-| `geocoded_trials.qs` | ClinicalTrials.gov API | Geocoded trial locations for map |
-| `geocoded_trials.qs.sha256` | — | SHA256 integrity checksum for geocoded data |
+
+> **Note:** Geocoded trial location data (`geocoded_trials.qs`) is generated at runtime by the Shiny app's map functionality (`R/fetch_trial_locations.R`), not by `trigger_update.R`.
 
 ### Automated Updates
 
-> **TODO**: Automated pipeline updates via GitHub Actions are planned but not currently implemented. The previous workflow (`.github/workflows/update_pipeline.yml`) has been removed. For now, run the pipeline manually using the commands above.
-
-**Planned Workflow Steps:**
-
-1. Initialize PostgreSQL 18 service container and load schema
-2. Run Python pipeline (`main.py`) to extract new genes
-3. Generate QS files via `trigger_update.R`
-4. Auto-commit updated `data/qs/*.qs` files to the repository
-
-The QS files are committed directly to the repository, allowing the Shiny app to run without database access in production.
+Pipeline automation is handled by a Kubernetes CronJob that runs weekly. See the [Kubernetes Cluster](#kubernetes-cluster) section for configuration details (schedule, resource limits, Helm values).
 
 ---
 
@@ -770,7 +777,7 @@ All LLM-related environment variables (from `pipeline/config.py`):
 | `PIPELINE_LLM_MODEL` | `claude-opus-4-6` | Model identifier |
 | `PIPELINE_LLM_MAX_TOKENS` | `32000` | Max output tokens |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort (`low` / `high` / `max`) |
-| `PIPELINE_MAX_PAPER_TEXT_CHARS` | `50000` | Paper text truncation limit (chars) |
+| `PIPELINE_MAX_PAPER_TEXT_CHARS` | `100000` | Paper text truncation limit (chars) |
 | `PIPELINE_CONFIDENCE_THRESHOLD` | `0.7` | Minimum confidence to keep a gene |
 | `PIPELINE_MAX_RETRIES` | `1` | Validation error retry budget |
 | `PIPELINE_MAX_RATE_LIMIT_RETRIES` | `6` | Rate limit (429) retry budget |
