@@ -377,27 +377,57 @@ Rscript -e "shiny::runApp()"
 shiny::runApp()
 ```
 
-### Docker
+### Kubernetes Cluster
+
+The Helm chart at `helm/svd-dashboard/` deploys the full platform: the Shiny dashboard, PostgreSQL, the ETL pipeline (as a weekly CronJob), ntfy/Healthchecks notifications, and an optional observability stack (kube-prometheus-stack + VictoriaLogs).
+
+**Prerequisites:** Helm 3, an [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/), and locally-built Docker images (the chart uses `pullPolicy: Never` by default).
+
+**Build images:**
 
 ```bash
-# Build the image
-docker build -t svd-dashboard .
-
-# Run the container
-docker run -p 3838:3838 svd-dashboard
-
-# Run with Table 2 preloading disabled (saves memory)
-docker run -p 3838:3838 -e PRELOAD_TABLE2=FALSE svd-dashboard
+docker build -t rshiny-dashboard:1.0.0 .
+docker build -f Dockerfile.pipeline -t svd-pipeline:1.0.0 .
 ```
 
-The app will be available at `http://localhost:3838`.
+**Install:**
 
-### Kubernetes
+```bash
+helm dependency build helm/svd-dashboard
 
-See `monitoring/yaml/` for Kubernetes deployment configurations including:
-- Monitoring stack deployment
-- VictoriaLogs configuration
-- Grafana monitoring integration
+helm install svd helm/svd-dashboard -n svd --create-namespace \
+  --set postgresql.credentials.username=<DB_USER> \
+  --set postgresql.credentials.password=<DB_PASSWORD> \
+  --set secrets.anthropicApiKey=<KEY> \
+  --set secrets.ncbiApiKey=<KEY> \
+  --set secrets.entrezEmail=<EMAIL> \
+  --set secrets.unpaywallEmail=<EMAIL>
+```
+
+**Pipeline automation:** A CronJob runs the ETL pipeline every Monday at 03:00 UTC (`0 3 * * 1`), looking back 7 days and syncing external data. Jobs are killed after 2 hours (`activeDeadlineSeconds: 7200`).
+
+**Ingress hosts (defaults):**
+
+| Service | Host |
+|---|---|
+| Dashboard | `shiny.local` |
+| ntfy | `ntfy.local` |
+| Healthchecks | `healthchecks.local` |
+| Grafana | `grafana.local` |
+
+**Key configuration overrides (`values.yaml`):**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `dashboard.replicas` | `1` | Dashboard pod replicas |
+| `dashboard.preloadTable2` | `TRUE` | Preload Table 2 at startup |
+| `pipeline.schedule` | `0 3 * * 1` | CronJob cron expression |
+| `pipeline.daysBack` | `7` | PubMed lookback window (days) |
+| `qsData.storage.accessMode` | `ReadWriteOnce` | Use `ReadWriteMany` for multiple dashboard replicas |
+| `observability.prometheus.enabled` | `true` | Deploy kube-prometheus-stack subchart |
+| `observability.victoriaLogs.enabled` | `true` | Deploy VictoriaLogs subchart |
+| `networkPolicies.enabled` | `false` | Enable NetworkPolicy resources (requires Calico/Cilium) |
+| `ingress.tls.enabled` | `false` | Enable TLS on Ingress |
 
 ---
 
