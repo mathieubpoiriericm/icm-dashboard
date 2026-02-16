@@ -912,9 +912,9 @@ Detailed documentation is available in the `docs/` directory:
 | Document | Description |
 |----------|-------------|
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
-| [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
-| [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
-| [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
+| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
+| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
+| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
 
 ---
 

@@ -21,20 +21,23 @@ Technical reference for the ICM Cerebral SVD Dashboard runtime architecture, fea
 
 ## Runtime Data Flow
 
-```
-PostgreSQL
-    |
-    v
-trigger_update.R  (offline, reads DB via R/clean_table1.R, R/clean_table2.R, R/read_external_data.R)
-    |
-    v
-data/qs/*.qs      (serialized data files, not version-controlled)
-    |
-    v
-app.R             (startup: loads QS files, builds fastmap indices)
-    |
-    v
-fastmap indices + data.table  -->  Shiny reactives  -->  browser
+```mermaid
+flowchart LR
+    A["PostgreSQL"] --> B["trigger_update.R
+    (offline, reads DB via
+    clean_table1.R,
+    clean_table2.R,
+    read_external_data.R)"]
+    B --> C["data/qs/*.qs
+    (serialized data files,
+    not version-controlled)"]
+    C --> D["app.R
+    (loads QS files,
+    builds fastmap indices)"]
+    D --> E["fastmap indices
+    + data.table"]
+    E --> F["Shiny reactives"]
+    F --> G["Browser"]
 ```
 
 The dashboard has **no database connection at runtime**. All data is read from pre-generated QS files produced by `scripts/trigger_update.R`.
