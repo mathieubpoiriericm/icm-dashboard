@@ -59,9 +59,9 @@ graph TD
     ingress -- "ntfy.local" --> ntfy["ntfy :80"]
     ingress -- "healthchecks.local" --> healthchecks["Healthchecks :8000"]
 
-    dashboard -- "reads QS files" --> qspvc[("QS Data PVC\n1Gi")]
+    dashboard -- "reads QS files" --> qspvc[("QS Data PVC<br/>1Gi")]
     pipeline["Pipeline CronJob"] -- "writes QS files" --> qspvc
-    pipeline -- "reads / writes" --> postgresql[("PostgreSQL :5432\n10Gi PVC")]
+    pipeline -- "reads / writes" --> postgresql[("PostgreSQL :5432<br/>10Gi PVC")]
 
     grafana -. "scrapes metrics" .-> prometheus["Prometheus"]
     grafana -. "queries logs" .-> victorialogs["VictoriaLogs"]
@@ -175,10 +175,10 @@ must all succeed) and a **regular container** for the final step:
 
 ```mermaid
 graph TD
-    step1["Step 1: run-pipeline\n(init container)"]
-    step2["Step 2: sync-external\n(init container, conditional)"]
-    step3["Step 3: generate-qs\n(init container)"]
-    step4["Step 4: restart-dashboard\n(regular container)"]
+    step1["Step 1: run-pipeline<br/>(init container)"]
+    step2["Step 2: sync-external<br/>(init container, conditional)"]
+    step3["Step 3: generate-qs<br/>(init container)"]
+    step4["Step 4: restart-dashboard<br/>(regular container)"]
 
     step1 --> step2 --> step3 --> step4
 ```
@@ -351,16 +351,16 @@ The full data lifecycle, from PubMed paper to user-visible table row:
 
 ```mermaid
 graph TD
-    pubmed["PubMed API"] --> step1["run-pipeline\n(Step 1)"]
-    apis["NCBI / UniProt /\nUnpaywall APIs"] --> step2["sync-external\n(Step 2)"]
+    pubmed["PubMed API"] --> step1["run-pipeline<br/>(Step 1)"]
+    apis["NCBI / UniProt /<br/>Unpaywall APIs"] --> step2["sync-external<br/>(Step 2)"]
 
-    step1 --> pg[("PostgreSQL\ngenes, trials,\npubmed_refs")]
-    step2 --> pg_cache[("PostgreSQL\nncbi_gene_info,\nuniprot_info,\npubmed_citations")]
+    step1 --> pg[("PostgreSQL<br/>genes, trials,<br/>pubmed_refs")]
+    step2 --> pg_cache[("PostgreSQL<br/>ncbi_gene_info,<br/>uniprot_info,<br/>pubmed_citations")]
 
     pg --> step3["generate-qs\n(Step 3)"]
     pg_cache --> step3
 
-    step3 --> qspvc[("QS Data PVC\n1Gi")]
+    step3 --> qspvc[("QS Data PVC<br/>1Gi")]
     qspvc --> step4["restart-dashboard\n(Step 4)"]
     step4 --> dashboard["Dashboard\nreads QS files"]
 ```
