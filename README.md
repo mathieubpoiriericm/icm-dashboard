@@ -753,7 +753,7 @@ LLM output feeds into a 3-stage validation pipeline (`pipeline/validation.py`):
 
 ### Cost & Rate Limiting
 
-**Pricing** (from `pipeline/report.py`):
+**Pricing (USD)** (from `pipeline/report.py`):
 
 | Model | Input (per 1M tokens) | Output (per 1M tokens) |
 |-------|----------------------|------------------------|
