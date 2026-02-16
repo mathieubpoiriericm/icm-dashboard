@@ -27,7 +27,7 @@ repositories:
     url: https://victoriametrics.github.io/helm-charts
 
 releases:
-  - name: svd-dashboard
+  - name: svd
     namespace: svd
     chart: ./helm/svd-dashboard
     values:
