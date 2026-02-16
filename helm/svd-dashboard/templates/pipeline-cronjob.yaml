@@ -1,0 +1,88 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-pipeline
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pipeline
+spec:
+  schedule: {{ .Values.pipeline.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "svd-dashboard.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: pipeline
+        spec:
+          serviceAccountName: {{ include "svd-dashboard.fullname" . }}-pipeline
+          restartPolicy: Never
+          initContainers:
+            # Step 1: Run the ETL pipeline
+            - name: run-pipeline
+              image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
+              imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              command: ["python", "pipeline/main.py", "--days-back", "{{ .Values.pipeline.daysBack }}"]
+              envFrom:
+                - secretRef:
+                    name: {{ include "svd-dashboard.fullname" . }}-secrets
+              volumeMounts:
+                - name: qs-data
+                  mountPath: /app/data/qs
+              resources:
+                {{- toYaml .Values.pipeline.resources | nindent 16 }}
+            {{- if .Values.pipeline.syncExternalData }}
+            # Step 2: Sync external data (NCBI, UniProt, PubMed)
+            - name: sync-external
+              image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
+              imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              command: ["python", "pipeline/main.py", "--sync-external-data"]
+              envFrom:
+                - secretRef:
+                    name: {{ include "svd-dashboard.fullname" . }}-secrets
+              volumeMounts:
+                - name: qs-data
+                  mountPath: /app/data/qs
+              resources:
+                {{- toYaml .Values.pipeline.resources | nindent 16 }}
+            {{- end }}
+            # Step 3: Generate QS data files from database
+            - name: generate-qs
+              image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
+              imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              command: ["Rscript", "scripts/trigger_update.R"]
+              envFrom:
+                - secretRef:
+                    name: {{ include "svd-dashboard.fullname" . }}-secrets
+              volumeMounts:
+                - name: qs-data
+                  mountPath: /app/data/qs
+              resources:
+                {{- toYaml .Values.pipeline.resources | nindent 16 }}
+          containers:
+            # Step 4: Restart dashboard to pick up new QS files
+            - name: restart-dashboard
+              image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
+              imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              command:
+                - kubectl
+                - rollout
+                - restart
+                - "deployment/{{ include "svd-dashboard.fullname" . }}-dashboard"
+                - -n
+                - {{ .Release.Namespace }}
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+          volumes:
+            - name: qs-data
+              persistentVolumeClaim:
+                claimName: {{ include "svd-dashboard.fullname" . }}-qs-data

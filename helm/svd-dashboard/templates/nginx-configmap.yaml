@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+data:
+  use-forwarded-headers: "true"
+  compute-full-forwarded-for: "true"
+  enable-real-ip: "true"
+  log-format-escape-json: "true"
+  log-format-upstream: |
+    {
+      "timestamp": "$time_iso8601",
+      "remote_addr": "$remote_addr",
+      "x_forwarded_for": "$proxy_add_x_forwarded_for",
+      "method": "$request_method",
+      "request_uri": "$request_uri",
+      "status": $status,
+      "body_bytes_sent": $body_bytes_sent,
+      "request_time": $request_time,
+      "http_referer": "$http_referer",
+      "http_user_agent": "$http_user_agent"
+    }

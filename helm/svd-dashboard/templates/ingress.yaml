@@ -1,0 +1,57 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.hosts.dashboard }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "svd-dashboard.fullname" . }}-dashboard
+                port:
+                  number: 3838
+    {{- if .Values.notifications.ntfy.enabled }}
+    - host: {{ .Values.ingress.hosts.ntfy }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "svd-dashboard.fullname" . }}-ntfy
+                port:
+                  number: 80
+    {{- end }}
+    {{- if .Values.notifications.healthchecks.enabled }}
+    - host: {{ .Values.ingress.hosts.healthchecks }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "svd-dashboard.fullname" . }}-healthchecks
+                port:
+                  number: 8000
+    {{- end }}
+    {{- if .Values.observability.prometheus.enabled }}
+    - host: {{ .Values.ingress.hosts.grafana }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-grafana
+                port:
+                  number: 80
+    {{- end }}
+{{- end }}

@@ -1,0 +1,132 @@
+# --- Dashboard ---
+dashboard:
+  image:
+    repository: rshiny-dashboard
+    tag: "1.0.0"
+    pullPolicy: Never
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  preloadTable2: "TRUE"
+
+# --- PostgreSQL ---
+postgresql:
+  image:
+    repository: postgres
+    tag: "17"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage:
+    size: 10Gi
+    storageClass: ""
+  credentials:
+    database: svd_dashboard
+    username: ""
+    password: ""
+
+# --- Pipeline CronJob ---
+pipeline:
+  image:
+    repository: svd-pipeline
+    tag: "1.0.0"
+    pullPolicy: Never
+  schedule: "0 3 * * 1"
+  daysBack: 7
+  syncExternalData: true
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+# --- Shared QS Data Volume ---
+qsData:
+  storage:
+    size: 1Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+# --- Notifications ---
+notifications:
+  ntfy:
+    enabled: true
+    image:
+      repository: binwiederhier/ntfy
+      tag: "v2.17.0"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    auth: "deny-all"
+    cache:
+      size: 1Gi
+  healthchecks:
+    enabled: true
+    image:
+      repository: healthchecks/healthchecks
+      tag: "latest"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    storage:
+      size: 1Gi
+    secretKey: "change-me-in-production"
+
+# --- Observability ---
+observability:
+  prometheus:
+    enabled: true
+  victoriaLogs:
+    enabled: true
+
+# --- Ingress ---
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    dashboard: shiny.local
+    ntfy: ntfy.local
+    healthchecks: healthchecks.local
+    grafana: grafana.local
+
+# --- Secrets (override via --set or -f secrets.yaml) ---
+secrets:
+  anthropicApiKey: ""
+  ncbiApiKey: ""
+  entrezEmail: ""
+  unpaywallEmail: ""
+  notifyUrls: ""
+  healthcheckUrl: ""
+
+# --- Subchart overrides ---
+kube-prometheus-stack:
+  grafana:
+    enabled: true
+
+victoria-logs-single:
+  server:
+    retentionPeriod: 30d
+    persistentVolume:
+      enabled: true
+      size: 50Gi
+  vector:
+    enabled: true
