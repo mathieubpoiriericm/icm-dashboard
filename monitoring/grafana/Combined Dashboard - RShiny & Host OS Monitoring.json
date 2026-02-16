@@ -319,7 +319,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(container_memory_working_set_bytes{pod=~\"rshiny.*\"}) by (pod)",
+          "expr": "sum(container_memory_working_set_bytes{pod=~\"svd-svd-dashboard-.*\"}) by (pod)",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
@@ -421,7 +421,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"rshiny.*\"}[5m])) by (pod)",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"svd-svd-dashboard-.*\"}[5m])) by (pod)",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
