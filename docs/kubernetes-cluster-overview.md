@@ -52,16 +52,16 @@ and the cluster converges to the new state.
 
 ```mermaid
 graph TD
-    ingress["Ingress Controller (nginx)"]
+    ingress["Ingress Controller<br/>(nginx)"]
 
-    ingress -- "shiny.local" --> dashboard["Dashboard :3838"]
-    ingress -- "grafana.local" --> grafana["Grafana :80"]
-    ingress -- "ntfy.local" --> ntfy["ntfy :80"]
-    ingress -- "healthchecks.local" --> healthchecks["Healthchecks :8000"]
+    ingress -- "shiny.local" --> dashboard["Dashboard<br/>(port:3838)"]
+    ingress -- "grafana.local" --> grafana["Grafana<br/>(port:80)"]
+    ingress -- "ntfy.local" --> ntfy["ntfy<br/>(port:80)"]
+    ingress -- "healthchecks.local" --> healthchecks["Healthchecks<br/>(port:8000)"]
 
     dashboard -- "reads QS files" --> qspvc[("QS Data PVC<br/>1Gi")]
     pipeline["Pipeline CronJob"] -- "writes QS files" --> qspvc
-    pipeline -- "reads / writes" --> postgresql[("PostgreSQL :5432<br/>10Gi PVC")]
+    pipeline -- "reads / writes" --> postgresql[("PostgreSQL<br/>(port:5432)<br/>10Gi PVC")]
 
     grafana -. "scrapes metrics" .-> prometheus["Prometheus"]
     grafana -. "queries logs" .-> victorialogs["VictoriaLogs"]
