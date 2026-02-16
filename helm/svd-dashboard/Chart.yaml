@@ -6,7 +6,7 @@ appVersion: "1.0.0"
 
 dependencies:
   - name: kube-prometheus-stack
-    version: "~72.x"
+    version: "~82.x"
     repository: https://prometheus-community.github.io/helm-charts
     condition: observability.prometheus.enabled
   - name: victoria-logs-single
