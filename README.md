@@ -600,33 +600,30 @@ The dashboard uses a two-stage data pipeline: a Python ETL pipeline that extract
 ### Pipeline Architecture
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph stage1["Stage 1: Python ETL"]
-        S1["1. Search PubMed for new papers"]
-        S2["2. Filter already-processed PMIDs"]
-        S3["3. Retrieve full text via PMC/Unpaywall"]
-        S4["4. Extract genes via Claude LLM"]
-        S5["5. Validate against NCBI Gene"]
-        S6["6. Batch quality checks with Pandera"]
-        S7["7. Merge into PostgreSQL"]
-        S8["8. Generate JSON report + summary"]
-        S9["9. Log event + send notifications"]
-        S10["10. Ping healthcheck endpoint"]
-        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10
+        direction LR
+        A["Search PubMed
+        Filter processed PMIDs
+        Retrieve full text"] --> B["Extract genes via LLM
+        Validate against NCBI Gene
+        Batch quality checks"] --> C["Merge into PostgreSQL
+        Generate report
+        Notify + healthcheck"]
     end
 
     subgraph stage2["Stage 2: R Transformation"]
-        T1["trigger_update.R"]
-        T2["Read from PostgreSQL"]
-        T3["Generate QS files for Shiny dashboard"]
-        T1 --> T2 --> T3
+        D["trigger_update.R
+        Read from PostgreSQL
+        Generate QS files"]
     end
 
-    S10 --> T1
+    C --> D
 
     subgraph sync["Separate mode: --sync-external-data"]
-        E1["Sync NCBI Gene, UniProt, PubMed refs
-        for all genes already in PostgreSQL"]
+        E["Sync NCBI Gene, UniProt,
+        PubMed refs for all genes
+        already in PostgreSQL"]
     end
 ```
 
