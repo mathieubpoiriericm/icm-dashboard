@@ -464,8 +464,10 @@ rshiny_dashboard/
 │   ├── tooltips.R                # Tooltip generation for tables
 │   ├── ui.R                      # UI definition with Bootstrap 5
 │   └── utils.R                   # CSS styles, DB utilities, column cleaning
-├── bibentry/                     # PubMed bibliography entries (gitignored)
 ├── data/                         # App data files (gitignored)
+│   ├── bibentry/                 # PubMed bibliography entries
+│   │   ├── bib/                  # .bib bibliography files
+│   │   └── xml/                  # MODS XML reference files
 │   ├── csv/                      # CSV exports
 │   └── qs/                       # QS serialized files (read by Shiny at runtime)
 ├── docs/                         # Technical documentation
