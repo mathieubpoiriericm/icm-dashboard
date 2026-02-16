@@ -820,14 +820,11 @@ Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`,
 Detailed documentation is available in the `docs/` directory:
 
 > [!CAUTION]
-> The **Dashboard Technical Documentation**, **maRco Package Documentation**, and **Automated Research Pipeline** are currently outdated and do not reflect the latest codebase. Please wait for the updated versions.
+> The **Dashboard Technical Documentation** is currently outdated and does not reflect the latest codebase. Please wait for the updated version.
 
 | Document | Description |
 |----------|-------------|
 | ⚠️ ![Outdated](https://img.shields.io/badge/-Outdated-orange) [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
-| ⚠️ ![Outdated](https://img.shields.io/badge/-Outdated-orange) [maRco Package Documentation](docs/marco-package-documentation.md) | Developer guide for the maRco R helper package |
-| ⚠️ ![Outdated](https://img.shields.io/badge/-Outdated-orange) [Automated Research Pipeline](docs/automated-research-pipeline.md) | Python ETL pipeline for gene extraction from literature |
-| [Observability Stack Guide](docs/observability-stack-guide.md) | Kubernetes monitoring and logging setup |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
 
