@@ -22,6 +22,18 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    {{- if .Values.postgresql.exporter.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: {{ .Values.postgresql.exporter.port }}
+    {{- end }}
 ---
 # --- Dashboard: only accept connections from ingress-nginx ---
 apiVersion: networking.k8s.io/v1
@@ -70,6 +82,14 @@ spec:
             matchLabels:
               {{- include "svd-dashboard.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: pipeline
+        {{- if .Values.notifications.ntfy.metrics.enabled }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+        {{- end }}
       ports:
         - protocol: TCP
           port: 80

@@ -12,6 +12,13 @@ spec:
     {{- include "svd-dashboard.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: postgresql
   ports:
-    - port: 5432
+    - name: postgresql
+      port: 5432
       targetPort: 5432
       protocol: TCP
+    {{- if .Values.postgresql.exporter.enabled }}
+    - name: metrics
+      port: {{ .Values.postgresql.exporter.port }}
+      targetPort: {{ .Values.postgresql.exporter.port }}
+      protocol: TCP
+    {{- end }}

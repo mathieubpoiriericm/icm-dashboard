@@ -67,6 +67,45 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
+        {{- if .Values.postgresql.exporter.enabled }}
+        - name: postgres-exporter
+          image: "{{ .Values.postgresql.exporter.image.repository }}:{{ .Values.postgresql.exporter.image.tag }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.postgresql.exporter.port }}
+          env:
+            - name: DATA_SOURCE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "svd-dashboard.fullname" . }}-db-credentials
+                  key: POSTGRES_USER
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "svd-dashboard.fullname" . }}-db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: DATA_SOURCE_URI
+              value: "localhost:5432/{{ .Values.postgresql.credentials.database }}?sslmode=disable"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.postgresql.exporter.resources | nindent 12 }}
+        {{- end }}
       volumes:
         - name: initdb
           configMap:

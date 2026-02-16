@@ -37,6 +37,19 @@ postgresql:
     database: svd_dashboard
     username: ""
     password: ""
+  exporter:
+    enabled: true
+    image:
+      repository: prometheuscommunity/postgres-exporter
+      tag: "0.16.0"
+    port: 9187
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
 
 # --- Pipeline CronJob ---
 pipeline:
@@ -82,6 +95,8 @@ notifications:
         cpu: 200m
         memory: 128Mi
     auth: "deny-all"
+    metrics:
+      enabled: true
     cache:
       size: 1Gi
   healthchecks:
@@ -100,6 +115,14 @@ notifications:
       size: 1Gi
     # Required when healthchecks is enabled. Set via --set or -f secrets-values.yaml.
     secretKey: ""
+
+# --- Monitoring (ServiceMonitors for external Prometheus) ---
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus
+    interval: 30s
 
 # --- Observability ---
 # Set to false if you already have kube-prometheus-stack and/or

@@ -12,7 +12,8 @@ spec:
     {{- include "svd-dashboard.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: ntfy
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 80
       protocol: TCP
 {{- end }}
