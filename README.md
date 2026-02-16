@@ -444,7 +444,7 @@ rshiny_dashboard/
 ├── Dockerfile.pipeline           # Pipeline Docker build
 ├── helmfile.yaml                 # Orchestrates the svd-dashboard umbrella Helm chart
 ├── LICENSE                       # MIT License
-├── Makevars                      # R compilation flags (OpenMP/clang)
+├── Makevars                      # R compilation flags (OpenMP/clang) for macOS (arm64)
 ├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
 ├── README.md                     # Project documentation
 ├── requirements.txt              # Python dependencies
