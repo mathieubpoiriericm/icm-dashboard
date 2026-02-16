@@ -463,6 +463,10 @@ rshiny_dashboard/
 │   ├── tooltips.R                # Tooltip generation for tables
 │   ├── ui.R                      # UI definition with Bootstrap 5
 │   └── utils.R                   # CSS styles, DB utilities, column cleaning
+├── bibentry/                     # PubMed bibliography entries (gitignored)
+├── data/                         # App data files (gitignored)
+│   ├── csv/                      # CSV exports
+│   └── qs/                       # QS serialized files (read by Shiny at runtime)
 ├── docs/                         # Technical documentation
 │   ├── dashboard-technical-documentation.md  # Dashboard architecture reference
 │   ├── python-etl-pipeline.md    # ETL pipeline documentation
@@ -500,6 +504,7 @@ rshiny_dashboard/
 │           ├── postgresql-statefulset.yaml    # PostgreSQL stateful deployment
 │           ├── qs-data-pvc.yaml               # QS data persistent volume
 │           └── secrets.yaml                   # Kubernetes secrets
+├── logs/                         # Pipeline execution logs (gitignored)
 ├── monitoring/                   # Monitoring and observability
 │   └── grafana/                  # Grafana dashboard definitions
 │       └── Combined Dashboard - RShiny & Host OS Monitoring.json  # Host OS & app monitoring
