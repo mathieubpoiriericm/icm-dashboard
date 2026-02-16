@@ -184,7 +184,7 @@ fetch_trial_locations <- function(
 #'   found.
 fetch_all_trial_locations <- function(
   nct_ids,
-  n_workers = 4L,
+  n_workers = min(4L, parallelly::availableCores()),
   chunk_delay_ms = MAP_API_DELAY_MS
 ) {
   empty_df <- data.frame(

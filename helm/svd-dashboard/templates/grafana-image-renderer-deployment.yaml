@@ -20,6 +20,7 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 472
       containers:
         - name: renderer
           image: grafana/grafana-image-renderer:3.12.1

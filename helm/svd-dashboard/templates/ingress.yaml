@@ -53,5 +53,16 @@ spec:
                 name: {{ .Release.Name }}-grafana
                 port:
                   number: 80
+    {{- else if .Values.observability.grafana.external.enabled }}
+    - host: {{ .Values.ingress.hosts.grafana }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "svd-dashboard.fullname" . }}-grafana-external
+                port:
+                  number: {{ .Values.observability.grafana.external.port }}
     {{- end }}
 {{- end }}

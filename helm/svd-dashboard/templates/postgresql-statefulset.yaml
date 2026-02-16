@@ -40,7 +40,9 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - $(POSTGRES_USER)
+                - {{ .Values.postgresql.credentials.username }}
+                - -d
+                - {{ .Values.postgresql.credentials.database }}
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
@@ -48,7 +50,9 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - $(POSTGRES_USER)
+                - {{ .Values.postgresql.credentials.username }}
+                - -d
+                - {{ .Values.postgresql.credentials.database }}
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:

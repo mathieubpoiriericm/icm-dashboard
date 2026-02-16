@@ -110,8 +110,10 @@ build_trials_map_base <- function() {
 #' @param session Shiny session object.
 #'
 #' @return Observer (side effects only).
-build_map_marker_observer <- function(map_data_reactive, session) {
+build_map_marker_observer <- function(map_data_reactive, input, session) {
   shiny::observe({
+    # Only fire when map tab is active (ensures leaflet widget exists)
+    shiny::req(identical(input$tabs, "Clinical Trials Map"))
     map_data <- map_data_reactive()
 
     # Clear existing markers and add new ones

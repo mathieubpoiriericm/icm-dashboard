@@ -19,6 +19,19 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 997
+        runAsGroup: 997
+        fsGroup: 997
+      initContainers:
+        - name: fix-qs-permissions
+          image: busybox:latest
+          command: ["sh", "-c", "chown -R 997:997 /data/qs"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
+            - name: qs-data
+              mountPath: /data/qs
       containers:
         - name: dashboard
           image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
@@ -37,23 +50,28 @@ spec:
           volumeMounts:
             - name: qs-data
               mountPath: /srv/shiny-server/data/qs
-              readOnly: true
+              readOnly: false
             - name: renviron
               mountPath: /srv/shiny-server/.Renviron
               subPath: .Renviron
               readOnly: true
+          startupProbe:
+            httpGet:
+              path: /
+              port: 3838
+            failureThreshold: 60
+            periodSeconds: 10
+            timeoutSeconds: 10
           livenessProbe:
             httpGet:
               path: /
               port: 3838
-            initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /
               port: 3838
-            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
           resources:

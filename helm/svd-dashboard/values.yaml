@@ -7,11 +7,11 @@ dashboard:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 1000m
+      memory: 2Gi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 4000m
+      memory: 4Gi
   preloadTable2: "TRUE"
 
 # --- PostgreSQL ---
@@ -92,11 +92,22 @@ notifications:
     secretKey: "change-me-in-production"
 
 # --- Observability ---
+# Disable subcharts if you already have kube-prometheus-stack and
+# victoria-logs deployed separately (e.g. in a 'monitoring' namespace).
 observability:
   prometheus:
-    enabled: true
+    enabled: false
   victoriaLogs:
-    enabled: true
+    enabled: false
+  # When the prometheus subchart is disabled but Grafana is deployed
+  # separately (e.g. in a 'monitoring' namespace), enable this to
+  # create an ExternalName service and ingress rule for Grafana.
+  grafana:
+    external:
+      enabled: true
+      namespace: monitoring
+      serviceName: prometheus-grafana
+      port: 80
 
 # --- Ingress ---
 ingress:
@@ -121,6 +132,28 @@ secrets:
 kube-prometheus-stack:
   grafana:
     enabled: true
+  prometheusOperator:
+    namespaces:
+      releaseNamespace: true
+      additional: []
+  prometheus:
+    prometheusSpec:
+      serviceMonitorNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+      podMonitorNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+      ruleNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+  alertmanager:
+    alertmanagerSpec:
+      alertmanagerConfigNamespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: svd
+  nodeExporter:
+    enabled: false
 
 victoria-logs-single:
   server:

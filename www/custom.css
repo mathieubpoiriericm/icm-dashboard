@@ -2085,10 +2085,15 @@ table.dataTable tbody tr td i.et-al {
 /* Map container */
 .map-container {
   width: 100%;
+  min-height: 700px;
   border-radius: 20px;
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   margin-top: 1rem;
+}
+
+#trials_map {
+  min-height: 700px !important;
 }
 
 .map-content {

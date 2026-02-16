@@ -26,6 +26,20 @@ $(document).on('shown.bs.tab', function(e) {
     syncControlsWidth('firstTable');
     syncControlsWidth('secondTable');
   }, [100, 300]);
+
+  // Invalidate Leaflet map size when Trials Map tab becomes visible
+  if (targetId === 'Clinical Trials Map') {
+    // Retry multiple times to handle async widget initialization
+    [100, 300, 600, 1000].forEach(function(delay) {
+      setTimeout(function() {
+        var widget = HTMLWidgets.find('#trials_map');
+        if (widget) {
+          var map = widget.getMap();
+          if (map) map.invalidateSize();
+        }
+      }, delay);
+    });
+  }
 });
 
 // Python plot handling

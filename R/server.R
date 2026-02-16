@@ -140,8 +140,11 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     # Setup lazy loading trigger for map tab
     setup_map_lazy_load_trigger(input, map_data_loader)
 
-    # Render map output
-    output$trials_map <- build_trials_map(map_data_loader)
+    # Render base map immediately (no data dependency)
+    output$trials_map <- build_trials_map_base()
+
+    # Add markers via proxy when map tab is active
+    build_map_marker_observer(map_data_loader, input, session)
 
     # Render map statistics
     output$map_stats <- build_map_stats(map_data_loader)
@@ -269,7 +272,7 @@ configure_output_options <- function(output) {
     suspendWhenHidden = TRUE
   )
   shiny::outputOptions(output, "secondTable", suspendWhenHidden = TRUE)
-  shiny::outputOptions(output, "trials_map", suspendWhenHidden = TRUE)
-  shiny::outputOptions(output, "map_stats", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "trials_map", suspendWhenHidden = FALSE)
+  shiny::outputOptions(output, "map_stats", suspendWhenHidden = FALSE)
 }
 # nolint end: object_usage_linter.
