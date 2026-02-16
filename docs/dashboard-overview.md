@@ -76,10 +76,12 @@ The startup sequence in `app.R` proceeds as follows:
 
 Files must be sourced in this exact order. Reordering causes undefined function errors:
 
-```
-constants.R -> utils.R -> filter_utils.R -> data_prep.R -> tooltips.R ->
-mod_checkbox_filter.R -> server_table1.R -> server_table2.R ->
-fetch_trial_locations.R -> server_map.R -> ui.R -> server.R
+```mermaid
+flowchart LR
+    A[constants.R] --> B[utils.R] --> C[filter_utils.R]
+    C --> D[data_prep.R] --> E[tooltips.R] --> F[mod_checkbox_filter.R]
+    F --> G[server_table1.R] --> H[server_table2.R] --> I[fetch_trial_locations.R]
+    I --> J[server_map.R] --> K[ui.R] --> L[server.R]
 ```
 
 ## Application Structure
