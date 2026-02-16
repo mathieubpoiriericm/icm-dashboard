@@ -5,8 +5,29 @@ metadata:
   name: {{ include "svd-dashboard.fullname" . }}
   labels:
     {{- include "svd-dashboard.labels" . | nindent 4 }}
+  {{- if and .Values.ingress.tls.enabled .Values.ingress.tls.clusterIssuer }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.clusterIssuer | quote }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.hosts.dashboard }}
+        {{- if .Values.notifications.ntfy.enabled }}
+        - {{ .Values.ingress.hosts.ntfy }}
+        {{- end }}
+        {{- if .Values.notifications.healthchecks.enabled }}
+        - {{ .Values.ingress.hosts.healthchecks }}
+        {{- end }}
+        {{- if or .Values.observability.prometheus.enabled .Values.observability.grafana.external.enabled }}
+        - {{ .Values.ingress.hosts.grafana }}
+        {{- end }}
+      {{- if .Values.ingress.tls.secretName }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+      {{- end }}
+  {{- end }}
   rules:
     - host: {{ .Values.ingress.hosts.dashboard }}
       http:

@@ -18,14 +18,24 @@ spec:
         {{- include "svd-dashboard.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: postgresql
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: postgresql
           image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 5432
           envFrom:
             - secretRef:
-                name: {{ include "svd-dashboard.fullname" . }}-secrets
+                name: {{ include "svd-dashboard.fullname" . }}-db-credentials
           env:
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata

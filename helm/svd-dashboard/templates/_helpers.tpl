@@ -34,6 +34,7 @@ Common labels.
 {{- define "svd-dashboard.labels" -}}
 helm.sh/chart: {{ include "svd-dashboard.chart" . }}
 {{ include "svd-dashboard.selectorLabels" . }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 

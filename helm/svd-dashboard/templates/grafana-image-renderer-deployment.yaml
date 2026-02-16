@@ -23,12 +23,24 @@ spec:
         runAsUser: 472
       containers:
         - name: renderer
-          image: grafana/grafana-image-renderer:3.12.1
+          image: "{{ .Values.observability.grafanaImageRenderer.image.repository }}:{{ .Values.observability.grafanaImageRenderer.image.tag }}"
           ports:
             - containerPort: 8081
           env:
             - name: ENABLE_METRICS
               value: "true"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            periodSeconds: 10
+            timeoutSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false

@@ -25,7 +25,7 @@ spec:
             - containerPort: 8000
           env:
             - name: ALLOWED_HOSTS
-              value: "*"
+              value: {{ .Values.ingress.hosts.healthchecks | quote }}
             - name: APPRISE_ENABLED
               value: "True"
             - name: DB
@@ -37,11 +37,26 @@ spec:
             - name: DEFAULT_FROM_EMAIL
               value: "noreply@svd-dashboard.org"
             - name: SECRET_KEY
-              value: {{ .Values.notifications.healthchecks.secretKey | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "svd-dashboard.fullname" . }}-healthchecks
+                  key: SECRET_KEY
             - name: SITE_NAME
               value: "SVD Pipeline Healthchecks"
             - name: SITE_ROOT
-              value: "http://{{ .Values.ingress.hosts.healthchecks }}"
+              value: "{{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.hosts.healthchecks }}"
+          livenessProbe:
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
           volumeMounts:
             - name: data
               mountPath: /data
