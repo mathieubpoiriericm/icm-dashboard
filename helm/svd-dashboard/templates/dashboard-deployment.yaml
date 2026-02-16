@@ -24,7 +24,7 @@ spec:
         fsGroup: 997
       initContainers:
         - name: fix-qs-permissions
-          image: busybox:latest
+          image: busybox:1.37.0
           command: ["sh", "-c", "chown -R 997:997 /data/qs"]
           securityContext:
             runAsUser: 0
@@ -82,4 +82,4 @@ spec:
             claimName: {{ include "svd-dashboard.fullname" . }}-qs-data
         - name: renviron
           secret:
-            secretName: {{ include "svd-dashboard.fullname" . }}-secrets
+            secretName: {{ include "svd-dashboard.fullname" . }}-renviron

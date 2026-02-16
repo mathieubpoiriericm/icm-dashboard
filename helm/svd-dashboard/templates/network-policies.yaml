@@ -1,0 +1,106 @@
+{{- if .Values.networkPolicies.enabled }}
+# --- PostgreSQL: only accept connections from pipeline pods ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-postgresql
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "svd-dashboard.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: pipeline
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# --- Dashboard: only accept connections from ingress-nginx ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-dashboard
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dashboard
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3838
+---
+{{- if .Values.notifications.ntfy.enabled }}
+# --- ntfy: accept connections from ingress-nginx and pipeline pods ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-ntfy
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ntfy
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              {{- include "svd-dashboard.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: pipeline
+      ports:
+        - protocol: TCP
+          port: 80
+---
+{{- end }}
+{{- if .Values.notifications.healthchecks.enabled }}
+# --- Healthchecks: accept connections from ingress-nginx and pipeline pods ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-healthchecks
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: healthchecks
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              {{- include "svd-dashboard.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: pipeline
+      ports:
+        - protocol: TCP
+          port: 8000
+{{- end }}
+{{- end }}

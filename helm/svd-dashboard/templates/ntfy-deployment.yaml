@@ -26,7 +26,7 @@ spec:
             - containerPort: 80
           env:
             - name: NTFY_BASE_URL
-              value: "http://{{ .Values.ingress.hosts.ntfy }}"
+              value: "{{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.hosts.ntfy }}"
             - name: NTFY_CACHE_FILE
               value: "/var/cache/ntfy/cache.db"
             - name: NTFY_AUTH_DEFAULT_ACCESS
@@ -35,6 +35,18 @@ spec:
               value: "true"
             - name: NTFY_ENABLE_SIGNUP
               value: "false"
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 80
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 80
+            periodSeconds: 10
+            timeoutSeconds: 5
           volumeMounts:
             - name: cache
               mountPath: /var/cache/ntfy

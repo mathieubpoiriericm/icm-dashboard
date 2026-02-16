@@ -1,3 +1,7 @@
+# Override chart name / full release name (handled in _helpers.tpl)
+nameOverride: ""
+fullnameOverride: ""
+
 # --- Dashboard ---
 dashboard:
   image:
@@ -43,6 +47,8 @@ pipeline:
   schedule: "0 3 * * 1"
   daysBack: 7
   syncExternalData: true
+  # Max duration (seconds) before the job is killed. Prevents infinite hangs.
+  activeDeadlineSeconds: 7200
   resources:
     requests:
       cpu: 200m
@@ -56,6 +62,9 @@ qsData:
   storage:
     size: 1Gi
     storageClass: ""
+    # ReadWriteOnce: works with a single dashboard replica (default).
+    # ReadWriteMany (RWX): required for multiple dashboard replicas, but needs
+    # a CSI driver that supports RWX (e.g. NFS, EFS, CephFS).
     accessMode: ReadWriteOnce
 
 # --- Notifications ---
@@ -79,7 +88,7 @@ notifications:
     enabled: true
     image:
       repository: healthchecks/healthchecks
-      tag: "latest"
+      tag: "v4"
     resources:
       requests:
         cpu: 50m
@@ -89,7 +98,8 @@ notifications:
         memory: 256Mi
     storage:
       size: 1Gi
-    secretKey: "change-me-in-production"
+    # Required when healthchecks is enabled. Set via --set or -f secrets-values.yaml.
+    secretKey: ""
 
 # --- Observability ---
 # Disable subcharts if you already have kube-prometheus-stack and
@@ -99,6 +109,10 @@ observability:
     enabled: false
   victoriaLogs:
     enabled: false
+  grafanaImageRenderer:
+    image:
+      repository: grafana/grafana-image-renderer
+      tag: "3.12.1"
   # When the prometheus subchart is disabled but Grafana is deployed
   # separately (e.g. in a 'monitoring' namespace), enable this to
   # create an ExternalName service and ingress rule for Grafana.
@@ -118,6 +132,16 @@ ingress:
     ntfy: ntfy.local
     healthchecks: healthchecks.local
     grafana: grafana.local
+  tls:
+    enabled: false
+    # Secret containing TLS certificate (create manually or via cert-manager)
+    secretName: ""
+    # cert-manager cluster issuer name (adds annotation to Ingress)
+    clusterIssuer: ""
+
+# --- Network Policies (requires a CNI that supports NetworkPolicy, e.g. Calico/Cilium) ---
+networkPolicies:
+  enabled: false
 
 # --- Secrets (override via --set or -f secrets.yaml) ---
 secrets:

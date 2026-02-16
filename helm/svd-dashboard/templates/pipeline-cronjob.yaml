@@ -12,6 +12,7 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      activeDeadlineSeconds: {{ .Values.pipeline.activeDeadlineSeconds }}
       backoffLimit: 1
       template:
         metadata:
@@ -29,7 +30,9 @@ spec:
               command: ["python", "pipeline/main.py", "--days-back", "{{ .Values.pipeline.daysBack }}"]
               envFrom:
                 - secretRef:
-                    name: {{ include "svd-dashboard.fullname" . }}-secrets
+                    name: {{ include "svd-dashboard.fullname" . }}-db-credentials
+                - secretRef:
+                    name: {{ include "svd-dashboard.fullname" . }}-pipeline-secrets
               volumeMounts:
                 - name: qs-data
                   mountPath: /app/data/qs
@@ -43,7 +46,9 @@ spec:
               command: ["python", "pipeline/main.py", "--sync-external-data"]
               envFrom:
                 - secretRef:
-                    name: {{ include "svd-dashboard.fullname" . }}-secrets
+                    name: {{ include "svd-dashboard.fullname" . }}-db-credentials
+                - secretRef:
+                    name: {{ include "svd-dashboard.fullname" . }}-pipeline-secrets
               volumeMounts:
                 - name: qs-data
                   mountPath: /app/data/qs
@@ -57,7 +62,18 @@ spec:
               command: ["Rscript", "scripts/trigger_update.R"]
               envFrom:
                 - secretRef:
-                    name: {{ include "svd-dashboard.fullname" . }}-secrets
+                    name: {{ include "svd-dashboard.fullname" . }}-db-credentials
+              env:
+                - name: NCBI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "svd-dashboard.fullname" . }}-pipeline-secrets
+                      key: NCBI_API_KEY
+                - name: ENTREZ_EMAIL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "svd-dashboard.fullname" . }}-pipeline-secrets
+                      key: ENTREZ_EMAIL
               volumeMounts:
                 - name: qs-data
                   mountPath: /app/data/qs
