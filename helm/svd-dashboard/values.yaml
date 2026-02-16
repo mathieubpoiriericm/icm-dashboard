@@ -106,9 +106,9 @@ notifications:
 # victoria-logs deployed separately (e.g. in a 'monitoring' namespace).
 observability:
   prometheus:
-    enabled: true
+    enabled: false
   victoriaLogs:
-    enabled: true
+    enabled: false
   grafanaImageRenderer:
     image:
       repository: grafana/grafana-image-renderer
@@ -118,7 +118,7 @@ observability:
   # create an ExternalName service and ingress rule for Grafana.
   grafana:
     external:
-      enabled: false
+      enabled: true
       namespace: monitoring
       serviceName: prometheus-grafana
       port: 80
