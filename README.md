@@ -910,7 +910,7 @@ Detailed documentation is available in the `docs/` directory:
 
 | Document | Description |
 |----------|-------------|
-| ![Outdated!](https://img.shields.io/badge/-Outdated-orange) [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
+| (https://img.shields.io/badge/-Outdated-orange) [Dashboard Technical Documentation](docs/dashboard-technical-documentation.md) | Complete technical reference for the Shiny dashboard architecture |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
 | ![New!](https://img.shields.io/badge/-New!-brightgreen) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
