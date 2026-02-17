@@ -159,7 +159,7 @@ flowchart TD
         Blackbox["Blackbox Exporter"]
         Pipeline["Pipeline CronJob\n(weekly Mon 3 AM)"]
 
-        Shiny --> QS
+        Shiny -->|"reads QS files"| QS
         Pipeline -->|"1. extract genes"| PG
         Pipeline -->|"2. sync external data"| PG
         Pipeline -->|"3. generate QS"| QS
@@ -175,16 +175,17 @@ flowchart TD
         VictoriaLogs["VictoriaLogs"]
         Vector["Vector"]
 
+        Grafana -->|"queries metrics"| Prometheus
+        Grafana -->|"queries logs"| VictoriaLogs
         Grafana -->|"render requests"| Renderer
-        Prometheus -->|"queries"| Grafana
         Vector -->|"ships logs"| VictoriaLogs
     end
 
+    Prometheus -->|"scrapes metrics"| Ingress
     Prometheus -->|"scrapes metrics"| Blackbox
     Prometheus -->|"scrapes metrics"| PG
     Prometheus -->|"scrapes metrics"| Ntfy
     Blackbox -->|"probes endpoints"| Shiny
-    Blackbox -->|"probes endpoints"| Ntfy
     Blackbox -->|"probes endpoints"| Healthchecks
 
     %% Node colors by namespace
@@ -201,11 +202,11 @@ flowchart TD
     %% Edge colors by flow type
     linkStyle 0,1,2,3,4 stroke:#4a90d9,stroke-width:2px
     linkStyle 5,6,7,8,9,10,11 stroke:#50b878,stroke-width:2px
-    linkStyle 12,13,14,15,16,17,18,19,20 stroke:#e8913a,stroke-width:2px
+    linkStyle 12,13,14,15,16,17,18,19,20,21 stroke:#e8913a,stroke-width:2px
 ```
 
 | Color | Flow Type | Description |
 |-------|-----------|-------------|
 | Blue | Ingress routing | Browser to nginx to backend services |
 | Green | Pipeline & data | CronJob to PostgreSQL to QS files to Shiny |
-| Orange | Monitoring | Prometheus scrapes, Blackbox probes, log shipping |
+| Orange | Monitoring | Grafana queries, Prometheus scrapes, Blackbox probes, log shipping |
