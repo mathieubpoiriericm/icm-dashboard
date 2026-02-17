@@ -123,6 +123,14 @@ monitoring:
     labels:
       release: prometheus
     interval: 30s
+  ingressNginx:
+    enabled: true
+    namespace: ingress-nginx
+    portName: metrics
+    metricsPort: 10254
+    selectorLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
   blackboxExporter:
     enabled: true
     image:

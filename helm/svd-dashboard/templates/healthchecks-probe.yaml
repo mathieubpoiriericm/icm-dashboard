@@ -18,4 +18,5 @@ spec:
     staticConfig:
       static:
         - http://{{ include "svd-dashboard.fullname" . }}-healthchecks.{{ .Release.Namespace }}.svc.cluster.local:8000/api/v3/status/
+        - http://{{ include "svd-dashboard.fullname" . }}-dashboard.{{ .Release.Namespace }}.svc.cluster.local:3838/
 {{- end }}
