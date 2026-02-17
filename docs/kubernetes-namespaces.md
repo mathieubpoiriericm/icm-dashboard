@@ -6,10 +6,10 @@ This document describes the namespaces in the SVD Dashboard Kubernetes cluster (
 
 | Namespace | Purpose | Pods |
 |-----------|---------|------|
-| `kube-system` | Kubernetes control plane and core services | 9 |
+| `kube-system` | Kubernetes control plane and core services | 10 |
 | `ingress-nginx` | HTTP ingress controller | 1 |
 | `monitoring` | Observability stack (Prometheus, Grafana, VictoriaLogs) | 9 |
-| `svd` | Application stack (Shiny dashboard, PostgreSQL, notifications) | 5 |
+| `svd` | Application stack (Shiny dashboard, PostgreSQL, notifications) | 5 pods + 1 CronJob |
 | `default` | Unused (Kubernetes default) | 0 |
 | `kube-node-lease` | Node heartbeat leases | 0 |
 | `kube-public` | Unused (Kubernetes default) | 0 |
@@ -27,6 +27,7 @@ The control plane and cluster services that make Kubernetes itself work. All man
 | `kube-proxy` | Network rules for Service routing |
 | `coredns` (x2) | Cluster DNS — resolves service names (e.g. `prometheus-grafana.monitoring.svc.cluster.local`) |
 | `storage-provisioner` | Docker Desktop's local PersistentVolume provisioner |
+| `metrics-server` | Kubernetes Metrics Server — enables `kubectl top` and HPA autoscaling |
 | `vpnkit-controller` | Docker Desktop networking bridge between macOS and the Linux VM |
 
 ## `ingress-nginx` — Ingress Controller
@@ -56,11 +57,11 @@ Deployed via the `kube-prometheus-stack` Helm chart (release name: `prometheus`)
 
 | Pod | Purpose |
 |-----|---------|
-| `prometheus-prometheus-kube-prometheus-prometheus-0` | Prometheus server — scrapes and stores time-series metrics |
+| `prometheus-prometheus-kube-prometheus-prometheus-0` | Prometheus server — scrapes and stores time-series metrics (2 containers: `prometheus` + `config-reloader` sidecar, plus `init-config-reloader` init container) |
 | `prometheus-kube-prometheus-operator` | Manages Prometheus CRDs (`ServiceMonitor`, `PrometheusRule`, `Alertmanager`) |
 | `prometheus-kube-state-metrics` | Exports Kubernetes object metrics (pod status, deployment replicas, etc.) |
 | `prometheus-prometheus-node-exporter` | Exports host OS metrics (CPU, memory, disk, network) |
-| `alertmanager-prometheus-kube-prometheus-alertmanager-0` | Routes and manages alerts from Prometheus |
+| `alertmanager-prometheus-kube-prometheus-alertmanager-0` | Routes and manages alerts from Prometheus (2 containers: `alertmanager` + `config-reloader` sidecar, plus `init-config-reloader` init container) |
 
 ### Dashboarding
 
@@ -84,8 +85,8 @@ Deployed via the `svd-dashboard` Helm chart (release name: `svd`). Contains the 
 
 | Pod | Purpose |
 |-----|---------|
-| `svd-svd-dashboard-dashboard` | The R Shiny dashboard — serves the web UI at `shiny.local`, reads QS data files at runtime |
-| `svd-svd-dashboard-postgresql-0` | PostgreSQL 18 database storing extracted gene data (StatefulSet with persistent storage) |
+| `svd-svd-dashboard-dashboard` | The R Shiny dashboard — serves the web UI at `shiny.local`, reads QS data files at runtime. Includes `fix-qs-permissions` init container that fixes PVC ownership before the dashboard starts. |
+| `svd-svd-dashboard-postgresql-0` | PostgreSQL 18 database storing extracted gene data (StatefulSet with persistent storage). Runs 2 containers: `postgresql` + `postgres-exporter` sidecar (Prometheus metrics on port 9187). |
 
 ### Notification Services
 
@@ -100,9 +101,37 @@ Deployed via the `svd-dashboard` Helm chart (release name: `svd`). Contains the 
 |-----|---------|
 | `svd-svd-dashboard-blackbox-exporter` | Probes HTTP endpoints (`shiny.local`, `ntfy.local`, `healthchecks.local`) and exposes availability metrics to Prometheus |
 
+### Pipeline CronJob
+
+The `svd-svd-dashboard-pipeline` CronJob runs the weekly ETL pipeline that extracts gene data from PubMed, syncs external data, regenerates QS files, and restarts the dashboard.
+
+| Property | Value |
+|----------|-------|
+| **Schedule** | `0 3 * * 1` (every Monday at 3:00 AM) |
+| **ServiceAccount** | `svd-svd-dashboard-pipeline` (Role grants `get`/`patch` on deployments) |
+| **Shared storage** | Mounts the `qs-data` PVC (same volume used by the dashboard) |
+
+**Execution sequence** — 3 init containers run sequentially, then the main container:
+
+| Step | Container | Command | Purpose |
+|------|-----------|---------|---------|
+| 1 | `run-pipeline` (init) | `python pipeline/main.py --days-back 7` | Search PubMed for new papers, extract genes via LLM, load into PostgreSQL |
+| 2 | `sync-external` (init) | `python pipeline/main.py --sync-external-data` | Sync NCBI Gene, UniProt, and PubMed citation data |
+| 3 | `generate-qs` (init) | `Rscript scripts/trigger_update.R` | Read from PostgreSQL and regenerate QS data files on the shared PVC |
+| 4 | `restart-dashboard` (main) | `kubectl rollout restart deployment/svd-svd-dashboard-dashboard` | Rolling restart of the Shiny dashboard to pick up new QS files |
+
 ### Cross-Namespace Services
 
 The `svd` namespace contains an **ExternalName** service (`svd-svd-dashboard-grafana-external`) that aliases `prometheus-grafana.monitoring.svc.cluster.local`. This allows the `grafana.local` ingress rule to route traffic to the Grafana pod in the `monitoring` namespace without duplicating the Grafana deployment.
+
+### PodDisruptionBudgets
+
+Two PDBs ensure availability during voluntary disruptions (node drains, upgrades):
+
+| PDB | Target | Policy |
+|-----|--------|--------|
+| `svd-svd-dashboard-dashboard` | Dashboard Deployment | `minAvailable: 1` |
+| `svd-svd-dashboard-postgresql` | PostgreSQL StatefulSet | `minAvailable: 1` |
 
 ## Data Flow Between Namespaces
 
@@ -123,14 +152,20 @@ flowchart TD
 
     subgraph svd namespace
         Shiny["Shiny App"]
-        QS["QS Files"]
+        QS["QS Files (PVC)"]
         PG["PostgreSQL"]
         Ntfy["ntfy"]
         Healthchecks["Healthchecks"]
         Blackbox["Blackbox Exporter"]
+        Pipeline["Pipeline CronJob\n(weekly Mon 3 AM)"]
 
         Shiny --> QS
-        PG -.->|"trigger_update.R"| QS
+        Pipeline -->|"1. extract genes"| PG
+        Pipeline -->|"2. sync external data"| PG
+        Pipeline -->|"3. generate QS"| QS
+        Pipeline -->|"4. rollout restart"| Shiny
+        Pipeline -->|"alerts"| Ntfy
+        Pipeline -->|"heartbeat"| Healthchecks
     end
 
     subgraph monitoring namespace
