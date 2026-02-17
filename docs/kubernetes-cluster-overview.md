@@ -20,6 +20,7 @@ describes every room, every lock, and every hallway.
   - [ntfy (Deployment, optional)](#ntfy-deployment)
   - [Healthchecks (Deployment, optional)](#healthchecks-deployment)
   - [Observability Stack](#observability-stack)
+  - [Monitoring Stack](#monitoring-stack)
 - [How Data Flows](#how-data-flows)
 - [Shared Storage](#shared-storage)
 - [Networking](#networking)
@@ -41,6 +42,7 @@ The Helm chart deploys a self-contained research platform with six concerns:
 | **Pipeline** | Weekly Python ETL job: PubMed search, LLM extraction, data loading | CronJob |
 | **Notifications** | Push alerts (ntfy) and uptime monitoring (Healthchecks) | Deployments |
 | **Observability** | Metrics (Prometheus + Grafana) and logs (VictoriaLogs + Vector) | Subcharts |
+| **Monitoring** | Blackbox probes, metrics exporters, ServiceMonitors for Prometheus scraping | Various |
 | **Networking** | Ingress routing, internal services, optional network policies | Ingress, Services |
 
 Everything is driven by a single `values.yaml` file. Change a value, run `helm upgrade`,
@@ -61,10 +63,19 @@ graph TD
 
     dashboard -- "reads QS files" --> qspvc[("QS Data PVC<br/>1Gi")]
     pipeline["Pipeline CronJob"] -- "writes QS files" --> qspvc
-    pipeline -- "reads / writes" --> postgresql[("PostgreSQL<br/>(port:5432)<br/>10Gi PVC")]
+    pipeline -- "reads / writes" --> postgresql[("PostgreSQL<br/>(port:5432)<br/>+ postgres_exporter sidecar<br/>(port:9187)<br/>10Gi PVC")]
 
     grafana -. "scrapes metrics" .-> prometheus["Prometheus"]
     grafana -. "queries logs" .-> victorialogs["VictoriaLogs"]
+
+    blackbox["Blackbox Exporter<br/>(port:9115)"]
+    blackbox -. "probes HTTP" .-> dashboard
+    blackbox -. "probes HTTP" .-> healthchecks
+
+    prometheus -. "scrapes :9187" .-> postgresql
+    prometheus -. "scrapes /metrics" .-> ntfy
+    prometheus -. "scrapes :9115" .-> blackbox
+    prometheus -. "scrapes :10254" .-> ingress
 ```
 
 ---
@@ -150,8 +161,40 @@ from a ConfigMap (`postgresql-initdb-configmap`) into `/docker-entrypoint-initdb
 These scripts are embedded in the ConfigMap at template render time from the chart's `sql/`
 directory.
 
+#### postgres_exporter sidecar
+
+**Condition**: `postgresql.exporter.enabled` (default: `true`)
+
+A sidecar container that connects to the local PostgreSQL instance and exposes database
+metrics (connections, queries, replication lag, etc.) for Prometheus scraping.
+
+| Property | Value |
+|----------|-------|
+| Image | `prometheuscommunity/postgres-exporter:v0.16.0` |
+| Port | 9187 (`metrics`) |
+| CPU | 50m request / 200m limit |
+| Memory | 64Mi request / 128Mi limit |
+
+The exporter reads `DATA_SOURCE_USER` and `DATA_SOURCE_PASS` from the `db-credentials`
+secret (using the `POSTGRES_USER` / `POSTGRES_PASSWORD` keys) and connects to
+`localhost:5432`.
+
+**Health checks** (on the `metrics` port):
+
+| Probe | Endpoint | Timing |
+|-------|----------|--------|
+| Liveness | `GET /` on port 9187 | Every 10s, initial delay 30s |
+| Readiness | `GET /` on port 9187 | Every 5s, initial delay 5s |
+
 **Service**: A headless ClusterIP service (`clusterIP: None`) provides stable DNS:
 `<release>-svd-dashboard-postgresql.svd.svc.cluster.local`
+
+The service exposes two ports:
+
+| Port Name | Port | Condition |
+|-----------|------|-----------|
+| `postgresql` | 5432 | Always |
+| `metrics` | 9187 | When `postgresql.exporter.enabled` is `true` |
 
 ---
 
@@ -268,7 +311,18 @@ push notification here so you know without checking manually.
 | `NTFY_CACHE_FILE` | `/var/cache/ntfy/cache.db` |
 | `NTFY_AUTH_DEFAULT_ACCESS` | `deny-all` (configurable) |
 | `NTFY_BEHIND_PROXY` | `true` |
+| `NTFY_ENABLE_METRICS` | `true` (conditional on `notifications.ntfy.metrics.enabled`) |
 | `NTFY_ENABLE_SIGNUP` | `false` |
+
+**Health checks**:
+
+| Probe | Endpoint | Timing |
+|-------|----------|--------|
+| Liveness | `GET /v1/health` on port 80 | Every 30s |
+| Readiness | `GET /v1/health` on port 80 | Every 10s |
+
+**ntfy ServiceMonitor** (conditional on `notifications.ntfy.metrics.enabled` and
+`monitoring.serviceMonitor.enabled`): scrapes `/metrics` on port `http` at 30s intervals.
 
 ---
 
@@ -283,7 +337,7 @@ scheduled.
 
 | Property | Value |
 |----------|-------|
-| Image | `healthchecks/healthchecks:v4` |
+| Image | `healthchecks/healthchecks:v4.0` |
 | Port | 8000 |
 | CPU | 50m request / 250m limit |
 | Memory | 128Mi request / 256Mi limit |
@@ -293,6 +347,33 @@ scheduled.
 Healthchecks uses SQLite (not the cluster's PostgreSQL) for its own data, stored on a
 dedicated PVC.
 
+**Configuration** (set via environment variables):
+
+| Variable | Value |
+|----------|-------|
+| `ALLOWED_HOSTS` | `*, <ingress.hosts.healthchecks>` |
+| `APPRISE_ENABLED` | `True` |
+| `DB` | `sqlite` |
+| `DB_NAME` | `/data/hc.sqlite` |
+| `DEBUG` | `False` |
+| `DEFAULT_FROM_EMAIL` | `noreply@svd-dashboard.org` |
+| `SECRET_KEY` | From `healthchecks-secrets` Secret |
+| `SITE_NAME` | `SVD Pipeline Healthchecks` |
+| `SITE_ROOT` | `http(s)://<ingress.hosts.healthchecks>` |
+
+**Health checks**:
+
+| Probe | Endpoint | Timing |
+|-------|----------|--------|
+| Liveness | `GET /api/v3/status/` on port 8000 | Every 30s |
+| Readiness | `GET /api/v3/status/` on port 8000 | Every 10s |
+
+**Healthchecks Probe** (conditional on `notifications.healthchecks.enabled`,
+`monitoring.blackboxExporter.enabled`, and `monitoring.serviceMonitor.enabled`): A
+Prometheus Operator `Probe` resource that uses the Blackbox Exporter to perform HTTP checks
+against `http://healthchecks:8000/api/v3/status/` and `http://dashboard:3838/` using the
+`http_2xx` module at 30s intervals.
+
 ---
 
 ### Observability Stack
@@ -301,7 +382,7 @@ The observability layer is built from two Helm subcharts and one custom Deployme
 
 #### Prometheus + Grafana (kube-prometheus-stack ~82.x)
 
-**Condition**: `observability.prometheus.enabled` (default: `true`)
+**Condition**: `observability.prometheus.enabled` (default: `false`)
 
 Deploys Prometheus (metrics collection), Grafana (dashboards), and Alertmanager (alert
 routing). The Prometheus Operator enables declarative monitoring via ServiceMonitor and
@@ -313,7 +394,7 @@ accidental cross-namespace metric collection.
 
 #### VictoriaLogs (victoria-logs-single ~0.x)
 
-**Condition**: `observability.victoriaLogs.enabled` (default: `true`)
+**Condition**: `observability.victoriaLogs.enabled` (default: `false`)
 
 Deploys VictoriaLogs for log aggregation with Vector as the log collector. Collects
 stdout/stderr from all pods in the namespace.
@@ -330,7 +411,7 @@ stdout/stderr from all pods in the namespace.
 
 | Property | Value |
 |----------|-------|
-| Image | `grafana/grafana-image-renderer:5.5.1` |
+| Image | `grafana/grafana-image-renderer:v5.5.1` |
 | Port | 8081 |
 | Runs as user | 472 |
 
@@ -338,10 +419,80 @@ Renders Grafana panels as PNG/PDF images for alert notifications and scheduled r
 
 #### External Grafana (optional)
 
-If Grafana lives in a different namespace (e.g., a shared `monitoring` namespace), set
-`observability.grafana.external.enabled: true` and `observability.prometheus.enabled: false`.
-This creates an `ExternalName` Service that proxies traffic to the remote Grafana instance,
+**Condition**: `observability.grafana.external.enabled` (default: `true`)
+
+If Grafana lives in a different namespace (e.g., a shared `monitoring` namespace), this
+creates an `ExternalName` Service that proxies traffic to the remote Grafana instance,
 allowing the Ingress to route to it without moving it into this namespace.
+
+---
+
+### Monitoring Stack
+
+The monitoring layer connects Prometheus to application-level metrics and health probes.
+All resources below are conditional on `monitoring.serviceMonitor.enabled` (default: `true`)
+and their respective component flags.
+
+#### Blackbox Exporter (Deployment + ConfigMap + Service)
+
+**Templates**: `templates/blackbox-exporter-deployment.yaml`, `templates/blackbox-exporter-configmap.yaml`, `templates/blackbox-exporter-service.yaml`
+**Condition**: `monitoring.blackboxExporter.enabled` (default: `true`)
+
+The Blackbox Exporter probes endpoints over HTTP and reports whether they are reachable.
+Prometheus executes these checks via `Probe` custom resources.
+
+| Property | Value |
+|----------|-------|
+| Image | `prom/blackbox-exporter:v0.25.0` |
+| Port | 9115 |
+| CPU | 50m request / 100m limit |
+| Memory | 32Mi request / 64Mi limit |
+
+**ConfigMap**: Defines an `http_2xx` module that probes HTTP/1.1 and HTTP/2.0 endpoints,
+expects a 200 status code, follows redirects, and prefers IPv4.
+
+**Health checks**:
+
+| Probe | Endpoint | Timing |
+|-------|----------|--------|
+| Liveness | `GET /health` on port 9115 | Every 30s |
+| Readiness | `GET /health` on port 9115 | Every 10s |
+
+#### ServiceMonitors
+
+Three ServiceMonitor custom resources tell Prometheus what to scrape:
+
+| ServiceMonitor | Target Port | Path | Interval | Condition |
+|----------------|-------------|------|----------|-----------|
+| PostgreSQL exporter | `metrics` (9187) | `/metrics` | 30s | `postgresql.exporter.enabled` |
+| ntfy | `http` (80) | `/metrics` | 30s | `notifications.ntfy.metrics.enabled` |
+| Ingress-Nginx | `metrics` (10254) | `/metrics` | 30s | `monitoring.ingressNginx.enabled` |
+
+The Ingress-Nginx ServiceMonitor uses a cross-namespace selector (`ingress-nginx`
+namespace) to scrape the controller's built-in metrics endpoint.
+
+#### Healthchecks Probe
+
+**Template**: `templates/healthchecks-probe.yaml`
+**Condition**: `notifications.healthchecks.enabled` + `monitoring.blackboxExporter.enabled` + `monitoring.serviceMonitor.enabled`
+
+A Prometheus Operator `Probe` resource that defines blackbox HTTP checks:
+
+| Target | Module |
+|--------|--------|
+| `http://<release>-healthchecks:8000/api/v3/status/` | `http_2xx` |
+| `http://<release>-dashboard:3838/` | `http_2xx` |
+
+Prometheus executes these checks via the Blackbox Exporter at 30s intervals.
+
+#### Ingress-Nginx Metrics Service
+
+**Template**: `templates/ingress-nginx-metrics-service.yaml`
+**Condition**: `monitoring.ingressNginx.enabled` (default: `true`)
+
+A headless ClusterIP Service deployed into the `ingress-nginx` namespace that exposes
+port 10254 on the nginx controller pods. This Service is the scrape target for the
+Ingress-Nginx ServiceMonitor.
 
 ---
 
@@ -405,6 +556,7 @@ Every component gets a ClusterIP Service for in-cluster communication:
 | ntfy | 80 | ClusterIP | Conditional |
 | Healthchecks | 8000 | ClusterIP | Conditional |
 | Grafana Image Renderer | 8081 | ClusterIP | Conditional |
+| Blackbox Exporter | 9115 | ClusterIP | Conditional |
 
 ### Ingress
 
@@ -438,10 +590,13 @@ policies restrict pod-to-pod traffic:
 
 | Target | Allowed Sources | Port |
 |--------|----------------|------|
-| PostgreSQL | Pipeline pods only | 5432 |
-| Dashboard | Ingress controller namespace only | 3838 |
+| PostgreSQL | Pipeline pods | 5432 |
+| PostgreSQL | Prometheus pods from `monitoring` namespace (when exporter enabled) | 9187 |
+| Dashboard | Ingress controller namespace | 3838 |
 | ntfy | Ingress controller namespace + Pipeline pods | 80 |
+| ntfy | Prometheus pods from `monitoring` namespace (when metrics enabled) | 80 |
 | Healthchecks | Ingress controller namespace + Pipeline pods | 8000 |
+| Healthchecks | Blackbox Exporter pods (when blackbox enabled) | 8000 |
 
 Egress is unrestricted -- all pods can initiate outbound connections (needed for PubMed,
 NCBI, Anthropic API calls).
@@ -470,10 +625,10 @@ Secrets are split by concern so that each component only sees the credentials it
 
 | Secret | Contents | Mounted By |
 |--------|----------|------------|
-| `db-credentials` | DB host, port, name, user, password | PostgreSQL, Pipeline, Dashboard |
-| `pipeline-secrets` | Anthropic, NCBI, Unpaywall API keys; notification URLs | Pipeline only |
+| `db-credentials` | `DB_*` vars (host, port, name, user, password) + `POSTGRES_*` variants (for the PostgreSQL container itself) | PostgreSQL, Pipeline, Dashboard |
+| `pipeline-secrets` | `ANTHROPIC_API_KEY`, `NCBI_API_KEY`, `ENTREZ_EMAIL`, `UNPAYWALL_EMAIL`, `PIPELINE_NOTIFY_URLS`, `PIPELINE_HEALTHCHECK_URL` | Pipeline only |
 | `.Renviron` | DB credentials + NCBI vars (R env file format) | Dashboard only |
-| `healthchecks-secrets` | Django SECRET_KEY | Healthchecks only |
+| `healthchecks-secrets` | Django `SECRET_KEY` | Healthchecks only |
 
 The dashboard never sees the `ANTHROPIC_API_KEY`. The pipeline never sees the Healthchecks
 `SECRET_KEY`. Each component operates on a need-to-know basis.
@@ -546,6 +701,44 @@ ingress:
     clusterIssuer: letsencrypt-prod
 ```
 
+### Monitoring
+
+```yaml
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus       # Must match Prometheus' serviceMonitorSelector
+    interval: 30s
+  ingressNginx:
+    enabled: true
+    namespace: ingress-nginx    # Namespace where ingress-nginx runs
+    portName: metrics
+    metricsPort: 10254
+    selectorLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  blackboxExporter:
+    enabled: true
+```
+
+### PostgreSQL Exporter
+
+```yaml
+postgresql:
+  exporter:
+    enabled: true               # Deploy postgres_exporter sidecar
+    image:
+      repository: prometheuscommunity/postgres-exporter
+      tag: "v0.16.0"
+    port: 9187
+```
+
+**Defaults note**: The chart ships with an external-Grafana-first posture:
+`observability.prometheus.enabled` defaults to `false` and
+`observability.grafana.external.enabled` defaults to `true`. If you want the full
+kube-prometheus-stack subchart instead, flip both values.
+
 ### Resource Tuning
 
 | Component | Default CPU (req/lim) | Default Memory (req/lim) |
@@ -556,6 +749,8 @@ ingress:
 | ntfy | 50m / 200m | 64Mi / 128Mi |
 | Healthchecks | 50m / 250m | 128Mi / 256Mi |
 | Image Renderer | 50m / 250m | 128Mi / 256Mi |
+| Blackbox Exporter | 50m / 100m | 32Mi / 64Mi |
+| PostgreSQL Exporter | 50m / 200m | 64Mi / 128Mi |
 
 ### Storage Sizing
 
@@ -578,10 +773,15 @@ Components can be toggled on or off without removing template files:
 | Flag | Default | What It Controls |
 |------|---------|-----------------|
 | `notifications.ntfy.enabled` | `true` | ntfy Deployment, Service, PVC, Ingress rule, NetworkPolicy |
+| `notifications.ntfy.metrics.enabled` | `true` | ntfy ServiceMonitor + `NTFY_ENABLE_METRICS` env var |
 | `notifications.healthchecks.enabled` | `true` | Healthchecks Deployment, Service, PVC, Secret, Ingress rule, NetworkPolicy |
-| `observability.prometheus.enabled` | `true` | kube-prometheus-stack subchart, Grafana Image Renderer, Grafana Ingress rule |
-| `observability.victoriaLogs.enabled` | `true` | victoria-logs-single subchart (VictoriaLogs + Vector) |
-| `observability.grafana.external.enabled` | `false` | ExternalName Service for Grafana in another namespace |
+| `observability.prometheus.enabled` | `false` | kube-prometheus-stack subchart, Grafana Image Renderer, Grafana Ingress rule |
+| `observability.victoriaLogs.enabled` | `false` | victoria-logs-single subchart (VictoriaLogs + Vector) |
+| `observability.grafana.external.enabled` | `true` | ExternalName Service for Grafana in another namespace |
+| `postgresql.exporter.enabled` | `true` | postgres_exporter sidecar + metrics port on PostgreSQL Service |
+| `monitoring.serviceMonitor.enabled` | `true` | All ServiceMonitor and Probe resources |
+| `monitoring.blackboxExporter.enabled` | `true` | Blackbox Exporter Deployment, ConfigMap, Service |
+| `monitoring.ingressNginx.enabled` | `true` | Ingress-Nginx ServiceMonitor + Metrics Service |
 | `networkPolicies.enabled` | `false` | All NetworkPolicy resources (requires CNI support) |
 | `ingress.enabled` | `true` | Ingress resource |
 | `ingress.tls.enabled` | `false` | TLS termination and cert-manager annotation |
@@ -593,6 +793,7 @@ Components can be toggled on or off without removing template files:
 
 | Term | Meaning |
 |------|---------|
+| **Blackbox Exporter** | A Prometheus exporter that probes endpoints over HTTP, HTTPS, DNS, TCP, ICMP and reports whether they are reachable. Used here to monitor dashboard and Healthchecks uptime. |
 | **ClusterIP** | The default Service type. Gives a pod an internal IP address reachable only from inside the cluster -- like an office extension number that does not work from outside the building. |
 | **CNI** | Container Network Interface. The plugin that handles networking between pods. Some CNIs (Calico, Cilium) support NetworkPolicy; simpler ones (Flannel) do not. |
 | **ConfigMap** | A Kubernetes object that holds non-secret configuration data (files, environment variables). This chart uses one to ship SQL schema files into the PostgreSQL container. |
@@ -609,7 +810,9 @@ Components can be toggled on or off without removing template files:
 | **Namespace** | A virtual partition inside a Kubernetes cluster. Resources in one namespace are isolated from those in another by default. This chart assumes all resources live in the same namespace. |
 | **NetworkPolicy** | A firewall rule for pods. It defines which pods can talk to which other pods on which ports. Requires a CNI that supports it. |
 | **PersistentVolumeClaim (PVC)** | A request for storage. When a pod mounts a PVC, Kubernetes provisions a disk (or reuses an existing one) and attaches it. Data on a PVC survives pod restarts. |
+| **postgres_exporter** | A Prometheus exporter sidecar that connects to PostgreSQL and exposes database metrics (connections, queries, replication lag, etc.) on a `/metrics` HTTP endpoint. |
 | **Pod** | The smallest deployable unit in Kubernetes -- one or more containers that share networking and storage. Every workload ultimately runs inside a pod. |
+| **Probe** | A custom resource from the Prometheus Operator. Defines blackbox-style endpoint checks that Prometheus executes via the Blackbox Exporter. |
 | **PodDisruptionBudget (PDB)** | A policy that tells Kubernetes how many pods of a given type must stay running during voluntary disruptions like node drains. `minAvailable: 1` means "never evict the last one." |
 | **QS** | A fast binary serialization format for R objects (from the `qs` package). About 3-5x faster than the standard RDS format. The pipeline writes QS files; the dashboard reads them. |
 | **RBAC** | Role-Based Access Control. Kubernetes permissions system. A Role defines allowed actions; a RoleBinding grants that Role to a ServiceAccount or user. |
