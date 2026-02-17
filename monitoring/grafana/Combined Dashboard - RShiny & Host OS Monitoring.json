@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 229,
+  "id": 0,
   "links": [],
   "panels": [
     {
@@ -46,7 +46,6 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
                   "color": "red",
@@ -58,7 +57,8 @@
                   "index": 0,
                   "text": "Ready"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -129,7 +129,6 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
                   "color": "red",
@@ -141,7 +140,8 @@
                   "index": 0,
                   "text": "Up"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -212,7 +212,6 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
                   "color": "red",
@@ -224,7 +223,8 @@
                   "index": 0,
                   "text": "Ready"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -371,11 +371,13 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Number of Prometheus scrape targets currently down",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -390,8 +392,7 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         },
         "overrides": []
       },
@@ -432,14 +433,14 @@
         }
       ],
       "title": "Targets Down",
-      "type": "stat",
-      "description": "Number of Prometheus scrape targets currently down"
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Vector log shipper health. If down, visitor panels show zeros.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -447,7 +448,6 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
                   "color": "red",
@@ -459,7 +459,8 @@
                   "index": 0,
                   "text": "Ready"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -516,8 +517,7 @@
         }
       ],
       "title": "Vector Running",
-      "type": "stat",
-      "description": "Vector log shipper health. If down, visitor panels show zeros."
+      "type": "stat"
     },
     {
       "collapsed": false,
@@ -599,6 +599,78 @@
     },
     {
       "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 6
+      },
+      "id": 232,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"svd\", pod=~\"svd-svd-dashboard-dashboard-.*\"}) by (pod)",
+          "legendFormat": "Shiny Dashboard",
+          "refId": "A"
+        }
+      ],
+      "title": "Dashboard Pod Restarts",
+      "type": "stat"
+    },
+    {
+      "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "ff70ntmxr0074a"
       },
@@ -608,7 +680,7 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisBorderShow": false,
+            "axisBorderShow": true,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisGridShow": true,
@@ -648,7 +720,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -662,17 +734,17 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 18,
-        "x": 6,
+        "w": 12,
+        "x": 12,
         "y": 6
       },
       "id": 2,
       "options": {
         "legend": {
           "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -699,78 +771,6 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "$datasource"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "orange",
-                "value": 3
-              },
-              {
-                "color": "red",
-                "value": 10
-              }
-            ]
-          },
-          "unit": "short",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 11
-      },
-      "id": 232,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"svd\", pod=~\"svd-svd-dashboard-dashboard-.*\"}) by (pod)",
-          "legendFormat": "Shiny Dashboard",
-          "refId": "A"
-        }
-      ],
-      "title": "Dashboard Pod Restarts",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
@@ -780,6 +780,8 @@
           },
           "decimals": 1,
           "mappings": [],
+          "max": 1,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -793,16 +795,14 @@
               }
             ]
           },
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1
+          "unit": "percentunit"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
+        "h": 8,
+        "w": 12,
+        "x": 0,
         "y": 11
       },
       "id": 3,
@@ -870,9 +870,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
+        "h": 8,
+        "w": 12,
+        "x": 12,
         "y": 11
       },
       "id": 4,
@@ -956,6 +956,7 @@
             }
           },
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -965,16 +966,15 @@
               }
             ]
           },
-          "unit": "s",
-          "min": 0
+          "unit": "s"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 6,
         "w": 12,
-        "x": 12,
-        "y": 11
+        "x": 0,
+        "y": 19
       },
       "id": 234,
       "options": {
@@ -1019,6 +1019,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Pod memory working set as percentage of container limit (4Gi). Using pod-level aggregation.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1060,6 +1061,8 @@
             }
           },
           "mappings": [],
+          "max": 1,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1069,16 +1072,111 @@
               }
             ]
           },
-          "unit": "percentunit",
-          "noValue": "No CFS data"
+          "unit": "percentunit"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 6,
         "w": 12,
-        "x": 0,
-        "y": 15
+        "x": 12,
+        "y": 19
+      },
+      "id": 236,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "sum(container_memory_working_set_bytes{pod=~\"svd-svd-dashboard-dashboard-.*\", container=\"\"}) / sum(kube_pod_container_resource_limits{pod=~\"svd-svd-dashboard-dashboard-.*\", resource=\"memory\", container=\"dashboard\"})",
+          "legendFormat": "Memory %",
+          "refId": "A"
+        }
+      ],
+      "title": "Dashboard Memory Usage (% of Limit)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "CPU throttling ratio for dashboard pod. Shows 'No CFS data' if cAdvisor doesn't report CFS metrics for this container.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisGridShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "noValue": "No CFS data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 6,
+        "y": 25
       },
       "id": 235,
       "options": {
@@ -1107,103 +1205,7 @@
         }
       ],
       "title": "Dashboard CPU Throttling",
-      "type": "timeseries",
-      "description": "CPU throttling ratio for dashboard pod. Shows 'No CFS data' if cAdvisor doesn't report CFS metrics for this container."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "$datasource"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": true,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisGridShow": false,
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 15
-      },
-      "id": 236,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "expr": "sum(container_memory_working_set_bytes{pod=~\"svd-svd-dashboard-dashboard-.*\", container=\"\"}) / sum(kube_pod_container_resource_limits{pod=~\"svd-svd-dashboard-dashboard-.*\", resource=\"memory\", container=\"dashboard\"})",
-          "legendFormat": "Memory %",
-          "refId": "A"
-        }
-      ],
-      "title": "Dashboard Memory Usage (% of Limit)",
-      "type": "timeseries",
-      "description": "Pod memory working set as percentage of container limit (4Gi). Using pod-level aggregation."
+      "type": "timeseries"
     },
     {
       "collapsed": false,
@@ -1211,7 +1213,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 31
       },
       "id": 200,
       "panels": [],
@@ -1246,10 +1248,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 8,
+        "h": 7,
+        "w": 12,
         "x": 0,
-        "y": 22
+        "y": 32
       },
       "id": 201,
       "options": {
@@ -1301,69 +1303,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 8,
-        "y": 22
-      },
-      "id": 203,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "expr": "pg_database_size_bytes{datname=\"svd_dashboard\"}",
-          "legendFormat": "Database Size",
-          "refId": "A"
-        }
-      ],
-      "title": "Database Size",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "$datasource"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "decimals": 2,
           "mappings": [],
           "max": 1,
@@ -1390,10 +1329,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 7,
         "w": 4,
         "x": 12,
-        "y": 22
+        "y": 32
       },
       "id": 202,
       "options": {
@@ -1436,6 +1375,7 @@
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -1454,16 +1394,15 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 7,
         "w": 4,
         "x": 16,
-        "y": 22
+        "y": 32
       },
       "id": 244,
       "options": {
@@ -1503,11 +1442,13 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Highest dead tuple count across all tables. High values indicate autovacuum can't keep up.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -1526,16 +1467,15 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 7,
         "w": 4,
         "x": 20,
-        "y": 22
+        "y": 32
       },
       "id": 245,
       "options": {
@@ -1568,8 +1508,70 @@
         }
       ],
       "title": "Max Dead Tuples",
-      "type": "stat",
-      "description": "Highest dead tuple count across all tables. High values indicate autovacuum can't keep up."
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 39
+      },
+      "id": 203,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "pg_database_size_bytes{datname=\"svd_dashboard\"}",
+          "legendFormat": "Database Size",
+          "refId": "A"
+        }
+      ],
+      "title": "Database Size",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -1633,9 +1635,9 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 27
+        "w": 18,
+        "x": 6,
+        "y": 39
       },
       "id": 204,
       "options": {
@@ -1680,6 +1682,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Top 5 tables by dead tuple count over time",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1735,105 +1738,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
+        "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 27
-      },
-      "id": 246,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "expr": "pg_locks_count{datname=\"svd_dashboard\"}",
-          "legendFormat": "{{mode}}",
-          "refId": "A"
-        }
-      ],
-      "title": "PostgreSQL Locks",
-      "type": "timeseries",
-      "description": "Active locks by mode. Watch for AccessExclusiveLock during pipeline runs."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "$datasource"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": true,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisGridShow": false,
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
         "x": 0,
-        "y": 33
+        "y": 45
       },
       "id": 247,
       "options": {
@@ -1862,14 +1770,14 @@
         }
       ],
       "title": "Dead Tuples Over Time",
-      "type": "timeseries",
-      "description": "Top 5 tables by dead tuple count over time"
+      "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Active locks by mode. Watch for AccessExclusiveLock during pipeline runs.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1920,15 +1828,112 @@
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 8,
-        "y": 33
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 45
+      },
+      "id": 246,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "pg_locks_count{datname=\"svd_dashboard\"}",
+          "legendFormat": "{{mode}}",
+          "refId": "A"
+        }
+      ],
+      "title": "PostgreSQL Locks",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "CPU throttling ratio for PostgreSQL pod",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisGridShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 53
       },
       "id": 249,
       "options": {
@@ -1957,14 +1962,14 @@
         }
       ],
       "title": "PostgreSQL CPU Throttling",
-      "type": "timeseries",
-      "description": "CPU throttling ratio for PostgreSQL pod"
+      "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Pod memory working set as percentage of container limit (512Mi). Using pod-level aggregation.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2006,6 +2011,8 @@
             }
           },
           "mappings": [],
+          "max": 1,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2020,10 +2027,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 33
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 53
       },
       "id": 250,
       "options": {
@@ -2031,7 +2038,7 @@
           "calcs": [],
           "displayMode": "table",
           "placement": "right",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -2052,8 +2059,7 @@
         }
       ],
       "title": "PostgreSQL Memory Usage (% of Limit)",
-      "type": "timeseries",
-      "description": "Pod memory working set as percentage of container limit (512Mi). Using pod-level aggregation."
+      "type": "timeseries"
     },
     {
       "collapsed": false,
@@ -2061,7 +2067,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 60
       },
       "id": 237,
       "panels": [],
@@ -2073,6 +2079,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Time since last scheduled pipeline run. Alert if >8 days (691200s). Uses schedule time since completed jobs are garbage-collected.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2104,7 +2111,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 40
+        "y": 61
       },
       "id": 238,
       "options": {
@@ -2137,8 +2144,7 @@
         }
       ],
       "title": "Time Since Last Run",
-      "type": "stat",
-      "description": "Time since last scheduled pipeline run. Alert if >8 days (691200s). Uses schedule time since completed jobs are garbage-collected."
+      "type": "stat"
     },
     {
       "datasource": {
@@ -2152,7 +2158,6 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
                   "color": "green",
@@ -2164,7 +2169,8 @@
                   "index": 1,
                   "text": "Suspended"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -2188,7 +2194,7 @@
         "h": 4,
         "w": 4,
         "x": 6,
-        "y": 40
+        "y": 61
       },
       "id": 239,
       "options": {
@@ -2235,7 +2241,6 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
                   "color": "green",
@@ -2247,7 +2252,8 @@
                   "index": 1,
                   "text": "Running"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -2275,7 +2281,7 @@
         "h": 4,
         "w": 4,
         "x": 10,
-        "y": 40
+        "y": 61
       },
       "id": 240,
       "options": {
@@ -2315,6 +2321,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Countdown to next scheduled pipeline run",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2342,7 +2349,7 @@
         "h": 4,
         "w": 5,
         "x": 14,
-        "y": 40
+        "y": 61
       },
       "id": 241,
       "options": {
@@ -2375,8 +2382,7 @@
         }
       ],
       "title": "Next Scheduled Run",
-      "type": "stat",
-      "description": "Countdown to next scheduled pipeline run"
+      "type": "stat"
     },
     {
       "datasource": {
@@ -2388,6 +2394,7 @@
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -2398,8 +2405,7 @@
               }
             ]
           },
-          "unit": "dateTimeFromNow",
-          "decimals": 0
+          "unit": "dateTimeFromNow"
         },
         "overrides": []
       },
@@ -2407,7 +2413,7 @@
         "h": 4,
         "w": 5,
         "x": 19,
-        "y": 40
+        "y": 61
       },
       "id": 242,
       "options": {
@@ -2448,7 +2454,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 65
       },
       "id": 101,
       "panels": [],
@@ -2467,6 +2473,8 @@
           },
           "decimals": 1,
           "mappings": [],
+          "max": 1,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2485,10 +2493,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
+        "h": 8,
         "w": 12,
         "x": 0,
-        "y": 45
+        "y": 66
       },
       "id": 102,
       "options": {
@@ -2583,7 +2591,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -2591,7 +2599,7 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "percent"
         },
         "overrides": [
           {
@@ -2626,19 +2634,17 @@
         ]
       },
       "gridPos": {
-        "h": 6,
-        "w": 8,
+        "h": 8,
+        "w": 12,
         "x": 12,
-        "y": 45
+        "y": 66
       },
       "id": 103,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": [],
           "displayMode": "table",
-          "placement": "bottom",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
@@ -2723,8 +2729,8 @@
       "gridPos": {
         "h": 6,
         "w": 4,
-        "x": 20,
-        "y": 45
+        "x": 0,
+        "y": 74
       },
       "id": 106,
       "options": {
@@ -2760,6 +2766,242 @@
       ],
       "title": "Memory Usage",
       "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mounted on"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 125
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Size"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 93
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Used"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 72
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Available"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 88
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Used, %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 20,
+        "x": 4,
+        "y": 74
+      },
+      "id": 109,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "12.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "max by (mountpoint) (node_filesystem_size_bytes{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", fstype!=\"\", mountpoint!=\"\"})\n",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "max by (mountpoint) (node_filesystem_avail_bytes{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", fstype!=\"\", mountpoint!=\"\"})\n",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "B"
+        }
+      ],
+      "title": "Disk Space Usage",
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "Value #A": {
+                "aggregations": [
+                  "lastNotNull"
+                ],
+                "operation": "aggregate"
+              },
+              "Value #B": {
+                "aggregations": [
+                  "lastNotNull"
+                ],
+                "operation": "aggregate"
+              },
+              "mountpoint": {
+                "aggregations": [],
+                "operation": "groupby"
+              }
+            }
+          }
+        },
+        {
+          "id": "merge"
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Used",
+            "binary": {
+              "left": "Value #A (lastNotNull)",
+              "operator": "-",
+              "reducer": "sum",
+              "right": "Value #B (lastNotNull)"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Used, %",
+            "binary": {
+              "left": "Used",
+              "operator": "/",
+              "reducer": "sum",
+              "right": "Value #A (lastNotNull)"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "Value #A (lastNotNull)": "Size",
+              "Value #B (lastNotNull)": "Available",
+              "mountpoint": "Mounted on"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Mounted on"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "datasource": {
@@ -2849,10 +3091,10 @@
         ]
       },
       "gridPos": {
-        "h": 6,
+        "h": 7,
         "w": 12,
         "x": 0,
-        "y": 51
+        "y": 80
       },
       "id": 108,
       "options": {
@@ -2982,10 +3224,10 @@
         ]
       },
       "gridPos": {
-        "h": 6,
+        "h": 7,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 80
       },
       "id": 113,
       "options": {
@@ -3028,248 +3270,12 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "footer": {
-              "reducers": []
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 0.8
-              },
-              {
-                "color": "red",
-                "value": 0.9
-              }
-            ]
-          },
-          "unit": "decbytes"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Mounted on"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 125
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Size"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 93
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Used"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 72
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Available"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 88
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Used, %"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percentunit"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "gauge"
-                }
-              },
-              {
-                "id": "max",
-                "value": 1
-              },
-              {
-                "id": "min",
-                "value": 0
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 24,
-        "x": 0,
-        "y": 57
-      },
-      "id": 109,
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true
-      },
-      "pluginVersion": "12.3.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "expr": "max by (mountpoint) (node_filesystem_size_bytes{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", fstype!=\"\", mountpoint!=\"\"})\n",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "expr": "max by (mountpoint) (node_filesystem_avail_bytes{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", fstype!=\"\", mountpoint!=\"\"})\n",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "B"
-        }
-      ],
-      "title": "Disk Space Usage",
-      "transformations": [
-        {
-          "id": "groupBy",
-          "options": {
-            "fields": {
-              "Value #A": {
-                "aggregations": [
-                  "lastNotNull"
-                ],
-                "operation": "aggregate"
-              },
-              "Value #B": {
-                "aggregations": [
-                  "lastNotNull"
-                ],
-                "operation": "aggregate"
-              },
-              "mountpoint": {
-                "aggregations": [],
-                "operation": "groupby"
-              }
-            }
-          }
-        },
-        {
-          "id": "merge"
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "Used",
-            "binary": {
-              "left": "Value #A (lastNotNull)",
-              "operator": "-",
-              "reducer": "sum",
-              "right": "Value #B (lastNotNull)"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "Used, %",
-            "binary": {
-              "left": "Used",
-              "operator": "/",
-              "reducer": "sum",
-              "right": "Value #A (lastNotNull)"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {},
-            "indexByName": {},
-            "renameByName": {
-              "Value #A (lastNotNull)": "Size",
-              "Value #B (lastNotNull)": "Available",
-              "mountpoint": "Mounted on"
-            }
-          }
-        },
-        {
-          "id": "sortBy",
-          "options": {
-            "fields": {},
-            "sort": [
-              {
-                "field": "Mounted on"
-              }
-            ]
-          }
-        }
-      ],
-      "type": "table"
-    },
-    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 87
       },
       "id": 301,
       "panels": [],
@@ -3281,6 +3287,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Ingress NGINX controller process CPU usage",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3339,7 +3346,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 63
+        "y": 88
       },
       "id": 256,
       "options": {
@@ -3368,14 +3375,14 @@
         }
       ],
       "title": "Ingress Controller CPU",
-      "type": "timeseries",
-      "description": "Ingress NGINX controller process CPU usage"
+      "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Ingress NGINX controller process resident memory",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3426,7 +3433,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "decbytes"
         },
         "overrides": []
       },
@@ -3434,7 +3441,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 63
+        "y": 88
       },
       "id": 257,
       "options": {
@@ -3463,8 +3470,7 @@
         }
       ],
       "title": "Ingress Controller Memory",
-      "type": "timeseries",
-      "description": "Ingress NGINX controller process resident memory"
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -3495,19 +3501,25 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "decbytes"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 7,
         "w": 12,
         "x": 0,
-        "y": 69
+        "y": 94
       },
       "id": 252,
       "options": {
         "displayMode": "gradient",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
         "maxVizHeight": 300,
         "minVizHeight": 16,
         "minVizWidth": 8,
@@ -3568,19 +3580,25 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "decbytes"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 7,
         "w": 12,
         "x": 12,
-        "y": 69
+        "y": 94
       },
       "id": 253,
       "options": {
         "displayMode": "gradient",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
         "maxVizHeight": 300,
         "minVizHeight": 16,
         "minVizWidth": 8,
@@ -3618,7 +3636,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 101
       },
       "id": 302,
       "panels": [],
@@ -3673,7 +3691,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 75
+        "y": 102
       },
       "id": 228,
       "options": {
@@ -3745,7 +3763,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 75
+        "y": 102
       },
       "id": 223,
       "options": {
@@ -3844,7 +3862,7 @@
         "h": 4,
         "w": 16,
         "x": 8,
-        "y": 75
+        "y": 102
       },
       "id": 229,
       "options": {
@@ -3948,7 +3966,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 79
+        "y": 106
       },
       "id": 211,
       "options": {
@@ -4045,7 +4063,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 79
+        "y": 106
       },
       "id": 212,
       "options": {
@@ -4053,7 +4071,7 @@
           "calcs": [],
           "displayMode": "table",
           "placement": "right",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -4082,7 +4100,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 85
+        "y": 112
       },
       "id": 259,
       "panels": [],
@@ -4094,6 +4112,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Prometheus TSDB storage used (50Gi PVC)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4117,7 +4136,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "decbytes"
         },
         "overrides": []
       },
@@ -4125,7 +4144,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 86
+        "y": 113
       },
       "id": 261,
       "options": {
@@ -4158,14 +4177,14 @@
         }
       ],
       "title": "Prometheus Storage",
-      "type": "stat",
-      "description": "Prometheus TSDB storage used (50Gi PVC)"
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Rate of Prometheus rule evaluation failures",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4193,7 +4212,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 86
+        "y": 113
       },
       "id": 262,
       "options": {
@@ -4226,14 +4245,14 @@
         }
       ],
       "title": "Rule Eval Failures",
-      "type": "stat",
-      "description": "Rate of Prometheus rule evaluation failures"
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Rate of failed Alertmanager notifications. Non-zero means alerts are firing but not reaching you.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4261,7 +4280,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 86
+        "y": 113
       },
       "id": 263,
       "options": {
@@ -4294,14 +4313,14 @@
         }
       ],
       "title": "Alert Notification Failures",
-      "type": "stat",
-      "description": "Rate of failed Alertmanager notifications. Non-zero means alerts are firing but not reaching you."
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "VictoriaLogs health",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4309,7 +4328,6 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
                   "color": "red",
@@ -4321,7 +4339,8 @@
                   "index": 0,
                   "text": "Ready"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -4345,7 +4364,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 86
+        "y": 113
       },
       "id": 265,
       "options": {
@@ -4378,14 +4397,14 @@
         }
       ],
       "title": "VictoriaLogs Running",
-      "type": "stat",
-      "description": "VictoriaLogs health"
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "$datasource"
       },
+      "description": "Number of Prometheus scrape targets up vs down over time",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4427,6 +4446,7 @@
             }
           },
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -4436,8 +4456,7 @@
               }
             ]
           },
-          "unit": "short",
-          "min": 0
+          "unit": "short"
         },
         "overrides": []
       },
@@ -4445,7 +4464,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 90
+        "y": 117
       },
       "id": 266,
       "options": {
@@ -4483,8 +4502,7 @@
         }
       ],
       "title": "Scrape Target Status",
-      "type": "timeseries",
-      "description": "Number of Prometheus scrape targets up vs down over time"
+      "type": "timeseries"
     }
   ],
   "preload": false,
@@ -4556,5 +4574,5 @@
   "timezone": "America/Toronto",
   "title": "Combined Dashboard - RShiny & Host OS Monitoring",
   "uid": "combined-rshiny-hostos",
-  "version": 44
+  "version": 16
 }
