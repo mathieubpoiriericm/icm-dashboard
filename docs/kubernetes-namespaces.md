@@ -186,4 +186,26 @@ flowchart TD
     Blackbox -->|"probes endpoints"| Shiny
     Blackbox -->|"probes endpoints"| Ntfy
     Blackbox -->|"probes endpoints"| Healthchecks
+
+    %% Node colors by namespace
+    classDef ingress fill:#4a90d9,stroke:#3a7bc8,color:#fff
+    classDef svdNode fill:#50b878,stroke:#40a868,color:#fff
+    classDef monNode fill:#e8913a,stroke:#d8812a,color:#fff
+    classDef external fill:#888,stroke:#777,color:#fff
+
+    class Browser external
+    class Ingress ingress
+    class Shiny,QS,PG,Ntfy,Healthchecks,Blackbox,Pipeline svdNode
+    class Grafana,Renderer,Prometheus,VictoriaLogs,Vector monNode
+
+    %% Edge colors by flow type
+    linkStyle 0,1,2,3,4 stroke:#4a90d9,stroke-width:2px
+    linkStyle 5,6,7,8,9,10,11 stroke:#50b878,stroke-width:2px
+    linkStyle 12,13,14,15,16,17,18,19,20 stroke:#e8913a,stroke-width:2px
 ```
+
+| Color | Flow Type | Description |
+|-------|-----------|-------------|
+| Blue | Ingress routing | Browser to nginx to backend services |
+| Green | Pipeline & data | CronJob to PostgreSQL to QS files to Shiny |
+| Orange | Monitoring | Prometheus scrapes, Blackbox probes, log shipping |
