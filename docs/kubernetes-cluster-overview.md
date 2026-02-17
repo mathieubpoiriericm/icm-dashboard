@@ -72,10 +72,10 @@ graph TD
     blackbox -. "probes HTTP" .-> dashboard
     blackbox -. "probes HTTP" .-> healthchecks
 
-    prometheus -. "scrapes :9187" .-> postgresql
+    prometheus -. "scrapes<br/>(port:9187)" .-> postgresql
     prometheus -. "scrapes /metrics" .-> ntfy
-    prometheus -. "scrapes :9115" .-> blackbox
-    prometheus -. "scrapes :10254" .-> ingress
+    prometheus -. "scrapes<br/>(port:9115)" .-> blackbox
+    prometheus -. "scrapes<br/>(port:10254)" .-> ingress
 ```
 
 ---
