@@ -2714,7 +2714,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "max(pg_stat_user_tables_n_dead_tup{server=~\".*:5432\"})",
+          "expr": "max(pg_stat_user_tables_n_dead_tup{datname=\"svd_dashboard\"})",
           "legendFormat": "Max Dead Tuples",
           "refId": "A"
         }
@@ -2904,7 +2904,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "pg_stat_user_tables_n_dead_tup{server=~\".*:5432\"}",
+          "expr": "pg_stat_user_tables_n_dead_tup{datname=\"svd_dashboard\"}",
           "legendFormat": "{{relname}}",
           "refId": "A"
         }
@@ -5578,5 +5578,5 @@
   "timezone": "America/Toronto",
   "title": "Combined Dashboard - RShiny & Host OS Monitoring",
   "uid": "combined-rshiny-hostos",
-  "version": 43
+  "version": 44
 }
