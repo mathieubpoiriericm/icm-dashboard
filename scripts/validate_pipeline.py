@@ -1341,7 +1341,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # Write report
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
     output_file = output_dir / f"validation_report_{timestamp}.md"
     output_file.write_text(report, encoding="utf-8")
 

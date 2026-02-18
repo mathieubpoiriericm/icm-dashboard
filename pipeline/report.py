@@ -295,7 +295,7 @@ def write_comprehensive_report(data: PipelineRunData, log_dir: Path) -> Path:
         Path to the written JSON file.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    stamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
     path = log_dir / f"pipeline_report_{stamp}.json"
     path.write_text(json.dumps(data, indent=2, default=str) + "\n")
     return path

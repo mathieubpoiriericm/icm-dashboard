@@ -120,7 +120,7 @@ def calibrate_threshold(
     Returns path to the generated plot.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
 
     # Parse into arrays
     confidences: list[float] = []

@@ -83,7 +83,7 @@ def analyze_errors(
         )
 
     # --- Output 1: Error analysis CSV ---
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
     output_dir.mkdir(parents=True, exist_ok=True)
     error_path = output_dir / f"error_analysis_{timestamp}.csv"
 

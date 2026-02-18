@@ -152,7 +152,7 @@ class PipelineMetrics:
         Returns the path to the written file.
         """
         log_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        stamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
         path = log_dir / f"pipeline_report_{stamp}.json"
         path.write_text(json.dumps(self.build_report(), indent=2) + "\n")
         return path

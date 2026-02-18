@@ -151,7 +151,7 @@ LOG_DIR = Path(os.getenv("PIPELINE_LOG_DIR", PROJECT_ROOT / "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 LOG_LOG_DIR = LOG_DIR / "log"
 LOG_LOG_DIR.mkdir(exist_ok=True)
-LOG_FILE = LOG_LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
+LOG_FILE = LOG_LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%Hh%Mm%Ss')}.log"
 
 from rich.logging import RichHandler  # noqa: E402
 
