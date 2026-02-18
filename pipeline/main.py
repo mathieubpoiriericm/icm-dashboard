@@ -325,7 +325,7 @@ async def process_paper(
     text = text_result.get("text")
     if not text:
         logger.warning(f"  No text available for PMID {pmid}, skipping")
-        return {"genes": [], "fulltext": False, "source": "none"}
+        return {"genes": [], "rejected_genes": [], "fulltext": False, "source": "none"}
 
     # Extract structured data using LLM (returns typed GeneEntry instances)
     genes, token_usage = await extract_from_paper(
