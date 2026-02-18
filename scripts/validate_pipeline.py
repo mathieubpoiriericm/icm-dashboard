@@ -538,6 +538,48 @@ def compare_all(
     return comparisons, false_negatives, false_positives
 
 
+def find_rejected_false_negative_overlaps(
+    false_negatives: list[AggregatedGene],
+    rejected_genes: list[RejectedGeneInfo] | None,
+) -> dict[str, tuple[AggregatedGene, list[RejectedGeneInfo]]]:
+    """Find false-negative genes that were extracted by the LLM but rejected.
+
+    Returns a dict keyed by FN gene symbol mapping to (AggregatedGene, matching
+    rejected entries).  Also checks ``_REVERSE_GENE_ALIASES`` so that e.g.
+    a rejected ``COL4A1`` is matched to the FN ``COL4A1/2``.
+    """
+    if not false_negatives or not rejected_genes:
+        return {}
+
+    # Build lookup: normalized FN symbol → AggregatedGene
+    fn_by_symbol: dict[str, AggregatedGene] = {
+        g.symbol.upper(): g for g in false_negatives
+    }
+
+    overlaps: dict[str, tuple[AggregatedGene, list[RejectedGeneInfo]]] = {}
+
+    for rg in rejected_genes:
+        norm = rg.symbol.upper()
+
+        # Direct match
+        if norm in fn_by_symbol:
+            target = norm
+        # Alias match (e.g. rejected COL4A1 → FN COL4A1/2)
+        elif (
+            norm in _REVERSE_GENE_ALIASES
+            and _REVERSE_GENE_ALIASES[norm] in fn_by_symbol
+        ):
+            target = _REVERSE_GENE_ALIASES[norm]
+        else:
+            continue
+
+        if target not in overlaps:
+            overlaps[target] = (fn_by_symbol[target], [])
+        overlaps[target][1].append(rg)
+
+    return overlaps
+
+
 # ---------------------------------------------------------------------------
 # 6. Scoring
 # ---------------------------------------------------------------------------
@@ -1029,6 +1071,68 @@ def generate_markdown(
                 f"<td>{_escape_html(rg.pmid)}</td>"
                 f'<td style="background-color:{conf_color};text-align:center;">'
                 f"{rg.confidence:.2f}</td>"
+                f"<td>{_escape_html(reasons_str)}</td></tr>"
+            )
+        lines.append("</table>\n")
+
+    # --- Potentially Recoverable Genes ---
+    recoverable = find_rejected_false_negative_overlaps(false_negatives, rejected_genes)
+    if recoverable:
+        fn_total = len(false_negatives)
+        lines.append("## Potentially Recoverable Genes\n")
+        lines.append(
+            f"These **{len(recoverable)} of {fn_total}** false-negative genes"
+            " were actually extracted by the LLM but rejected during NCBI"
+            " validation. Relaxing or correcting validation rules could"
+            " recover them.\n"
+        )
+        lines.append('<table class="vr-table">')
+        lines.append(
+            "<tr><th>Gene</th><th>Ref GWAS Traits</th><th>Ref MR</th>"
+            "<th>Ref Omics</th><th>Ref PMIDs</th><th>Rejected From</th>"
+            "<th>LLM Confidence</th><th>Rejection Reasons</th></tr>"
+        )
+        for symbol in sorted(recoverable):
+            fn_gene, rg_entries = recoverable[symbol]
+
+            traits = (
+                ", ".join(sorted(fn_gene.gwas_traits))
+                if fn_gene.gwas_traits
+                else "(empty)"
+            )
+            omics = ", ".join(sorted(fn_gene.omics)) if fn_gene.omics else "(empty)"
+            pmids_str = (
+                "(reference needed)"
+                if fn_gene.pmids_reference_needed
+                else (", ".join(sorted(fn_gene.pmids)) if fn_gene.pmids else "(empty)")
+            )
+
+            # Aggregate rejected entries
+            rejected_pmids = sorted({rg.pmid for rg in rg_entries})
+            confs = [rg.confidence for rg in rg_entries]
+            mean_conf = sum(confs) / len(confs) if confs else 0.0
+            conf_color = _score_color(mean_conf)
+
+            # Deduplicate reasons across entries
+            seen_reasons: list[str] = []
+            seen_set: set[str] = set()
+            for rg in rg_entries:
+                for reason in rg.reasons:
+                    if reason not in seen_set:
+                        seen_set.add(reason)
+                        seen_reasons.append(reason)
+            reasons_str = "; ".join(seen_reasons) if seen_reasons else "(unknown)"
+
+            lines.append(
+                f'<tr style="background-color:#fff3e0;">'
+                f"<td><b>{_escape_html(symbol)}</b></td>"
+                f"<td>{_escape_html(traits)}</td>"
+                f"<td>{'Yes' if fn_gene.mr else 'No'}</td>"
+                f"<td>{_escape_html(omics)}</td>"
+                f"<td>{_escape_html(pmids_str)}</td>"
+                f"<td>{_escape_html(', '.join(rejected_pmids))}</td>"
+                f'<td style="background-color:{conf_color};text-align:center;">'
+                f"{mean_conf:.2f}</td>"
                 f"<td>{_escape_html(reasons_str)}</td></tr>"
             )
         lines.append("</table>\n")
