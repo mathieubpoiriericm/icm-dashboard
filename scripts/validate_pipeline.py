@@ -628,6 +628,120 @@ def _pct(value: float) -> str:
     return f"{value * 100:.1f}%"
 
 
+def _letter_grade(score: float) -> str:
+    """Return a letter grade for a 0.0–1.0 score."""
+    if score >= 0.80:
+        return "A"
+    if score >= 0.65:
+        return "B"
+    if score >= 0.50:
+        return "C"
+    if score >= 0.35:
+        return "D"
+    return "F"
+
+
+def _venn_diagram(tp: int, fn: int, fp: int, ref_count: int, pipe_count: int) -> str:
+    """Return an inline SVG Venn diagram showing gene detection overlap."""
+    # Layout constants
+    w, h = 480, 260
+    cx_left, cx_right, cy = 180, 300, 120
+    r = 100
+
+    # Colors
+    ref_fill = "#667eea"  # accent blue
+    pipe_fill = "#e87461"  # warm coral
+    overlap_fill = "#5a4fcf"  # deeper blend
+
+    return f"""\
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" \
+width="{w}" height="{h}" \
+style="font-family:system-ui,sans-serif;max-width:100%;">
+  <defs>
+    <clipPath id="clip-left"><circle cx="{cx_left}" cy="{cy}" r="{r}"/></clipPath>
+  </defs>
+  <!-- Left circle (Reference) -->
+  <circle cx="{cx_left}" cy="{cy}" r="{r}" \
+fill="{ref_fill}" opacity="0.25" stroke="{ref_fill}" stroke-width="2"/>
+  <!-- Right circle (Pipeline) -->
+  <circle cx="{cx_right}" cy="{cy}" r="{r}" \
+fill="{pipe_fill}" opacity="0.25" stroke="{pipe_fill}" stroke-width="2"/>
+  <!-- Overlap highlight -->
+  <circle cx="{cx_right}" cy="{cy}" r="{r}" \
+clip-path="url(#clip-left)" fill="{overlap_fill}" opacity="0.25"/>
+  <!-- FN label (left only) -->
+  <text x="{cx_left - 45}" y="{cy - 8}" text-anchor="middle" \
+font-size="22" font-weight="700" fill="#333">{fn}</text>
+  <text x="{cx_left - 45}" y="{cy + 14}" text-anchor="middle" \
+font-size="11" fill="#555">missed</text>
+  <!-- TP label (overlap) -->
+  <text x="{(cx_left + cx_right) // 2}" y="{cy - 8}" text-anchor="middle" \
+font-size="22" font-weight="700" fill="#333">{tp}</text>
+  <text x="{(cx_left + cx_right) // 2}" y="{cy + 14}" text-anchor="middle" \
+font-size="11" fill="#555">matched</text>
+  <!-- FP label (right only) -->
+  <text x="{cx_right + 45}" y="{cy - 8}" text-anchor="middle" \
+font-size="22" font-weight="700" fill="#333">{fp}</text>
+  <text x="{cx_right + 45}" y="{cy + 14}" text-anchor="middle" \
+font-size="11" fill="#555">extra</text>
+  <!-- Circle labels -->
+  <text x="{cx_left - 45}" y="{cy + r + 28}" text-anchor="middle" \
+font-size="12" font-weight="600" fill="{ref_fill}">Reference ({ref_count})</text>
+  <text x="{cx_right + 45}" y="{cy + r + 28}" text-anchor="middle" \
+font-size="12" font-weight="600" fill="{pipe_fill}">Pipeline ({pipe_count})</text>
+</svg>"""
+
+
+def _generate_executive_summary(
+    scores: ValidationScores,
+    ref_count: int,
+    pipe_count: int,
+) -> str:
+    """Return an auto-generated interpretive summary paragraph."""
+    tp = scores.true_positives
+    fp = scores.false_positives
+    grade = _letter_grade(scores.composite)
+
+    # Find strongest and weakest field metrics
+    field_metrics: list[tuple[str, float]] = [
+        ("GWAS Jaccard", scores.mean_gwas_jaccard),
+        ("MR Accuracy", scores.mr_accuracy),
+        ("Omics Jaccard", scores.mean_omics_jaccard),
+        ("PMID Recall", scores.mean_pmid_recall),
+    ]
+    strongest = max(field_metrics, key=lambda x: x[1])
+    weakest = min(field_metrics, key=lambda x: x[1])
+
+    # Assessment sentence keyed to grade
+    assessments: dict[str, str] = {
+        "A": "The pipeline is performing well across detection and field extraction.",
+        "B": "The pipeline shows solid performance with room for"
+        " improvement in some areas.",
+        "C": "The pipeline has moderate accuracy; several metrics need attention.",
+        "D": "The pipeline is under-performing; significant improvements are needed.",
+        "F": "The pipeline is failing to meet acceptable accuracy thresholds.",
+    }
+    assessment = assessments[grade]
+
+    parts: list[str] = [
+        f"The pipeline detected **{tp} of {ref_count}** reference genes"
+        f" (recall {_pct(scores.recall)})",
+    ]
+    if fp:
+        parts[0] += f" and reported **{fp}** false positive{'s' if fp != 1 else ''}."
+    else:
+        parts[0] += " with no false positives."
+
+    parts.append(
+        f"Among field-level metrics, **{strongest[0]}** was the strongest"
+        f" at {_pct(strongest[1])}, while **{weakest[0]}** was the weakest"
+        f" at {_pct(weakest[1])}."
+    )
+    parts.append(assessment)
+
+    return " ".join(parts)
+
+
 def _escape_html(text: str) -> str:
     """Minimal HTML escaping."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -648,14 +762,52 @@ def generate_markdown(
     """Generate a full Markdown validation report."""
     lines: list[str] = []
 
-    # --- Header ---
+    # --- Shared table styles ---
+    lines.append("""\
+<style>
+.vr-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  font-family: system-ui, -apple-system, sans-serif;
+  width: 100%;
+  max-width: 900px;
+  margin: 8px 0 16px;
+}
+.vr-table th {
+  background: #f0f0f5;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid #d0d0d8;
+}
+.vr-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #e8e8ee;
+  vertical-align: top;
+}
+.vr-table tr:hover {
+  background: #f8f8fc;
+}
+.vr-table code {
+  font-size: 12px;
+  background: #f5f5fa;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+</style>
+""")
+
+    # --- Header with grade badge ---
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    grade = _letter_grade(scores.composite)
     lines.append("# Pipeline Validation Report\n")
+    lines.append(f"## Grade: {grade} ({_pct(scores.composite)})\n")
     lines.append(f"**Generated:** {now}  ")
-    lines.append(f"**Reference:** `{ref_path}`  ")
-    lines.append(f"**Pipeline report:** `{pipe_path}`  ")
-    lines.append(f"**Reference genes:** {ref_count}  ")
-    lines.append(f"**Pipeline genes (after alias merging):** {pipe_count}  ")
+    lines.append(f"**Reference:** `{ref_path}` | **Pipeline report:** `{pipe_path}`  ")
+    lines.append(
+        f"**Reference genes:** {ref_count} | "
+        f"**Pipeline genes (after alias merging):** {pipe_count}  "
+    )
     filter_label = (
         "Full-text papers only"
         if fulltext_only
@@ -668,10 +820,27 @@ def generate_markdown(
         f"**False Positives:** {scores.false_positives}\n"
     )
 
+    # --- Executive Summary ---
+    lines.append("## Executive Summary\n")
+    lines.append(_generate_executive_summary(scores, ref_count, pipe_count) + "\n")
+
+    # --- Gene Detection Venn Diagram ---
+    lines.append("## Gene Detection Overview\n")
+    lines.append(
+        _venn_diagram(
+            scores.true_positives,
+            scores.false_negatives,
+            scores.false_positives,
+            ref_count,
+            pipe_count,
+        )
+    )
+    lines.append("")
+
     # --- Summary Scores ---
     lines.append("## Summary Scores\n")
-    lines.append("<table>")
-    lines.append("<tr><th>Metric</th><th>Value</th><th>Rating</th></tr>")
+    lines.append('<table class="vr-table">')
+    lines.append("<tr><th>Metric</th><th>Value</th><th>Grade</th></tr>")
 
     score_rows = [
         ("Composite Score", scores.composite),
@@ -687,16 +856,18 @@ def generate_markdown(
 
     for label, value in score_rows:
         color = _score_color(value)
+        row_grade = _letter_grade(value)
         lines.append(
             f"<tr><td>{label}</td><td>{_pct(value)}</td>"
-            f'<td style="background-color:{color};">&nbsp;</td></tr>'
+            f'<td style="background-color:{color};text-align:center;'
+            f'font-weight:600;border-radius:3px;">{row_grade}</td></tr>'
         )
     lines.append("</table>\n")
 
     # --- Gene Comparison Table ---
     sorted_comps = sorted(comparisons, key=lambda c: c.gene_score)
     lines.append("## Gene Comparison (sorted by score, worst first)\n")
-    lines.append("<table>")
+    lines.append('<table class="vr-table">')
     lines.append(
         "<tr><th>Gene</th><th>Score</th><th>Conf.</th>"
         "<th>GWAS Traits</th><th>MR</th><th>Omics</th><th>PMIDs</th></tr>"
@@ -706,7 +877,10 @@ def generate_markdown(
         field_map = {fc.field_name: fc for fc in comp.fields}
         row = f"<tr><td><b>{_escape_html(comp.gene)}</b></td>"
         sc = comp.gene_score
-        row += f'<td style="background-color:{_score_color(sc)};">{_pct(sc)}</td>'
+        row += (
+            f'<td style="background-color:{_score_color(sc)};'
+            f'text-align:center;">{_pct(sc)}</td>'
+        )
         row += f"<td>{comp.mean_confidence:.2f}</td>"
 
         for fname in ["GWAS Traits", "MR", "Omics", "PMIDs"]:
@@ -731,7 +905,7 @@ def generate_markdown(
     if false_negatives:
         lines.append("## False Negatives (reference only)\n")
         lines.append("Genes in the reference table but not found by the pipeline.\n")
-        lines.append("<table>")
+        lines.append('<table class="vr-table">')
         lines.append(
             "<tr><th>Gene</th><th>GWAS Traits</th>"
             "<th>MR</th><th>Omics</th><th>PMIDs</th></tr>"
@@ -747,7 +921,7 @@ def generate_markdown(
                 else (", ".join(sorted(gene.pmids)) if gene.pmids else "(empty)")
             )
             lines.append(
-                f'<tr style="background-color:#ffcdd2;">'
+                f'<tr style="background-color:#fff0f0;">'
                 f"<td><b>{_escape_html(gene.symbol)}</b></td>"
                 f"<td>{_escape_html(traits)}</td>"
                 f"<td>{'Yes' if gene.mr else 'No'}</td>"
@@ -760,7 +934,7 @@ def generate_markdown(
     if false_positives:
         lines.append("## False Positives (pipeline only)\n")
         lines.append("Genes found by the pipeline but not in the reference table.\n")
-        lines.append("<table>")
+        lines.append('<table class="vr-table">')
         lines.append(
             "<tr><th>Gene</th><th>GWAS Traits</th><th>MR</th><th>Omics</th>"
             "<th>Mean Confidence</th></tr>"
@@ -776,7 +950,7 @@ def generate_markdown(
                 else "N/A"
             )
             lines.append(
-                f'<tr style="background-color:#fff9c4;">'
+                f'<tr style="background-color:#fffbf0;">'
                 f"<td><b>{_escape_html(gene.symbol)}</b></td>"
                 f"<td>{_escape_html(traits)}</td>"
                 f"<td>{'Yes' if gene.mr else 'No'}</td>"
@@ -861,7 +1035,7 @@ def generate_markdown(
         " or wrong), omics evidence types (10%, also Jaccard), and citing"
         " the right PMIDs (10%, measured by recall — what fraction of the"
         " reference PMIDs were found). When PMIDs cannot be compared — for"
-        " example when the reference contains \"(reference needed)\" or"
+        ' example when the reference contains "(reference needed)" or'
         " when running in local-PDF mode — that 10% is redistributed"
         " proportionally among the other three field scores.\n"
     )
