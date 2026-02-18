@@ -130,7 +130,7 @@ def calibrate_threshold(
     for row in score_rows:
         try:
             conf = float(row["confidence"])
-        except ValueError, KeyError:
+        except (ValueError, KeyError):
             continue
         is_ref = row.get("is_in_reference", "").strip().lower() == "true"
         was_acc = row.get("was_accepted", "").strip().lower() == "true"

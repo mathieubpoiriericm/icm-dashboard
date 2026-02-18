@@ -30,8 +30,10 @@ import json, sys
 report_path, log_path = sys.argv[1], sys.argv[2]
 with open(report_path, encoding="utf-8") as f:
     report = json.load(f)
+import re
+ansi_re = re.compile(r"\x1b\[[0-9;]*m")
 with open(log_path, encoding="utf-8") as f:
-    report["experiment_log"] = f.read().splitlines()
+    report["experiment_log"] = [ansi_re.sub("", line) for line in f.read().splitlines()]
 with open(report_path, "w", encoding="utf-8") as f:
     json.dump(report, f, indent=2, ensure_ascii=False)
     f.write("\n")
@@ -51,6 +53,9 @@ log_echo() {
 run_logged() {
   "$@" 2>&1 | tee -a "$LOG_FILE"
 }
+
+# Force rich/colorama to emit ANSI colors even though stdout is piped through tee.
+export FORCE_COLOR=1
 
 log_echo "=== Tuning Experiment ==="
 log_echo "  Threshold:      $THRESHOLD"

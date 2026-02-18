@@ -123,7 +123,7 @@ def _print_diff(current: dict[str, str], previous: dict[str, str]) -> None:
             delta = cur_f - prev_f
             sign = "+" if delta > 0 else ""
             print(f"  {key}: {prev_val} -> {cur_val} ({sign}{delta:.4f})")
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             print(f"  {key}: {prev_val} -> {cur_val}")
 
 
