@@ -30,6 +30,8 @@ REFERENCE_NEEDED_SENTINELS: set[str] = {"(reference needed)", "reference needed"
 
 DEFAULT_REFERENCE_PATH = Path("data/test_data/gold_standard.csv")
 
+_PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
+
 
 class MatchStatus(Enum):
     MATCH = "match"
@@ -1286,7 +1288,7 @@ def main(argv: list[str] | None = None) -> None:
 
     pipe_path: Path = args.pipeline_report
     ref_path: Path = args.reference
-    output_dir: Path = args.output_dir or pipe_path.parent
+    output_dir: Path = args.output_dir or (_PROJECT_ROOT / "logs" / "md")
 
     if not pipe_path.exists():
         print(f"Error: Pipeline report not found: {pipe_path}", file=sys.stderr)

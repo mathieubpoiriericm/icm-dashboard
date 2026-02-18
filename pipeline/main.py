@@ -149,7 +149,9 @@ _SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
 # Configure logging
 LOG_DIR = Path(os.getenv("PIPELINE_LOG_DIR", PROJECT_ROOT / "logs"))
 LOG_DIR.mkdir(exist_ok=True)
-LOG_FILE = LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
+LOG_LOG_DIR = LOG_DIR / "log"
+LOG_LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
 
 from rich.logging import RichHandler  # noqa: E402
 
@@ -586,7 +588,7 @@ async def run_pipeline(
                 len(new_pmids),
                 total_duration,
             )
-            report_path = write_comprehensive_report(run_data, LOG_DIR)
+            report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
             logger.info(f"JSON report written to: {report_path}")
             print_rich_summary(run_data)
 
@@ -639,7 +641,7 @@ async def run_pipeline(
             len(new_pmids),
             total_duration,
         )
-        report_path = write_comprehensive_report(run_data, LOG_DIR)
+        report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
@@ -843,7 +845,7 @@ async def run_local_pdf_pipeline(
             skip_validation,
             total_duration,
         )
-        report_path = write_comprehensive_report(run_data, LOG_DIR)
+        report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
@@ -1055,7 +1057,7 @@ async def run_pmid_pipeline(
             skip_validation,
             total_duration,
         )
-        report_path = write_comprehensive_report(run_data, LOG_DIR)
+        report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
