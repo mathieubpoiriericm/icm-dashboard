@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-THRESHOLD="${1:-0.7}"
+THRESHOLD="${1:-0.65}"
 NOTES="${2:-}"
 PDF_PATH="${3:-pipeline/test_data/37069360.pdf}"
 
@@ -60,7 +60,7 @@ export FORCE_COLOR=1
 log_echo "=== Tuning Experiment ==="
 log_echo "  Threshold:      $THRESHOLD"
 log_echo "  PDF:            $PDF_PATH"
-log_echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v4}"
+log_echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v3}"
 log_echo "  Notes:          ${NOTES:-<none>}"
 log_echo ""
 
@@ -104,7 +104,7 @@ log_echo "--- Step 5: Tracking run ---"
 run_logged python scripts/tuning/track_run.py \
   --pipeline-report "$REPORT" \
   --local-pdfs \
-  --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v4}}"
+  --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v3}}"
 
 log_echo ""
 log_echo "=== Experiment complete ==="
