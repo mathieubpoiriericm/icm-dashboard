@@ -6,6 +6,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import anthropic
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -307,3 +308,54 @@ class TestExtractFromPaper:
         genes, _ = await extract_from_paper("Paper text", "12345678", config=cfg)
         assert genes == []  # Second call should succeed with empty genes
         assert mock_client.messages.stream.call_count == 2
+
+    async def test_connection_error_retries_then_succeeds(
+        self, mocker, mock_anthropic_response
+    ):
+        """Connection error on first call, success on second → 2 total calls."""
+        response = mock_anthropic_response(text='{"genes": []}')
+
+        good_stream = AsyncMock()
+        good_stream.get_final_message = AsyncMock(return_value=response)
+        good_cm = MagicMock()
+        good_cm.__aenter__ = AsyncMock(return_value=good_stream)
+        good_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client = MagicMock()
+        mock_client.messages.stream.side_effect = [
+            httpx.RemoteProtocolError(
+                "peer closed connection without sending complete message body"
+            ),
+            good_cm,
+        ]
+        mocker.patch(
+            "pipeline.llm_extraction._get_async_client",
+            return_value=mock_client,
+        )
+        mocker.patch("asyncio.sleep", new_callable=AsyncMock)
+
+        from pipeline.config import PipelineConfig
+
+        cfg = PipelineConfig(max_connection_retries=3)
+        genes, _ = await extract_from_paper("Paper text", "12345678", config=cfg)
+        assert genes == []  # empty genes from good response
+        assert mock_client.messages.stream.call_count == 2
+
+    async def test_connection_error_retries_exhausted(self, mocker):
+        """Persistent connection error exhausts retries → returns empty."""
+        mock_client = MagicMock()
+        mock_client.messages.stream.side_effect = httpx.RemoteProtocolError(
+            "peer closed connection without sending complete message body"
+        )
+        mocker.patch(
+            "pipeline.llm_extraction._get_async_client",
+            return_value=mock_client,
+        )
+        mocker.patch("asyncio.sleep", new_callable=AsyncMock)
+
+        from pipeline.config import PipelineConfig
+
+        cfg = PipelineConfig(max_connection_retries=3)
+        genes, _ = await extract_from_paper("Paper text", "12345678", config=cfg)
+        assert genes == []
+        assert mock_client.messages.stream.call_count == cfg.max_connection_retries + 1

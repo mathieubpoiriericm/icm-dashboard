@@ -183,6 +183,7 @@ class MockAnthropicResponse:
     usage: MockUsage | None = None
     content: list[Any] | None = None
     parsed_output: Any = None
+    stop_reason: str = "end_turn"
 
     def __post_init__(self):
         if self.usage is None:

@@ -25,6 +25,7 @@ import logging
 from typing import Any
 
 import anthropic
+import httpx
 from anthropic import transform_schema
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -156,6 +157,7 @@ async def extract_from_paper(
 
     rate_limit_retries = 0
     validation_retries = 0
+    connection_retries = 0
 
     while True:
         try:
@@ -251,6 +253,31 @@ async def extract_from_paper(
             if rate_limiter is not None:
                 rate_limiter.signal_rate_limit(delay)
             await asyncio.sleep(delay)
+
+        except (
+            anthropic.APIConnectionError,
+            httpx.RemoteProtocolError,
+            httpx.ReadError,
+            httpx.ConnectError,
+        ) as e:
+            connection_retries += 1
+            if connection_retries > config.max_connection_retries:
+                logger.error(
+                    f"Connection retries exhausted for PMID {pmid} "
+                    f"({connection_retries}/{config.max_connection_retries}): {e}"
+                )
+                return [], usage
+            backoff_delay = min(
+                config.connection_retry_delay * (2 ** (connection_retries - 1)),
+                64.0,
+            )
+            logger.warning(
+                f"Connection error on PMID {pmid}: {e!r}. "
+                f"Retrying in {backoff_delay:.1f}s "
+                f"(connection retry "
+                f"{connection_retries}/{config.max_connection_retries})..."
+            )
+            await asyncio.sleep(backoff_delay)
 
         except (json.JSONDecodeError, ValidationError, ValueError) as e:
             validation_retries += 1

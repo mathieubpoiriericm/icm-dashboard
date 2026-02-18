@@ -148,6 +148,14 @@ class PipelineConfig:
         default_factory=lambda: _env_float("PIPELINE_RATE_LIMIT_RETRY_DELAY", 1.0)
     )
 
+    # --- Connection/network error retry settings ---
+    max_connection_retries: int = field(
+        default_factory=lambda: _env_int("PIPELINE_MAX_CONNECTION_RETRIES", 3)
+    )
+    connection_retry_delay: float = field(
+        default_factory=lambda: _env_float("PIPELINE_CONNECTION_RETRY_DELAY", 2.0)
+    )
+
     # --- Concurrency ---
     max_concurrent_papers: int = field(
         default_factory=lambda: _env_int("PIPELINE_MAX_CONCURRENT_PAPERS", 5)
