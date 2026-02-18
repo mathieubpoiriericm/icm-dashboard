@@ -5,6 +5,7 @@ Usage:
     python scripts/validate_pipeline.py report.json \\
         --reference data/test_data/full_reference_table.csv
     python scripts/validate_pipeline.py report.json --output-dir results/
+    python scripts/validate_pipeline.py report.json --fulltext-only
 """
 
 from __future__ import annotations
@@ -228,7 +229,9 @@ def parse_reference_csv(path: Path) -> dict[str, AggregatedGene]:
     return genes
 
 
-def parse_pipeline_json(path: Path) -> dict[str, AggregatedGene]:
+def parse_pipeline_json(
+    path: Path, *, fulltext_only: bool = False
+) -> dict[str, AggregatedGene]:
     """Parse pipeline report JSON, aggregating same gene across papers."""
     with open(path, encoding="utf-8") as f:
         report = json.load(f)
@@ -236,6 +239,8 @@ def parse_pipeline_json(path: Path) -> dict[str, AggregatedGene]:
     aggregated: dict[str, AggregatedGene] = {}
 
     for paper in report.get("papers_detail", []):
+        if fulltext_only and not paper.get("fulltext", False):
+            continue
         paper_pmid = str(paper.get("pmid", ""))
 
         for gene_data in paper.get("genes", []):
@@ -610,6 +615,8 @@ def generate_markdown(
     pipe_path: Path,
     ref_count: int,
     pipe_count: int,
+    *,
+    fulltext_only: bool = False,
 ) -> str:
     """Generate a full Markdown validation report."""
     lines: list[str] = []
@@ -622,6 +629,12 @@ def generate_markdown(
     lines.append(f"**Pipeline report:** `{pipe_path}`  ")
     lines.append(f"**Reference genes:** {ref_count}  ")
     lines.append(f"**Pipeline genes (after alias merging):** {pipe_count}  ")
+    filter_label = (
+        "Full-text papers only"
+        if fulltext_only
+        else "All papers (full-text + abstract)"
+    )
+    lines.append(f"**Filter:** {filter_label}  ")
     lines.append(
         f"**Matched:** {scores.true_positives} | "
         f"**False Negatives:** {scores.false_negatives} | "
@@ -821,6 +834,13 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Output directory (default: same dir as report)",
     )
+    parser.add_argument(
+        "--fulltext-only",
+        action="store_true",
+        default=False,
+        help="Only include genes extracted from full-text papers "
+        "(exclude abstract-only)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -839,7 +859,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Parse
     ref_genes = parse_reference_csv(ref_path)
-    pipe_genes = parse_pipeline_json(pipe_path)
+    pipe_genes = parse_pipeline_json(pipe_path, fulltext_only=args.fulltext_only)
 
     # Compare
     comparisons, false_negatives, false_positives = compare_all(ref_genes, pipe_genes)
@@ -863,6 +883,7 @@ def main(argv: list[str] | None = None) -> None:
         pipe_path,
         len(ref_genes),
         pipe_count,
+        fulltext_only=args.fulltext_only,
     )
 
     # Write report
