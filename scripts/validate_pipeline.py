@@ -1,0 +1,885 @@
+"""Compare pipeline gene extraction output against a gold-standard reference table.
+
+Usage:
+    python scripts/validate_pipeline.py logs/pipeline_report_<ts>.json
+    python scripts/validate_pipeline.py report.json \\
+        --reference data/test_data/full_reference_table.csv
+    python scripts/validate_pipeline.py report.json --output-dir results/
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import re
+import sys
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# 1. Constants & Enums
+# ---------------------------------------------------------------------------
+
+NONE_FOUND_SENTINELS: set[str] = {"(none found)", "none found", "n/a", "na", ""}
+REFERENCE_NEEDED_SENTINELS: set[str] = {"(reference needed)", "reference needed"}
+
+DEFAULT_REFERENCE_PATH = Path("data/test_data/full_reference_table.csv")
+
+
+class MatchStatus(Enum):
+    MATCH = "match"
+    PARTIAL = "partial"
+    MISMATCH = "mismatch"
+    MISSING_REF = "missing_ref"
+    MISSING_PIPELINE = "missing_pipeline"
+    BOTH_EMPTY = "both_empty"
+    SKIPPED = "skipped"
+
+
+STATUS_COLORS: dict[MatchStatus, str] = {
+    MatchStatus.MATCH: "#c8e6c9",
+    MatchStatus.PARTIAL: "#fff9c4",
+    MatchStatus.MISMATCH: "#ffcdd2",
+    MatchStatus.MISSING_REF: "#e0e0e0",
+    MatchStatus.MISSING_PIPELINE: "#e0e0e0",
+    MatchStatus.BOTH_EMPTY: "#c8e6c9",
+    MatchStatus.SKIPPED: "#e0e0e0",
+}
+
+# Alias map: reference name → set of pipeline gene symbols that should merge
+GENE_ALIAS_MAP: dict[str, set[str]] = {
+    "COL4A1/2": {"COL4A1", "COL4A2"},
+}
+
+# Reverse lookup: pipeline symbol → reference name
+_REVERSE_GENE_ALIASES: dict[str, str] = {}
+for _ref_name, _pipe_names in GENE_ALIAS_MAP.items():
+    for _pn in _pipe_names:
+        _REVERSE_GENE_ALIASES[_pn.upper()] = _ref_name.upper()
+
+# Trait aliases: normalize alternative names to canonical form
+TRAIT_ALIASES: dict[str, str] = {
+    "cmb": "cerebral-microbleeds",
+    "noddi": "icvf",
+}
+
+# ---------------------------------------------------------------------------
+# 2. Dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AggregatedGene:
+    symbol: str
+    gwas_traits: set[str] = field(default_factory=set)
+    mr: bool = False
+    omics: set[str] = field(default_factory=set)
+    pmids: set[str] = field(default_factory=set)
+    pmids_reference_needed: bool = False
+    confidences: list[float] = field(default_factory=list)
+
+
+@dataclass
+class FieldComparison:
+    field_name: str
+    status: MatchStatus
+    ref_value: str
+    pipe_value: str
+    score: float
+
+
+@dataclass
+class GeneComparison:
+    gene: str
+    detection_status: MatchStatus
+    fields: list[FieldComparison] = field(default_factory=list)
+    gene_score: float = 0.0
+    mean_confidence: float = 0.0
+
+
+@dataclass
+class ValidationScores:
+    # Gene detection
+    true_positives: int = 0
+    false_positives: int = 0
+    false_negatives: int = 0
+    precision: float = 0.0
+    recall: float = 0.0
+    f1: float = 0.0
+
+    # Per-field aggregates
+    mean_gwas_jaccard: float = 0.0
+    mr_accuracy: float = 0.0
+    mean_omics_jaccard: float = 0.0
+    mean_pmid_recall: float = 0.0
+
+    # Overall
+    mean_gene_score: float = 0.0
+    composite: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# 3. Normalization functions
+# ---------------------------------------------------------------------------
+
+
+def normalize_gene_symbol(symbol: str) -> str:
+    return symbol.strip().upper()
+
+
+def _is_sentinel(value: str, sentinels: set[str]) -> bool:
+    return value.strip().lower() in sentinels
+
+
+def parse_comma_set(value: str, sentinels: set[str] | None = None) -> set[str]:
+    """Parse a comma-separated string into a normalized set."""
+    if sentinels and _is_sentinel(value, sentinels):
+        return set()
+    parts = re.split(r",\s*", value.strip())
+    return {p.strip().lower() for p in parts if p.strip()}
+
+
+def normalize_trait(trait: str) -> str:
+    """Normalize a single GWAS trait string."""
+    t = trait.strip().lower()
+    return TRAIT_ALIASES.get(t, t)
+
+
+def normalize_traits(raw: str) -> set[str]:
+    """Parse and normalize GWAS traits from a comma-separated string."""
+    if _is_sentinel(raw, NONE_FOUND_SENTINELS):
+        return set()
+    parts = re.split(r",\s*", raw.strip())
+    return {normalize_trait(p) for p in parts if p.strip()}
+
+
+def normalize_omics_base(entry: str) -> str:
+    """Extract base omics type, stripping tissue annotation after ';'.
+
+    Examples:
+        'TWAS;brain frontal cortex' → 'twas'
+        'TWAS;' → 'twas'
+        'proteomics' → 'proteomics'
+    """
+    base = entry.split(";")[0].strip().lower()
+    return base if base else ""
+
+
+def normalize_omics_set(raw: str) -> set[str]:
+    """Parse omics evidence string into a set of base types."""
+    if _is_sentinel(raw, NONE_FOUND_SENTINELS):
+        return set()
+    parts = re.split(r",\s*", raw.strip())
+    result: set[str] = set()
+    for p in parts:
+        base = normalize_omics_base(p)
+        if base:
+            result.add(base)
+    return result
+
+
+def parse_pmids(raw: str) -> tuple[set[str], bool]:
+    """Parse PMID string. Returns (pmid_set, is_reference_needed)."""
+    if _is_sentinel(raw, REFERENCE_NEEDED_SENTINELS):
+        return set(), True
+    if _is_sentinel(raw, NONE_FOUND_SENTINELS):
+        return set(), False
+    parts = re.split(r",\s*", raw.strip())
+    return {p.strip() for p in parts if p.strip()}, False
+
+
+def parse_bool(raw: str) -> bool:
+    return raw.strip().lower() in ("yes", "true", "1")
+
+
+def is_non_numeric_pmid(pmid: str) -> bool:
+    """Detect non-numeric PMIDs (e.g. filenames from --local-pdfs mode)."""
+    return not pmid.strip().isdigit()
+
+
+# ---------------------------------------------------------------------------
+# 4. Parsers
+# ---------------------------------------------------------------------------
+
+
+def parse_reference_csv(path: Path) -> dict[str, AggregatedGene]:
+    """Parse gold-standard reference CSV into a dict keyed by upper-case gene symbol."""
+    genes: dict[str, AggregatedGene] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            symbol = normalize_gene_symbol(row["gene"])
+            traits = normalize_traits(row["gwas_trait"])
+            mr = parse_bool(row["mr"])
+            omics = normalize_omics_set(row["omics"])
+            pmids, ref_needed = parse_pmids(row["pmid"])
+
+            genes[symbol] = AggregatedGene(
+                symbol=symbol,
+                gwas_traits=traits,
+                mr=mr,
+                omics=omics,
+                pmids=pmids,
+                pmids_reference_needed=ref_needed,
+            )
+    return genes
+
+
+def parse_pipeline_json(path: Path) -> dict[str, AggregatedGene]:
+    """Parse pipeline report JSON, aggregating same gene across papers."""
+    with open(path, encoding="utf-8") as f:
+        report = json.load(f)
+
+    aggregated: dict[str, AggregatedGene] = {}
+
+    for paper in report.get("papers_detail", []):
+        paper_pmid = str(paper.get("pmid", ""))
+
+        for gene_data in paper.get("genes", []):
+            symbol = normalize_gene_symbol(gene_data.get("gene_symbol", ""))
+            if not symbol:
+                continue
+
+            if symbol not in aggregated:
+                aggregated[symbol] = AggregatedGene(symbol=symbol)
+
+            ag = aggregated[symbol]
+
+            # GWAS traits: union
+            for trait in gene_data.get("gwas_trait", []):
+                normalized = normalize_trait(trait)
+                if normalized:
+                    ag.gwas_traits.add(normalized)
+
+            # MR: OR across papers
+            if gene_data.get("mendelian_randomization", False):
+                ag.mr = True
+
+            # Omics: union of base types
+            for omics_entry in gene_data.get("omics_evidence", []):
+                base = normalize_omics_base(omics_entry)
+                if base:
+                    ag.omics.add(base)
+
+            # PMIDs: collect paper PMID
+            if paper_pmid:
+                ag.pmids.add(paper_pmid)
+
+            # Confidence: collect
+            conf = gene_data.get("confidence")
+            if conf is not None:
+                ag.confidences.append(float(conf))
+
+    return aggregated
+
+
+# ---------------------------------------------------------------------------
+# 5. Comparison engine
+# ---------------------------------------------------------------------------
+
+
+def jaccard_index(a: set[str], b: set[str]) -> float:
+    """Compute Jaccard index. Returns 1.0 if both empty."""
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def set_recall(reference: set[str], pipeline: set[str]) -> float:
+    """Compute recall: what fraction of reference items are in pipeline."""
+    if not reference:
+        return 1.0
+    return len(reference & pipeline) / len(reference)
+
+
+def compare_sets(
+    ref: set[str], pipe: set[str], field_name: str, *, use_jaccard: bool = True
+) -> FieldComparison:
+    """Compare two sets and return a FieldComparison."""
+    ref_str = ", ".join(sorted(ref)) if ref else "(empty)"
+    pipe_str = ", ".join(sorted(pipe)) if pipe else "(empty)"
+
+    if not ref and not pipe:
+        return FieldComparison(
+            field_name, MatchStatus.BOTH_EMPTY, ref_str, pipe_str, 1.0
+        )
+
+    score = jaccard_index(ref, pipe) if use_jaccard else set_recall(ref, pipe)
+
+    if ref == pipe:
+        status = MatchStatus.MATCH
+    elif ref & pipe:
+        status = MatchStatus.PARTIAL
+    elif not ref:
+        status = MatchStatus.MISSING_REF
+    elif not pipe:
+        status = MatchStatus.MISSING_PIPELINE
+    else:
+        status = MatchStatus.MISMATCH
+
+    return FieldComparison(field_name, status, ref_str, pipe_str, score)
+
+
+def compare_boolean(ref: bool, pipe: bool, field_name: str) -> FieldComparison:
+    """Compare two boolean values."""
+    ref_str = "Yes" if ref else "No"
+    pipe_str = "Yes" if pipe else "No"
+    match = ref == pipe
+    status = MatchStatus.MATCH if match else MatchStatus.MISMATCH
+    return FieldComparison(field_name, status, ref_str, pipe_str, 1.0 if match else 0.0)
+
+
+def compare_pmids(
+    ref_gene: AggregatedGene, pipe_gene: AggregatedGene, has_non_numeric: bool
+) -> FieldComparison:
+    """Compare PMID sets with special handling for reference-needed
+    and non-numeric PMIDs."""
+    if ref_gene.pmids_reference_needed or has_non_numeric:
+        ref_label = (
+            "(reference needed)" if ref_gene.pmids_reference_needed else "(non-numeric)"
+        )
+        pipe_label = (
+            ", ".join(sorted(pipe_gene.pmids)) if pipe_gene.pmids else "(empty)"
+        )
+        return FieldComparison(
+            "PMIDs",
+            MatchStatus.SKIPPED,
+            ref_label,
+            pipe_label,
+            0.0,
+        )
+
+    ref_set = ref_gene.pmids
+    pipe_set = pipe_gene.pmids
+    ref_str = ", ".join(sorted(ref_set)) if ref_set else "(empty)"
+    pipe_str = ", ".join(sorted(pipe_set)) if pipe_set else "(empty)"
+
+    if not ref_set and not pipe_set:
+        return FieldComparison("PMIDs", MatchStatus.BOTH_EMPTY, ref_str, pipe_str, 1.0)
+
+    score = set_recall(ref_set, pipe_set)
+
+    if ref_set == pipe_set:
+        status = MatchStatus.MATCH
+    elif ref_set & pipe_set:
+        status = MatchStatus.PARTIAL
+    elif not pipe_set:
+        status = MatchStatus.MISSING_PIPELINE
+    else:
+        status = MatchStatus.MISMATCH
+
+    return FieldComparison("PMIDs", status, ref_str, pipe_str, score)
+
+
+def remap_pipeline_genes(
+    pipeline_genes: dict[str, AggregatedGene],
+) -> dict[str, AggregatedGene]:
+    """Merge pipeline genes that map to the same reference alias.
+
+    E.g., COL4A1 + COL4A2 in pipeline → COL4A1/2 in output.
+    """
+    remapped: dict[str, AggregatedGene] = {}
+    consumed: set[str] = set()
+
+    for symbol, gene in pipeline_genes.items():
+        ref_name = _REVERSE_GENE_ALIASES.get(symbol)
+        if ref_name:
+            consumed.add(symbol)
+            if ref_name not in remapped:
+                remapped[ref_name] = AggregatedGene(symbol=ref_name)
+            target = remapped[ref_name]
+            target.gwas_traits |= gene.gwas_traits
+            target.mr = target.mr or gene.mr
+            target.omics |= gene.omics
+            target.pmids |= gene.pmids
+            target.confidences.extend(gene.confidences)
+
+    # Add non-alias genes as-is
+    for symbol, gene in pipeline_genes.items():
+        if symbol not in consumed:
+            remapped[symbol] = gene
+
+    return remapped
+
+
+def compare_all(
+    ref_genes: dict[str, AggregatedGene],
+    pipe_genes: dict[str, AggregatedGene],
+) -> tuple[list[GeneComparison], list[AggregatedGene], list[AggregatedGene]]:
+    """Compare reference and pipeline genes.
+
+    Returns:
+        (matched_comparisons, false_negatives, false_positives)
+    """
+    pipe_remapped = remap_pipeline_genes(pipe_genes)
+
+    # Detect non-numeric PMIDs (local-pdf mode)
+    has_non_numeric = any(
+        is_non_numeric_pmid(pmid) for g in pipe_remapped.values() for pmid in g.pmids
+    )
+
+    all_ref_keys = set(ref_genes.keys())
+    all_pipe_keys = set(pipe_remapped.keys())
+
+    matched_keys = all_ref_keys & all_pipe_keys
+    fn_keys = all_ref_keys - all_pipe_keys
+    fp_keys = all_pipe_keys - all_ref_keys
+
+    comparisons: list[GeneComparison] = []
+    for key in sorted(matched_keys):
+        ref = ref_genes[key]
+        pipe = pipe_remapped[key]
+
+        fields: list[FieldComparison] = [
+            compare_sets(ref.gwas_traits, pipe.gwas_traits, "GWAS Traits"),
+            compare_boolean(ref.mr, pipe.mr, "MR"),
+            compare_sets(ref.omics, pipe.omics, "Omics"),
+            compare_pmids(ref, pipe, has_non_numeric),
+        ]
+
+        mean_conf = (
+            sum(pipe.confidences) / len(pipe.confidences) if pipe.confidences else 0.0
+        )
+
+        comp = GeneComparison(
+            gene=key,
+            detection_status=MatchStatus.MATCH,
+            fields=fields,
+            mean_confidence=mean_conf,
+        )
+        comparisons.append(comp)
+
+    false_negatives = [ref_genes[k] for k in sorted(fn_keys)]
+    false_positives = [pipe_remapped[k] for k in sorted(fp_keys)]
+
+    return comparisons, false_negatives, false_positives
+
+
+# ---------------------------------------------------------------------------
+# 6. Scoring
+# ---------------------------------------------------------------------------
+
+# Weight definitions
+DETECTION_WEIGHT = 0.55
+GWAS_WEIGHT = 0.15
+MR_WEIGHT = 0.10
+OMICS_WEIGHT = 0.10
+PMID_WEIGHT = 0.10
+
+
+def compute_gene_score(comp: GeneComparison) -> float:
+    """Compute per-gene composite score."""
+    detection_credit = 1.0  # Gene was detected (matched)
+
+    field_scores: dict[str, float] = {}
+    pmid_skipped = False
+    for fc in comp.fields:
+        field_scores[fc.field_name] = fc.score
+        if fc.field_name == "PMIDs" and fc.status == MatchStatus.SKIPPED:
+            pmid_skipped = True
+
+    gwas = field_scores.get("GWAS Traits", 0.0)
+    mr = field_scores.get("MR", 0.0)
+    omics = field_scores.get("Omics", 0.0)
+    pmid = field_scores.get("PMIDs", 0.0)
+
+    if pmid_skipped:
+        # Redistribute PMID weight proportionally to other field weights
+        other_total = GWAS_WEIGHT + MR_WEIGHT + OMICS_WEIGHT
+        if other_total > 0:
+            scale = (GWAS_WEIGHT + MR_WEIGHT + OMICS_WEIGHT + PMID_WEIGHT) / other_total
+        else:
+            scale = 1.0
+        return (
+            DETECTION_WEIGHT * detection_credit
+            + GWAS_WEIGHT * scale * gwas
+            + MR_WEIGHT * scale * mr
+            + OMICS_WEIGHT * scale * omics
+        )
+    else:
+        return (
+            DETECTION_WEIGHT * detection_credit
+            + GWAS_WEIGHT * gwas
+            + MR_WEIGHT * mr
+            + OMICS_WEIGHT * omics
+            + PMID_WEIGHT * pmid
+        )
+
+
+def compute_scores(
+    comparisons: list[GeneComparison],
+    false_negatives: list[AggregatedGene],
+    false_positives: list[AggregatedGene],
+    ref_count: int,
+) -> ValidationScores:
+    """Compute all aggregate validation scores."""
+    scores = ValidationScores()
+
+    tp = len(comparisons)
+    fp = len(false_positives)
+    fn = len(false_negatives)
+
+    scores.true_positives = tp
+    scores.false_positives = fp
+    scores.false_negatives = fn
+    scores.precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    scores.recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    if scores.precision + scores.recall > 0:
+        p, r = scores.precision, scores.recall
+        scores.f1 = 2 * p * r / (p + r)
+
+    # Per-field aggregates over matched genes
+    gwas_scores: list[float] = []
+    mr_scores: list[float] = []
+    omics_scores: list[float] = []
+    pmid_scores: list[float] = []
+    gene_scores: list[float] = []
+
+    for comp in comparisons:
+        gene_sc = compute_gene_score(comp)
+        comp.gene_score = gene_sc
+        gene_scores.append(gene_sc)
+
+        for fc in comp.fields:
+            if fc.field_name == "GWAS Traits":
+                gwas_scores.append(fc.score)
+            elif fc.field_name == "MR":
+                mr_scores.append(fc.score)
+            elif fc.field_name == "Omics":
+                omics_scores.append(fc.score)
+            elif fc.field_name == "PMIDs" and fc.status != MatchStatus.SKIPPED:
+                pmid_scores.append(fc.score)
+
+    def _mean(vals: list[float]) -> float:
+        return sum(vals) / len(vals) if vals else 0.0
+
+    scores.mean_gwas_jaccard = _mean(gwas_scores)
+    scores.mr_accuracy = _mean(mr_scores)
+    scores.mean_omics_jaccard = _mean(omics_scores)
+    scores.mean_pmid_recall = _mean(pmid_scores)
+    scores.mean_gene_score = _mean(gene_scores)
+
+    # Overall composite
+    scores.composite = (
+        0.40 * scores.f1
+        + 0.15 * scores.mean_gwas_jaccard
+        + 0.10 * scores.mr_accuracy
+        + 0.15 * scores.mean_omics_jaccard
+        + 0.10 * scores.mean_pmid_recall
+        + 0.10 * scores.mean_gene_score
+    )
+
+    return scores
+
+
+# ---------------------------------------------------------------------------
+# 7. Markdown generator
+# ---------------------------------------------------------------------------
+
+
+def _score_color(value: float) -> str:
+    """Return background color for a score value."""
+    if value >= 0.8:
+        return "#c8e6c9"
+    if value >= 0.5:
+        return "#fff9c4"
+    return "#ffcdd2"
+
+
+def _pct(value: float) -> str:
+    """Format a float as a percentage string."""
+    return f"{value * 100:.1f}%"
+
+
+def _escape_html(text: str) -> str:
+    """Minimal HTML escaping."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def generate_markdown(
+    comparisons: list[GeneComparison],
+    false_negatives: list[AggregatedGene],
+    false_positives: list[AggregatedGene],
+    scores: ValidationScores,
+    ref_path: Path,
+    pipe_path: Path,
+    ref_count: int,
+    pipe_count: int,
+) -> str:
+    """Generate a full Markdown validation report."""
+    lines: list[str] = []
+
+    # --- Header ---
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    lines.append("# Pipeline Validation Report\n")
+    lines.append(f"**Generated:** {now}  ")
+    lines.append(f"**Reference:** `{ref_path}`  ")
+    lines.append(f"**Pipeline report:** `{pipe_path}`  ")
+    lines.append(f"**Reference genes:** {ref_count}  ")
+    lines.append(f"**Pipeline genes (after alias merging):** {pipe_count}  ")
+    lines.append(
+        f"**Matched:** {scores.true_positives} | "
+        f"**False Negatives:** {scores.false_negatives} | "
+        f"**False Positives:** {scores.false_positives}\n"
+    )
+
+    # --- Summary Scores ---
+    lines.append("## Summary Scores\n")
+    lines.append("<table>")
+    lines.append("<tr><th>Metric</th><th>Value</th><th>Rating</th></tr>")
+
+    score_rows = [
+        ("Composite Score", scores.composite),
+        ("Gene F1", scores.f1),
+        ("Gene Precision", scores.precision),
+        ("Gene Recall", scores.recall),
+        ("Mean GWAS Jaccard", scores.mean_gwas_jaccard),
+        ("MR Accuracy", scores.mr_accuracy),
+        ("Mean Omics Jaccard", scores.mean_omics_jaccard),
+        ("Mean PMID Recall", scores.mean_pmid_recall),
+        ("Mean Gene Score", scores.mean_gene_score),
+    ]
+
+    for label, value in score_rows:
+        color = _score_color(value)
+        lines.append(
+            f"<tr><td>{label}</td><td>{_pct(value)}</td>"
+            f'<td style="background-color:{color};">&nbsp;</td></tr>'
+        )
+    lines.append("</table>\n")
+
+    # --- Gene Comparison Table ---
+    sorted_comps = sorted(comparisons, key=lambda c: c.gene_score)
+    lines.append("## Gene Comparison (sorted by score, worst first)\n")
+    lines.append("<table>")
+    lines.append(
+        "<tr><th>Gene</th><th>Score</th><th>Conf.</th>"
+        "<th>GWAS Traits</th><th>MR</th><th>Omics</th><th>PMIDs</th></tr>"
+    )
+
+    for comp in sorted_comps:
+        field_map = {fc.field_name: fc for fc in comp.fields}
+        row = f"<tr><td><b>{_escape_html(comp.gene)}</b></td>"
+        sc = comp.gene_score
+        row += f'<td style="background-color:{_score_color(sc)};">{_pct(sc)}</td>'
+        row += f"<td>{comp.mean_confidence:.2f}</td>"
+
+        for fname in ["GWAS Traits", "MR", "Omics", "PMIDs"]:
+            fc = field_map.get(fname)
+            if fc:
+                color = STATUS_COLORS[fc.status]
+                ref_display = _escape_html(fc.ref_value)
+                pipe_display = _escape_html(fc.pipe_value)
+                row += (
+                    f'<td style="background-color:{color};">'
+                    f"<b>Ref:</b> {ref_display}<br>"
+                    f"<b>Pipe:</b> {pipe_display}</td>"
+                )
+            else:
+                row += "<td>—</td>"
+        row += "</tr>"
+        lines.append(row)
+
+    lines.append("</table>\n")
+
+    # --- False Negatives ---
+    if false_negatives:
+        lines.append("## False Negatives (reference only)\n")
+        lines.append("Genes in the reference table but not found by the pipeline.\n")
+        lines.append("<table>")
+        lines.append(
+            "<tr><th>Gene</th><th>GWAS Traits</th>"
+            "<th>MR</th><th>Omics</th><th>PMIDs</th></tr>"
+        )
+        for gene in sorted(false_negatives, key=lambda g: g.symbol):
+            traits = (
+                ", ".join(sorted(gene.gwas_traits)) if gene.gwas_traits else "(empty)"
+            )
+            omics = ", ".join(sorted(gene.omics)) if gene.omics else "(empty)"
+            pmids_str = (
+                "(reference needed)"
+                if gene.pmids_reference_needed
+                else (", ".join(sorted(gene.pmids)) if gene.pmids else "(empty)")
+            )
+            lines.append(
+                f'<tr style="background-color:#ffcdd2;">'
+                f"<td><b>{_escape_html(gene.symbol)}</b></td>"
+                f"<td>{_escape_html(traits)}</td>"
+                f"<td>{'Yes' if gene.mr else 'No'}</td>"
+                f"<td>{_escape_html(omics)}</td>"
+                f"<td>{_escape_html(pmids_str)}</td></tr>"
+            )
+        lines.append("</table>\n")
+
+    # --- False Positives ---
+    if false_positives:
+        lines.append("## False Positives (pipeline only)\n")
+        lines.append("Genes found by the pipeline but not in the reference table.\n")
+        lines.append("<table>")
+        lines.append(
+            "<tr><th>Gene</th><th>GWAS Traits</th><th>MR</th><th>Omics</th>"
+            "<th>Mean Confidence</th></tr>"
+        )
+        for gene in sorted(false_positives, key=lambda g: g.symbol):
+            traits = (
+                ", ".join(sorted(gene.gwas_traits)) if gene.gwas_traits else "(empty)"
+            )
+            omics = ", ".join(sorted(gene.omics)) if gene.omics else "(empty)"
+            mean_conf = (
+                f"{sum(gene.confidences) / len(gene.confidences):.2f}"
+                if gene.confidences
+                else "N/A"
+            )
+            lines.append(
+                f'<tr style="background-color:#fff9c4;">'
+                f"<td><b>{_escape_html(gene.symbol)}</b></td>"
+                f"<td>{_escape_html(traits)}</td>"
+                f"<td>{'Yes' if gene.mr else 'No'}</td>"
+                f"<td>{_escape_html(omics)}</td>"
+                f"<td>{mean_conf}</td></tr>"
+            )
+        lines.append("</table>\n")
+
+    # --- Methodology Notes ---
+    lines.append("## Methodology Notes\n")
+    lines.append("### Normalization Rules\n")
+    lines.append(
+        "- **Gene symbols**: Case-insensitive; `COL4A1/2` in reference"
+        " maps to pipeline's `COL4A1` + `COL4A2`"
+    )
+    lines.append(
+        "- **GWAS traits**: Comma-separated to set; "
+        "`(none found)` = empty; aliases: `CMB` = "
+        "`cerebral-microbleeds`, `NODDI` = `ICVF`"
+    )
+    lines.append("- **MR**: `Yes`/`No` to boolean; aggregated across papers via OR")
+    lines.append(
+        "- **Omics**: Comma-separated to set; tissue stripped"
+        " after `;` for base-type comparison"
+        " (e.g., `TWAS;brain` becomes `twas`)"
+    )
+    lines.append(
+        "- **PMIDs**: Comma-separated to set; "
+        "`(reference needed)` = skip comparison; "
+        "non-numeric PMIDs (local-pdf mode) = skip\n"
+    )
+    lines.append("### Scoring Formulas\n")
+    lines.append("- **Gene F1** = 2 x Precision x Recall / (Precision + Recall)")
+    lines.append(
+        "- **GWAS/Omics Jaccard** = |intersection| / |union|; both-empty = 1.0"
+    )
+    lines.append("- **MR Accuracy** = binary match (1.0 or 0.0)")
+    lines.append(
+        "- **PMID Recall** = |intersection| / |reference|; skipped if reference needed"
+    )
+    lines.append(
+        "- **Per-gene score** = 0.55 x detection"
+        " + 0.15 x gwas + 0.10 x mr"
+        " + 0.10 x omics + 0.10 x pmid"
+    )
+    lines.append(
+        "- **Composite** = 0.40 x F1"
+        " + 0.15 x gwas_jaccard + 0.10 x mr_accuracy"
+        " + 0.15 x omics_jaccard + 0.10 x pmid_recall"
+        " + 0.10 x mean_gene_score"
+    )
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 8. CLI
+# ---------------------------------------------------------------------------
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Compare pipeline gene extraction against a gold-standard reference table."
+        ),
+    )
+    parser.add_argument(
+        "pipeline_report",
+        type=Path,
+        help="Path to pipeline report JSON",
+    )
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        default=DEFAULT_REFERENCE_PATH,
+        help=f"Path to reference CSV (default: {DEFAULT_REFERENCE_PATH})",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Output directory (default: same dir as report)",
+    )
+
+    args = parser.parse_args(argv)
+
+    pipe_path: Path = args.pipeline_report
+    ref_path: Path = args.reference
+    output_dir: Path = args.output_dir or pipe_path.parent
+
+    if not pipe_path.exists():
+        print(f"Error: Pipeline report not found: {pipe_path}", file=sys.stderr)
+        sys.exit(1)
+    if not ref_path.exists():
+        print(f"Error: Reference CSV not found: {ref_path}", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Parse
+    ref_genes = parse_reference_csv(ref_path)
+    pipe_genes = parse_pipeline_json(pipe_path)
+
+    # Compare
+    comparisons, false_negatives, false_positives = compare_all(ref_genes, pipe_genes)
+
+    # Count pipeline genes after remapping
+    pipe_remapped = remap_pipeline_genes(pipe_genes)
+    pipe_count = len(pipe_remapped)
+
+    # Score
+    scores = compute_scores(
+        comparisons, false_negatives, false_positives, len(ref_genes)
+    )
+
+    # Generate report
+    report = generate_markdown(
+        comparisons,
+        false_negatives,
+        false_positives,
+        scores,
+        ref_path,
+        pipe_path,
+        len(ref_genes),
+        pipe_count,
+    )
+
+    # Write report
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    output_file = output_dir / f"validation_report_{timestamp}.md"
+    output_file.write_text(report, encoding="utf-8")
+
+    # Print summary to stdout
+    print(f"Validation report written to: {output_file}")
+    print(f"  Composite Score: {_pct(scores.composite)}")
+    print(f"  Gene F1:         {_pct(scores.f1)}")
+    print(f"  Precision:       {_pct(scores.precision)}")
+    print(f"  Recall:          {_pct(scores.recall)}")
+    print(f"  Matched: {scores.true_positives} / {len(ref_genes)} reference genes")
+    print(f"  False Positives: {scores.false_positives}")
+    print(f"  False Negatives: {scores.false_negatives}")
+
+
+if __name__ == "__main__":
+    main()
