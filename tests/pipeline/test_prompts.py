@@ -54,6 +54,19 @@ class TestExtractionInstructions:
         assert 'type="exclude_pathway_only"' in EXTRACTION_INSTRUCTIONS
         assert 'type="exclude_background_monogenic"' in EXTRACTION_INSTRUCTIONS
 
+    def test_has_positional_candidate_exclusion_example(self):
+        assert 'type="exclude_positional_candidate"' in EXTRACTION_INSTRUCTIONS
+
+    def test_has_orf_gene_example(self):
+        assert 'type="include_orf_gene"' in EXTRACTION_INSTRUCTIONS
+
+    def test_positional_candidate_warning(self):
+        assert "positional candidate" in EXTRACTION_INSTRUCTIONS
+
+    def test_confidence_hard_cap(self):
+        assert "maximum score is 0.30" in EXTRACTION_INSTRUCTIONS
+        assert "hard cap of 0.20" in EXTRACTION_INSTRUCTIONS
+
     def test_gwas_trait_vocabulary(self):
         """GWAS traits in prompt should use canonical abbreviations."""
         assert "WMH" in EXTRACTION_INSTRUCTIONS
@@ -161,3 +174,12 @@ class TestBuildExtractionMessages:
         )
         user_blocks = messages[0]["content"]
         assert "cache_control" not in user_blocks[0]
+
+    def test_v3_dispatch(self):
+        """v3 prompt should include positional candidate filtering content."""
+        system_blocks, _ = build_extraction_messages(
+            paper_text="Test", pmid="111", max_chars=50000, prompt_version="v3"
+        )
+        system_text = system_blocks[0]["text"]
+        assert "positional candidate" in system_blocks[1]["text"]
+        assert "genomic loci, not individual genes" in system_text
