@@ -18,10 +18,16 @@ PDF_PATH="${3:-pipeline/test_data/37069360.pdf}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Capture all console output so it can be embedded in the JSON report later.
+LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/experiment_log.XXXXXX")
+trap 'rm -f "$LOG_FILE"' EXIT
+exec 3>&1 4>&2
+exec > >(tee "$LOG_FILE") 2>&1
+
 echo "=== Tuning Experiment ==="
 echo "  Threshold:      $THRESHOLD"
 echo "  PDF:            $PDF_PATH"
-echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v2}"
+echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v3}"
 echo "  Notes:          ${NOTES:-<none>}"
 echo ""
 
@@ -65,7 +71,26 @@ echo "--- Step 5: Tracking run ---"
 python scripts/tuning/track_run.py \
   --pipeline-report "$REPORT" \
   --local-pdfs \
-  --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v2}}"
+  --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v3}}"
 
 echo ""
 echo "=== Experiment complete ==="
+
+# Stop tee so the log file is fully flushed before we read it.
+exec 1>&3 2>&4 3>&- 4>&-
+sleep 0.1
+
+# Embed the captured console output into the pipeline JSON report.
+python3 -c '
+import json, sys
+report_path, log_path = sys.argv[1], sys.argv[2]
+with open(report_path, encoding="utf-8") as f:
+    report = json.load(f)
+with open(log_path, encoding="utf-8") as f:
+    report["experiment_log"] = f.read().splitlines()
+with open(report_path, "w", encoding="utf-8") as f:
+    json.dump(report, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+' "$REPORT" "$LOG_FILE"
+
+echo "Console log embedded in: $REPORT"
