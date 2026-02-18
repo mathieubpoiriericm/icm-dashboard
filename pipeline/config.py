@@ -122,6 +122,10 @@ class PipelineConfig:
     llm_effort: str = field(
         default_factory=lambda: _env_str("PIPELINE_LLM_EFFORT", "high")
     )
+    # Prompt version for A/B testing during tuning ("v1", "v2", etc.)
+    prompt_version: str = field(
+        default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v2")
+    )
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
     max_paper_text_chars: int = field(

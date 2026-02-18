@@ -151,6 +151,7 @@ async def extract_from_paper(
         paper_text=text,
         pmid=pmid,
         max_chars=config.max_paper_text_chars,
+        prompt_version=config.prompt_version,
     )
 
     rate_limit_retries = 0

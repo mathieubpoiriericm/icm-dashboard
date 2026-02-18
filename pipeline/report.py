@@ -206,6 +206,7 @@ def build_run_data(
             "confidence_threshold": config.confidence_threshold,
             "thinking_mode": "adaptive",
             "effort": config.llm_effort,
+            "prompt_version": config.prompt_version,
         },
     )
     data["search"] = {
@@ -243,6 +244,7 @@ def build_local_pdf_run_data(
             "confidence_threshold": config.confidence_threshold,
             "thinking_mode": "adaptive",
             "effort": config.llm_effort,
+            "prompt_version": config.prompt_version,
         },
     )
     data["papers"]["total"] = failed_count + metrics.papers_processed
@@ -275,6 +277,7 @@ def build_pmid_run_data(
             "confidence_threshold": config.confidence_threshold,
             "thinking_mode": "adaptive",
             "effort": config.llm_effort,
+            "prompt_version": config.prompt_version,
         },
     )
     data["papers"]["total"] = failed_count + metrics.papers_processed
