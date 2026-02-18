@@ -6,6 +6,7 @@ Usage:
         --reference data/test_data/full_reference_table.csv
     python scripts/validate_pipeline.py report.json --output-dir results/
     python scripts/validate_pipeline.py report.json --fulltext-only
+    python scripts/validate_pipeline.py report.json --local-pdfs
 """
 
 from __future__ import annotations
@@ -758,6 +759,7 @@ def generate_markdown(
     pipe_count: int,
     *,
     fulltext_only: bool = False,
+    local_pdfs: bool = False,
 ) -> str:
     """Generate a full Markdown validation report."""
     lines: list[str] = []
@@ -808,11 +810,12 @@ def generate_markdown(
         f"**Reference genes:** {ref_count} | "
         f"**Pipeline genes (after alias merging):** {pipe_count}  "
     )
-    filter_label = (
-        "Full-text papers only"
-        if fulltext_only
-        else "All papers (full-text + abstract)"
-    )
+    if local_pdfs:
+        filter_label = "Local PDFs only"
+    elif fulltext_only:
+        filter_label = "Full-text papers only"
+    else:
+        filter_label = "All papers (full-text + abstract)"
     lines.append(f"**Filter:** {filter_label}  ")
     lines.append(
         f"**Matched:** {scores.true_positives} | "
@@ -1088,12 +1091,20 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Output directory (default: same dir as report)",
     )
-    parser.add_argument(
+    filter_group = parser.add_mutually_exclusive_group()
+    filter_group.add_argument(
         "--fulltext-only",
         action="store_true",
         default=False,
         help="Only include genes extracted from full-text papers "
         "(exclude abstract-only)",
+    )
+    filter_group.add_argument(
+        "--local-pdfs",
+        action="store_true",
+        default=False,
+        help="Restrict reference to genes from papers in the local-PDFs run "
+        "(PDFs must be named by PMID, e.g. 12345678.pdf)",
     )
 
     args = parser.parse_args(argv)
@@ -1117,9 +1128,9 @@ def main(argv: list[str] | None = None) -> None:
         pipe_path, fulltext_only=args.fulltext_only
     )
 
-    # In fulltext-only mode, restrict the reference to genes linked to
-    # at least one fulltext PMID so abstract-only genes don't inflate FN.
-    if args.fulltext_only:
+    # In fulltext-only or local-pdfs mode, restrict the reference to genes
+    # linked to at least one fulltext PMID so abstract-only genes don't inflate FN.
+    if args.fulltext_only or args.local_pdfs:
         ref_genes = filter_reference_for_fulltext(ref_genes, fulltext_pmids)
 
     # Compare
@@ -1145,6 +1156,7 @@ def main(argv: list[str] | None = None) -> None:
         len(ref_genes),
         pipe_count,
         fulltext_only=args.fulltext_only,
+        local_pdfs=args.local_pdfs,
     )
 
     # Write report
