@@ -18,4 +18,9 @@ spec:
     - port: http
       path: /metrics
       interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'ntfy_messages_published_(success|failure)'
+          targetLabel: __name__
+          replacement: 'ntfy_messages_published_${1}_total'
 {{- end }}
