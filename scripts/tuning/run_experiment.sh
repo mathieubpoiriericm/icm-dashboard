@@ -20,68 +20,12 @@ cd "$PROJECT_ROOT"
 
 # Capture all console output so it can be embedded in the JSON report later.
 LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/experiment_log.XXXXXX")
-trap 'rm -f "$LOG_FILE"' EXIT
-exec 3>&1 4>&2
-exec > >(tee "$LOG_FILE") 2>&1
+REPORT=""
 
-echo "=== Tuning Experiment ==="
-echo "  Threshold:      $THRESHOLD"
-echo "  PDF:            $PDF_PATH"
-echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v3}"
-echo "  Notes:          ${NOTES:-<none>}"
-echo ""
-
-# Step 1: Extract
-echo "--- Step 1: Running pipeline extraction ---"
-PIPELINE_CONFIDENCE_THRESHOLD="$THRESHOLD" \
-  python pipeline/main.py --local-pdfs "$PDF_PATH"
-
-# Find the latest report
-REPORT=$(ls -t logs/json/pipeline_report_*.json 2>/dev/null | head -1)
-if [ -z "$REPORT" ]; then
-  echo "ERROR: No pipeline report found in logs/json/"
-  exit 1
-fi
-echo "  Report: $REPORT"
-
-# Step 2: Validate
-echo ""
-echo "--- Step 2: Running validation ---"
-python scripts/validate_pipeline.py "$REPORT" --local-pdfs
-
-# Step 3: Error analysis
-echo ""
-echo "--- Step 3: Analyzing errors ---"
-python scripts/tuning/analyze_errors.py "$REPORT" --local-pdfs
-
-# Step 4: Calibrate threshold
-echo ""
-echo "--- Step 4: Calibrating threshold ---"
-# Find the latest score distribution
-SCORE_DIST=$(ls -t logs/tuning/score_distribution_*.csv 2>/dev/null | head -1)
-if [ -n "$SCORE_DIST" ]; then
-  python scripts/tuning/calibrate_threshold.py "$SCORE_DIST"
-else
-  echo "  No score distribution CSV found, skipping calibration"
-fi
-
-# Step 5: Track run
-echo ""
-echo "--- Step 5: Tracking run ---"
-python scripts/tuning/track_run.py \
-  --pipeline-report "$REPORT" \
-  --local-pdfs \
-  --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v3}}"
-
-echo ""
-echo "=== Experiment complete ==="
-
-# Stop tee so the log file is fully flushed before we read it.
-exec 1>&3 2>&4 3>&- 4>&-
-sleep 0.1
-
-# Embed the captured console output into the pipeline JSON report.
-python3 -c '
+# Embed the captured console log into the JSON report, then clean up.
+embed_log() {
+  if [ -n "$REPORT" ] && [ -f "$REPORT" ] && [ -f "$LOG_FILE" ]; then
+    python3 -c '
 import json, sys
 report_path, log_path = sys.argv[1], sys.argv[2]
 with open(report_path, encoding="utf-8") as f:
@@ -92,5 +36,70 @@ with open(report_path, "w", encoding="utf-8") as f:
     json.dump(report, f, indent=2, ensure_ascii=False)
     f.write("\n")
 ' "$REPORT" "$LOG_FILE"
+    echo "Console log embedded in: $REPORT"
+  fi
+  rm -f "$LOG_FILE"
+}
+trap embed_log EXIT
 
-echo "Console log embedded in: $REPORT"
+# Helper: echo to both terminal and log file.
+log_echo() {
+  echo "$@" | tee -a "$LOG_FILE"
+}
+
+# Helper: run a command, sending its stdout+stderr to both terminal and log file.
+run_logged() {
+  "$@" 2>&1 | tee -a "$LOG_FILE"
+}
+
+log_echo "=== Tuning Experiment ==="
+log_echo "  Threshold:      $THRESHOLD"
+log_echo "  PDF:            $PDF_PATH"
+log_echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v3}"
+log_echo "  Notes:          ${NOTES:-<none>}"
+log_echo ""
+
+# Step 1: Extract
+log_echo "--- Step 1: Running pipeline extraction ---"
+PIPELINE_CONFIDENCE_THRESHOLD="$THRESHOLD" \
+  run_logged python pipeline/main.py --local-pdfs "$PDF_PATH"
+
+# Find the latest report
+REPORT=$(ls -t logs/json/pipeline_report_*.json 2>/dev/null | head -1)
+if [ -z "$REPORT" ]; then
+  log_echo "ERROR: No pipeline report found in logs/json/"
+  exit 1
+fi
+log_echo "  Report: $REPORT"
+
+# Step 2: Validate
+log_echo ""
+log_echo "--- Step 2: Running validation ---"
+run_logged python scripts/validate_pipeline.py "$REPORT" --local-pdfs
+
+# Step 3: Error analysis
+log_echo ""
+log_echo "--- Step 3: Analyzing errors ---"
+run_logged python scripts/tuning/analyze_errors.py "$REPORT" --local-pdfs
+
+# Step 4: Calibrate threshold
+log_echo ""
+log_echo "--- Step 4: Calibrating threshold ---"
+# Find the latest score distribution
+SCORE_DIST=$(ls -t logs/tuning/score_distribution_*.csv 2>/dev/null | head -1)
+if [ -n "$SCORE_DIST" ]; then
+  run_logged python scripts/tuning/calibrate_threshold.py "$SCORE_DIST"
+else
+  log_echo "  No score distribution CSV found, skipping calibration"
+fi
+
+# Step 5: Track run
+log_echo ""
+log_echo "--- Step 5: Tracking run ---"
+run_logged python scripts/tuning/track_run.py \
+  --pipeline-report "$REPORT" \
+  --local-pdfs \
+  --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v3}}"
+
+log_echo ""
+log_echo "=== Experiment complete ==="
