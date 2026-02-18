@@ -198,6 +198,22 @@ async def extract_from_paper(
                     config.estimated_tokens_per_call, actual
                 )
 
+            # Detect truncation: with adaptive thinking, max_tokens covers
+            # both thinking + text output. If thinking consumed most of the
+            # budget, the JSON output gets cut off mid-stream.
+            if response.stop_reason == "max_tokens":
+                used = (
+                    response.usage.output_tokens
+                    if response.usage
+                    else "?"
+                )
+                raise ValueError(
+                    f"Response truncated (stop_reason=max_tokens, "
+                    f"output_tokens={used}/{config.llm_max_tokens}). "
+                    f"Increase PIPELINE_LLM_MAX_TOKENS or "
+                    f"reduce effort level."
+                )
+
             # Extract text content from response blocks (skip thinking blocks)
             text_content = ""
             for block in response.content:
@@ -238,7 +254,7 @@ async def extract_from_paper(
 
         except (json.JSONDecodeError, ValidationError, ValueError) as e:
             validation_retries += 1
-            if validation_retries >= config.max_retries:
+            if validation_retries > config.max_retries:
                 logger.error(
                     f"Validation retries exhausted for PMID {pmid} "
                     f"({validation_retries}/{config.max_retries}): {e}"

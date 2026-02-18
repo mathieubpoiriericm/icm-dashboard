@@ -115,7 +115,7 @@ class PipelineConfig:
         default_factory=lambda: _env_str("PIPELINE_LLM_MODEL", "claude-opus-4-6")
     )
     llm_max_tokens: int = field(
-        default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 32000)
+        default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 64000)
     )
     # Effort level for adaptive thinking: "high" (default), "low", or "max".
     # Higher effort = deeper reasoning but more output tokens.
