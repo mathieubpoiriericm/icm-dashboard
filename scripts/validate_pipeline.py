@@ -85,6 +85,17 @@ class AggregatedGene:
 
 
 @dataclass
+class RejectedGeneInfo:
+    """A gene that was rejected during pipeline validation."""
+
+    symbol: str
+    protein_name: str
+    pmid: str
+    confidence: float
+    reasons: list[str]
+
+
+@dataclass
 class FieldComparison:
     field_name: str
     status: MatchStatus
@@ -232,18 +243,20 @@ def parse_reference_csv(path: Path) -> dict[str, AggregatedGene]:
 
 def parse_pipeline_json(
     path: Path, *, fulltext_only: bool = False
-) -> tuple[dict[str, AggregatedGene], set[str]]:
+) -> tuple[dict[str, AggregatedGene], set[str], list[RejectedGeneInfo]]:
     """Parse pipeline report JSON, aggregating same gene across papers.
 
     Returns:
-        (aggregated_genes, fulltext_pmids) — the second element contains
-        PMIDs from papers where ``fulltext == True``.
+        (aggregated_genes, fulltext_pmids, rejected_genes) — the second
+        element contains PMIDs from papers where ``fulltext == True``,
+        the third contains genes rejected during pipeline validation.
     """
     with open(path, encoding="utf-8") as f:
         report = json.load(f)
 
     aggregated: dict[str, AggregatedGene] = {}
     fulltext_pmids: set[str] = set()
+    rejected_genes: list[RejectedGeneInfo] = []
 
     for paper in report.get("papers_detail", []):
         is_fulltext = paper.get("fulltext", False)
@@ -290,7 +303,22 @@ def parse_pipeline_json(
             if conf is not None:
                 ag.confidences.append(float(conf))
 
-    return aggregated, fulltext_pmids
+        # Collect rejected genes
+        for rg in paper.get("rejected_genes", []):
+            gene_data = rg.get("gene", {})
+            symbol = gene_data.get("gene_symbol", "")
+            if symbol:
+                rejected_genes.append(
+                    RejectedGeneInfo(
+                        symbol=normalize_gene_symbol(symbol),
+                        protein_name=gene_data.get("protein_name") or "",
+                        pmid=str(gene_data.get("pmid", paper_pmid)),
+                        confidence=float(gene_data.get("confidence", 0)),
+                        reasons=rg.get("reasons", []),
+                    )
+                )
+
+    return aggregated, fulltext_pmids, rejected_genes
 
 
 def filter_reference_for_fulltext(
@@ -777,6 +805,7 @@ def generate_markdown(
     *,
     fulltext_only: bool = False,
     local_pdfs: bool = False,
+    rejected_genes: list[RejectedGeneInfo] | None = None,
 ) -> str:
     """Generate a full Markdown validation report."""
     lines: list[str] = []
@@ -979,6 +1008,31 @@ def generate_markdown(
             )
         lines.append("</table>\n")
 
+    # --- Rejected Genes ---
+    if rejected_genes:
+        lines.append("## Rejected Genes (failed validation)\n")
+        lines.append(
+            "Genes extracted by the LLM but rejected during NCBI validation.\n"
+        )
+        lines.append('<table class="vr-table">')
+        lines.append(
+            "<tr><th>Gene</th><th>Protein</th><th>PMID</th>"
+            "<th>Confidence</th><th>Rejection Reasons</th></tr>"
+        )
+        for rg in sorted(rejected_genes, key=lambda g: g.symbol):
+            conf_color = _score_color(rg.confidence)
+            reasons_str = "; ".join(rg.reasons) if rg.reasons else "(unknown)"
+            lines.append(
+                f'<tr style="background-color:#fff0f0;">'
+                f"<td><b>{_escape_html(rg.symbol)}</b></td>"
+                f"<td>{_escape_html(rg.protein_name) or '—'}</td>"
+                f"<td>{_escape_html(rg.pmid)}</td>"
+                f'<td style="background-color:{conf_color};text-align:center;">'
+                f"{rg.confidence:.2f}</td>"
+                f"<td>{_escape_html(reasons_str)}</td></tr>"
+            )
+        lines.append("</table>\n")
+
     # --- Methodology Notes ---
     lines.append("## Methodology Notes\n")
     lines.append("### Normalization Rules\n")
@@ -1141,7 +1195,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Parse
     ref_genes = parse_reference_csv(ref_path)
-    pipe_genes, fulltext_pmids = parse_pipeline_json(
+    pipe_genes, fulltext_pmids, rejected_genes = parse_pipeline_json(
         pipe_path, fulltext_only=args.fulltext_only
     )
 
@@ -1177,6 +1231,7 @@ def main(argv: list[str] | None = None) -> None:
         pipe_count,
         fulltext_only=args.fulltext_only,
         local_pdfs=args.local_pdfs,
+        rejected_genes=rejected_genes,
     )
 
     # Write report
