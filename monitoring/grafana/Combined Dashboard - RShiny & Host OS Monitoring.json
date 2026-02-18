@@ -1564,7 +1564,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(pg_stat_database_xact_commit{datname=\"svd_dashboard\"}[5m])",
+          "expr": "rate(pg_stat_database_xact_commit_total{datname=\"svd_dashboard\"}[5m])",
           "legendFormat": "Commits/s",
           "refId": "A"
         },
@@ -1573,7 +1573,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(pg_stat_database_xact_rollback{datname=\"svd_dashboard\"}[5m])",
+          "expr": "rate(pg_stat_database_xact_rollback_total{datname=\"svd_dashboard\"}[5m])",
           "legendFormat": "Rollbacks/s",
           "refId": "B"
         }

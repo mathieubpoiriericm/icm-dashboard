@@ -18,4 +18,9 @@ spec:
     - port: metrics
       path: /metrics
       interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'pg_stat_database_xact_(commit|rollback)'
+          targetLabel: __name__
+          replacement: '${0}_total'
 {{- end }}

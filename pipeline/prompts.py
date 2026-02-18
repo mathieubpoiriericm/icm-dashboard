@@ -3,7 +3,7 @@
 Separates prompt engineering from API call logic so prompts can be
 iterated on without touching extraction code.
 
-Supports versioned prompts (v1, v2) for A/B testing during tuning.
+Supports versioned prompts (v1, v2, v3) for A/B testing during tuning.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION: Final[str] = "v2"
+PROMPT_VERSION: Final[str] = "v3"
 
 # ---------------------------------------------------------------------------
 # V1 prompts (original baseline)
