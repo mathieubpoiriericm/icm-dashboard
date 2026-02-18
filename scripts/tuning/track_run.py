@@ -34,7 +34,7 @@ from validate_pipeline import (  # noqa: E402
 )
 
 DEFAULT_REFERENCE_PATH = (
-    _PROJECT_ROOT / "data" / "test_data" / "full_reference_table.csv"
+    _PROJECT_ROOT / "data" / "test_data" / "gold_standard.csv"
 )
 TRACKING_CSV = _PROJECT_ROOT / "logs" / "tuning" / "tuning_runs.csv"
 
