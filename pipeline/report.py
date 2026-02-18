@@ -37,6 +37,8 @@ class PaperSummary(TypedDict):
     error: str | None
     gene_count: int
     genes: list[dict[str, Any]]
+    rejected_gene_count: int
+    rejected_genes: list[dict[str, Any]]
     processing_time: float
 
 
@@ -99,6 +101,10 @@ def _paper_results_to_summaries(
     summaries: list[PaperSummary] = []
     for r in results:
         genes_data = [g.model_dump() for g in r.genes] if r.genes else []
+        rejected_data = [
+            {"gene": rg.gene.model_dump(), "reasons": rg.reasons}
+            for rg in getattr(r, "rejected_genes", [])
+        ]
         summaries.append(
             {
                 "pmid": r.pmid,
@@ -107,6 +113,8 @@ def _paper_results_to_summaries(
                 "error": r.error,
                 "gene_count": len(r.genes),
                 "genes": genes_data,
+                "rejected_gene_count": len(rejected_data),
+                "rejected_genes": rejected_data,
                 "processing_time": getattr(r, "processing_time", 0.0),
             }
         )
@@ -438,6 +446,36 @@ def print_rich_summary(data: PipelineRunData) -> None:
                 ", ".join(g.get("omics_evidence", [])),
             )
         console.print(genes_table)
+
+    # --- Rejected genes table ---
+    all_rejected_flat: list[dict[str, Any]] = []
+    for p in papers_detail:
+        for rg in p.get("rejected_genes", []):
+            all_rejected_flat.append(rg)
+
+    if all_rejected_flat:
+        rejected_table = Table(
+            title="Rejected Genes",
+            show_lines=True,
+            title_style="bold red",
+        )
+        rejected_table.add_column("Gene", style="bold")
+        rejected_table.add_column("Protein")
+        rejected_table.add_column("PMID")
+        rejected_table.add_column("Confidence", justify="right")
+        rejected_table.add_column("Rejection Reasons")
+
+        for rg in all_rejected_flat:
+            g = rg.get("gene", {})
+            conf = g.get("confidence", 0)
+            rejected_table.add_row(
+                g.get("gene_symbol", ""),
+                g.get("protein_name") or "",
+                g.get("pmid", ""),
+                Text(f"{conf:.2f}", style="red"),
+                Text("; ".join(rg.get("reasons", [])), style="dim"),
+            )
+        console.print(rejected_table)
 
     # --- Validation panel ---
     genes_info = data.get("genes", {})

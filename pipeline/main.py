@@ -181,10 +181,19 @@ class MetadataResult(TypedDict):
     doi: str | None
 
 
+@dataclass(slots=True)
+class RejectedGene:
+    """A gene that failed validation, preserved for reporting."""
+
+    gene: GeneEntry
+    reasons: list[str]
+
+
 class PaperProcessResult(TypedDict):
     """Result from processing a single paper."""
 
     genes: list[GeneEntry]
+    rejected_genes: list[RejectedGene]
     fulltext: bool
     source: str
 
@@ -195,6 +204,7 @@ class PaperResult:
 
     pmid: str
     genes: list[GeneEntry] = field(default_factory=list)
+    rejected_genes: list[RejectedGene] = field(default_factory=list)
     fulltext: bool = False
     source: str = "none"
     error: str | None = None
@@ -332,6 +342,7 @@ async def process_paper(
 
     # Validate genes concurrently
     validated_genes: list[GeneEntry] = []
+    rejected_genes: list[RejectedGene] = []
     validation_tasks = [validate_gene_entry(gene, config=config) for gene in genes]
     results = await asyncio.gather(*validation_tasks, return_exceptions=True)
 
@@ -339,15 +350,18 @@ async def process_paper(
         if isinstance(result, Exception):
             logger.error(f"  Validation error for gene {gene.gene_symbol}: {result}")
             metrics.genes_rejected += 1
+            rejected_genes.append(RejectedGene(gene=gene, reasons=[str(result)]))
         elif result.is_valid:
             validated_genes.append(result.normalized_data)
             metrics.genes_validated += 1
         else:
             metrics.genes_rejected += 1
             logger.debug(f"  Gene rejected: {result.errors}")
+            rejected_genes.append(RejectedGene(gene=gene, reasons=result.errors))
 
     return {
         "genes": validated_genes,
+        "rejected_genes": rejected_genes,
         "fulltext": text_result["fulltext"],
         "source": text_result["source"],
     }
@@ -388,6 +402,7 @@ async def process_paper_safe(
             return PaperResult(
                 pmid=pmid,
                 genes=result["genes"],
+                rejected_genes=result["rejected_genes"],
                 fulltext=result["fulltext"],
                 source=result["source"],
                 processing_time=duration,
@@ -744,9 +759,11 @@ async def run_local_pdf_pipeline(
                     # Validation
                     if skip_validation:
                         validated_genes = genes
+                        rejected_genes: list[RejectedGene] = []
                         metrics.genes_validated += len(genes)
                     else:
                         validated_genes = []
+                        rejected_genes = []
                         # Validate genes concurrently for this paper
                         validation_tasks = [
                             validate_gene_entry(gene, config=config) for gene in genes
@@ -762,12 +779,18 @@ async def run_local_pdf_pipeline(
                                     f"{result}"
                                 )
                                 metrics.genes_rejected += 1
+                                rejected_genes.append(
+                                    RejectedGene(gene=gene, reasons=[str(result)])
+                                )
                             elif result.is_valid:
                                 validated_genes.append(result.normalized_data)
                                 metrics.genes_validated += 1
                             else:
                                 metrics.genes_rejected += 1
                                 logger.debug(f"  Gene rejected: {result.errors}")
+                                rejected_genes.append(
+                                    RejectedGene(gene=gene, reasons=result.errors)
+                                )
 
                     metrics.papers_processed += 1
                     metrics.fulltext_retrieved += 1
@@ -775,6 +798,7 @@ async def run_local_pdf_pipeline(
                     return PaperResult(
                         pmid=file_id,
                         genes=validated_genes,
+                        rejected_genes=rejected_genes,
                         fulltext=True,
                         source="local_pdf",
                         processing_time=time.monotonic() - start_time,
@@ -947,9 +971,11 @@ async def run_pmid_pipeline(
                     # Validation
                     if skip_validation:
                         validated_genes = genes
+                        rejected_genes: list[RejectedGene] = []
                         metrics.genes_validated += len(genes)
                     else:
                         validated_genes = []
+                        rejected_genes = []
                         validation_tasks = [
                             validate_gene_entry(gene, config=config) for gene in genes
                         ]
@@ -963,12 +989,18 @@ async def run_pmid_pipeline(
                                     f"{gene.gene_symbol}: {result}"
                                 )
                                 metrics.genes_rejected += 1
+                                rejected_genes.append(
+                                    RejectedGene(gene=gene, reasons=[str(result)])
+                                )
                             elif result.is_valid:
                                 validated_genes.append(result.normalized_data)
                                 metrics.genes_validated += 1
                             else:
                                 metrics.genes_rejected += 1
                                 logger.debug(f"  Gene rejected: {result.errors}")
+                                rejected_genes.append(
+                                    RejectedGene(gene=gene, reasons=result.errors)
+                                )
 
                     if is_fulltext:
                         metrics.fulltext_retrieved += 1
@@ -979,6 +1011,7 @@ async def run_pmid_pipeline(
                     return PaperResult(
                         pmid=pmid,
                         genes=validated_genes,
+                        rejected_genes=rejected_genes,
                         fulltext=is_fulltext,
                         source=source,
                         processing_time=time.monotonic() - start_time,

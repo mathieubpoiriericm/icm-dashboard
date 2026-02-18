@@ -59,6 +59,7 @@ class TestEstimateCost:
 class MockPaperResult:
     pmid: str
     genes: list[GeneEntry] = field(default_factory=list)
+    rejected_genes: list = field(default_factory=list)
     fulltext: bool = False
     source: str = "abstract"
     error: str | None = None
@@ -285,8 +286,10 @@ class TestPrintRichSummary:
             "search": {},
             "papers": {},
             "genes": {
-                "extracted": 0, "validated": 0,
-                "rejected": 0, "acceptance_rate": 0,
+                "extracted": 0,
+                "validated": 0,
+                "rejected": 0,
+                "acceptance_rate": 0,
             },
             "token_usage": {"total_tokens": 0},
             "database": None,
@@ -412,3 +415,95 @@ class TestBuildPmidRunData:
         data = self._build()
         serialized = json.dumps(data, default=str)
         assert isinstance(serialized, str)
+
+
+# ---------------------------------------------------------------------------
+# Rejected genes in serialization and display
+# ---------------------------------------------------------------------------
+
+
+class MockRejectedGene:
+    """Lightweight stand-in for main.RejectedGene (avoids importing main.py)."""
+
+    def __init__(self, gene: GeneEntry, reasons: list[str]):
+        self.gene = gene
+        self.reasons = reasons
+
+
+class TestRejectedGeneSerialization:
+    def test_summaries_include_rejected_genes(self):
+        gene = GeneEntry(gene_symbol="FAKEGENE", confidence=0.3, pmid="999")
+        rejected = MockRejectedGene(
+            gene=gene, reasons=["Low confidence", "NCBI lookup failed"]
+        )
+        result = MockPaperResult(pmid="999", rejected_genes=[rejected])
+        summaries = _paper_results_to_summaries([result])
+        assert summaries[0]["rejected_gene_count"] == 1
+        assert len(summaries[0]["rejected_genes"]) == 1
+        rg = summaries[0]["rejected_genes"][0]
+        assert rg["gene"]["gene_symbol"] == "FAKEGENE"
+        assert rg["reasons"] == ["Low confidence", "NCBI lookup failed"]
+
+    def test_summaries_empty_rejected_by_default(self):
+        result = MockPaperResult(pmid="111")
+        summaries = _paper_results_to_summaries([result])
+        assert summaries[0]["rejected_gene_count"] == 0
+        assert summaries[0]["rejected_genes"] == []
+
+    def test_json_serializable_with_rejected(self):
+        gene = GeneEntry(gene_symbol="BAD1", confidence=0.2, pmid="888")
+        rejected = MockRejectedGene(gene=gene, reasons=["Invalid symbol"])
+        result = MockPaperResult(pmid="888", rejected_genes=[rejected])
+        summaries = _paper_results_to_summaries([result])
+        serialized = json.dumps(summaries, default=str)
+        assert "BAD1" in serialized
+
+
+class TestPrintRichSummaryWithRejected:
+    def test_smoke_with_rejected_genes(self):
+        data = {
+            "pipeline_config": {"model": "claude-opus-4-6", "dry_run": False},
+            "search": {},
+            "papers": {},
+            "genes": {
+                "extracted": 2,
+                "validated": 1,
+                "rejected": 1,
+                "acceptance_rate": 0.5,
+            },
+            "token_usage": {"total_tokens": 0},
+            "batch_validation_warnings": [],
+            "papers_detail": [
+                {
+                    "pmid": "123",
+                    "source": "pmc",
+                    "gene_count": 1,
+                    "error": None,
+                    "genes": [
+                        {
+                            "gene_symbol": "NOTCH3",
+                            "protein_name": "Notch 3",
+                            "pmid": "123",
+                            "confidence": 0.95,
+                            "gwas_trait": [],
+                            "mendelian_randomization": False,
+                            "omics_evidence": [],
+                        }
+                    ],
+                    "rejected_gene_count": 1,
+                    "rejected_genes": [
+                        {
+                            "gene": {
+                                "gene_symbol": "BADGENE",
+                                "protein_name": None,
+                                "pmid": "123",
+                                "confidence": 0.2,
+                            },
+                            "reasons": ["NCBI lookup failed"],
+                        }
+                    ],
+                }
+            ],
+        }
+        # Should not raise
+        print_rich_summary(data)
