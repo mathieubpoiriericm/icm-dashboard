@@ -64,6 +64,12 @@ for _ref_name, _pipe_names in GENE_ALIAS_MAP.items():
     for _pn in _pipe_names:
         _REVERSE_GENE_ALIASES[_pn.upper()] = _ref_name.upper()
 
+# NCBI gene symbol aliases: old/alternative names → current official symbol.
+# Handles gene renames by NCBI (e.g., C6orf195 was renamed to LINC01600).
+NCBI_GENE_ALIASES: dict[str, str] = {
+    "C6ORF195": "LINC01600",
+}
+
 # Trait aliases: normalize alternative names to canonical form
 TRAIT_ALIASES: dict[str, str] = {
     "cmb": "cerebral-microbleeds",
@@ -142,7 +148,8 @@ class ValidationScores:
 
 
 def normalize_gene_symbol(symbol: str) -> str:
-    return symbol.strip().upper()
+    upper = symbol.strip().upper()
+    return NCBI_GENE_ALIASES.get(upper, upper)
 
 
 def _is_sentinel(value: str, sentinels: set[str]) -> bool:
