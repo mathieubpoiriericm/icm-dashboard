@@ -231,17 +231,28 @@ def parse_reference_csv(path: Path) -> dict[str, AggregatedGene]:
 
 def parse_pipeline_json(
     path: Path, *, fulltext_only: bool = False
-) -> dict[str, AggregatedGene]:
-    """Parse pipeline report JSON, aggregating same gene across papers."""
+) -> tuple[dict[str, AggregatedGene], set[str]]:
+    """Parse pipeline report JSON, aggregating same gene across papers.
+
+    Returns:
+        (aggregated_genes, fulltext_pmids) — the second element contains
+        PMIDs from papers where ``fulltext == True``.
+    """
     with open(path, encoding="utf-8") as f:
         report = json.load(f)
 
     aggregated: dict[str, AggregatedGene] = {}
+    fulltext_pmids: set[str] = set()
 
     for paper in report.get("papers_detail", []):
-        if fulltext_only and not paper.get("fulltext", False):
-            continue
+        is_fulltext = paper.get("fulltext", False)
         paper_pmid = str(paper.get("pmid", ""))
+
+        if is_fulltext and paper_pmid:
+            fulltext_pmids.add(paper_pmid)
+
+        if fulltext_only and not is_fulltext:
+            continue
 
         for gene_data in paper.get("genes", []):
             symbol = normalize_gene_symbol(gene_data.get("gene_symbol", ""))
@@ -278,7 +289,23 @@ def parse_pipeline_json(
             if conf is not None:
                 ag.confidences.append(float(conf))
 
-    return aggregated
+    return aggregated, fulltext_pmids
+
+
+def filter_reference_for_fulltext(
+    ref_genes: dict[str, AggregatedGene],
+    fulltext_pmids: set[str],
+) -> dict[str, AggregatedGene]:
+    """Keep only reference genes linked to at least one fulltext PMID.
+
+    Genes with ``pmids_reference_needed == True`` are excluded because their
+    provenance is unknown and cannot be verified in fulltext-only mode.
+    """
+    return {
+        symbol: gene
+        for symbol, gene in ref_genes.items()
+        if not gene.pmids_reference_needed and gene.pmids & fulltext_pmids
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -859,7 +886,14 @@ def main(argv: list[str] | None = None) -> None:
 
     # Parse
     ref_genes = parse_reference_csv(ref_path)
-    pipe_genes = parse_pipeline_json(pipe_path, fulltext_only=args.fulltext_only)
+    pipe_genes, fulltext_pmids = parse_pipeline_json(
+        pipe_path, fulltext_only=args.fulltext_only
+    )
+
+    # In fulltext-only mode, restrict the reference to genes linked to
+    # at least one fulltext PMID so abstract-only genes don't inflate FN.
+    if args.fulltext_only:
+        ref_genes = filter_reference_for_fulltext(ref_genes, fulltext_pmids)
 
     # Compare
     comparisons, false_negatives, false_positives = compare_all(ref_genes, pipe_genes)
