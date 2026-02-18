@@ -1151,7 +1151,9 @@ def generate_markdown(
     lines.append("### Normalization Rules\n")
     lines.append(
         "- **Gene symbols**: Case-insensitive; `COL4A1/2` in reference"
-        " maps to pipeline's `COL4A1` + `COL4A2`"
+        " maps to pipeline's `COL4A1` + `COL4A2`;"
+        " NCBI-renamed genes resolved to current official symbol"
+        " (e.g., `C6ORF195` → `LINC01600`)"
     )
     lines.append(
         "- **GWAS traits**: Comma-separated to set; "
