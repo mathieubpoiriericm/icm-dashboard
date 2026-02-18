@@ -183,3 +183,22 @@ class TestBuildExtractionMessages:
         system_text = system_blocks[0]["text"]
         assert "positional candidate" in system_blocks[1]["text"]
         assert "genomic loci, not individual genes" in system_text
+
+    def test_v4_dispatch(self):
+        """v4 prompt should include locus-vs-causal gene and EWAS fixes."""
+        system_blocks, _ = build_extraction_messages(
+            paper_text="Test", pmid="111", max_chars=50000, prompt_version="v4"
+        )
+        instructions = system_blocks[1]["text"]
+        # C6ORF195 fix: locus-vs-causal gene instruction
+        assert "fine-mapping analysis identifies" in instructions
+        assert "LINC01600" in instructions
+        assert "C6orf195" in instructions
+        # CENPF fix: EWAS check instruction
+        assert "EWAS (epigenome-wide association)" in instructions
+        assert "methylation analyses" in instructions
+        # VWA2 fix: MTAG clarification
+        mtag_fix = "MTAG (multi-trait GWAS) reaching genome-wide"
+        assert mtag_fix in instructions
+        # New example
+        assert 'type="include_twas_causal_gene"' in instructions

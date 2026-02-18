@@ -20,7 +20,7 @@ class TestPipelineConfigDefaults:
 
     def test_default_max_tokens(self):
         cfg = PipelineConfig()
-        assert cfg.llm_max_tokens == 32_000
+        assert cfg.llm_max_tokens == 64_000
 
     def test_default_effort(self):
         cfg = PipelineConfig()

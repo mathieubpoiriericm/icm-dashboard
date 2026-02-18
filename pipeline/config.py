@@ -124,7 +124,7 @@ class PipelineConfig:
     )
     # Prompt version for A/B testing during tuning ("v1", "v2", etc.)
     prompt_version: str = field(
-        default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v3")
+        default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v4")
     )
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
