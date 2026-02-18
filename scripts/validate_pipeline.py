@@ -309,6 +309,23 @@ def filter_reference_for_fulltext(
     }
 
 
+def filter_reference_for_single_pmid(
+    ref_genes: dict[str, AggregatedGene],
+    single_pmid: str,
+) -> dict[str, AggregatedGene]:
+    """Keep only reference genes whose sole PMID is *single_pmid*.
+
+    Excludes genes with ``pmids_reference_needed`` and genes with
+    multiple PMIDs, since their evidence spans papers the pipeline
+    did not process.
+    """
+    return {
+        symbol: gene
+        for symbol, gene in ref_genes.items()
+        if not gene.pmids_reference_needed and gene.pmids == {single_pmid}
+    }
+
+
 # ---------------------------------------------------------------------------
 # 5. Comparison engine
 # ---------------------------------------------------------------------------
@@ -1130,7 +1147,10 @@ def main(argv: list[str] | None = None) -> None:
 
     # In fulltext-only or local-pdfs mode, restrict the reference to genes
     # linked to at least one fulltext PMID so abstract-only genes don't inflate FN.
-    if args.fulltext_only or args.local_pdfs:
+    if args.local_pdfs and len(fulltext_pmids) == 1:
+        (single_pmid,) = fulltext_pmids
+        ref_genes = filter_reference_for_single_pmid(ref_genes, single_pmid)
+    elif args.fulltext_only or args.local_pdfs:
         ref_genes = filter_reference_for_fulltext(ref_genes, fulltext_pmids)
 
     # Compare
