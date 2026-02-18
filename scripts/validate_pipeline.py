@@ -829,6 +829,59 @@ def generate_markdown(
         " + 0.10 x mean_gene_score"
     )
     lines.append("")
+    lines.append("### Scoring Explained\n")
+    lines.append(
+        "The system scores at two levels: **individual genes** and the"
+        " **overall pipeline run**.\n"
+    )
+    lines.append(
+        "**Key terms.** *Precision* is the fraction of pipeline-reported"
+        " genes that actually appear in the reference (i.e. how many of"
+        " its calls are correct). *Recall* is the fraction of reference"
+        " genes that the pipeline found (i.e. how many true genes it"
+        " detected). *F1* is the harmonic mean (the reciprocal — one"
+        " divided by the number — of the average of the reciprocals) of"
+        " precision and recall —"
+        " a single number that is high only when both are high, so it"
+        " penalises a pipeline that finds many genes but gets lots wrong"
+        " (low precision) just as much as one that is very selective but"
+        " misses many (low recall). *Jaccard similarity* measures overlap"
+        " between two sets: it divides the number of items they share by"
+        " the total number of distinct items across both sets. A Jaccard"
+        " of 1.0 means perfect agreement; 0.0 means no overlap at all."
+        " When both the pipeline and reference sets are empty the score"
+        " is treated as 1.0 (both agree nothing is present).\n"
+    )
+    lines.append(
+        "**Per-gene score.** For each gene the pipeline correctly detected,"
+        " over half the credit (55%) comes from simply finding the gene."
+        " The remaining 45% is split among getting the right GWAS traits"
+        " (15%, measured by Jaccard similarity between the reported and"
+        " reference trait sets), MR status (10%, a binary match — right"
+        " or wrong), omics evidence types (10%, also Jaccard), and citing"
+        " the right PMIDs (10%, measured by recall — what fraction of the"
+        " reference PMIDs were found). When PMIDs cannot be compared — for"
+        " example when the reference contains \"(reference needed)\" or"
+        " when running in local-PDF mode — that 10% is redistributed"
+        " proportionally among the other three field scores.\n"
+    )
+    lines.append(
+        "**Overall composite score.** The single biggest factor (40%) is the"
+        " F1 score — a single number that rewards a pipeline only when it"
+        " both finds most reference genes (high recall) and avoids"
+        " reporting spurious ones (high precision). The remaining 60%"
+        " reflects how accurately the pipeline extracts each field's"
+        " details, averaged across matched genes: GWAS trait overlap"
+        " (15%, Jaccard), omics evidence overlap (15%, Jaccard), MR"
+        " accuracy (10%, binary match), PMID recall (10%), plus the mean"
+        " per-gene score (10%).\n"
+    )
+    lines.append(
+        "**Interpreting the result.** A perfect pipeline matching the"
+        " reference table exactly would score 100%. Scores above 80% are"
+        " highlighted green, 50–80% yellow, and below 50% red."
+    )
+    lines.append("")
 
     return "\n".join(lines)
 
