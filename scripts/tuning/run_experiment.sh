@@ -125,5 +125,10 @@ run_logged python scripts/tuning/track_run.py \
   --local-pdfs \
   --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v5}}"
 
+# Step 6: Plot
+log_echo ""
+log_echo "--- Step 6: Plotting tuning runs ---"
+run_logged Rscript scripts/plot_tuning_runs.R
+
 log_echo ""
 log_echo "=== Experiment complete ==="
