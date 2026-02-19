@@ -250,13 +250,12 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
     name = "F1 Score"
   ) +
   scale_x_continuous(
-    labels = scales::label_number(accuracy = 0.01),
-    limits = x_lim
+    labels = scales::label_number(accuracy = 0.01)
   ) +
   scale_y_continuous(
-    labels = scales::label_number(accuracy = 0.01),
-    limits = y_lim
+    labels = scales::label_number(accuracy = 0.01)
   ) +
+  coord_cartesian(xlim = x_lim, ylim = y_lim) +
   labs(
     title = "Precision\u2013Recall Tradeoff",
     subtitle = "Point size proportional to F1 score; dashed lines are F1 iso-curves",
@@ -568,7 +567,7 @@ has_cost <- "estimated_cost_usd" %in% names(runs) &&
 if (has_cost) {
   runs <- runs |>
     mutate(
-      cost = as.numeric(estimated_cost_usd),
+      cost = as.numeric(ifelse(estimated_cost_usd == "None", NA_character_, estimated_cost_usd)),
       # LLM time in minutes (NA for old rows without timing)
       llm_min = if ("llm_time" %in% names(runs)) {
         as.numeric(llm_time) / 60
@@ -581,16 +580,24 @@ if (has_cost) {
   has_timing <- "llm_min" %in% names(runs) &&
     any(!is.na(runs$llm_min))
 
+  # Filter to rows with valid cost for Panel 5
+  runs_costed <- runs |> filter(!is.na(cost))
+  best_costed <- if (!is.na(best_run$cost)) {
+    best_run
+  } else {
+    runs_costed[which.max(runs_costed$composite_score), ]
+  }
+
   # Left panel: Cost vs Composite Score
   p5a <- ggplot(
-    runs, aes(x = cost, y = composite_score)
+    runs_costed, aes(x = cost, y = composite_score)
   ) +
     geom_point(
       aes(fill = prompt_version, shape = model_family),
       size = 4.5, stroke = 0.5, color = "white"
     ) +
     geom_point(
-      data = best_run,
+      data = best_costed,
       shape = 21, size = 8, stroke = 1.5, fill = NA, color = "#e6a817"
     ) +
     geom_text_repel(

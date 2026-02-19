@@ -200,10 +200,10 @@ def track_run(
         "f1": f"{scores.f1:.4f}",
         "f2": f"{f2:.4f}",
         "composite_score": f"{scores.composite:.4f}",
-        "estimated_cost_usd": str(token_info.get("estimated_cost_usd", "")),
-        "input_tokens": str(token_info.get("input_tokens", "")),
-        "output_tokens": str(token_info.get("output_tokens", "")),
-        "thinking_tokens": str(token_info.get("thinking_tokens", "")),
+        "estimated_cost_usd": str(v) if (v := token_info.get("estimated_cost_usd")) is not None else "",
+        "input_tokens": str(v2) if (v2 := token_info.get("input_tokens")) is not None else "",
+        "output_tokens": str(v3) if (v3 := token_info.get("output_tokens")) is not None else "",
+        "thinking_tokens": str(v4) if (v4 := token_info.get("thinking_tokens")) is not None else "",
         "total_processing_time": f"{report.get('total_processing_time', 0):.1f}",
         "llm_time": f"{total_llm_time:.1f}",
         "notes": notes,
@@ -212,9 +212,23 @@ def track_run(
     # Read previous row for diff
     previous = _read_previous_row(TRACKING_CSV)
 
-    # Append to CSV
-    write_header = not TRACKING_CSV.exists()
+    # Append to CSV (with header migration if columns changed)
     TRACKING_CSV.parent.mkdir(parents=True, exist_ok=True)
+    if TRACKING_CSV.exists():
+        with open(TRACKING_CSV, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            existing_columns = reader.fieldnames or []
+            if list(existing_columns) != CSV_COLUMNS:
+                # Header mismatch — rewrite with updated columns
+                rows_on_disk = list(reader)
+                with open(TRACKING_CSV, "w", newline="", encoding="utf-8") as fw:
+                    writer = csv.DictWriter(fw, fieldnames=CSV_COLUMNS)
+                    writer.writeheader()
+                    for old_row in rows_on_disk:
+                        migrated = {col: old_row.get(col, "") for col in CSV_COLUMNS}
+                        writer.writerow(migrated)
+
+    write_header = not TRACKING_CSV.exists()
     with open(TRACKING_CSV, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         if write_header:
