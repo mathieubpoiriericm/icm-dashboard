@@ -6,7 +6,6 @@
 #
 # Options:
 #   --fast  Use Sonnet + low effort + reduced max_tokens for ~3x faster iteration.
-#           Also skips NCBI validation during extraction.
 #
 # Examples:
 #   ./scripts/tuning/run_experiment.sh                          # defaults (Opus, high effort)
@@ -25,7 +24,6 @@ if [ "${1:-}" = "--fast" ]; then
   export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
   export PIPELINE_LLM_EFFORT="${PIPELINE_LLM_EFFORT:-low}"
   export PIPELINE_LLM_MAX_TOKENS="${PIPELINE_LLM_MAX_TOKENS:-16000}"
-  SKIP_VALIDATION_FLAG="--skip-validation"
 fi
 
 THRESHOLD="${1:-0.65}"
