@@ -84,8 +84,9 @@ def analyze_errors(
 
     # --- Output 1: Error analysis CSV ---
     timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    error_path = output_dir / f"error_analysis_{timestamp}.csv"
+    error_dir = output_dir / "error_analyses"
+    error_dir.mkdir(parents=True, exist_ok=True)
+    error_path = error_dir / f"error_analysis_{timestamp}.csv"
 
     error_rows: list[dict[str, str]] = []
 
@@ -187,7 +188,9 @@ def analyze_errors(
         writer.writerows(error_rows)
 
     # --- Output 2: Score distribution CSV ---
-    score_path = output_dir / f"score_distribution_{timestamp}.csv"
+    score_dir = output_dir / "score_distributions"
+    score_dir.mkdir(parents=True, exist_ok=True)
+    score_path = score_dir / f"score_distribution_{timestamp}.csv"
 
     # Build reference symbol set for is_in_reference check
     ref_symbols = set(ref_genes.keys())

@@ -110,7 +110,7 @@ run_logged python scripts/tuning/analyze_errors.py "$REPORT" --local-pdfs
 log_echo ""
 log_echo "--- Step 4: Calibrating threshold ---"
 # Find the latest score distribution
-SCORE_DIST=$(ls -t logs/tuning/score_distribution_*.csv 2>/dev/null | head -1)
+SCORE_DIST=$(ls -t logs/tuning/score_distributions/score_distribution_*.csv 2>/dev/null | head -1)
 if [ -n "$SCORE_DIST" ]; then
   run_logged python scripts/tuning/calibrate_threshold.py "$SCORE_DIST"
 else

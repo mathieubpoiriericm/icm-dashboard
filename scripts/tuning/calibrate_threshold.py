@@ -114,12 +114,15 @@ def calibrate_threshold(
     score_rows: list[dict[str, str]],
     output_dir: Path,
     beta: float = 2.0,
+    png_dir: Path | None = None,
 ) -> Path:
     """Run threshold calibration analysis.
 
     Returns path to the generated plot.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    if png_dir is None:
+        png_dir = _PROJECT_ROOT / "logs" / "png" / "pr_curves"
     timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
 
     # Parse into arrays
@@ -174,7 +177,9 @@ def calibrate_threshold(
     max_bin_center = float((bin_edges[max_bin_idx] + bin_edges[max_bin_idx + 1]) / 2)
 
     # --- Threshold analysis CSV ---
-    analysis_path = output_dir / f"threshold_analysis_{timestamp}.csv"
+    analysis_dir = output_dir / "threshold_analyses"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    analysis_path = analysis_dir / f"threshold_analysis_{timestamp}.csv"
     analysis_rows: list[dict[str, str]] = []
 
     test_thresholds = sorted(
@@ -226,7 +231,8 @@ def calibrate_threshold(
         writer.writerows(analysis_rows)
 
     # --- Plot ---
-    plot_path = output_dir / f"pr_curve_{timestamp}.png"
+    png_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = png_dir / f"pr_curve_{timestamp}.png"
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -423,6 +429,12 @@ def main(argv: list[str] | None = None) -> None:
         default=_PROJECT_ROOT / "logs" / "tuning",
         help="Output directory (default: logs/tuning/)",
     )
+    parser.add_argument(
+        "--png-dir",
+        type=Path,
+        default=None,
+        help="Output directory for PNG plots (default: logs/png/pr_curves/)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -447,7 +459,9 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(1)
 
-    calibrate_threshold(score_rows, args.output_dir, beta=args.beta)
+    calibrate_threshold(
+        score_rows, args.output_dir, beta=args.beta, png_dir=args.png_dir
+    )
 
 
 if __name__ == "__main__":
