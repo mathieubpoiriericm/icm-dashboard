@@ -6,8 +6,18 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(patchwork)
+library(ragg)
 library(readr)
 library(ggrepel)
+library(ggtext)
+library(systemfonts)
+
+# -- Register Roboto from local TTF ------------------------------------------
+systemfonts::register_font(
+  name    = "Roboto",
+  plain   = "www/fonts/Roboto-Regular.ttf",
+  bold    = "www/fonts/Roboto-Bold.ttf"
+)
 
 # -- Read data ----------------------------------------------------------------
 csv_path <- file.path("logs", "tuning", "tuning_runs.csv")
@@ -31,10 +41,28 @@ prompt_colors <- c(
   "v4" = "#d94f3b"
 )
 
+# Weight color palettes for infographic panel
+weight_colors <- c(
+  "F1"       = "#2d287a",
+  "GWAS_J"   = "#4a7ceb",
+  "MR_acc"   = "#35b779",
+  "Omics_J"  = "#e6a817",
+  "PMID_R"   = "#d94f3b",
+  "Gene_sc"  = "#6c757d"
+)
+
+gene_weight_colors <- c(
+  "Detection" = "#2d287a",
+  "GWAS_J"    = "#4a7ceb",
+  "MR"        = "#35b779",
+  "Omics_J"   = "#e6a817",
+  "PMID_R"    = "#d94f3b"
+)
+
 theme_pub <- function(base_size = 11) {
   theme_minimal(base_size = base_size) %+replace%
     theme(
-      text = element_text(color = "grey20"),
+      text = element_text(family = "Roboto", color = "grey20"),
       plot.title = element_text(
         size = base_size + 2, face = "bold", color = "grey10",
         margin = margin(b = 3), hjust = 0
@@ -80,7 +108,7 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
   ) +
   geom_text(
     aes(label = paste0("t=", confidence_threshold)),
-    vjust = -1.5, size = 2.8, color = "grey50"
+    vjust = -1.5, size = 2.8, color = "grey50", family = "Roboto"
   ) +
   annotate(
     "label",
@@ -91,7 +119,7 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
       " | t=", best_run$confidence_threshold,
       "\nScore: ", sprintf("%.4f", best_run$composite_score)
     ),
-    size = 2.9, fontface = "bold",
+    size = 2.8, fontface = "bold", family = "Roboto",
     fill = "#fdf6e3", color = "grey20",
     label.r = unit(0.25, "lines"),
     label.padding = unit(0.35, "lines")
@@ -141,6 +169,7 @@ iso_data <- do.call(rbind, lapply(f1_levels, function(f) {
 iso_labels <- iso_data |>
   group_by(f1_val) |>
   slice_max(recall, n = 1L) |>
+  mutate(recall = recall - 0.03) |>
   ungroup()
 
 p2 <- ggplot(runs, aes(x = recall, y = precision)) +
@@ -154,7 +183,7 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
     data = iso_labels,
     aes(x = recall, y = precision, label = paste0("F1=", f1_val)),
     size = 2.4, color = "grey72", hjust = -0.1, vjust = -0.4,
-    inherit.aes = FALSE
+    family = "Roboto", inherit.aes = FALSE
   ) +
   geom_point(
     aes(fill = prompt_version, size = f1),
@@ -166,7 +195,7 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
   ) +
   geom_text_repel(
     aes(label = paste0("#", run_id), color = prompt_version),
-    size = 3.2, fontface = "bold",
+    size = 3.0, fontface = "bold", family = "Roboto",
     point.padding = 0.5, box.padding = 0.55,
     min.segment.length = 0.3, segment.color = "grey75",
     segment.size = 0.3, max.overlaps = 20,
@@ -177,6 +206,7 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
   scale_size_continuous(
     range = c(3.5, 10),
     breaks = c(0.30, 0.40, 0.50),
+    limits = c(0.28, 0.53),
     name = "F1 Score"
   ) +
   scale_x_continuous(
@@ -269,11 +299,223 @@ p3 <- ggplot(metrics_long, aes(x = reorder(run_short, run_id), y = value)) +
 
 
 # =============================================================================
+# Panel 4: Scoring Methodology Infographic
+# =============================================================================
+
+# -- Helper: build a segmented weight bar as data.frame ----------------------
+make_bar <- function(weights, colors, y_center, bar_h, x_left, x_right) {
+  bar_w <- x_right - x_left
+  n <- length(weights)
+  cum <- cumsum(weights)
+  xmin <- x_left + c(0, cum[-n]) / sum(weights) * bar_w
+  xmax <- x_left + cum / sum(weights) * bar_w
+  data.frame(
+    xmin = xmin, xmax = xmax,
+    ymin = y_center - bar_h / 2, ymax = y_center + bar_h / 2,
+    fill = colors[seq_len(n)],
+    label = paste0(weights * 100, "%"),
+    stringsAsFactors = FALSE
+  )
+}
+
+comp_bar <- make_bar(
+  weights = c(0.40, 0.15, 0.10, 0.15, 0.10, 0.10),
+  colors  = unname(weight_colors),
+  y_center = 70, bar_h = 4, x_left = 4, x_right = 48
+)
+
+gene_bar <- make_bar(
+  weights = c(0.55, 0.15, 0.10, 0.10, 0.10),
+  colors  = unname(gene_weight_colors),
+  y_center = 70, bar_h = 4, x_left = 54, x_right = 97
+)
+
+# -- Rich-text labels --------------------------------------------------------
+# Color helper: wrap text in colored span
+clr <- function(txt, hex) paste0("<span style='color:", hex, "'>", txt, "</span>")
+
+# Formula bodies only (headers rendered separately in Roboto)
+composite_formula <- paste0(
+  "= ", clr("0.40", weight_colors["F1"]), " \u00b7 <i>F</i><sub>1</sub>",
+  " + ", clr("0.15", weight_colors["GWAS_J"]), " \u00b7 <i>GWAS</i><sub><i>J</i></sub>",
+  " + ", clr("0.10", weight_colors["MR_acc"]), " \u00b7 <i>MR</i><sub><i>acc</i></sub>",
+  " + ", clr("0.15", weight_colors["Omics_J"]), " \u00b7 <i>Omics</i><sub><i>J</i></sub>",
+  "<br>\u2003+ ", clr("0.10", weight_colors["PMID_R"]), " \u00b7 <i>PMID</i><sub><i>R</i></sub>",
+  " + ", clr("0.10", weight_colors["Gene_sc"]), " \u00b7 <i>Gene</i><sub><i>sc</i></sub>"
+)
+
+gene_formula <- paste0(
+  "= ", clr("0.55", gene_weight_colors["Detection"]), " \u00b7 <i>Det</i>",
+  " + ", clr("0.15", gene_weight_colors["GWAS_J"]), " \u00b7 <i>GWAS</i><sub><i>J</i></sub>",
+  " + ", clr("0.10", gene_weight_colors["MR"]), " \u00b7 <i>MR</i>",
+  "<br>\u2003+ ", clr("0.10", gene_weight_colors["Omics_J"]), " \u00b7 <i>Omics</i><sub><i>J</i></sub>",
+  " + ", clr("0.10", gene_weight_colors["PMID_R"]), " \u00b7 <i>PMID</i><sub><i>R</i></sub>"
+)
+
+standard_formulas <- paste0(
+  "<i>Precision</i> = <i>TP</i> / (<i>TP</i> + <i>FP</i>)<br>",
+  "<i>Recall</i> = <i>TP</i> / (<i>TP</i> + <i>FN</i>)<br>",
+  "<i>F</i><sub>1</sub> = 2 \u00b7 <i>P</i> \u00b7 <i>R</i> / (<i>P</i> + <i>R</i>)"
+)
+
+field_formulas <- paste0(
+  "<i>J</i>(<i>A</i>,<i>B</i>) = |<i>A</i>\u2229<i>B</i>| / |<i>A</i>\u222a<i>B</i>|<br>",
+  "<i>Set Recall</i> = |<i>Ref</i>\u2229<i>Pipe</i>| / |<i>Ref</i>|<br>",
+  "<i>MR Accuracy</i> = exact boolean match"
+)
+
+fn_formulas <- paste0(
+  "<i>FN</i><sub><i>threshold</i></sub> \u2014 extracted by LLM<br>",
+  "\u2003but rejected at confidence threshold<br>",
+  "\u2003(recoverable by lowering threshold)<br>",
+  "<i>FN</i><sub><i>miss</i></sub> \u2014 never extracted by LLM<br>",
+  "\u2003(true miss, not recoverable)"
+)
+
+robustness <- paste0(
+  "\u2022 PMID weight redistributed when skipped\n",
+  "\u2022 Gene aliases resolved (e.g. COL4A1 = COL4A1/2)\n",
+  "\u2022 Detection credit = 1.0 for any matched gene\n",
+  "\u2022 Composite mixes gene-level and field-level\n",
+  "\u2022 Jaccard penalizes both FP and FN in sets\n",
+  "\u2022 Set Recall only penalizes missing items\n",
+  "\u2022 Scores bounded [0, 1]; higher is better"
+)
+
+# Section header positions (x, y, label)
+headers <- data.frame(
+  x = c(4, 54, 4, 54, 4, 54),
+  y = c(92, 92, 58, 58, 33, 33),
+  label = c("Composite Score", "Per-Gene Score",
+            "Standard Metrics", "Field-Level Metrics",
+            "FN Categories", "Robustness Properties"),
+  stringsAsFactors = FALSE
+)
+
+# -- Assemble canvas ---------------------------------------------------------
+richtext_size <- 2.8
+header_size   <- 10 / .pt
+
+p4 <- ggplot() +
+  coord_cartesian(xlim = c(0, 100), ylim = c(0, 100), expand = FALSE) +
+
+  # -- Section headers (all Roboto) --
+  geom_text(
+    data = headers,
+    aes(x = x, y = y, label = label),
+    hjust = 0, vjust = 1, size = header_size,
+    fontface = "bold", family = "Roboto", color = "grey20"
+  ) +
+
+  # -- Top zone: Composite formula (serif) --
+  geom_richtext(
+    aes(x = 4, y = 87, label = composite_formula),
+    hjust = 0, vjust = 1, size = richtext_size, family = "serif",
+    fill = NA, label.color = NA, color = "grey20",
+    label.padding = unit(0, "lines")
+  ) +
+  # Composite weight bar
+  geom_rect(
+    data = comp_bar,
+    aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+    fill = comp_bar$fill, color = "white", linewidth = 0.4
+  ) +
+  geom_text(
+    data = comp_bar,
+    aes(x = (xmin + xmax) / 2, y = (ymin + ymax) / 2, label = label),
+    size = 2.0, color = "white", fontface = "bold", family = "Roboto"
+  ) +
+  geom_text(
+    data = comp_bar,
+    aes(x = (xmin + xmax) / 2, y = ymin - 1.8,
+        label = c("F1", "GWAS", "MR", "Omics", "PMID", "Gene")),
+    size = 2.0, color = "grey50", family = "Roboto"
+  ) +
+
+  # -- Top zone: Per-Gene formula (serif) --
+  geom_richtext(
+    aes(x = 54, y = 87, label = gene_formula),
+    hjust = 0, vjust = 1, size = richtext_size, family = "serif",
+    fill = NA, label.color = NA, color = "grey20",
+    label.padding = unit(0, "lines")
+  ) +
+  # Gene weight bar
+  geom_rect(
+    data = gene_bar,
+    aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+    fill = gene_bar$fill, color = "white", linewidth = 0.4
+  ) +
+  geom_text(
+    data = gene_bar,
+    aes(x = (xmin + xmax) / 2, y = (ymin + ymax) / 2, label = label),
+    size = 2.0, color = "white", fontface = "bold", family = "Roboto"
+  ) +
+  geom_text(
+    data = gene_bar,
+    aes(x = (xmin + xmax) / 2, y = ymin - 1.8,
+        label = c("Detect", "GWAS", "MR", "Omics", "PMID")),
+    size = 2.0, color = "grey50", family = "Roboto"
+  ) +
+
+  # -- Middle zone: Standard Metrics formulas (serif) --
+  geom_richtext(
+    aes(x = 4, y = 53, label = standard_formulas),
+    hjust = 0, vjust = 1, size = richtext_size, family = "serif",
+    fill = NA, label.color = NA, color = "grey20",
+    label.padding = unit(0, "lines")
+  ) +
+
+  # -- Middle zone: Field-Level Metrics formulas (serif) --
+  geom_richtext(
+    aes(x = 54, y = 53, label = field_formulas),
+    hjust = 0, vjust = 1, size = richtext_size, family = "serif",
+    fill = NA, label.color = NA, color = "grey20",
+    label.padding = unit(0, "lines")
+  ) +
+
+  # -- Bottom zone: FN Categories formulas (serif) --
+  geom_richtext(
+    aes(x = 4, y = 28, label = fn_formulas),
+    hjust = 0, vjust = 1, size = richtext_size, family = "serif",
+    fill = NA, label.color = NA, color = "grey20",
+    label.padding = unit(0, "lines")
+  ) +
+
+  # -- Bottom zone: Robustness Properties (Roboto, plain text) --
+  annotate(
+    "text", x = 54, y = 28, label = robustness,
+    hjust = 0, vjust = 1, size = richtext_size,
+    family = "Roboto", color = "grey20", lineheight = 1.2
+  ) +
+
+  labs(
+    title = "Scoring Methodology",
+    subtitle = "Formulas and weights from validate_pipeline.py"
+  ) +
+  theme_pub() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank(),
+    axis.ticks.length = unit(0, "pt"),
+    panel.grid.major = element_blank()
+  )
+
+
+# =============================================================================
 # Combine and save
 # =============================================================================
 
-combined <- (p1 / p2 / p3) +
-  plot_layout(heights = c(1, 1.15, 0.9)) +
+# Thin horizontal rule separator between panels
+sep <- ggplot() +
+  geom_segment(aes(x = 0, xend = 1, y = 0.5, yend = 0.5),
+               color = "grey60", linewidth = 0.5) +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE) +
+  theme_void() +
+  theme(plot.margin = margin(0, 14, 0, 14))
+
+combined <- (p1 / sep / p2 / sep / p3 / sep / p4) +
+  plot_layout(heights = c(1, 0.015, 1.15, 0.015, 0.9, 0.015, 1.4)) +
   plot_annotation(
     title = "LLM Tuning Runs \u2014 Configuration Comparison",
     subtitle = paste0(
@@ -283,11 +525,11 @@ combined <- (p1 / p2 / p3) +
     ),
     theme = theme(
       plot.title = element_text(
-        size = 17, face = "bold", color = "grey10",
+        family = "Roboto", size = 17, face = "bold", color = "grey10",
         margin = margin(b = 2)
       ),
       plot.subtitle = element_text(
-        size = 11, color = "grey50", margin = margin(b = 12)
+        family = "Roboto", size = 11, color = "grey50", margin = margin(b = 12)
       ),
       plot.margin = margin(12, 12, 10, 12)
     )
@@ -295,5 +537,6 @@ combined <- (p1 / p2 / p3) +
 
 out_path <- file.path("logs", "tuning", "tuning_runs.png")
 ggsave(out_path, combined,
-       width = 12, height = 14, dpi = 300, bg = "white")
+       width = 12, height = 21, dpi = 300, bg = "white",
+       device = ragg::agg_png)
 cat("Saved:", out_path, "\n")
