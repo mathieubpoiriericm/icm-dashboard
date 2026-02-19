@@ -124,7 +124,7 @@ class PipelineConfig:
     )
     # Prompt version for A/B testing during tuning ("v1", "v2", etc.)
     prompt_version: str = field(
-        default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v3")
+        default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v5")
     )
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
@@ -176,7 +176,7 @@ class PipelineConfig:
 
     # --- Validation ---
     confidence_threshold: float = field(
-        default_factory=lambda: _env_float("PIPELINE_CONFIDENCE_THRESHOLD", 0.7)
+        default_factory=lambda: _env_float("PIPELINE_CONFIDENCE_THRESHOLD", 0.65)
     )
 
     # --- External API rate limits ---
