@@ -766,7 +766,9 @@ combined <- combined +
     )
   )
 
-out_path <- file.path("logs", "tuning", "tuning_runs.png")
+out_dir <- file.path("logs", "png")
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+out_path <- file.path(out_dir, "tuning_runs.png")
 ggsave(out_path, combined,
        width = 12, height = fig_height, dpi = 300, bg = "white",
        device = ragg::agg_png)
