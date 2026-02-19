@@ -38,7 +38,8 @@ best_run <- runs[best_idx, ]
 prompt_colors <- c(
   "v2" = "#2d287a",
   "v3" = "#4a7ceb",
-  "v4" = "#d94f3b"
+  "v4" = "#d94f3b",
+  "v5" = "#35b779"
 )
 
 # Weight color palettes for infographic panel
@@ -519,7 +520,8 @@ combined <- (p1 / sep / p2 / sep / p3 / sep / p4) +
   plot_annotation(
     title = "LLM Tuning Runs \u2014 Configuration Comparison",
     subtitle = paste0(
-      "10 runs across prompt versions (v2, v3, v4) ",
+      nrow(runs), " runs across prompt versions (",
+      paste(sort(unique(runs$prompt_version)), collapse = ", "), ") ",
       "and confidence thresholds (0.4\u20130.75)  |  ",
       "Model: claude-opus-4-6"
     ),
