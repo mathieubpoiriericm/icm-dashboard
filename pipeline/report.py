@@ -28,7 +28,7 @@ _CACHE_WRITE_MULTIPLIER: float = 2.0  # 1h TTL
 _CACHE_READ_MULTIPLIER: float = 0.1
 
 
-class PaperSummary(TypedDict):
+class PaperSummary(TypedDict, total=False):
     """Serialisable summary for one processed paper."""
 
     pmid: str
@@ -40,6 +40,9 @@ class PaperSummary(TypedDict):
     rejected_gene_count: int
     rejected_genes: list[dict[str, Any]]
     processing_time: float
+    pdf_parse_time: float
+    llm_time: float
+    validation_time: float
 
 
 class PipelineRunData(TypedDict, total=False):
@@ -105,19 +108,23 @@ def _paper_results_to_summaries(
             {"gene": rg.gene.model_dump(), "reasons": rg.reasons}
             for rg in getattr(r, "rejected_genes", [])
         ]
-        summaries.append(
-            {
-                "pmid": r.pmid,
-                "fulltext": r.fulltext,
-                "source": r.source,
-                "error": r.error,
-                "gene_count": len(r.genes),
-                "genes": genes_data,
-                "rejected_gene_count": len(rejected_data),
-                "rejected_genes": rejected_data,
-                "processing_time": getattr(r, "processing_time", 0.0),
-            }
-        )
+        summary: PaperSummary = {
+            "pmid": r.pmid,
+            "fulltext": r.fulltext,
+            "source": r.source,
+            "error": r.error,
+            "gene_count": len(r.genes),
+            "genes": genes_data,
+            "rejected_gene_count": len(rejected_data),
+            "rejected_genes": rejected_data,
+            "processing_time": getattr(r, "processing_time", 0.0),
+        }
+        # Include per-step timing when available
+        for timing_field in ("pdf_parse_time", "llm_time", "validation_time"):
+            val = getattr(r, timing_field, 0.0)
+            if val > 0:
+                summary[timing_field] = val
+        summaries.append(summary)
     return summaries
 
 
@@ -168,6 +175,8 @@ def _build_common_run_data(
         "token_usage": {
             "input_tokens": tu.input_tokens,
             "output_tokens": tu.output_tokens,
+            "thinking_tokens": tu.thinking_tokens,
+            "text_output_tokens": tu.text_output_tokens,
             "cache_creation_input_tokens": tu.cache_creation_input_tokens,
             "cache_read_input_tokens": tu.cache_read_input_tokens,
             "total_tokens": tu.total_tokens,
@@ -384,6 +393,7 @@ def print_rich_summary(data: PipelineRunData) -> None:
         papers_table.add_column("Source")
         papers_table.add_column("Genes", justify="right")
         papers_table.add_column("Time", justify="right")
+        papers_table.add_column("Breakdown", justify="right")
         papers_table.add_column("Status")
 
         for p in papers_detail:
@@ -398,11 +408,22 @@ def print_rich_summary(data: PipelineRunData) -> None:
                 style = "yellow"
                 status = Text("0 genes", style="yellow")
 
+            # Per-step timing breakdown
+            parts: list[str] = []
+            if p.get("pdf_parse_time", 0) > 0:
+                parts.append(f"pdf:{p['pdf_parse_time']:.1f}s")
+            if p.get("llm_time", 0) > 0:
+                parts.append(f"llm:{p['llm_time']:.1f}s")
+            if p.get("validation_time", 0) > 0:
+                parts.append(f"val:{p['validation_time']:.1f}s")
+            breakdown = " ".join(parts) if parts else ""
+
             papers_table.add_row(
                 p["pmid"],
                 p.get("source", ""),
                 str(p["gene_count"]),
                 f"{p.get('processing_time', 0):.1f}s",
+                breakdown,
                 status,
                 style=style,
             )
@@ -513,9 +534,16 @@ def print_rich_summary(data: PipelineRunData) -> None:
         cost = tu.get("estimated_cost_usd")
         cost_str = f"${_round_cost(cost):.2f} USD" if cost is not None else "N/A"
 
+        thinking = tu.get("thinking_tokens", 0)
+        text_out = tu.get("text_output_tokens", 0)
+        output_breakdown = ""
+        if thinking > 0:
+            output_breakdown = f" (~{thinking:,} thinking + ~{text_out:,} text)"
+
         token_lines = [
             f"[bold]Input tokens:[/bold] {tu.get('input_tokens', 0):,}",
-            f"[bold]Output tokens:[/bold] {tu.get('output_tokens', 0):,}",
+            f"[bold]Output tokens:[/bold] {tu.get('output_tokens', 0):,}"
+            f"{output_breakdown}",
             f"[bold]Cache read:[/bold] {tu.get('cache_read_input_tokens', 0):,}",
             f"[bold]Cache created:[/bold] {tu.get('cache_creation_input_tokens', 0):,}",
             f"[bold]Cache hit rate:[/bold] {tu.get('cache_hit_rate', 0):.1%}",

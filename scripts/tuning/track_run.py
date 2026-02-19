@@ -33,9 +33,7 @@ from validate_pipeline import (  # noqa: E402
     parse_reference_csv,
 )
 
-DEFAULT_REFERENCE_PATH = (
-    _PROJECT_ROOT / "data" / "test_data" / "gold_standard_2.csv"
-)
+DEFAULT_REFERENCE_PATH = _PROJECT_ROOT / "data" / "test_data" / "gold_standard_2.csv"
 TRACKING_CSV = _PROJECT_ROOT / "logs" / "tuning" / "tuning_runs.csv"
 
 CSV_COLUMNS = [
@@ -59,6 +57,11 @@ CSV_COLUMNS = [
     "f2",
     "composite_score",
     "estimated_cost_usd",
+    "input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "total_processing_time",
+    "llm_time",
     "notes",
 ]
 
@@ -111,6 +114,9 @@ def _print_diff(current: dict[str, str], previous: dict[str, str]) -> None:
         "total_validated",
         "total_rejected",
         "acceptance_rate",
+        "estimated_cost_usd",
+        "total_processing_time",
+        "llm_time",
     ]
     for key in diff_keys:
         cur_val = current.get(key, "")
@@ -170,6 +176,10 @@ def track_run(
     f2 = _compute_f_beta(scores.precision, scores.recall, 2.0)
     run_id = _next_run_id(TRACKING_CSV)
 
+    # Extract per-paper timing (sum llm_time across all papers)
+    papers_detail = report.get("papers_detail", [])
+    total_llm_time = sum(p.get("llm_time", 0) for p in papers_detail)
+
     row = {
         "run_id": str(run_id),
         "timestamp": datetime.now(UTC).isoformat(),
@@ -191,6 +201,11 @@ def track_run(
         "f2": f"{f2:.4f}",
         "composite_score": f"{scores.composite:.4f}",
         "estimated_cost_usd": str(token_info.get("estimated_cost_usd", "")),
+        "input_tokens": str(token_info.get("input_tokens", "")),
+        "output_tokens": str(token_info.get("output_tokens", "")),
+        "thinking_tokens": str(token_info.get("thinking_tokens", "")),
+        "total_processing_time": f"{report.get('total_processing_time', 0):.1f}",
+        "llm_time": f"{total_llm_time:.1f}",
         "notes": notes,
     }
 

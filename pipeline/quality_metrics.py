@@ -21,6 +21,15 @@ class TokenUsage:
     output_tokens: int = 0
     cache_creation_input_tokens: int = 0
     cache_read_input_tokens: int = 0
+    # Estimated thinking tokens (output_tokens minus text-block tokens).
+    # The API does not separate thinking from text in usage counts, so this
+    # is set by the caller after inspecting response content blocks.
+    thinking_tokens: int = 0
+
+    @property
+    def text_output_tokens(self) -> int:
+        """Estimated non-thinking output tokens."""
+        return max(0, self.output_tokens - self.thinking_tokens)
 
     @property
     def total_tokens(self) -> int:
@@ -39,6 +48,7 @@ class TokenUsage:
         self.output_tokens += other.output_tokens
         self.cache_creation_input_tokens += other.cache_creation_input_tokens
         self.cache_read_input_tokens += other.cache_read_input_tokens
+        self.thinking_tokens += other.thinking_tokens
         return self
 
 
@@ -118,6 +128,11 @@ class PipelineMetrics:
                 f"  Tokens: {tu.input_tokens:,} input + {tu.output_tokens:,} output "
                 f"= {tu.total_tokens:,} total"
             )
+            if tu.thinking_tokens > 0:
+                lines.append(
+                    f"  Output breakdown: ~{tu.thinking_tokens:,} thinking "
+                    f"+ ~{tu.text_output_tokens:,} text"
+                )
             if tu.cache_read_input_tokens > 0 or tu.cache_creation_input_tokens > 0:
                 lines.append(
                     f"  Cache: {tu.cache_read_input_tokens:,} read, "

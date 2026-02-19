@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Visualize LLM tuning run results from logs/tuning/tuning_runs.csv
-# Publication-ready 3-panel figure
+# Publication-ready multi-panel figure
 
 library(ggplot2)
 library(dplyr)
@@ -28,11 +28,36 @@ runs <- readr::read_csv(csv_path, show_col_types = FALSE)
 runs <- runs |>
   mutate(
     run_label = paste0("Run ", run_id),
-    run_short = as.character(run_id)
+    run_short = as.character(run_id),
+    # Extract model family from full model name (e.g. "claude-opus-4-6" -> "Opus")
+    model_family = dplyr::case_when(
+      grepl("opus", llm_model, ignore.case = TRUE)   ~ "Opus",
+      grepl("sonnet", llm_model, ignore.case = TRUE)  ~ "Sonnet",
+      grepl("haiku", llm_model, ignore.case = TRUE)   ~ "Haiku",
+      .default = "Other"
+    ),
+    # Effort label (NA-safe for old rows)
+    effort_label = dplyr::if_else(
+      is.na(llm_effort) | llm_effort == "", "high", llm_effort
+    ),
+    # Combined config badge for labels
+    config_badge = paste0(model_family, "/", effort_label)
   )
+
+# Ensure numeric columns added later are numeric (NA for old rows)
+for (col in c("input_tokens", "output_tokens", "thinking_tokens",
+              "total_processing_time", "llm_time")) {
+  if (col %in% names(runs)) {
+    runs[[col]] <- as.numeric(runs[[col]])
+  }
+}
 
 best_idx <- which.max(runs$composite_score)
 best_run <- runs[best_idx, ]
+
+# Model shapes: consistent across all panels
+model_shapes <- c("Opus" = 21, "Sonnet" = 24, "Haiku" = 22, "Other" = 23)
+has_multiple_models <- length(unique(runs$model_family)) > 1L
 
 # -- Palette & theme ----------------------------------------------------------
 prompt_colors <- c(
@@ -101,8 +126,8 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
         color = prompt_version),
     linewidth = 0.9, lineend = "round"
   ) +
-  geom_point(aes(fill = prompt_version),
-             shape = 21, size = 4.5, stroke = 0.5, color = "white") +
+  geom_point(aes(fill = prompt_version, shape = model_family),
+             size = 4.5, stroke = 0.5, color = "white") +
   geom_point(
     data = best_run, aes(x = reorder(run_label, run_id)),
     shape = 21, size = 8, stroke = 1.5, fill = NA, color = "#e6a817"
@@ -118,8 +143,10 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
     label = paste0(
       "Best: ", best_run$prompt_version,
       " | t=", best_run$confidence_threshold,
+      " | ", best_run$config_badge,
       "\nScore: ", sprintf("%.4f", best_run$composite_score)
     ),
+    hjust = dplyr::if_else(best_idx > nrow(runs) * 0.6, 1, 0.5),
     size = 2.8, fontface = "bold", family = "Roboto",
     fill = "#fdf6e3", color = "grey20",
     label.r = unit(0.25, "lines"),
@@ -127,6 +154,7 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
   ) +
   scale_color_manual(values = prompt_colors) +
   scale_fill_manual(values = prompt_colors) +
+  scale_shape_manual(values = model_shapes) +
   scale_y_continuous(
     limits = c(y_lo, y_hi),
     breaks = scales::pretty_breaks(6),
@@ -135,7 +163,7 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
   labs(
     title = "Composite Score by Configuration",
     subtitle = "Confidence threshold shown above each point; gold ring marks the best run",
-    x = NULL, y = "Composite Score", fill = "Prompt"
+    x = NULL, y = "Composite Score", fill = "Prompt", shape = "Model"
   ) +
   theme_pub() +
   theme(
@@ -145,7 +173,14 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
   ) +
   guides(
     color = "none",
-    fill = guide_legend(override.aes = list(size = 4, stroke = 0.3))
+    fill = guide_legend(
+      order = 1, override.aes = list(size = 4, stroke = 0.3, shape = 21)
+    ),
+    shape = if (has_multiple_models) {
+      guide_legend(order = 2, override.aes = list(size = 4, fill = "grey60"))
+    } else {
+      "none"
+    }
   )
 
 
@@ -187,8 +222,8 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
     family = "Roboto", inherit.aes = FALSE
   ) +
   geom_point(
-    aes(fill = prompt_version, size = f1),
-    shape = 21, stroke = 0.5, color = "white", alpha = 0.92
+    aes(fill = prompt_version, shape = model_family, size = f1),
+    stroke = 0.5, color = "white", alpha = 0.92
   ) +
   geom_point(
     data = best_run, aes(size = f1),
@@ -204,6 +239,7 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
   ) +
   scale_fill_manual(values = prompt_colors) +
   scale_color_manual(values = prompt_colors) +
+  scale_shape_manual(values = model_shapes) +
   scale_size_continuous(
     range = c(3.5, 10),
     breaks = c(0.30, 0.40, 0.50),
@@ -224,7 +260,7 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
   labs(
     title = "Precision\u2013Recall Tradeoff",
     subtitle = "Point size proportional to F1 score; dashed lines are F1 iso-curves",
-    x = "Recall", y = "Precision", fill = "Prompt"
+    x = "Recall", y = "Precision", fill = "Prompt", shape = "Model"
   ) +
   theme_pub() +
   theme(
@@ -234,8 +270,15 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
   ) +
   guides(
     color = "none",
-    fill = guide_legend(order = 1, override.aes = list(size = 4, stroke = 0.3)),
-    size = guide_legend(order = 2)
+    fill = guide_legend(
+      order = 1, override.aes = list(size = 4, stroke = 0.3, shape = 21)
+    ),
+    shape = if (has_multiple_models) {
+      guide_legend(order = 2, override.aes = list(size = 4, fill = "grey60"))
+    } else {
+      "none"
+    },
+    size = guide_legend(order = 3)
   )
 
 
@@ -244,8 +287,8 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
 # =============================================================================
 
 metrics_long <- runs |>
-  select(run_id, run_short, prompt_version, confidence_threshold,
-         precision, recall, f1, composite_score) |>
+  select(run_id, run_short, prompt_version, model_family,
+         confidence_threshold, precision, recall, f1, composite_score) |>
   pivot_longer(
     cols = c(precision, recall, f1, composite_score),
     names_to = "metric",
@@ -269,8 +312,8 @@ p3 <- ggplot(metrics_long, aes(x = reorder(run_short, run_id), y = value)) +
     linewidth = 0.6, alpha = 0.35
   ) +
   geom_point(
-    aes(fill = prompt_version),
-    shape = 21, size = 3, stroke = 0.4, color = "white"
+    aes(fill = prompt_version, shape = model_family),
+    size = 3, stroke = 0.4, color = "white"
   ) +
   geom_point(
     data = metric_best, aes(x = reorder(run_short, run_id)),
@@ -278,6 +321,7 @@ p3 <- ggplot(metrics_long, aes(x = reorder(run_short, run_id), y = value)) +
   ) +
   scale_color_manual(values = prompt_colors) +
   scale_fill_manual(values = prompt_colors) +
+  scale_shape_manual(values = model_shapes) +
   scale_y_continuous(
     labels = scales::label_number(accuracy = 0.01),
     expand = expansion(mult = c(0.02, 0.08))
@@ -285,7 +329,7 @@ p3 <- ggplot(metrics_long, aes(x = reorder(run_short, run_id), y = value)) +
   labs(
     title = "Metric Breakdown by Run",
     subtitle = "Each panel independently scaled; best value per metric highlighted",
-    x = "Run", y = NULL, fill = "Prompt"
+    x = "Run", y = NULL, fill = "Prompt", shape = "Model"
   ) +
   theme_pub() +
   theme(
@@ -298,7 +342,14 @@ p3 <- ggplot(metrics_long, aes(x = reorder(run_short, run_id), y = value)) +
   ) +
   guides(
     color = "none",
-    fill = guide_legend(override.aes = list(size = 4, stroke = 0.3))
+    fill = guide_legend(
+      order = 1, override.aes = list(size = 4, stroke = 0.3, shape = 21)
+    ),
+    shape = if (has_multiple_models) {
+      guide_legend(order = 2, override.aes = list(size = 3, fill = "grey60"))
+    } else {
+      "none"
+    }
   )
 
 
@@ -507,6 +558,155 @@ p4 <- ggplot() +
 
 
 # =============================================================================
+# Panel 5: Cost & Speed Tradeoff
+# =============================================================================
+
+# Always available: estimated_cost_usd. Optional: llm_time, output_tokens.
+has_cost <- "estimated_cost_usd" %in% names(runs) &&
+  any(!is.na(runs$estimated_cost_usd))
+
+if (has_cost) {
+  runs <- runs |>
+    mutate(
+      cost = as.numeric(estimated_cost_usd),
+      # LLM time in minutes (NA for old rows without timing)
+      llm_min = if ("llm_time" %in% names(runs)) {
+        as.numeric(llm_time) / 60
+      } else {
+        NA_real_
+      }
+    )
+  best_run <- runs[best_idx, ]  # refresh after mutate
+
+  has_timing <- "llm_min" %in% names(runs) &&
+    any(!is.na(runs$llm_min))
+
+  # Left panel: Cost vs Composite Score
+  p5a <- ggplot(
+    runs, aes(x = cost, y = composite_score)
+  ) +
+    geom_point(
+      aes(fill = prompt_version, shape = model_family),
+      size = 4.5, stroke = 0.5, color = "white"
+    ) +
+    geom_point(
+      data = best_run,
+      shape = 21, size = 8, stroke = 1.5, fill = NA, color = "#e6a817"
+    ) +
+    geom_text_repel(
+      aes(label = paste0("#", run_id), color = prompt_version),
+      size = 3.0, fontface = "bold", family = "Roboto",
+      point.padding = 0.4, box.padding = 0.45,
+      min.segment.length = 0.3, segment.color = "grey75",
+      segment.size = 0.3, max.overlaps = 20,
+      show.legend = FALSE
+    ) +
+    scale_fill_manual(values = prompt_colors) +
+    scale_color_manual(values = prompt_colors) +
+    scale_shape_manual(values = model_shapes) +
+    scale_x_continuous(
+      labels = scales::label_dollar(accuracy = 0.01)
+    ) +
+    scale_y_continuous(
+      labels = scales::label_number(accuracy = 0.01)
+    ) +
+    labs(
+      title = "Cost vs. Quality",
+      subtitle = "Lower-left = cheaper; higher = better quality",
+      x = "Estimated Cost (USD)", y = "Composite Score",
+      fill = "Prompt", shape = "Model"
+    ) +
+    theme_pub() +
+    theme(
+      legend.position = "top",
+      legend.justification = "left",
+      legend.box = "horizontal"
+    ) +
+    guides(
+      color = "none",
+      fill = guide_legend(
+        order = 1,
+        override.aes = list(size = 4, stroke = 0.3, shape = 21)
+      ),
+      shape = if (has_multiple_models) {
+        guide_legend(
+          order = 2, override.aes = list(size = 4, fill = "grey60")
+        )
+      } else {
+        "none"
+      }
+    )
+
+  # Right panel: LLM Time vs Composite (only if timing data exists)
+  if (has_timing) {
+    runs_timed <- runs |> filter(!is.na(llm_min))
+    best_timed <- if (!is.na(best_run$llm_min)) {
+      best_run
+    } else {
+      runs_timed[which.max(runs_timed$composite_score), ]
+    }
+
+    p5b <- ggplot(
+      runs_timed, aes(x = llm_min, y = composite_score)
+    ) +
+      geom_point(
+        aes(fill = prompt_version, shape = model_family),
+        size = 4.5, stroke = 0.5, color = "white"
+      ) +
+      geom_point(
+        data = best_timed,
+        shape = 21, size = 8, stroke = 1.5, fill = NA, color = "#e6a817"
+      ) +
+      geom_text_repel(
+        aes(label = paste0("#", run_id), color = prompt_version),
+        size = 3.0, fontface = "bold", family = "Roboto",
+        point.padding = 0.4, box.padding = 0.45,
+        min.segment.length = 0.3, segment.color = "grey75",
+        segment.size = 0.3, max.overlaps = 20,
+        show.legend = FALSE
+      ) +
+      scale_fill_manual(values = prompt_colors) +
+      scale_color_manual(values = prompt_colors) +
+      scale_shape_manual(values = model_shapes) +
+      scale_y_continuous(
+        labels = scales::label_number(accuracy = 0.01)
+      ) +
+      labs(
+        title = "LLM Time vs. Quality",
+        subtitle = "Lower-left = faster; higher = better quality",
+        x = "LLM Streaming Time (min)", y = "Composite Score",
+        fill = "Prompt", shape = "Model"
+      ) +
+      theme_pub() +
+      theme(
+        legend.position = "top",
+        legend.justification = "left",
+        legend.box = "horizontal"
+      ) +
+      guides(
+        color = "none",
+        fill = guide_legend(
+          order = 1,
+          override.aes = list(size = 4, stroke = 0.3, shape = 21)
+        ),
+        shape = if (has_multiple_models) {
+          guide_legend(
+            order = 2, override.aes = list(size = 4, fill = "grey60")
+          )
+        } else {
+          "none"
+        }
+      )
+
+    p5 <- p5a + p5b + plot_layout(ncol = 2, guides = "collect") &
+      theme(legend.position = "top", legend.justification = "left")
+  } else {
+    p5 <- p5a
+  }
+}
+
+
+# =============================================================================
 # Combine and save
 # =============================================================================
 
@@ -518,16 +718,35 @@ sep <- ggplot() +
   theme_void() +
   theme(plot.margin = margin(0, 14, 0, 14))
 
-combined <- (p1 / sep / p2 / sep / p3 / sep / p4) +
-  plot_layout(heights = c(1, 0.015, 1.15, 0.015, 0.9, 0.015, 1.4)) +
+# Dynamic subtitle: models, efforts, thresholds
+threshold_range <- range(runs$confidence_threshold)
+model_str <- paste(sort(unique(runs$model_family)), collapse = ", ")
+effort_str <- paste(sort(unique(runs$effort_label)), collapse = ", ")
+anno_subtitle <- paste0(
+  nrow(runs), " runs across prompt versions (",
+  paste(sort(unique(runs$prompt_version)), collapse = ", "), "), ",
+  "thresholds (",
+  threshold_range[1], "\u2013", threshold_range[2], ")  |  ",
+  "Models: ", model_str, "  |  Effort: ", effort_str
+)
+
+# Assemble layout: include Panel 5 if cost data is available
+if (has_cost) {
+  combined <- (p1 / sep / p2 / sep / p3 / sep / p5 / sep / p4) +
+    plot_layout(
+      heights = c(1, 0.015, 1.15, 0.015, 0.9, 0.015, 1.15, 0.015, 1.4)
+    )
+  fig_height <- 26
+} else {
+  combined <- (p1 / sep / p2 / sep / p3 / sep / p4) +
+    plot_layout(heights = c(1, 0.015, 1.15, 0.015, 0.9, 0.015, 1.4))
+  fig_height <- 21
+}
+
+combined <- combined +
   plot_annotation(
     title = "LLM Tuning Runs \u2014 Configuration Comparison",
-    subtitle = paste0(
-      nrow(runs), " runs across prompt versions (",
-      paste(sort(unique(runs$prompt_version)), collapse = ", "), ") ",
-      "and confidence thresholds (0.4\u20130.75)  |  ",
-      "Model: claude-opus-4-6"
-    ),
+    subtitle = anno_subtitle,
     theme = theme(
       plot.title = element_text(
         family = "Roboto", size = 17, face = "bold", color = "grey10",
@@ -542,6 +761,6 @@ combined <- (p1 / sep / p2 / sep / p3 / sep / p4) +
 
 out_path <- file.path("logs", "tuning", "tuning_runs.png")
 ggsave(out_path, combined,
-       width = 12, height = 21, dpi = 300, bg = "white",
+       width = 12, height = fig_height, dpi = 300, bg = "white",
        device = ragg::agg_png)
 cat("Saved:", out_path, "\n")

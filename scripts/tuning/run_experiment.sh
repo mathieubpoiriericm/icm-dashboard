@@ -2,14 +2,31 @@
 # Run a full tuning experiment: extract → validate → analyze → calibrate → track.
 #
 # Usage:
-#   ./scripts/tuning/run_experiment.sh [threshold] [notes] [pdf_path]
+#   ./scripts/tuning/run_experiment.sh [--fast] [threshold] [notes] [pdf_path]
+#
+# Options:
+#   --fast  Use Sonnet + low effort + reduced max_tokens for ~3x faster iteration.
+#           Also skips NCBI validation during extraction.
 #
 # Examples:
-#   ./scripts/tuning/run_experiment.sh                          # defaults
+#   ./scripts/tuning/run_experiment.sh                          # defaults (Opus, high effort)
+#   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick test"  # Sonnet, low effort
 #   ./scripts/tuning/run_experiment.sh 0.5 "lower threshold test"
 #   ./scripts/tuning/run_experiment.sh 0.7 "v2 prompt" pipeline/test_data/36180795.pdf
 
 set -euo pipefail
+
+# Parse --fast flag
+FAST_MODE=false
+SKIP_VALIDATION_FLAG=""
+if [ "${1:-}" = "--fast" ]; then
+  FAST_MODE=true
+  shift
+  export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
+  export PIPELINE_LLM_EFFORT="${PIPELINE_LLM_EFFORT:-low}"
+  export PIPELINE_LLM_MAX_TOKENS="${PIPELINE_LLM_MAX_TOKENS:-16000}"
+  SKIP_VALIDATION_FLAG="--skip-validation"
+fi
 
 THRESHOLD="${1:-0.65}"
 NOTES="${2:-}"
@@ -61,13 +78,17 @@ log_echo "=== Tuning Experiment ==="
 log_echo "  Threshold:      $THRESHOLD"
 log_echo "  PDF:            $PDF_PATH"
 log_echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v5}"
+log_echo "  Model:          ${PIPELINE_LLM_MODEL:-claude-opus-4-6}"
+log_echo "  Effort:         ${PIPELINE_LLM_EFFORT:-high}"
+log_echo "  Max tokens:     ${PIPELINE_LLM_MAX_TOKENS:-64000}"
+log_echo "  Fast mode:      $FAST_MODE"
 log_echo "  Notes:          ${NOTES:-<none>}"
 log_echo ""
 
 # Step 1: Extract
 log_echo "--- Step 1: Running pipeline extraction ---"
 PIPELINE_CONFIDENCE_THRESHOLD="$THRESHOLD" \
-  run_logged python pipeline/main.py --local-pdfs "$PDF_PATH"
+  run_logged python pipeline/main.py --local-pdfs "$PDF_PATH" $SKIP_VALIDATION_FLAG
 
 # Find the latest report
 REPORT=$(ls -t logs/json/pipeline_report_*.json 2>/dev/null | head -1)

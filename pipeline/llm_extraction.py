@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 import anthropic
@@ -183,8 +184,10 @@ async def extract_from_paper(
                 "output_config": output_config,
             }
 
+            stream_start = time.monotonic()
             async with client.messages.stream(**stream_kwargs) as stream:
                 response = await stream.get_final_message()
+            stream_elapsed = time.monotonic() - stream_start
 
             # Track token usage from final message
             accumulate_usage(usage, response)
@@ -204,11 +207,7 @@ async def extract_from_paper(
             # both thinking + text output. If thinking consumed most of the
             # budget, the JSON output gets cut off mid-stream.
             if response.stop_reason == "max_tokens":
-                used = (
-                    response.usage.output_tokens
-                    if response.usage
-                    else "?"
-                )
+                used = response.usage.output_tokens if response.usage else "?"
                 raise ValueError(
                     f"Response truncated (stop_reason=max_tokens, "
                     f"output_tokens={used}/{config.llm_max_tokens}). "
@@ -216,11 +215,38 @@ async def extract_from_paper(
                     f"reduce effort level."
                 )
 
-            # Extract text content from response blocks (skip thinking blocks)
+            # Extract text content and estimate thinking tokens from
+            # content blocks. The API lumps thinking + text into
+            # output_tokens, so we estimate the split from char counts.
             text_content = ""
+            thinking_chars = 0
+            text_chars = 0
             for block in response.content:
-                if hasattr(block, "type") and block.type == "text":
-                    text_content += block.text
+                block_type = getattr(block, "type", None)
+                if block_type == "thinking":
+                    thinking_chars += len(getattr(block, "thinking", ""))
+                elif block_type == "text":
+                    block_text: str = getattr(block, "text", "")
+                    text_content += block_text
+                    text_chars += len(block_text)
+
+            # Estimate thinking tokens from character ratio
+            total_chars = thinking_chars + text_chars
+            if total_chars > 0 and usage.output_tokens > 0:
+                thinking_ratio = thinking_chars / total_chars
+                usage.thinking_tokens = int(usage.output_tokens * thinking_ratio)
+
+            # Log timing and token breakdown for observability
+            tok_per_sec = (
+                usage.output_tokens / stream_elapsed if stream_elapsed > 0 else 0
+            )
+            logger.info(
+                f"  LLM stream: {stream_elapsed:.1f}s, "
+                f"{usage.output_tokens:,} output tokens "
+                f"(~{usage.thinking_tokens:,} thinking + "
+                f"~{usage.text_output_tokens:,} text), "
+                f"{tok_per_sec:.0f} tok/s"
+            )
 
             if not text_content.strip():
                 logger.warning(f"Empty text response for PMID {pmid}")

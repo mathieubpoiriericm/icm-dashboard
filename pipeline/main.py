@@ -212,6 +212,9 @@ class PaperResult:
     error: str | None = None
     token_usage: TokenUsage = field(default_factory=TokenUsage)
     processing_time: float = 0.0
+    pdf_parse_time: float = 0.0
+    llm_time: float = 0.0
+    validation_time: float = 0.0
 
     @property
     def succeeded(self) -> bool:
@@ -733,7 +736,9 @@ async def run_local_pdf_pipeline(
                 try:
                     # Extract text
                     # Use asyncio.to_thread to avoid blocking loop with PDF parsing
+                    pdf_parse_start = time.monotonic()
                     text = await asyncio.to_thread(parse_local_pdf, pdf_path)
+                    pdf_parse_elapsed = time.monotonic() - pdf_parse_start
 
                     if not text:
                         logger.warning(f"  No text extracted from {pdf_path.name}")
@@ -741,12 +746,15 @@ async def run_local_pdf_pipeline(
                             pmid=file_id,
                             error="empty or corrupt PDF",
                             processing_time=time.monotonic() - start_time,
+                            pdf_parse_time=pdf_parse_elapsed,
                         )
 
                     # LLM extraction
+                    llm_start = time.monotonic()
                     genes, token_usage = await extract_from_paper(
                         text, file_id, config=config, rate_limiter=rate_limiter
                     )
+                    llm_elapsed = time.monotonic() - llm_start
 
                     # Update metrics safely (single-threaded event loop)
                     metrics.genes_extracted += len(genes)
@@ -759,6 +767,7 @@ async def run_local_pdf_pipeline(
                     logger.info(f"  Extracted {len(genes)} genes from {pdf_path.name}")
 
                     # Validation
+                    validation_start = time.monotonic()
                     if skip_validation:
                         validated_genes = genes
                         rejected_genes: list[RejectedGene] = []
@@ -793,6 +802,7 @@ async def run_local_pdf_pipeline(
                                 rejected_genes.append(
                                     RejectedGene(gene=gene, reasons=result.errors)
                                 )
+                    validation_elapsed = time.monotonic() - validation_start
 
                     metrics.papers_processed += 1
                     metrics.fulltext_retrieved += 1
@@ -804,6 +814,9 @@ async def run_local_pdf_pipeline(
                         fulltext=True,
                         source="local_pdf",
                         processing_time=time.monotonic() - start_time,
+                        pdf_parse_time=pdf_parse_elapsed,
+                        llm_time=llm_elapsed,
+                        validation_time=validation_elapsed,
                     )
 
                 except Exception as e:
@@ -959,9 +972,11 @@ async def run_pmid_pipeline(
                         logger.info("  Using abstract only")
 
                     # LLM extraction
+                    llm_start = time.monotonic()
                     genes, token_usage = await extract_from_paper(
                         text, pmid, config=config, rate_limiter=rate_limiter
                     )
+                    llm_elapsed = time.monotonic() - llm_start
                     metrics.genes_extracted += len(genes)
                     metrics.token_usage += token_usage
 
@@ -971,6 +986,7 @@ async def run_pmid_pipeline(
                     logger.info(f"  Extracted {len(genes)} genes")
 
                     # Validation
+                    validation_start = time.monotonic()
                     if skip_validation:
                         validated_genes = genes
                         rejected_genes: list[RejectedGene] = []
@@ -1003,6 +1019,7 @@ async def run_pmid_pipeline(
                                 rejected_genes.append(
                                     RejectedGene(gene=gene, reasons=result.errors)
                                 )
+                    validation_elapsed = time.monotonic() - validation_start
 
                     if is_fulltext:
                         metrics.fulltext_retrieved += 1
@@ -1017,6 +1034,8 @@ async def run_pmid_pipeline(
                         fulltext=is_fulltext,
                         source=source,
                         processing_time=time.monotonic() - start_time,
+                        llm_time=llm_elapsed,
+                        validation_time=validation_elapsed,
                     )
                 except Exception as e:
                     logger.error(f"Error processing PMID {pmid}: {e}")
