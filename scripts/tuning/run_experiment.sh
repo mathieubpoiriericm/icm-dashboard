@@ -7,13 +7,13 @@
 # Examples:
 #   ./scripts/tuning/run_experiment.sh                          # defaults
 #   ./scripts/tuning/run_experiment.sh 0.5 "lower threshold test"
-#   ./scripts/tuning/run_experiment.sh 0.7 "v2 prompt" pipeline/test_data/37069360.pdf
+#   ./scripts/tuning/run_experiment.sh 0.7 "v2 prompt" pipeline/test_data/36180795.pdf
 
 set -euo pipefail
 
 THRESHOLD="${1:-0.65}"
 NOTES="${2:-}"
-PDF_PATH="${3:-pipeline/test_data/37069360.pdf}"
+PDF_PATH="${3:-pipeline/test_data/36180795.pdf}"
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"

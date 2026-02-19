@@ -3,7 +3,7 @@
 Usage:
     python scripts/validate_pipeline.py logs/pipeline_report_<ts>.json
     python scripts/validate_pipeline.py report.json \\
-        --reference data/test_data/gold_standard.csv
+        --reference data/test_data/gold_standard_2.csv
     python scripts/validate_pipeline.py report.json --output-dir results/
     python scripts/validate_pipeline.py report.json --fulltext-only
     python scripts/validate_pipeline.py report.json --local-pdfs
@@ -28,7 +28,7 @@ from pathlib import Path
 NONE_FOUND_SENTINELS: set[str] = {"(none found)", "none found", "n/a", "na", ""}
 REFERENCE_NEEDED_SENTINELS: set[str] = {"(reference needed)", "reference needed"}
 
-DEFAULT_REFERENCE_PATH = Path("data/test_data/gold_standard.csv")
+DEFAULT_REFERENCE_PATH = Path("data/test_data/gold_standard_2.csv")
 
 _PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
