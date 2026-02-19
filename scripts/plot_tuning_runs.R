@@ -207,7 +207,10 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
   scale_size_continuous(
     range = c(3.5, 10),
     breaks = c(0.30, 0.40, 0.50),
-    limits = c(0.28, 0.53),
+    limits = c(
+      min(runs$f1) - 0.02,
+      max(runs$f1) + 0.02
+    ),
     name = "F1 Score"
   ) +
   scale_x_continuous(
