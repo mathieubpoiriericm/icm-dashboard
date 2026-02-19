@@ -43,6 +43,7 @@ CSV_COLUMNS = [
     "confidence_threshold",
     "llm_model",
     "llm_effort",
+    "test_pdf",
     "total_extracted",
     "total_validated",
     "total_rejected",
@@ -62,6 +63,7 @@ CSV_COLUMNS = [
     "thinking_tokens",
     "total_processing_time",
     "llm_time",
+    "run_group",
     "notes",
 ]
 
@@ -139,6 +141,8 @@ def track_run(
     *,
     local_pdfs: bool = False,
     notes: str = "",
+    test_pdf: str = "",
+    run_group: str = "",
 ) -> dict[str, str]:
     """Parse report, compute metrics, append row to CSV."""
     # Load pipeline report JSON
@@ -180,6 +184,11 @@ def track_run(
     papers_detail = report.get("papers_detail", [])
     total_llm_time = sum(p.get("llm_time", 0) for p in papers_detail)
 
+    # Derive test_pdf from report if not explicitly provided
+    if not test_pdf and papers_detail:
+        paper_pmids = [str(p.get("pmid", "")) for p in papers_detail if p.get("pmid")]
+        test_pdf = ";".join(paper_pmids) if paper_pmids else ""
+
     row = {
         "run_id": str(run_id),
         "timestamp": datetime.now(UTC).isoformat(),
@@ -187,6 +196,7 @@ def track_run(
         "confidence_threshold": str(cfg.get("confidence_threshold", "")),
         "llm_model": cfg.get("model", ""),
         "llm_effort": cfg.get("effort", ""),
+        "test_pdf": test_pdf,
         "total_extracted": str(genes_info.get("extracted", 0)),
         "total_validated": str(genes_info.get("validated", 0)),
         "total_rejected": str(genes_info.get("rejected", 0)),
@@ -206,6 +216,7 @@ def track_run(
         "thinking_tokens": str(v4) if (v4 := token_info.get("thinking_tokens")) is not None else "",
         "total_processing_time": f"{report.get('total_processing_time', 0):.1f}",
         "llm_time": f"{total_llm_time:.1f}",
+        "run_group": run_group,
         "notes": notes,
     }
 
@@ -273,6 +284,18 @@ def main(argv: list[str] | None = None) -> None:
         help="Use local-PDF reference filtering (single PMID mode)",
     )
     parser.add_argument(
+        "--test-pdf",
+        type=str,
+        default="",
+        help="Test PDF identifier (PMIDs or filenames); derived from report if omitted",
+    )
+    parser.add_argument(
+        "--run-group",
+        type=str,
+        default="",
+        help="Group ID for repeated runs (all repeats share the same group)",
+    )
+    parser.add_argument(
         "--notes",
         type=str,
         default="",
@@ -293,6 +316,8 @@ def main(argv: list[str] | None = None) -> None:
         args.reference,
         local_pdfs=args.local_pdfs,
         notes=args.notes,
+        test_pdf=args.test_pdf,
+        run_group=args.run_group,
     )
 
 

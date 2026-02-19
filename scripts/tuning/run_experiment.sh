@@ -2,36 +2,64 @@
 # Run a full tuning experiment: extract → validate → analyze → calibrate → track.
 #
 # Usage:
-#   ./scripts/tuning/run_experiment.sh [--fast] [threshold] [notes] [pdf_path]
+#   ./scripts/tuning/run_experiment.sh [--fast] [--repeats N] [threshold] [notes] [pdf_path]
 #
 # Options:
-#   --fast  Use Sonnet + low effort + reduced max_tokens for ~3x faster iteration.
+#   --fast       Use Sonnet + low effort + reduced max_tokens for ~3x faster iteration.
+#   --repeats N  Run the same config N times to measure variance (default: 1).
 #
 # Examples:
-#   ./scripts/tuning/run_experiment.sh                          # defaults (Opus, high effort)
-#   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick test"  # Sonnet, low effort
-#   ./scripts/tuning/run_experiment.sh 0.5 "lower threshold test"
-#   ./scripts/tuning/run_experiment.sh 0.7 "v2 prompt" pipeline/test_data/36180795.pdf
+#   ./scripts/tuning/run_experiment.sh                              # defaults: both PDFs, Opus, high effort
+#   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick test"     # Sonnet, low effort
+#   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "variance"  # 3 repeats for variance measurement
+#   ./scripts/tuning/run_experiment.sh 0.7 "v2 prompt" pipeline/test_data/36180795.pdf  # single PDF
 
 set -euo pipefail
 
-# Parse --fast flag
+# Parse flags
 FAST_MODE=false
 SKIP_VALIDATION_FLAG=""
-if [ "${1:-}" = "--fast" ]; then
-  FAST_MODE=true
-  shift
-  export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
-  export PIPELINE_LLM_EFFORT="${PIPELINE_LLM_EFFORT:-low}"
-  export PIPELINE_LLM_MAX_TOKENS="${PIPELINE_LLM_MAX_TOKENS:-16000}"
-fi
+REPEATS=1
 
-THRESHOLD="${1:-0.65}"
+while [ $# -gt 0 ]; do
+  case "${1}" in
+    --fast)
+      FAST_MODE=true
+      export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
+      export PIPELINE_LLM_EFFORT="${PIPELINE_LLM_EFFORT:-low}"
+      export PIPELINE_LLM_MAX_TOKENS="${PIPELINE_LLM_MAX_TOKENS:-16000}"
+      shift
+      ;;
+    --repeats)
+      REPEATS="${2:?--repeats requires a number}"
+      shift 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+THRESHOLD="${1:-0.70}"
 NOTES="${2:-}"
-PDF_PATH="${3:-pipeline/test_data/36180795.pdf}"
+PDF_PATH="${3:-pipeline/test_data/}"
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"
+
+# Generate a run group ID when doing repeats
+RUN_GROUP=""
+if [ "$REPEATS" -gt 1 ]; then
+  RUN_GROUP="grp_$(date +%Y%m%d_%H%M%S)"
+fi
+
+# Force rich/colorama to emit ANSI colors even though stdout is piped through tee.
+export FORCE_COLOR=1
+
+# Collect reports for summary stats across repeats
+ALL_REPORTS=()
+
+for ITER in $(seq 1 "$REPEATS"); do
 
 # Capture all console output so it can be embedded in the JSON report later.
 LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/experiment_log.XXXXXX")
@@ -57,7 +85,6 @@ with open(report_path, "w", encoding="utf-8") as f:
   fi
   rm -f "$LOG_FILE"
 }
-trap embed_log EXIT
 
 # Helper: echo to both terminal and log file.
 log_echo() {
@@ -69,10 +96,11 @@ run_logged() {
   "$@" 2>&1 | tee -a "$LOG_FILE"
 }
 
-# Force rich/colorama to emit ANSI colors even though stdout is piped through tee.
-export FORCE_COLOR=1
-
-log_echo "=== Tuning Experiment ==="
+if [ "$REPEATS" -gt 1 ]; then
+  log_echo "=== Tuning Experiment (repeat $ITER/$REPEATS, group $RUN_GROUP) ==="
+else
+  log_echo "=== Tuning Experiment ==="
+fi
 log_echo "  Threshold:      $THRESHOLD"
 log_echo "  PDF:            $PDF_PATH"
 log_echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v5}"
@@ -120,15 +148,69 @@ fi
 # Step 5: Track run
 log_echo ""
 log_echo "--- Step 5: Tracking run ---"
-run_logged python scripts/tuning/track_run.py \
-  --pipeline-report "$REPORT" \
-  --local-pdfs \
+TRACK_ARGS=(
+  --pipeline-report "$REPORT"
+  --local-pdfs
   --notes "${NOTES:-threshold=$THRESHOLD prompt=${PIPELINE_PROMPT_VERSION:-v5}}"
+)
+if [ -n "$RUN_GROUP" ]; then
+  TRACK_ARGS+=(--run-group "$RUN_GROUP")
+fi
+run_logged python scripts/tuning/track_run.py "${TRACK_ARGS[@]}"
 
 # Step 6: Plot
 log_echo ""
 log_echo "--- Step 6: Plotting tuning runs ---"
 run_logged Rscript scripts/plot_tuning_runs.R
 
+# Embed log and clean up for this iteration
+embed_log
+
+ALL_REPORTS+=("$REPORT")
+
 log_echo ""
-log_echo "=== Experiment complete ==="
+log_echo "=== Repeat $ITER/$REPEATS complete ==="
+
+done  # end of repeats loop
+
+# Print variance summary if multiple repeats
+if [ "$REPEATS" -gt 1 ]; then
+  echo ""
+  echo "=== Variance Summary ($REPEATS repeats, group $RUN_GROUP) ==="
+  python3 -c '
+import csv, sys, statistics
+from pathlib import Path
+
+csv_path = Path("logs/tuning/tuning_runs.csv")
+if not csv_path.exists():
+    print("  No tuning_runs.csv found", file=sys.stderr)
+    sys.exit(1)
+
+group = sys.argv[1]
+with open(csv_path, newline="", encoding="utf-8") as f:
+    rows = [r for r in csv.DictReader(f) if r.get("run_group") == group]
+
+if len(rows) < 2:
+    print(f"  Only {len(rows)} row(s) found for group {group}, need >= 2 for variance")
+    sys.exit(0)
+
+metrics = ["precision", "recall", "f1", "f2", "composite_score"]
+print(f"  Runs: {len(rows)}")
+print(f"  {'Metric':<18} {'Mean':>8} {'Std':>8} {'Min':>8} {'Max':>8}")
+print(f"  {'-'*18} {'-'*8} {'-'*8} {'-'*8} {'-'*8}")
+for m in metrics:
+    vals = []
+    for r in rows:
+        try:
+            vals.append(float(r[m]))
+        except (ValueError, KeyError):
+            pass
+    if len(vals) >= 2:
+        mean = statistics.mean(vals)
+        std = statistics.stdev(vals)
+        lo, hi = min(vals), max(vals)
+        print(f"  {m:<18} {mean:>8.4f} {std:>8.4f} {lo:>8.4f} {hi:>8.4f}")
+    elif vals:
+        print(f"  {m:<18} {vals[0]:>8.4f}      n/a      n/a      n/a")
+' "$RUN_GROUP"
+fi

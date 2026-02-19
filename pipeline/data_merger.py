@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Any, TypedDict, TypeVar
+from typing import Any, TypedDict
 
 from pipeline.database import (
     get_existing_genes,
@@ -17,9 +17,6 @@ from pipeline.llm_extraction import GeneEntry
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
-
-
 class MergeResult(TypedDict):
     """Result of merge operation."""
 
@@ -27,7 +24,7 @@ class MergeResult(TypedDict):
     updated: int
 
 
-def ensure_list(value: T | list[T] | None) -> list[Any]:
+def ensure_list[T](value: T | list[T] | None) -> list[Any]:
     """Ensure value is a list (handles LLM returning string instead of list).
 
     Args:

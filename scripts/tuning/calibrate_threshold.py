@@ -40,7 +40,7 @@ from validate_pipeline import (  # noqa: E402
 DEFAULT_REFERENCE_PATH = (
     _PROJECT_ROOT / "data" / "test_data" / "gold_standard_2.csv"
 )
-CURRENT_THRESHOLD = 0.65
+CURRENT_THRESHOLD = 0.70
 
 
 def _load_score_distribution(path: Path) -> list[dict[str, str]]:
