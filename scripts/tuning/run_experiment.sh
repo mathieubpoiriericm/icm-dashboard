@@ -14,9 +14,11 @@
 #   pdf_path       Path to a PDF or directory (default: pipeline/test_data/).
 #
 # Defaults:
-#   Model: claude-sonnet-4-6  |  Effort: high  |  Max tokens: 64000
-#   Override any default via env vars: PIPELINE_LLM_MODEL, PIPELINE_LLM_EFFORT,
-#   PIPELINE_LLM_MAX_TOKENS, PIPELINE_PROMPT_VERSION, PIPELINE_CONFIDENCE_THRESHOLD.
+#   Model:      claude-sonnet-4-6   (env: PIPELINE_LLM_MODEL)
+#   Effort:     high                (env: PIPELINE_LLM_EFFORT)
+#   Max tokens: 64000               (env: PIPELINE_LLM_MAX_TOKENS)
+#   Prompt:     v5                  (env: PIPELINE_PROMPT_VERSION)
+#   Threshold:  0.70                (env: PIPELINE_CONFIDENCE_THRESHOLD)
 #
 # Examples:
 #   ./scripts/tuning/run_experiment.sh                        # all defaults
@@ -34,6 +36,39 @@ REPEATS=1
 
 while [ $# -gt 0 ]; do
   case "${1}" in
+    --help)
+      cat <<'EOF'
+Run a full tuning experiment: extract → validate → analyze → calibrate → track.
+
+Usage:
+  ./scripts/tuning/run_experiment.sh [options] [threshold] [notes] [pdf_path]
+
+Options:
+  --help         Show this help message and exit.
+  --fast         Low effort + 16K max_tokens for ~3x faster iteration.
+  --repeats N    Run the same config N times to measure variance.
+
+Arguments (positional, all optional):
+  threshold      Confidence threshold for extraction (default: 0.70).
+  notes          Free-text label stored in the run tracker.
+  pdf_path       Path to a PDF or directory (default: pipeline/test_data/).
+
+Defaults:
+  Model:      claude-sonnet-4-6   (env: PIPELINE_LLM_MODEL)
+  Effort:     high                (env: PIPELINE_LLM_EFFORT)
+  Max tokens: 64000               (env: PIPELINE_LLM_MAX_TOKENS)
+  Prompt:     v5                  (env: PIPELINE_PROMPT_VERSION)
+  Threshold:  0.70                (env: PIPELINE_CONFIDENCE_THRESHOLD)
+
+Examples:
+  ./scripts/tuning/run_experiment.sh                        # all defaults
+  ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"    # low effort, 16K tokens
+  ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var" # 3 repeats for variance
+  ./scripts/tuning/run_experiment.sh 0.7 "v2" pipeline/test_data/36180795.pdf
+  PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh  # use Opus
+EOF
+      exit 0
+      ;;
     --fast)
       FAST_MODE=true
       export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
