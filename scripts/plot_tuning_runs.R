@@ -38,7 +38,7 @@ runs <- runs |>
     ),
     # Model version: use column if present, else derive from llm_model
     model_version = dplyr::case_when(
-      !is.na(model_version) & model_version != "" ~ model_version,
+      !is.na(model_version) & model_version != "" ~ as.character(model_version),
       grepl("claude-(opus|sonnet|haiku)-(\\d+)-(\\d+)", llm_model) ~
         sub(".*claude-(?:opus|sonnet|haiku)-(\\d+)-(\\d+).*", "\\1.\\2", llm_model, perl = TRUE),
       .default = "unknown"
