@@ -5,13 +5,15 @@
 #   ./scripts/tuning/run_experiment.sh [options] [threshold] [notes] [pdf_path]
 #
 # Options:
-#   --fast         Low effort + 16K max_tokens for ~3x faster iteration.
-#   --repeats N    Run the same config N times to measure variance.
+#   --fast            Low effort + 16K max_tokens for ~3x faster iteration.
+#   --repeats N       Run the same config N times to measure variance.
+#   --pdf PATH        Path to a PDF file or directory.
+#   --threshold NUM   Confidence threshold for extraction (default: 0.70).
+#   --notes TEXT      Free-text label stored in the run tracker.
 #
-# Arguments (positional, all optional):
-#   threshold      Confidence threshold for extraction (default: 0.70).
-#   notes          Free-text label stored in the run tracker.
-#   pdf_path       Path to a PDF or directory (default: data/test_data/pdf/).
+# Positional arguments (all optional, auto-detected):
+#   Numbers (e.g. 0.70) → threshold, file paths (contain / or end .pdf) → pdf_path,
+#   anything else → notes.
 #
 # Defaults:
 #   Model:      claude-sonnet-4-6   (env: PIPELINE_LLM_MODEL)
@@ -21,11 +23,14 @@
 #   Threshold:  0.70                (env: PIPELINE_CONFIDENCE_THRESHOLD)
 #
 # Examples:
-#   ./scripts/tuning/run_experiment.sh                        # all defaults
-#   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"    # low effort, 16K tokens
-#   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var" # 3 repeats for variance
+#   ./scripts/tuning/run_experiment.sh                                        # all defaults
+#   ./scripts/tuning/run_experiment.sh ./data/test_data/pdf/37063705.pdf      # just a PDF
+#   ./scripts/tuning/run_experiment.sh --pdf ./data/test_data/pdf/37063705.pdf # named flag
+#   ./scripts/tuning/run_experiment.sh --fast --pdf ./data/test_data/pdf/37063705.pdf
+#   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"                    # low effort
+#   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var"                 # 3 repeats
 #   ./scripts/tuning/run_experiment.sh 0.7 "v2" data/test_data/pdf/36180795.pdf
-#   PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh  # use Opus
+#   PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh     # use Opus
 
 set -euo pipefail
 
@@ -44,14 +49,16 @@ Usage:
   ./scripts/tuning/run_experiment.sh [options] [threshold] [notes] [pdf_path]
 
 Options:
-  --help         Show this help message and exit.
-  --fast         Low effort + 16K max_tokens for ~3x faster iteration.
-  --repeats N    Run the same config N times to measure variance.
+  --help            Show this help message and exit.
+  --fast            Low effort + 16K max_tokens for ~3x faster iteration.
+  --repeats N       Run the same config N times to measure variance.
+  --pdf PATH        Path to a PDF file or directory.
+  --threshold NUM   Confidence threshold for extraction (default: 0.70).
+  --notes TEXT      Free-text label stored in the run tracker.
 
-Arguments (positional, all optional):
-  threshold      Confidence threshold for extraction (default: 0.70).
-  notes          Free-text label stored in the run tracker.
-  pdf_path       Path to a PDF or directory (default: data/test_data/pdf/).
+Positional arguments (all optional, auto-detected):
+  Numbers (e.g. 0.70) → threshold, file paths (contain / or end .pdf) → pdf_path,
+  anything else → notes.
 
 Defaults:
   Model:      claude-sonnet-4-6   (env: PIPELINE_LLM_MODEL)
@@ -61,11 +68,14 @@ Defaults:
   Threshold:  0.70                (env: PIPELINE_CONFIDENCE_THRESHOLD)
 
 Examples:
-  ./scripts/tuning/run_experiment.sh                        # all defaults
-  ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"    # low effort, 16K tokens
-  ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var" # 3 repeats for variance
+  ./scripts/tuning/run_experiment.sh                                        # all defaults
+  ./scripts/tuning/run_experiment.sh ./data/test_data/pdf/37063705.pdf      # just a PDF
+  ./scripts/tuning/run_experiment.sh --pdf ./data/test_data/pdf/37063705.pdf # named flag
+  ./scripts/tuning/run_experiment.sh --fast --pdf ./data/test_data/pdf/37063705.pdf
+  ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"                    # low effort
+  ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var"                 # 3 repeats
   ./scripts/tuning/run_experiment.sh 0.7 "v2" data/test_data/pdf/36180795.pdf
-  PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh  # use Opus
+  PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh     # use Opus
 EOF
       exit 0
       ;;
@@ -80,6 +90,18 @@ EOF
       REPEATS="${2:?--repeats requires a number}"
       shift 2
       ;;
+    --pdf)
+      PDF_PATH="${2:?--pdf requires a path}"
+      shift 2
+      ;;
+    --threshold)
+      THRESHOLD="${2:?--threshold requires a number}"
+      shift 2
+      ;;
+    --notes)
+      NOTES="${2:?--notes requires text}"
+      shift 2
+      ;;
     *)
       break
       ;;
@@ -89,9 +111,21 @@ done
 # Default to Sonnet 4.6 (--fast still useful for low effort + reduced max_tokens).
 export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
 
-THRESHOLD="${1:-0.70}"
-NOTES="${2:-}"
-PDF_PATH="${3:-data/test_data/pdf/}"
+# Smart positional args: detect file paths vs thresholds
+for arg in "$@"; do
+  if [[ -z "${THRESHOLD+set}" ]] && [[ "$arg" =~ ^[0-9]*\.?[0-9]+$ ]]; then
+    THRESHOLD="$arg"
+  elif [[ -z "${PDF_PATH+set}" ]] && { [[ "$arg" == */* ]] || [[ "$arg" == *.pdf ]]; }; then
+    PDF_PATH="$arg"
+  elif [[ -z "${NOTES+set}" ]]; then
+    NOTES="$arg"
+  fi
+done
+
+# Apply defaults
+THRESHOLD="${THRESHOLD:-0.70}"
+NOTES="${NOTES:-}"
+PDF_PATH="${PDF_PATH:-data/test_data/pdf/}"
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"
