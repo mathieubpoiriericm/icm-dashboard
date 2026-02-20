@@ -72,7 +72,7 @@ _run_experiment() {
 }
 
 _run_experiment_pdf_path() {
-  _path_files -W pipeline/test_data -g '*.pdf' -/
+  _path_files -W data/test_data/pdf -g '*.pdf' -/
 }
 
 compdef _run_experiment run_experiment.sh ./scripts/tuning/run_experiment.sh scripts/tuning/run_experiment.sh

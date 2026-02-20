@@ -38,7 +38,7 @@ from validate_pipeline import (  # noqa: E402
 )
 
 DEFAULT_REFERENCE_PATH = (
-    _PROJECT_ROOT / "data" / "test_data" / "gold_standard_v2.csv"
+    _PROJECT_ROOT / "data" / "test_data" / "gold_standard" / "gold_standard_v2.csv"
 )
 CURRENT_THRESHOLD = 0.70
 

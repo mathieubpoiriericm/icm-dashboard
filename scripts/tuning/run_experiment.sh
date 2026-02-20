@@ -11,7 +11,7 @@
 # Arguments (positional, all optional):
 #   threshold      Confidence threshold for extraction (default: 0.70).
 #   notes          Free-text label stored in the run tracker.
-#   pdf_path       Path to a PDF or directory (default: pipeline/test_data/).
+#   pdf_path       Path to a PDF or directory (default: data/test_data/pdf/).
 #
 # Defaults:
 #   Model:      claude-sonnet-4-6   (env: PIPELINE_LLM_MODEL)
@@ -24,7 +24,7 @@
 #   ./scripts/tuning/run_experiment.sh                        # all defaults
 #   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"    # low effort, 16K tokens
 #   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var" # 3 repeats for variance
-#   ./scripts/tuning/run_experiment.sh 0.7 "v2" pipeline/test_data/36180795.pdf
+#   ./scripts/tuning/run_experiment.sh 0.7 "v2" data/test_data/pdf/36180795.pdf
 #   PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh  # use Opus
 
 set -euo pipefail
@@ -51,7 +51,7 @@ Options:
 Arguments (positional, all optional):
   threshold      Confidence threshold for extraction (default: 0.70).
   notes          Free-text label stored in the run tracker.
-  pdf_path       Path to a PDF or directory (default: pipeline/test_data/).
+  pdf_path       Path to a PDF or directory (default: data/test_data/pdf/).
 
 Defaults:
   Model:      claude-sonnet-4-6   (env: PIPELINE_LLM_MODEL)
@@ -64,7 +64,7 @@ Examples:
   ./scripts/tuning/run_experiment.sh                        # all defaults
   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"    # low effort, 16K tokens
   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var" # 3 repeats for variance
-  ./scripts/tuning/run_experiment.sh 0.7 "v2" pipeline/test_data/36180795.pdf
+  ./scripts/tuning/run_experiment.sh 0.7 "v2" data/test_data/pdf/36180795.pdf
   PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh  # use Opus
 EOF
       exit 0
@@ -91,7 +91,7 @@ export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
 
 THRESHOLD="${1:-0.70}"
 NOTES="${2:-}"
-PDF_PATH="${3:-pipeline/test_data/}"
+PDF_PATH="${3:-data/test_data/pdf/}"
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"
