@@ -93,6 +93,7 @@ PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 # Pricing per 1M tokens (input, output) — update when models change.
 MODEL_PRICING: Final[dict[str, tuple[float, float]]] = {
     "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
     "claude-opus-4-5-20251101": (5.0, 25.0),
     "claude-opus-4-1-20250805": (15.0, 75.0),
     "claude-opus-4-20250514": (15.0, 75.0),

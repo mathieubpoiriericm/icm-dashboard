@@ -2,17 +2,28 @@
 # Run a full tuning experiment: extract → validate → analyze → calibrate → track.
 #
 # Usage:
-#   ./scripts/tuning/run_experiment.sh [--fast] [--repeats N] [threshold] [notes] [pdf_path]
+#   ./scripts/tuning/run_experiment.sh [options] [threshold] [notes] [pdf_path]
 #
 # Options:
-#   --fast       Use Sonnet + low effort + reduced max_tokens for ~3x faster iteration.
-#   --repeats N  Run the same config N times to measure variance (default: 1).
+#   --fast         Low effort + 16K max_tokens for ~3x faster iteration.
+#   --repeats N    Run the same config N times to measure variance.
+#
+# Arguments (positional, all optional):
+#   threshold      Confidence threshold for extraction (default: 0.70).
+#   notes          Free-text label stored in the run tracker.
+#   pdf_path       Path to a PDF or directory (default: pipeline/test_data/).
+#
+# Defaults:
+#   Model: claude-sonnet-4-6  |  Effort: high  |  Max tokens: 64000
+#   Override any default via env vars: PIPELINE_LLM_MODEL, PIPELINE_LLM_EFFORT,
+#   PIPELINE_LLM_MAX_TOKENS, PIPELINE_PROMPT_VERSION, PIPELINE_CONFIDENCE_THRESHOLD.
 #
 # Examples:
-#   ./scripts/tuning/run_experiment.sh                              # defaults: both PDFs, Opus, high effort
-#   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick test"     # Sonnet, low effort
-#   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "variance"  # 3 repeats for variance measurement
-#   ./scripts/tuning/run_experiment.sh 0.7 "v2 prompt" pipeline/test_data/36180795.pdf  # single PDF
+#   ./scripts/tuning/run_experiment.sh                        # all defaults
+#   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"    # low effort, 16K tokens
+#   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var" # 3 repeats for variance
+#   ./scripts/tuning/run_experiment.sh 0.7 "v2" pipeline/test_data/36180795.pdf
+#   PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh  # use Opus
 
 set -euo pipefail
 
@@ -39,6 +50,9 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# Default to Sonnet 4.6 (--fast still useful for low effort + reduced max_tokens).
+export PIPELINE_LLM_MODEL="${PIPELINE_LLM_MODEL:-claude-sonnet-4-6}"
 
 THRESHOLD="${1:-0.70}"
 NOTES="${2:-}"
@@ -101,13 +115,13 @@ if [ "$REPEATS" -gt 1 ]; then
 else
   log_echo "=== Tuning Experiment ==="
 fi
-MODEL_VERSION=$(echo "${PIPELINE_LLM_MODEL:-claude-opus-4-6}" | sed -n 's/.*claude-\(opus\|sonnet\|haiku\)-\([0-9]*\)-\([0-9]*\).*/\2.\3/p')
+MODEL_VERSION=$(echo "${PIPELINE_LLM_MODEL}" | sed -n 's/.*claude-\(opus\|sonnet\|haiku\)-\([0-9]*\)-\([0-9]*\).*/\2.\3/p')
 MODEL_VERSION="${MODEL_VERSION:-unknown}"
 
 log_echo "  Threshold:      $THRESHOLD"
 log_echo "  PDF:            $PDF_PATH"
 log_echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v5}"
-log_echo "  Model:          ${PIPELINE_LLM_MODEL:-claude-opus-4-6}"
+log_echo "  Model:          ${PIPELINE_LLM_MODEL}"
 log_echo "  Model version:  $MODEL_VERSION"
 log_echo "  Effort:         ${PIPELINE_LLM_EFFORT:-high}"
 log_echo "  Max tokens:     ${PIPELINE_LLM_MAX_TOKENS:-64000}"
