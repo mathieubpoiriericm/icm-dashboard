@@ -36,12 +36,19 @@ runs <- runs |>
       grepl("haiku", llm_model, ignore.case = TRUE)   ~ "Haiku",
       .default = "Other"
     ),
+    # Model version: use column if present, else derive from llm_model
+    model_version = dplyr::case_when(
+      !is.na(model_version) & model_version != "" ~ model_version,
+      grepl("claude-(opus|sonnet|haiku)-(\\d+)-(\\d+)", llm_model) ~
+        sub(".*claude-(?:opus|sonnet|haiku)-(\\d+)-(\\d+).*", "\\1.\\2", llm_model, perl = TRUE),
+      .default = "unknown"
+    ),
     # Effort label (NA-safe for old rows)
     effort_label = dplyr::if_else(
       is.na(llm_effort) | llm_effort == "", "high", llm_effort
     ),
     # Combined config badge for labels
-    config_badge = paste0(model_family, "/", effort_label)
+    config_badge = paste0(model_family, " ", model_version, "/", effort_label)
   )
 
 # Ensure numeric columns added later are numeric (NA for old rows)
@@ -729,12 +736,13 @@ sep <- ggplot() +
 threshold_range <- range(runs$confidence_threshold)
 model_str <- paste(sort(unique(runs$model_family)), collapse = ", ")
 effort_str <- paste(sort(unique(runs$effort_label)), collapse = ", ")
+version_str <- paste(sort(unique(runs$model_version)), collapse = ", ")
 anno_subtitle <- paste0(
   nrow(runs), " runs across prompt versions (",
   paste(sort(unique(runs$prompt_version)), collapse = ", "), "), ",
   "thresholds (",
   threshold_range[1], "\u2013", threshold_range[2], ")  |  ",
-  "Models: ", model_str, "  |  Effort: ", effort_str
+  "Models: ", model_str, " (v", version_str, ")  |  Effort: ", effort_str
 )
 
 # Assemble layout: include Panel 5 if cost data is available

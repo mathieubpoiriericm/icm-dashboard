@@ -14,6 +14,7 @@ import argparse
 import contextlib
 import csv
 import json
+import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +43,7 @@ CSV_COLUMNS = [
     "prompt_version",
     "confidence_threshold",
     "llm_model",
+    "model_version",
     "llm_effort",
     "test_pdf",
     "total_extracted",
@@ -66,6 +68,15 @@ CSV_COLUMNS = [
     "run_group",
     "notes",
 ]
+
+
+_MODEL_VERSION_RE = re.compile(r"claude-(?:opus|sonnet|haiku)-(\d+)-(\d+)")
+
+
+def _extract_model_version(model: str) -> str:
+    """Extract short version from model name (e.g. 'claude-opus-4-6' -> '4.6')."""
+    m = _MODEL_VERSION_RE.search(model)
+    return f"{m.group(1)}.{m.group(2)}" if m else "unknown"
 
 
 def _compute_f_beta(precision: float, recall: float, beta: float) -> float:
@@ -195,6 +206,10 @@ def track_run(
         "prompt_version": cfg.get("prompt_version", "unknown"),
         "confidence_threshold": str(cfg.get("confidence_threshold", "")),
         "llm_model": cfg.get("model", ""),
+        "model_version": (
+            cfg.get("model_version")
+            or _extract_model_version(cfg.get("model", ""))
+        ),
         "llm_effort": cfg.get("effort", ""),
         "test_pdf": test_pdf,
         "total_extracted": str(genes_info.get("extracted", 0)),

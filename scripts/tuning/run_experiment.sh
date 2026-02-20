@@ -101,10 +101,14 @@ if [ "$REPEATS" -gt 1 ]; then
 else
   log_echo "=== Tuning Experiment ==="
 fi
+MODEL_VERSION=$(echo "${PIPELINE_LLM_MODEL:-claude-opus-4-6}" | sed -n 's/.*claude-\(opus\|sonnet\|haiku\)-\([0-9]*\)-\([0-9]*\).*/\2.\3/p')
+MODEL_VERSION="${MODEL_VERSION:-unknown}"
+
 log_echo "  Threshold:      $THRESHOLD"
 log_echo "  PDF:            $PDF_PATH"
 log_echo "  Prompt version: ${PIPELINE_PROMPT_VERSION:-v5}"
 log_echo "  Model:          ${PIPELINE_LLM_MODEL:-claude-opus-4-6}"
+log_echo "  Model version:  $MODEL_VERSION"
 log_echo "  Effort:         ${PIPELINE_LLM_EFFORT:-high}"
 log_echo "  Max tokens:     ${PIPELINE_LLM_MAX_TOKENS:-64000}"
 log_echo "  Fast mode:      $FAST_MODE"

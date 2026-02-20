@@ -210,6 +210,7 @@ def build_run_data(
         total_duration,
         pipeline_config={
             "model": config.llm_model,
+            "model_version": config.model_version,
             "days_back": days_back,
             "dry_run": dry_run,
             "confidence_threshold": config.confidence_threshold,
@@ -248,6 +249,7 @@ def build_local_pdf_run_data(
         pipeline_config={
             "mode": "local_pdf",
             "model": config.llm_model,
+            "model_version": config.model_version,
             "pdf_directory": str(pdf_dir),
             "skip_validation": skip_validation,
             "confidence_threshold": config.confidence_threshold,
@@ -281,6 +283,7 @@ def build_pmid_run_data(
         pipeline_config={
             "mode": "pmid_list",
             "model": config.llm_model,
+            "model_version": config.model_version,
             "pmid_file": str(pmid_file),
             "skip_validation": skip_validation,
             "confidence_threshold": config.confidence_threshold,

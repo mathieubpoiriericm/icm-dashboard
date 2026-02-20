@@ -246,3 +246,9 @@ class PipelineConfig:
             "PIPELINE_EMAIL_ADMIN", "mathieu.poirier@icm-institute.org"
         )
     )
+
+    @property
+    def model_version(self) -> str:
+        """Extract short version from llm_model (e.g. 'claude-opus-4-6' -> '4.6')."""
+        m = re.search(r"claude-(?:opus|sonnet|haiku)-(\d+)-(\d+)", self.llm_model)
+        return f"{m.group(1)}.{m.group(2)}" if m else "unknown"
