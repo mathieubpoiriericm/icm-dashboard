@@ -1,9 +1,9 @@
 dependencies:
 - name: kube-prometheus-stack
   repository: https://prometheus-community.github.io/helm-charts
-  version: 82.1.0
+  version: 82.2.1
 - name: victoria-logs-single
   repository: https://victoriametrics.github.io/helm-charts
-  version: 0.11.26
-digest: sha256:95df62487f9e486e701300ba1119d10ed0770438c4673bab219a8cdb13ac657e
-generated: "2026-02-17T14:21:00.907838-05:00"
+  version: 0.11.27
+digest: sha256:9ffed3c0a08ff3035285ea1a436ef13d1e652caebdf4cb300734ce814c7bf46b
+generated: "2026-02-23T10:43:17.684748-05:00"
