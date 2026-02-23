@@ -3448,7 +3448,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=\"svd\"},\n  \"friendly\", \"$0\", \"persistentvolumeclaim\", \".*\"\n),\n  \"friendly\", \"PostgreSQL Data\", \"persistentvolumeclaim\", \"data-svd-svd-dashboard-postgresql-.*\"\n),\n  \"friendly\", \"VictoriaLogs Data\", \"persistentvolumeclaim\", \"server-volume-svd-.*victoria-logs-.*\"\n),\n  \"friendly\", \"Healthchecks Data\", \"persistentvolumeclaim\", \"svd-svd-dashboard-healthchecks-data\"\n),\n  \"friendly\", \"ntfy Cache\", \"persistentvolumeclaim\", \"svd-svd-dashboard-ntfy-cache\"\n),\n  \"friendly\", \"QS Data\", \"persistentvolumeclaim\", \"svd-svd-dashboard-qs-data\"\n)",
+          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=\"svd\"},\n  \"friendly\", \"$0\", \"persistentvolumeclaim\", \".*\"\n),\n  \"friendly\", \"PostgreSQL Data\", \"persistentvolumeclaim\", \"data-svd(-svd)?-dashboard-postgresql-.*\"\n),\n  \"friendly\", \"VictoriaLogs Data\", \"persistentvolumeclaim\", \"server-volume-svd-.*victoria-logs-.*\"\n),\n  \"friendly\", \"Healthchecks Data\", \"persistentvolumeclaim\", \"svd-svd-dashboard-healthchecks-data\"\n),\n  \"friendly\", \"ntfy Cache\", \"persistentvolumeclaim\", \"svd-svd-dashboard-ntfy-cache\"\n),\n  \"friendly\", \"QS Data\", \"persistentvolumeclaim\", \"svd-svd-dashboard-qs-data\"\n)",
           "instant": true,
           "legendFormat": "{{friendly}}",
           "refId": "A"
