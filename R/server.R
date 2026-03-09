@@ -3,19 +3,21 @@
 # Orchestrates Table 1 and Table 2 server modules
 # nolint start: object_usage_linter.
 
-#' Build Server Function for SVD Dashboard
-#'
-#' Creates the server function for the Shiny application by composing
-#' Table 1 and Table 2 server modules.
-#'
-#' @param app_data List containing prepared application data from
-#'   load_and_prepare_data().
-#' @param table1_display Data frame with pre-computed tooltip HTML for Table 1.
-#'
-#' @return A Shiny server function.
-#'
-#' @export
-build_server <- function(app_data, table1_display) {
+# Build Server Function for SVD Dashboard
+#
+# Creates the server function for the Shiny application by composing
+# Table 1 and Table 2 server modules.
+#
+# Args:
+#   app_data: List containing prepared application data from
+#     load_and_prepare_data().
+#   table1_display: Data frame with pre-computed tooltip HTML for Table 1.
+#   preloaded_table2: Optional list containing preloaded Table 2 data.
+#     If provided, eliminates lazy loading delay on Clinical Trials tabs.
+#
+# Returns:
+#   A Shiny server function.
+build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
   function(input, output, session) {
     # Extract data from app_data
     table1 <- app_data$table1
@@ -23,25 +25,51 @@ build_server <- function(app_data, table1_display) {
     omics_type_rows <- app_data$omics_type_rows
 
     # =========================================================================
+    # THEME SWITCHING (BSLIB DARK MODE)
+    # =========================================================================
+    shiny::observeEvent(
+      input$dark_mode,
+      {
+        session$setCurrentTheme(
+          if (isTRUE(input$dark_mode)) dark_theme else light_theme
+        )
+      },
+      ignoreNULL = FALSE
+    )
+
+    # =========================================================================
     # PYTHON PLOT HANDLER
     # =========================================================================
     setup_python_plot_handler(input, session)
 
     # =========================================================================
-    # TABLE 2 LAZY LOADING
+    # TABLE 2 DATA (PRELOADED OR LAZY LOADED)
     # =========================================================================
-    table2_reactive_vals <- create_table2_reactive_vals()
-    load_table2 <- build_table2_loader(
-      table2_reactive_vals$table2_data,
-      table2_reactive_vals$table2_display_data,
-      table2_reactive_vals$ct_info_data,
-      table2_reactive_vals$registry_matches_data,
-      table2_reactive_vals$registry_rows_data,
-      table2_reactive_vals$sample_sizes_data
-    )
+    # Optimization: When preloaded, use direct reference instead of copying
+    # into per-session reactiveVals (saves ~1-3MB per session)
+    if (!is.null(preloaded_table2)) {
+      # Use preloaded data directly - no per-session copies needed
+      load_table2 <- shiny::reactive({
+        preloaded_table2
+      })
+      message("Using preloaded Table 2 data (direct reference)")
+    } else {
+      # Lazy loading: create reactiveVals to track loading state
+      table2_reactive_vals <- create_table2_reactive_vals()
 
-    # Trigger Table 2 loading when Clinical Trials tabs are accessed
-    setup_table2_lazy_load_trigger(input, load_table2)
+      load_table2 <- build_table2_loader(
+        table2_reactive_vals$table2_data,
+        table2_reactive_vals$table2_display_data,
+        table2_reactive_vals$ct_info_data,
+        table2_reactive_vals$registry_matches_data,
+        table2_reactive_vals$registry_rows_data,
+        table2_reactive_vals$sample_sizes_data,
+        table2_reactive_vals$sample_sizes_hash_data
+      )
+
+      # Trigger Table 2 loading when Clinical Trials tabs are accessed
+      setup_table2_lazy_load_trigger(input, load_table2)
+    }
 
     # =========================================================================
     # FILTER MODULES
@@ -80,7 +108,7 @@ build_server <- function(app_data, table1_display) {
     # =========================================================================
     output$sample_size_histogram <- build_sample_size_histogram(
       load_table2,
-      shiny::reactive(input$sample_size_filter)
+      sample_size_filter_debounced
     )
 
     filtered_data2 <- build_table2_filtered_data(
@@ -105,23 +133,40 @@ build_server <- function(app_data, table1_display) {
     output$secondTable <- build_table2_datatable(filtered_data2)
 
     # =========================================================================
+    # CLINICAL TRIALS MAP SERVER LOGIC
+    # =========================================================================
+    map_data_loader <- build_map_data_loader(load_table2)
+
+    # Setup lazy loading trigger for map tab
+    setup_map_lazy_load_trigger(input, map_data_loader)
+
+    # Render base map immediately (no data dependency)
+    output$trials_map <- build_trials_map_base()
+
+    # Add markers via proxy when map tab is active
+    build_map_marker_observer(map_data_loader, input, session)
+
+    # Render map statistics
+    output$map_stats <- build_map_stats(map_data_loader)
+
+    # =========================================================================
     # OUTPUT OPTIONS
     # =========================================================================
     configure_output_options(output)
   }
 }
 
-#' Setup Python Plot Handler
-#'
-#' Configures the observer for resizing the Python visualization when
-#' the Clinical Trials Visualization tab is accessed.
-#'
-#' @param input Shiny input object.
-#' @param session Shiny session object.
-#'
-#' @return NULL (side effects only).
-#'
-#' @keywords internal
+# Setup Python Plot Handler
+#
+# Configures the observer for resizing the Python visualization when
+# the Clinical Trials Visualization tab is accessed.
+#
+# Args:
+#   input: Shiny input object.
+#   session: Shiny session object.
+#
+# Returns:
+#   NULL (side effects only).
 setup_python_plot_handler <- function(input, session) {
   shiny::observeEvent(
     input$tabs,
@@ -134,13 +179,12 @@ setup_python_plot_handler <- function(input, session) {
   )
 }
 
-#' Create Table 2 Reactive Values
-#'
-#' Creates the reactiveVal containers for lazy-loaded Table 2 data.
-#'
-#' @return List of reactiveVal objects.
-#'
-#' @keywords internal
+# Create Table 2 Reactive Values
+#
+# Creates the reactiveVal containers for lazy-loaded Table 2 data.
+#
+# Returns:
+#   List of reactiveVal objects.
 create_table2_reactive_vals <- function() {
   list(
     table2_data = shiny::reactiveVal(NULL),
@@ -148,39 +192,43 @@ create_table2_reactive_vals <- function() {
     ct_info_data = shiny::reactiveVal(NULL),
     registry_matches_data = shiny::reactiveVal(NULL),
     registry_rows_data = shiny::reactiveVal(NULL),
-    sample_sizes_data = shiny::reactiveVal(NULL)
+    sample_sizes_data = shiny::reactiveVal(NULL),
+    sample_sizes_hash_data = shiny::reactiveVal(NULL)
   )
 }
 
-#' Setup Table 2 Lazy Load Trigger
-#'
-#' Creates an observer that triggers Table 2 data loading when
-#' Clinical Trials tabs are accessed.
-#'
-#' @param input Shiny input object.
-#' @param load_table2 Reactive that loads Table 2 data.
-#'
-#' @return NULL (side effects only).
-#'
-#' @keywords internal
+# Setup Table 2 Lazy Load Trigger
+#
+# Creates an observer that triggers Table 2 data loading when
+# Clinical Trials tabs are accessed.
+#
+# Args:
+#   input: Shiny input object.
+#   load_table2: Reactive that loads Table 2 data.
+#
+# Returns:
+#   NULL (side effects only).
 setup_table2_lazy_load_trigger <- function(input, load_table2) {
   shiny::observeEvent(input$tabs, {
     if (
       input$tabs %in%
-        c("Clinical Trials Table", "Clinical Trials Visualization")
+        c(
+          "Clinical Trials Table",
+          "Clinical Trials Visualization",
+          "Clinical Trials Map"
+        )
     ) {
       load_table2()
     }
   })
 }
 
-#' Initialize Filter Modules
-#'
-#' Creates and returns all filter module server instances.
-#'
-#' @return List of reactive filter values.
-#'
-#' @keywords internal
+# Initialize Filter Modules
+#
+# Creates and returns all filter module server instances.
+#
+# Returns:
+#   List of reactive filter values.
 initialize_filter_modules <- function() {
   list(
     # Table 1 filters
@@ -197,15 +245,15 @@ initialize_filter_modules <- function() {
   )
 }
 
-#' Configure Output Options
-#'
-#' Sets suspendWhenHidden for all outputs to improve performance.
-#'
-#' @param output Shiny output object.
-#'
-#' @return NULL (side effects only).
-#'
-#' @keywords internal
+# Configure Output Options
+#
+# Sets suspendWhenHidden for all outputs to improve performance.
+#
+# Args:
+#   output: Shiny output object.
+#
+# Returns:
+#   NULL (side effects only).
 configure_output_options <- function(output) {
   shiny::outputOptions(output, "firstTable", suspendWhenHidden = TRUE)
   shiny::outputOptions(
@@ -224,5 +272,7 @@ configure_output_options <- function(output) {
     suspendWhenHidden = TRUE
   )
   shiny::outputOptions(output, "secondTable", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "trials_map", suspendWhenHidden = FALSE)
+  shiny::outputOptions(output, "map_stats", suspendWhenHidden = FALSE)
 }
 # nolint end: object_usage_linter.

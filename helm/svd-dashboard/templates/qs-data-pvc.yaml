@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-qs-data
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.qsData.storage.accessMode }}
+  {{- if .Values.qsData.storage.storageClass }}
+  storageClassName: {{ .Values.qsData.storage.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.qsData.storage.size }}

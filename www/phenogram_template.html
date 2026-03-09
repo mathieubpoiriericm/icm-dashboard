@@ -3,8 +3,11 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
     <meta http-equiv="Cache-Control" content="public, max-age=86400">
     <title>Image Tooltip by Pixel Color</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
 
     <style>
@@ -14,6 +17,7 @@
             justify-content: center;
             padding: 40px;
             font-family: 'Roboto', sans-serif;
+            overflow: hidden;
         }
 
         #container {
@@ -127,7 +131,7 @@
 <body>
 
     <div id="container">
-        <img id="sourceImage" src="images/phenogram.png" style="display:none;">
+        <img id="sourceImage" src="images/phenogram.webp" onerror="this.onerror=null;this.src='images/phenogram.png';" style="display:none;">
         <canvas id="canvas"></canvas>
         <div id="tooltip">
             <div class="tooltip-header">
@@ -161,6 +165,12 @@
             "rgba(255, 204, 1)": "MD",
             "rgba(212, 84, 0)": "Lacunar Stroke"
         };
+
+        // Pre-parse colors at initialization to avoid string parsing on every mousemove
+        const PARSED_COLORS = Object.keys(COLOR_TOOLTIPS).map(key => {
+            const parts = key.replace("rgba(", "").replace(")", "").split(",").map(x => parseInt(x.trim()));
+            return { key, r: parts[0], g: parts[1], b: parts[2] };
+        });
 
         // Placeholder text per phenotype; replace string values as details become available.
         const DEFAULT_COLOR_DETAILS = Object.fromEntries(
@@ -221,31 +231,25 @@
             }).join("");
         }
 
-        // RGBA-based color matching function
+        // RGBA-based color matching function (optimized with pre-parsed colors)
         function nearestColorRGBA(r, g, b, a) {
             let best = null;
             let bestDist = 1e9;
 
-            for (const key in COLOR_TOOLTIPS) {
-                // key is "rgba(r,g,b)" or "rgba(r,g,b,a)"
-                const parts = key
-                    .replace("rgba(", "")
-                    .replace(")", "")
-                    .split(",")
-                    .map(x => parseInt(x.trim()));
-
-                const kr = parts[0], kg = parts[1], kb = parts[2];
+            // Use pre-parsed color array instead of parsing strings on each call
+            for (let i = 0; i < PARSED_COLORS.length; i++) {
+                const c = PARSED_COLORS[i];
 
                 // Euclidean distance in RGB space
                 const dist = Math.sqrt(
-                    (r - kr) ** 2 +
-                    (g - kg) ** 2 +
-                    (b - kb) ** 2
+                    (r - c.r) ** 2 +
+                    (g - c.g) ** 2 +
+                    (b - c.b) ** 2
                 );
 
                 if (dist < bestDist) {
                     bestDist = dist;
-                    best = key;
+                    best = c.key;
                 }
             }
 
@@ -255,8 +259,20 @@
         // -----------------------------------------
         // 3. Detect pixel on hover and show tooltip
         // -----------------------------------------
+
+        // Cache canvas bounding rect to avoid layout recalculation on every mousemove
+        let cachedCanvasRect = null;
+        function getCanvasRect() {
+            if (!cachedCanvasRect) {
+                cachedCanvasRect = canvas.getBoundingClientRect();
+            }
+            return cachedCanvasRect;
+        }
+        // Invalidate cache on resize
+        window.addEventListener('resize', () => { cachedCanvasRect = null; });
+
         canvas.onmousemove = (e) => {
-            const rect = canvas.getBoundingClientRect();
+            const rect = getCanvasRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
             const x = Math.floor((e.clientX - rect.left) * scaleX);

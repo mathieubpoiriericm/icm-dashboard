@@ -1,21 +1,51 @@
 # clean_table1.R
 # Table 1 data cleaning function
 
-#' Clean Table 1 Data
-#'
-#' Reads and cleans the raw Table 1 CSV file, performing various
-#' data transformations including column renaming, NA handling,
-#' and text cleanup.
-#'
-#' @param file_path Path to the raw table1.csv file.
-#'   Defaults to "table1.csv" in the current directory.
-#'
-#' @return A cleaned data.frame with processed columns ready for display.
-#'
-#' @export
-clean_table1 <- function(file_path = file.path(".", "table1.csv")) {
-  # Load Table 1 data
-  table1 <- read.csv(file_path, header = TRUE, sep = ",")
+# nolint start: object_usage_linter.
+# Functions with_db_connection and clean_column_names are from utils.R
+# (sourced before this file in app.R)
+
+# Clean Table 1 Data
+#
+# Reads and cleans the genes table from a PostgreSQL database, performing
+# various data transformations including column renaming, NA handling,
+# and text cleanup.
+#
+# Args:
+#   con: A DBI database connection object. If NULL, a new connection
+#     will be created using environment variables or defaults.
+#   dbname: Database name. Defaults to "csvd_dashboard".
+#   host: Database host. Defaults to "localhost".
+#   port: Database port. Defaults to 5432.
+#   user: Database user. Defaults to Sys.getenv("DB_USER").
+#   password: Database password. Defaults to Sys.getenv("DB_PASSWORD").
+#
+# Returns:
+#   A cleaned data.frame with processed columns ready for display.
+clean_table1 <- function(
+  con = NULL,
+  dbname = "csvd_dashboard",
+  host = "localhost",
+  port = 5432,
+  user = Sys.getenv("DB_USER"),
+  password = Sys.getenv("DB_PASSWORD")
+) {
+  # Load data using connection utility
+  table1 <- with_db_connection(
+    function(conn) {
+      df <- DBI::dbGetQuery(conn, "SELECT * FROM genes")
+      df$id <- NULL
+      df$created_at <- NULL
+      df$updated_at <- NULL
+      df
+    },
+    con = con,
+    dbname = dbname,
+    host = host,
+    port = port,
+    user = user,
+    password = password
+  )
 
   # Replace empty cells with NA
   table1[!nzchar(table1, keepNA = TRUE)] <- NA
@@ -28,8 +58,7 @@ clean_table1 <- function(file_path = file.path(".", "table1.csv")) {
   table1 <- table1 |>
     dplyr::select("gene", dplyr::everything())
 
-  names(table1) <- gsub("_", " ", names(table1), fixed = TRUE)
-  names(table1) <- tools::toTitleCase(names(table1))
+  names(table1) <- clean_column_names(names(table1))
 
   # Convert multiple comma-separated strings in a cell into a list
   # of strings (GWAS Trait)
@@ -98,7 +127,7 @@ clean_table1 <- function(file_path = file.path(".", "table1.csv")) {
     table1$`Evidence from Other Omics Studies`
   )] <- "(none found)"
 
-  ## Split the relevant strings
+  # Split the relevant strings
   table1$`Evidence from Other Omics Studies` <- strsplit(
     table1$`Evidence from Other Omics Studies`,
     ", ",
@@ -207,3 +236,4 @@ clean_table1 <- function(file_path = file.path(".", "table1.csv")) {
 
   table1
 }
+# nolint end: object_usage_linter.

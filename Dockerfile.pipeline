@@ -1,0 +1,32 @@
+FROM python:3.14-slim
+
+WORKDIR /app
+
+# Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pipeline source code
+COPY pipeline/ pipeline/
+COPY scripts/ scripts/
+COPY helm/svd-dashboard/sql sql/
+
+# R runtime (for trigger_update.R) + system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    r-base \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libpq-dev \
+    libzstd-dev \
+    liblz4-dev \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# R packages needed by trigger_update.R
+RUN R -e "install.packages(c('DBI', 'RPostgres', 'data.table', 'qs', 'jsonlite'))"
+
+# kubectl (for rollout restart of dashboard deployment)
+RUN curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && install kubectl /usr/local/bin/ \
+    && rm kubectl

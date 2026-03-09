@@ -1,49 +1,35 @@
-/* Dashboard Custom Styles */
+/* =============================================================================
+   SVD Dashboard Custom Styles
+   =============================================================================
 
-body {
-  min-width: 1000px;
-}
+   ARCHITECTURE NOTES:
+   - bslib (Bootstrap 5) handles theme configuration in R/ui.R
+   - This CSS provides custom styling on top of bslib defaults
+   - Custom CSS variables (--svd-*) are used for app-specific colors
+   - Bootstrap variables (--bs-*) are used with fallbacks where needed
 
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap');
+   !important USAGE POLICY:
+   - Avoid !important on properties that bslib already sets (fonts, basic colors)
+   - Use !important only when overriding DataTables, Tippy, or Bootstrap defaults
+   - Dark mode requires !important to override Bootstrap 5 defaults
+   ============================================================================= */
 
-* {
+/* Roboto font loaded locally via showtext in app.R for faster loading
+   (avoids render-blocking Google Fonts network request) */
+
+/* =============================================================================
+   BASE TYPOGRAPHY
+   Note: bslib theme sets base_font="Roboto, sans-serif" in ui.R
+   These declarations serve as fallback without !important to avoid conflicts
+   ============================================================================= */
+html {
+  font-size: 14px;
   font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.app-header {
-  font-size: 1rem;
-  padding: 20px 12px;
-  text-align: center;
-  color: #1f2937;
-  background: linear-gradient(135deg, #f8f9fc 0%, #e8eaf0 100%);
-  border-top: 3px solid #2d287a;
-  margin-bottom: 2rem;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-  border-radius: 20px;
-}
-
-.app-header .header-inner {
-  display: inline-flex;
-  gap: 12px;
-  align-items: center;
-  font-weight: 500;
-}
-
-.app-header a {
-  text-decoration: none;
-  font-weight: 600;
-  color: #2d287a;
-  transition: color 0.2s;
-}
-
-.app-header a:hover {
-  text-decoration: underline;
-  color: #e52f12;
-}
-
-.app-header .divider {
-  color: #9ca3af;
-  font-weight: 400;
+body {
+  min-width: 1000px;
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 table.dataTable tbody td {
@@ -52,20 +38,22 @@ table.dataTable tbody td {
   border-bottom: 1px solid #f0f1f3;
   color: #4b5563;
   vertical-align: middle;
-  white-space: normal;
-  word-wrap: break-word;
+  white-space: nowrap;
 }
 
 body {
-  background: #7a7a7a;
+  background: #7a7a7a !important;
   min-height: 100vh;
   padding: 4rem;
   margin: 0;
 }
 
 .container-fluid {
-  max-width: 1400px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
+  padding-left: 2rem;
+  padding-right: 2rem;
 }
 
 .main-container {
@@ -77,6 +65,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 4rem);
+  margin-top: 1rem;
 }
 
 @keyframes fadeIn {
@@ -91,32 +80,24 @@ body {
   }
 }
 
-.title-section {
-  text-align: center;
-  background: linear-gradient(135deg, #2d287a 0%, #e52f12 100%);
-  padding: 2.5rem 3rem;
-  color: white;
-  border-bottom: 1px solid #e1e4e8;
-}
+/* .title-section moved to line ~836 with CSS variables for theme support */
 
 h2 {
   font-size: 2.5rem;
-  font-weight: 600;
+  font-weight: 700 !important;
   margin: 0;
   line-height: 1.3;
 }
 
-.content-wrapper {
-  display: flex;
-  flex: 1;
-  background: #f8f9fc;
-  border-bottom: 1px solid #e1e4e8;
-  align-items: stretch;
+.title-section h2 {
+  font-weight: 700 !important;
 }
 
 .sidebar-section {
   padding: 2rem;
-  width: 280px;
+  min-width: 320px;
+  width: auto;
+  max-width: 400px;
   flex-shrink: 0;
   border-right: 1px solid #e1e4e8;
   display: flex;
@@ -124,13 +105,16 @@ h2 {
   min-height: 100%;
 }
 
-.main-content {
-  flex: 1;
-  padding: 2rem 3rem;
-  overflow-x: auto;
-  background: white;
-  border-radius: 20px;
+/* =============================================================================
+   BSLIB SIDEBAR CONSTRAINTS
+   Note: bslib::sidebar(width="auto") is set in ui.R. CSS adds min/max only.
+   ============================================================================= */
+.bslib-sidebar-layout>.sidebar {
+  min-width: 320px;
+  max-width: 400px;
 }
+
+/* .main-content moved to line ~1617 with CSS variables for theme support */
 
 .filter-label {
   font-size: 1rem;
@@ -140,29 +124,37 @@ h2 {
   letter-spacing: 0.05em;
 }
 
-#mr_filter,
-#gwas_trait_filter,
-#omics_filter,
-#ge_filter,
-#reg_filter,
-#ct_filter,
-#pop_filter,
-#spon_filter,
-#sample_size_filter {
-  background: white;
-  padding: 1.25rem;
-  border-radius: 20px;
-  border: 1px solid #e1e4e8;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+/* Filter box title styling (in sidebar bslib cards) */
+.bslib-sidebar-layout .card .control-label,
+#sample_size_filter_card strong {
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+  color: #1f2937;
+  display: block;
+  margin-bottom: 0 !important;
+}
+
+/* Add spacing between filter title and checkboxes */
+.bslib-sidebar-layout .card .shiny-options-group {
+  margin-top: 0;
+}
+
+[data-bs-theme="dark"] .bslib-sidebar-layout .card .control-label,
+[data-bs-theme="dark"] #sample_size_filter_card strong {
+  color: var(--svd-text);
 }
 
 #sample_size_histogram {
   background: white;
-  border-radius: 8px;
+  border-radius: 20px;
   margin-bottom: 0;
   width: 105%;
   margin-left: -2.5%;
+  overflow: hidden;
+}
+
+#sample_size_histogram img {
+  border-radius: 20px;
 }
 
 .checkbox {
@@ -175,27 +167,33 @@ h2 {
   color: black;
   cursor: pointer;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   transition: color 0.2s;
+  line-height: 1.4;
 }
 
 .checkbox label:hover {
-  color: #667eea;
+  color: var(--svd-secondary, #667eea);
 }
 
 .checkbox input[type='checkbox'] {
   width: 18px;
   height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  flex-shrink: 0;
   margin-right: 0.5rem;
+  margin-top: 2px;
   cursor: pointer;
-  accent-color: #2d287a;
+  accent-color: var(--svd-primary, #2d287a);
 }
 
 .dataTables_wrapper {
   background: white;
-  padding: 1.5rem;
+  padding: 1.5rem 1.5rem 0.75rem 1.5rem;
   font-size: 1rem;
   position: relative;
+  box-sizing: border-box;
 }
 
 /* GPU acceleration for smooth scrolling - WebKit optimized */
@@ -205,6 +203,8 @@ h2 {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   contain: paint;
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* WebKit-specific horizontal scroll optimization */
@@ -212,11 +212,8 @@ h2 {
   .dataTables_scrollBody {
     scroll-behavior: auto;
   }
-
-  .dataTables_scrollBody table {
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-  }
+  /* Note: Removed translateZ(0) from inner table to reduce GPU layer count.
+     The scroll container already has translate3d which is sufficient. */
 }
 
 /* Hide top scrollbar to prevent WebKit screen tearing from dual scrollbar sync */
@@ -227,6 +224,12 @@ h2 {
 /* Ensure bottom scrollbar is always visible (not auto-hiding on macOS) */
 .dataTables_scrollBody {
   overflow-x: scroll !important;
+  margin-bottom: 0 !important;
+  padding-bottom: 10px;
+}
+
+.dataTables_scrollFoot {
+  margin-bottom: 0 !important;
 }
 
 /* Style the always-visible scrollbar for WebKit browsers */
@@ -236,18 +239,19 @@ h2 {
 }
 
 .dataTables_scrollBody::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--svd-bg-light, #f8f9fc);
   border-radius: 6px;
 }
 
 .dataTables_scrollBody::-webkit-scrollbar-thumb {
-  background-color: #888;
+  background-color: rgba(45, 40, 122, 0.35);
   border-radius: 6px;
-  border: 2px solid #f1f1f1;
+  border: 2px solid var(--svd-bg-light, #f8f9fc);
+  transition: background-color 0.2s ease;
 }
 
 .dataTables_scrollBody::-webkit-scrollbar-thumb:hover {
-  background-color: #555;
+  background-color: var(--svd-secondary, #667eea);
 }
 
 .dataTables_wrapper .dataTables_length,
@@ -258,13 +262,41 @@ h2 {
 /* Top scrollbar container */
 .top-scrollbar {
   width: 100%;
-  overflow-x: auto;
+  overflow-x: scroll;
   overflow-y: hidden;
   margin-bottom: 10px;
+  -webkit-transform: translate3d(0, 0, 0);
+  transform: translate3d(0, 0, 0);
+  position: relative;
+  z-index: 1;
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
 }
 
 .top-scrollbar-inner {
   height: 1px;
+}
+
+/* Style the top scrollbar for WebKit browsers */
+.top-scrollbar::-webkit-scrollbar {
+  -webkit-appearance: none;
+  height: 12px;
+}
+
+.top-scrollbar::-webkit-scrollbar-track {
+  background: var(--svd-bg-light, #f8f9fc);
+  border-radius: 6px;
+}
+
+.top-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(45, 40, 122, 0.35);
+  border-radius: 6px;
+  border: 2px solid var(--svd-bg-light, #f8f9fc);
+  transition: background-color 0.2s ease;
+}
+
+.top-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--svd-secondary, #667eea);
 }
 
 .dataTables_wrapper .dataTables_filter {
@@ -292,28 +324,48 @@ h2 {
 
 .dataTables_wrapper .dataTables_filter input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--svd-secondary, #667eea);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 table.dataTable {
   border-collapse: separate !important;
   border-spacing: 0;
-  width: 1600px !important;
+  width: max-content !important;
+  min-width: 100%;
   border-radius: 20px;
   border: 1px solid #e1e4e8;
   overflow: hidden;
-  table-layout: fixed;
-  /* GPU layer for the table itself to prevent tearing */
-  -webkit-transform: translate3d(0, 0, 0);
-  transform: translate3d(0, 0, 0);
+  table-layout: auto;
+  /* Containment for scroll performance - isolates layout/paint calculations */
+  contain: layout paint;
   isolation: isolate;
+}
+
+/* DataTables wrapper should be responsive */
+.dataTables_wrapper {
+  width: 100%;
+  overflow-x: auto;
 }
 
 /* Move box-shadow to scroll wrapper to avoid repaints during horizontal scroll */
 .dataTables_scroll {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   border-radius: 20px;
+  margin-bottom: 0 !important;
+  width: 100%;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure scroll body can extend to full table width */
+.dataTables_scrollBody {
+  width: 100% !important;
+}
+
+.dataTables_scrollHead {
+  width: 100% !important;
 }
 
 table.dataTable thead th:first-child {
@@ -336,10 +388,11 @@ table.dataTable thead th {
   background: #f8f9fc;
   color: #1f2937;
   font-weight: 600;
-  font-size: 1.2rem;
+  font-size: 1rem;
   letter-spacing: 0.05em;
   padding: 1rem;
-  border-bottom: 2px solid #e1e4e8;
+  border-bottom: none;
+  white-space: nowrap;
 }
 
 table.dataTable tbody td {
@@ -347,17 +400,41 @@ table.dataTable tbody td {
   border-bottom: 1px solid #f0f1f3;
   color: #4b5563;
   vertical-align: middle;
-  white-space: normal;
-  word-wrap: break-word;
+  white-space: nowrap;
+}
+
+/* Style links within table cells */
+table.dataTable tbody td a {
+  color: #347bb7;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+table.dataTable tbody td a:hover {
+  color: var(--svd-primary, #2d287a);
+  text-decoration: underline;
+}
+
+table.dataTable tbody td a:visited {
+  color: #5a4a9e;
 }
 
 table.dataTable tbody tr:hover {
   background-color: #f8f9f9;
 }
 
-/* Disable hover effects during scroll to prevent tearing */
+/* Disable hover effects and transitions during scroll to prevent tearing */
 .dataTables_scrollBody.is-scrolling table.dataTable tbody {
   pointer-events: none;
+}
+
+.dataTables_scrollBody.is-scrolling table.dataTable,
+.dataTables_scrollBody.is-scrolling table.dataTable * {
+  transition: none !important;
+}
+
+.dataTables_scrollBody.is-scrolling table.dataTable tbody tr {
+  background-color: transparent !important;
 }
 
 table.dataTable tbody tr td i {
@@ -368,6 +445,11 @@ table.dataTable tbody tr td i {
 /* Override italic styling for et al. in References column */
 table.dataTable tbody tr td i.et-al {
   color: inherit;
+  font-weight: inherit;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody tr td i.et-al {
+  color: inherit !important;
   font-weight: inherit;
 }
 
@@ -419,7 +501,13 @@ table.dataTable tbody tr td i.et-al {
 .dataTables_info {
   font-size: 1.2rem;
   color: black;
-  padding-top: 1rem;
+  padding-top: 0.25rem !important;
+  margin-top: 0 !important;
+}
+
+.dataTables_wrapper .dataTables_paginate {
+  padding-top: 0.25rem !important;
+  margin-top: 0 !important;
 }
 
 [data-toggle='tooltip'] {
@@ -427,7 +515,13 @@ table.dataTable tbody tr td i.et-al {
   border-bottom: 1px dotted #667eea;
 }
 
-/* Tippy tooltip styling */
+/* =============================================================================
+   TIPPY TOOLTIP CUSTOM THEME
+
+   Tippy.js is used instead of Bootstrap tooltips for richer HTML content.
+   This custom theme overrides Tippy defaults. !important is required because
+   Tippy sets inline styles.
+   ============================================================================= */
 .tippy-box[data-theme~='custom'] {
   background: linear-gradient(135deg, #2d287a 0%, #e52f12 100%) !important;
   border-radius: 20px !important;
@@ -436,6 +530,7 @@ table.dataTable tbody tr td i.et-al {
 }
 
 .tippy-box[data-theme~='custom'] .tippy-content {
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: white !important;
   padding: 12px 16px !important;
   line-height: 1.5 !important;
@@ -461,42 +556,168 @@ table.dataTable tbody tr td i.et-al {
   color: #001f3f !important;
 }
 
-/* Tab styling */
-.nav-tabs {
-  border-bottom: 2px solid #e1e4e8;
-  margin-bottom: 1.5rem;
+/* =============================================================================
+   TOOLTIP BOX STYLING (elements with data-tippy-content)
+   These are the inline grey boxes that indicate hoverable tooltip content.
+   Uses CSS classes instead of inline styles to enable :hover effects.
+   ============================================================================= */
+
+/* Tooltip box - base (light mode) */
+.tooltip-box {
+  background-color: #f3f4f6;
+  color: inherit;
+  font-size: 1rem;
+  padding: 4px 8px;
+  border-radius: 20px;
+  display: inline-block;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px dotted #667eea;
+  cursor: help;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, border-bottom 0.2s ease;
+}
+
+/* Tooltip box hover - light mode (lift + shadow + glow) */
+.tooltip-box:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow:
+    0 10px 24px rgba(45, 40, 122, 0.2),
+    0 4px 10px rgba(0, 0, 0, 0.12),
+    0 0 20px rgba(102, 126, 234, 0.15),
+    0 0 0 2px rgba(45, 40, 122, 0.15);
+  background-color: #e8eaef;
+  border-bottom-color: var(--svd-primary, #2d287a);
+  border-bottom-width: 2px;
+}
+
+/* Italic variant for gene symbols */
+.tooltip-box-italic {
+  font-style: italic;
+}
+
+/* Tab styling - Modern Compact Pill Design */
+/* Using high-specificity selectors to override Bootstrap defaults without !important */
+.bslib-page-navbar .navbar .navbar-nav {
   display: flex;
-  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 0.25rem;
 }
 
-.nav-tabs>li>a {
-  color: #4b5563;
+.bslib-page-navbar .navbar .navbar-nav .nav-link {
+  font-size: 0.95rem;
   font-weight: 500;
-  font-size: 15px !important;
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-bottom: 3px solid transparent;
-  transition: all 0.2s;
+  color: var(--svd-text, #4b5563);
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  line-height: 1;
+  vertical-align: middle;
 }
 
-.nav-tabs>li>a:hover {
-  background-color: transparent;
-  border-bottom: 3px solid #667eea;
-  color: #667eea;
+.bslib-page-navbar .navbar .navbar-nav .nav-link > * {
+  vertical-align: middle;
+  line-height: 1;
 }
 
-.nav-tabs>li.active>a,
-.nav-tabs>li.active>a:hover,
-.nav-tabs>li.active>a:focus {
-  color: #2d287a;
-  background-color: transparent;
-  border: none;
-  border-bottom: 3px solid #2d287a;
+.bslib-page-navbar .navbar .navbar-nav .nav-link i,
+.bslib-page-navbar .navbar .navbar-nav .nav-link .fa {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.bslib-page-navbar .navbar .navbar-nav .nav-link:hover {
+  background-color: rgba(102, 126, 234, 0.15);
+  color: var(--svd-secondary, #667eea);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+}
+
+.bslib-page-navbar .navbar .navbar-nav .nav-link:hover i,
+.bslib-page-navbar .navbar .navbar-nav .nav-link:hover .fa {
+  opacity: 1;
+}
+
+.bslib-page-navbar .navbar .navbar-nav .nav-link.active {
+  background: rgba(102, 126, 234, 0.25);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--svd-secondary, #667eea);
   font-weight: 600;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  box-shadow:
+    0 4px 16px rgba(102, 126, 234, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
-.tab-content {
-  padding-top: 1rem;
+.bslib-page-navbar .navbar .navbar-nav .nav-link.active i,
+.bslib-page-navbar .navbar .navbar-nav .nav-link.active .fa {
+  opacity: 1;
+}
+
+.bslib-page-navbar .navbar .navbar-nav .nav-link:focus-visible {
+  outline: 2px solid var(--svd-secondary, #667eea);
+  outline-offset: 2px;
+}
+
+.bslib-page-navbar .tab-content {
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.bslib-page-navbar .tab-content > .tab-pane {
+  padding-top: 0;
+  margin-top: 0;
+}
+
+/* Dark mode tab styling - using CSS custom properties for consistency */
+/* Define dark mode tab colors via custom properties */
+[data-bs-theme="dark"] {
+  --tab-text-color: #e0e0e0;
+  --tab-hover-bg: rgba(129, 140, 248, 0.2);
+  --tab-hover-color: #818cf8;
+  --tab-hover-shadow: rgba(129, 140, 248, 0.3);
+  --tab-active-bg: rgba(99, 102, 241, 0.2);
+  --tab-active-border: rgba(129, 140, 248, 0.3);
+  --tab-active-shadow: rgba(99, 102, 241, 0.25);
+}
+
+[data-bs-theme="dark"] .bslib-page-navbar .navbar .navbar-nav .nav-link {
+  color: var(--tab-text-color, #e0e0e0);
+}
+
+[data-bs-theme="dark"] .bslib-page-navbar .navbar .navbar-nav .nav-link:hover {
+  background-color: var(--tab-hover-bg);
+  color: var(--tab-hover-color);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 12px var(--tab-hover-shadow);
+}
+
+[data-bs-theme="dark"] .bslib-page-navbar .navbar .navbar-nav .nav-link.active {
+  background: var(--tab-active-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  font-weight: 600;
+  border: 1px solid var(--tab-active-border);
+  box-shadow:
+    0 4px 16px var(--tab-active-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Fallback for browsers without backdrop-filter support */
+@supports not (backdrop-filter: blur(12px)) {
+  .bslib-page-navbar .navbar .navbar-nav .nav-link.active {
+    background: rgba(102, 126, 234, 0.85);
+    color: #ffffff;
+  }
+  [data-bs-theme="dark"] .bslib-page-navbar .navbar .navbar-nav .nav-link.active {
+    background: rgba(99, 102, 241, 0.85);
+  }
 }
 
 /* Custom slider tick marks styling */
@@ -534,4 +755,1736 @@ table.dataTable tbody tr td i.et-al {
   margin-top: 0;
   /* Add padding at bottom to accommodate tick labels */
   margin-bottom: 25px;
+}
+
+/* =============================================================================
+   BSLIB PAGE LAYOUT - FULL WIDTH RESPONSIVE
+   ============================================================================= */
+
+/* Make bslib page_navbar content full width */
+.bslib-page-navbar>.container-fluid,
+.bslib-page-navbar>.container-xl,
+.bslib-page-navbar>.container-lg,
+.bslib-page-navbar>.container-md,
+.bslib-page-navbar>.container-sm {
+  max-width: 100%;
+  width: 100%;
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+/* Tab content should fill available width */
+.tab-content,
+.tab-pane {
+  width: 100%;
+}
+
+/* Layout sidebar should use full width */
+.bslib-sidebar-layout {
+  width: 100%;
+  border-radius: 20px !important;
+  overflow: hidden;
+  margin-top: 1rem;
+  display: flex;
+  align-items: stretch;
+}
+
+.bslib-sidebar-layout>.sidebar {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+}
+
+.bslib-sidebar-layout>.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 992px) {
+  .bslib-page-navbar>.container-fluid {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .main-content {
+    padding: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    padding: 1rem;
+  }
+
+  .bslib-sidebar-layout {
+    flex-direction: column;
+  }
+}
+
+/* =============================================================================
+   CUSTOM CSS VARIABLES (--svd-*)
+
+   These variables provide app-specific theming separate from Bootstrap's --bs-*
+   variables. This separation allows:
+   - Custom colors that don't map to Bootstrap semantics
+   - Independent control over dark/light mode appearance
+   - Clear distinction between Bootstrap components and custom UI
+
+   Usage: var(--svd-primary), var(--svd-text), etc.
+   ============================================================================= */
+:root {
+  --svd-primary: #2d287a;
+  --svd-secondary: #667eea;
+  --svd-accent: #e52f12;
+  --svd-text: #4b5563;
+  --svd-text-muted: #6b7280;
+  --svd-bg-light: #f8f9fc;
+  --svd-bg-card: #ffffff;
+  --svd-border: #e1e4e8;
+  --svd-link: #347bb7;
+}
+
+[data-bs-theme="dark"] {
+  --svd-primary: #6366f1;
+  --svd-secondary: #818cf8;
+  --svd-accent: #f87171;
+  --svd-text: #e0e0e0;
+  --svd-text-muted: #9ca3af;
+  --svd-bg-light: #1a1a2e;
+  --svd-bg-card: rgba(255, 255, 255, 0.05);
+  --svd-border: rgba(255, 255, 255, 0.1);
+  --svd-link: #93c5fd;
+}
+
+/* =============================================================================
+   DARK MODE GLASSMORPHISM
+
+   Dark mode is triggered by bslib::input_dark_mode() which toggles the
+   data-bs-theme="dark" attribute on <html>. The CSS below overrides Bootstrap 5
+   defaults with a custom glassmorphism design.
+
+   !important IS REQUIRED here because Bootstrap 5 sets its own dark mode
+   styles that need to be overridden for our custom appearance.
+   ============================================================================= */
+
+[data-bs-theme="dark"] body {
+  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%) !important;
+  min-height: 100vh;
+}
+
+[data-bs-theme="dark"] .main-container {
+  background: var(--svd-bg-card);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--svd-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+[data-bs-theme="dark"] .bslib-sidebar-layout>.sidebar,
+[data-bs-theme="dark"] .sidebar-section {
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-right: 1px solid var(--svd-border) !important;
+}
+
+/* Graceful fallback for browsers without backdrop-filter */
+@supports not (backdrop-filter: blur(10px)) {
+  [data-bs-theme="dark"] .main-container {
+    background: rgba(26, 26, 46, 0.95);
+  }
+
+  [data-bs-theme="dark"] .bslib-sidebar-layout>.sidebar {
+    background: rgba(26, 26, 46, 0.95) !important;
+  }
+}
+
+/* =============================================================================
+   LIGHT MODE GLASSMORPHISM FOR BSLIB CARDS
+   ============================================================================= */
+
+/* Base card styling - subtle frosted glass effect */
+.bslib-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  border-radius: 16px;
+  transition: all 0.3s ease;
+}
+
+/* Value Box - Enhanced with gradient background */
+.bslib-value-box {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 249, 252, 0.98) 50%, rgba(240, 242, 250, 0.95) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px solid rgba(45, 40, 122, 0.18);
+  border-radius: 18px;
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.06),
+    inset 0 2px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.02);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Accent gradient border effect at bottom */
+.bslib-value-box::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--svd-primary, #2d287a) 0%, var(--svd-secondary, #667eea) 50%, var(--svd-accent, #e52f12) 100%);
+  opacity: 0.7;
+}
+
+/* Fallback for browsers without backdrop-filter */
+@supports not (backdrop-filter: blur(8px)) {
+  .bslib-card,
+  .bslib-value-box {
+    background: rgba(255, 255, 255, 0.95);
+  }
+}
+
+/* =============================================================================
+   DARK MODE GLASSMORPHISM FOR BSLIB CARDS
+   ============================================================================= */
+
+[data-bs-theme="dark"] .bslib-card {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Dark mode Value Box - Enhanced with gradient background */
+[data-bs-theme="dark"] .bslib-value-box {
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.12) 0%, rgba(40, 40, 80, 0.85) 50%, rgba(30, 30, 60, 0.9) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 2px solid rgba(129, 140, 248, 0.3);
+  box-shadow:
+    0 8px 36px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 24px rgba(99, 102, 241, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+[data-bs-theme="dark"] .bslib-value-box::after {
+  background: linear-gradient(90deg, var(--svd-primary, #6366f1) 0%, var(--svd-secondary, #818cf8) 50%, var(--svd-accent, #f87171) 100%);
+  opacity: 0.85;
+}
+
+/* Fallback for browsers without backdrop-filter */
+@supports not (backdrop-filter: blur(12px)) {
+  [data-bs-theme="dark"] .bslib-card,
+  [data-bs-theme="dark"] .bslib-value-box {
+    background: rgba(26, 26, 46, 0.95);
+  }
+}
+
+/* =============================================================================
+   VALUE BOX CONTENT STYLING
+   ============================================================================= */
+
+/* Light mode value box text - override white text from theme="primary" */
+/* Using multiple selectors to override bslib's Bootstrap themed classes */
+.bslib-value-box .value-box-title,
+.bslib-value-box.bg-primary .value-box-title,
+.bslib-value-box .value-box-grid .value-box-title {
+  color: var(--svd-primary, #2d287a) !important;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.bslib-value-box .value-box-value,
+.bslib-value-box.bg-primary .value-box-value,
+.bslib-value-box .value-box-grid .value-box-value {
+  color: var(--svd-primary, #2d287a) !important;
+  font-weight: 700;
+  font-size: 2.25rem;
+  letter-spacing: -0.02em;
+}
+
+/* Dark mode value box content */
+[data-bs-theme="dark"] .bslib-value-box .value-box-title,
+[data-bs-theme="dark"] .bslib-value-box.bg-primary .value-box-title,
+[data-bs-theme="dark"] .bslib-value-box .value-box-grid .value-box-title {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* About tab value boxes - title case and title below value */
+.about-content .bslib-value-box .value-box-title {
+  text-transform: none !important;
+  font-size: 1.1rem !important;
+  margin-top: 0.75rem;
+}
+
+.about-content .bslib-value-box .value-box-value {
+  font-weight: 700 !important;
+  font-size: 3.5rem !important;
+}
+
+.about-content .bslib-value-box .value-box-area {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+[data-bs-theme="dark"] .bslib-value-box .value-box-value,
+[data-bs-theme="dark"] .bslib-value-box.bg-primary .value-box-value,
+[data-bs-theme="dark"] .bslib-value-box .value-box-grid .value-box-value {
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* =============================================================================
+   HOVER EFFECTS FOR BSLIB CARDS
+   ============================================================================= */
+
+/* Light mode hover - Bold/Dramatic */
+.bslib-card:hover,
+.bslib-value-box:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.18),
+    0 8px 16px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(45, 40, 122, 0.1),
+    inset 0 2px 0 rgba(255, 255, 255, 1);
+  border-color: rgba(45, 40, 122, 0.4);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* Light mode value box hover - maintain readable text */
+.bslib-value-box:hover .value-box-title,
+.bslib-value-box:hover .value-box-value,
+.bslib-value-box.bg-primary:hover .value-box-title,
+.bslib-value-box.bg-primary:hover .value-box-value,
+.bslib-value-box:hover .value-box-grid .value-box-title,
+.bslib-value-box:hover .value-box-grid .value-box-value {
+  color: var(--svd-primary, #2d287a) !important;
+}
+
+/* Dark mode hover - Bold/Dramatic with glow */
+[data-bs-theme="dark"] .bslib-card:hover,
+[data-bs-theme="dark"] .bslib-value-box:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.7),
+    0 0 40px rgba(99, 102, 241, 0.35),
+    0 0 80px rgba(99, 102, 241, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  border-color: rgba(129, 140, 248, 0.6);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Dark mode value box hover - maintain readable text */
+[data-bs-theme="dark"] .bslib-value-box:hover .value-box-title,
+[data-bs-theme="dark"] .bslib-value-box.bg-primary:hover .value-box-title,
+[data-bs-theme="dark"] .bslib-value-box:hover .value-box-grid .value-box-title {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-bs-theme="dark"] .bslib-value-box:hover .value-box-value,
+[data-bs-theme="dark"] .bslib-value-box.bg-primary:hover .value-box-value,
+[data-bs-theme="dark"] .bslib-value-box:hover .value-box-grid .value-box-value {
+  color: #ffffff !important;
+}
+
+/* Disable hover transform for inline cards (info labels) */
+.d-inline-block.bslib-card:hover {
+  transform: none;
+}
+
+/* Dark mode - About tab inline card labels (How to Cite, etc.) */
+[data-bs-theme="dark"] .about-content .d-inline-block.bslib-card .card-body.text-primary {
+  color: var(--svd-text) !important;
+}
+
+/* =============================================================================
+   SPECIAL BSLIB CARD STYLING
+   ============================================================================= */
+
+/* Warning card (danger theme) - Light mode */
+.bslib-card.border-danger {
+  background: rgba(255, 0, 0, 0.08);
+  border: 2px solid rgba(255, 0, 0, 0.3);
+}
+
+.bslib-card.border-danger:hover {
+  background: rgba(255, 0, 0, 0.12);
+  border-color: rgba(255, 0, 0, 0.5);
+}
+
+/* Warning card (danger theme) - Dark mode */
+[data-bs-theme="dark"] .bslib-card.border-danger {
+  background: rgba(248, 113, 113, 0.1);
+  border: 2px solid rgba(248, 113, 113, 0.3);
+}
+
+[data-bs-theme="dark"] .bslib-card.border-danger:hover {
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+/* Sidebar background - white (light mode only) */
+.bslib-sidebar-layout>.sidebar {
+  background: white !important;
+}
+
+/* Sidebar filter cards - same as dt-bslib-controls (light mode only) */
+.bslib-sidebar-layout .bslib-card {
+  background: var(--svd-bg-light, #f8f9fc);
+  border: 1px solid var(--svd-border, #e1e4e8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+[data-bs-theme="dark"] .bslib-sidebar-layout .bslib-card {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Light mode sidebar card hover - Enhanced */
+.bslib-sidebar-layout .bslib-card:hover {
+  background: rgba(255, 255, 255, 0.95);
+  transform: translateY(-3px) scale(1.01);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.12),
+    0 4px 8px rgba(0, 0, 0, 0.08);
+  border-color: rgba(45, 40, 122, 0.25);
+}
+
+/* Dark mode sidebar card hover - Enhanced */
+[data-bs-theme="dark"] .bslib-sidebar-layout .bslib-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-3px) scale(1.01);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(99, 102, 241, 0.25);
+  border-color: rgba(129, 140, 248, 0.4);
+}
+
+/* =============================================================================
+   TIP BOX STYLING
+   ============================================================================= */
+
+/* Tip Row Container */
+.tip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 1rem;
+}
+
+.tip-row-centered {
+  justify-content: center;
+}
+
+/* Individual Tip Box - Bold Styling */
+.tip-box {
+  background: linear-gradient(135deg, rgba(45, 40, 122, 0.12) 0%, rgba(102, 126, 234, 0.1) 100%);
+  border: 2px solid rgba(45, 40, 122, 0.25);
+  border-left: 5px solid var(--svd-primary, #2d287a);
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  flex: 1;
+  min-width: 200px;
+  max-width: 400px;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle gradient overlay for depth */
+.tip-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--svd-primary, #2d287a) 0%, var(--svd-secondary, #667eea) 100%);
+  opacity: 0.6;
+}
+
+.tip-box:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.15),
+    0 4px 8px rgba(0, 0, 0, 0.1);
+  border-color: rgba(45, 40, 122, 0.45);
+  background: linear-gradient(135deg, rgba(45, 40, 122, 0.16) 0%, rgba(102, 126, 234, 0.14) 100%);
+}
+
+.tip-box:hover::before {
+  opacity: 1;
+}
+
+/* Tip Box Divider */
+.tip-divider {
+  width: 2px;
+  background: linear-gradient(180deg, transparent 0%, rgba(45, 40, 122, 0.3) 50%, transparent 100%);
+  margin: 0.5rem 0;
+  align-self: stretch;
+}
+
+/* Tip Box Text Hints */
+.link-hint {
+  color: var(--svd-link, #347bb7);
+  font-weight: 500;
+}
+
+.tip-link {
+  color: var(--svd-secondary, #667eea);
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.tip-link:hover {
+  color: var(--svd-primary, #2d287a);
+}
+
+/* Dark Mode Tip Boxes - Bold Styling */
+[data-bs-theme="dark"] .tip-box {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(129, 140, 248, 0.1) 100%);
+  border: 2px solid rgba(129, 140, 248, 0.3);
+  border-left: 5px solid var(--svd-secondary, #818cf8);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(129, 140, 248, 0.1);
+}
+
+[data-bs-theme="dark"] .tip-box::before {
+  background: linear-gradient(90deg, var(--svd-primary, #6366f1) 0%, var(--svd-secondary, #818cf8) 100%);
+}
+
+[data-bs-theme="dark"] .tip-box:hover {
+  transform: translateY(-4px) scale(1.01);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(129, 140, 248, 0.16) 100%);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(99, 102, 241, 0.25),
+    0 0 60px rgba(99, 102, 241, 0.1);
+  border-color: rgba(129, 140, 248, 0.5);
+}
+
+[data-bs-theme="dark"] .tip-divider {
+  background: linear-gradient(180deg, transparent 0%, rgba(129, 140, 248, 0.4) 50%, transparent 100%);
+}
+
+[data-bs-theme="dark"] .link-hint {
+  color: var(--svd-link, #93c5fd);
+}
+
+[data-bs-theme="dark"] .tip-link {
+  color: var(--svd-secondary, #818cf8);
+}
+
+[data-bs-theme="dark"] .tip-link:hover {
+  color: #a5b4fc;
+}
+
+/* =============================================================================
+   NEW CSS CLASSES (REPLACING INLINE STYLES)
+   ============================================================================= */
+
+/* Title Section */
+.title-section {
+  text-align: center;
+  background: linear-gradient(135deg, var(--svd-primary) 0%, var(--svd-accent) 100%);
+  padding: 2.5rem 3rem;
+  margin: 1rem 0 0 0;
+  color: white;
+  border-radius: 20px;
+  font-weight: bold;
+}
+
+[data-bs-theme="dark"] .title-section {
+  background: rgba(26, 26, 46, 0.95) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--svd-border);
+}
+
+/* Content Title */
+.content-title {
+  font-size: 2rem;
+  color: var(--bs-body-color, black);
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+/* About Header */
+.about-header {
+  color: var(--svd-primary);
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* About Text - Glassmorphism styling */
+.about-text {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--svd-text);
+  font-size: 1.2rem;
+  padding: 2rem 3rem;
+  border-radius: 20px;
+  display: inline-block;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  margin-top: 1rem;
+  line-height: 1.6;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* Fallback for browsers without backdrop-filter */
+@supports not (backdrop-filter: blur(12px)) {
+  .about-text {
+    background: rgba(248, 249, 252, 0.95);
+  }
+}
+
+[data-bs-theme="dark"] .about-text {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* About Content wrapper */
+.about-content {
+  background: var(--bs-body-bg, #f8f9fc);
+  border-bottom: 1px solid var(--svd-border);
+}
+
+[data-bs-theme="dark"] .about-content {
+  background: transparent;
+}
+
+/* About tab bslib boxes - custom border radius */
+.about-content .bslib-card,
+.about-content .bslib-value-box {
+  border-radius: 20px;
+}
+
+/* Date Label and Badge */
+.date-label {
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--bs-body-color, var(--svd-text));
+}
+
+/* Date Badge - Glassmorphism styling with hover effect */
+.date-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.35rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+  color: var(--svd-primary, #2d287a);
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+/* Date Badge - Light mode hover effect */
+.date-badge:hover {
+  transform: translateY(-3px) scale(1.03);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.15),
+    0 6px 12px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(45, 40, 122, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  border-color: rgba(45, 40, 122, 0.3);
+}
+
+/* Fallback for browsers without backdrop-filter */
+@supports not (backdrop-filter: blur(12px)) {
+  .date-badge {
+    background: rgba(248, 249, 252, 0.95);
+  }
+}
+
+/* Date Badge - Dark mode glassmorphism */
+[data-bs-theme="dark"] .date-badge {
+  background: rgba(99, 102, 241, 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  color: var(--svd-text);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(129, 140, 248, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Date Badge - Dark mode hover effect */
+[data-bs-theme="dark"] .date-badge:hover {
+  transform: translateY(-3px) scale(1.03);
+  background: rgba(99, 102, 241, 0.25);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(99, 102, 241, 0.3),
+    0 0 60px rgba(99, 102, 241, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-color: rgba(129, 140, 248, 0.5);
+}
+
+/* Section Divider */
+.section-divider {
+  border: none;
+  border-top: 2px solid #9ca3af;
+  margin: 1.5rem 0;
+}
+
+[data-bs-theme="dark"] .section-divider {
+  border-top-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Visualization Iframe */
+.viz-iframe {
+  height: 800px;
+  background: white;
+  border: none;
+  display: block;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.phenogram-iframe {
+  width: 1200px;
+  height: 800px;
+  margin: 0 auto;
+}
+
+.trials-iframe {
+  width: 1600px;
+}
+
+.iframe-container {
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* Phenogram and Viz Content */
+.phenogram-content,
+.viz-content {
+  padding: 2rem;
+}
+
+/* =============================================================================
+   DARK MODE - DATATABLE STYLING
+
+   DataTables applies its own inline styles and classes. !important is required
+   to override these defaults for consistent dark mode appearance.
+   ============================================================================= */
+
+[data-bs-theme="dark"] .dataTables_wrapper {
+  background: transparent;
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] table.dataTable {
+  border-color: var(--svd-border);
+}
+
+[data-bs-theme="dark"] table.dataTable thead th {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--svd-text);
+  border-bottom: none;
+  border-right-color: rgba(129, 140, 248, 0.4) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable thead th[style*="border-right"],
+[data-bs-theme="dark"] table.dataTable thead th[style*="border-bottom"] {
+  border-right-color: rgba(129, 140, 248, 0.4) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody td {
+  color: #d1d5db;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: transparent;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-bs-theme="dark"] table.dataTable tbody td a {
+  color: var(--svd-link) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody td a:hover {
+  color: var(--svd-secondary) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody td a:visited {
+  color: #a78bfa !important;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody tr td i {
+  color: var(--svd-secondary);
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_filter input {
+  background: #1e1e3f;
+  border: 2px solid var(--svd-secondary);
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_filter input::placeholder {
+  color: var(--svd-text-muted);
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_filter input:focus {
+  background: #1e1e3f;
+  border-color: var(--svd-secondary);
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.3);
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_length select {
+  background: #1e1e3f;
+  border: 1px solid var(--svd-secondary);
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_length select option {
+  background: #1e1e3f;
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_length select:focus {
+  border-color: var(--svd-secondary);
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+  outline: none;
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button {
+  background: transparent !important;
+  color: var(--svd-text) !important;
+  border: 1px solid transparent !important;
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button a {
+  color: var(--svd-text) !important;
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.current,
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+  background: #2a2a4a !important;
+  color: var(--svd-text) !important;
+  border: 1px solid var(--svd-secondary) !important;
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.current a,
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover a {
+  color: var(--svd-text) !important;
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button:hover,
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button:hover a {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--svd-text) !important;
+  border: 1px solid var(--svd-border) !important;
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.previous a,
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.next a {
+  color: var(--svd-secondary) !important;
+}
+
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.disabled a,
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover,
+[data-bs-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover a {
+  color: var(--svd-text-muted) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  cursor: default;
+}
+
+[data-bs-theme="dark"] .dataTables_info {
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .dataTables_scrollBody::-webkit-scrollbar-track,
+[data-bs-theme="dark"] .top-scrollbar::-webkit-scrollbar-track {
+  background: var(--svd-bg-light, #1a1a2e);
+  border-radius: 6px;
+}
+
+[data-bs-theme="dark"] .dataTables_scrollBody::-webkit-scrollbar-thumb,
+[data-bs-theme="dark"] .top-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(129, 140, 248, 0.5);
+  border-radius: 6px;
+  border: 2px solid var(--svd-bg-light, #1a1a2e);
+  transition: background-color 0.2s ease;
+}
+
+[data-bs-theme="dark"] .dataTables_scrollBody::-webkit-scrollbar-thumb:hover,
+[data-bs-theme="dark"] .top-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--svd-secondary, #818cf8);
+}
+
+/* =============================================================================
+   DARK MODE - TOOLTIP TRIGGER ELEMENTS (rounded boxes in table cells)
+   ============================================================================= */
+
+[data-bs-theme="dark"] [data-tippy-content] {
+  background-color: #2a2a4a !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  border-bottom-color: var(--svd-secondary) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable [data-tippy-content] {
+  background-color: #2a2a4a !important;
+  color: var(--svd-text) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody td a [data-tippy-content],
+[data-bs-theme="dark"] table.dataTable tbody td a[data-tippy-content] {
+  color: var(--svd-link) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody td a:hover [data-tippy-content],
+[data-bs-theme="dark"] table.dataTable tbody td a:hover[data-tippy-content] {
+  color: var(--svd-secondary) !important;
+}
+
+[data-bs-theme="dark"] table.dataTable tbody td a:visited [data-tippy-content],
+[data-bs-theme="dark"] table.dataTable tbody td a:visited[data-tippy-content] {
+  color: #a78bfa !important;
+}
+
+/* =============================================================================
+   DARK MODE - TIPPY TOOLTIPS (popup content)
+   ============================================================================= */
+
+[data-bs-theme="dark"] .tippy-box[data-theme~='custom'] {
+  background: rgba(255, 255, 255, 0.1) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+[data-bs-theme="dark"] .tippy-box[data-theme~='custom'] .tippy-content {
+  color: var(--svd-text) !important;
+}
+
+[data-bs-theme="dark"] .tippy-box[data-theme~='custom'] .tippy-content strong {
+  border-top-color: rgba(255, 255, 255, 0.3);
+}
+
+[data-bs-theme="dark"] .tippy-box[data-theme~='custom'] .tippy-arrow {
+  color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* =============================================================================
+   DARK MODE - TOOLTIP BOXES (inline elements with tooltips)
+   ============================================================================= */
+
+/* Tooltip box - dark mode base */
+[data-bs-theme="dark"] .tooltip-box {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-bottom: 1px dotted #818cf8;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Tooltip box hover - dark mode with pronounced glow */
+[data-bs-theme="dark"] .tooltip-box:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(99, 102, 241, 0.4),
+    0 0 60px rgba(129, 140, 248, 0.2),
+    0 0 0 2px rgba(129, 140, 248, 0.4);
+  background-color: rgba(255, 255, 255, 0.2);
+  border-bottom-color: #818cf8;
+  border-bottom-width: 2px;
+}
+
+/* =============================================================================
+   DARK MODE - SIDEBAR FILTERS
+   ============================================================================= */
+
+[data-bs-theme="dark"] #mr_filter,
+[data-bs-theme="dark"] #gwas_trait_filter,
+[data-bs-theme="dark"] #omics_filter,
+[data-bs-theme="dark"] #ge_filter,
+[data-bs-theme="dark"] #reg_filter,
+[data-bs-theme="dark"] #ct_filter,
+[data-bs-theme="dark"] #pop_filter,
+[data-bs-theme="dark"] #spon_filter,
+[data-bs-theme="dark"] #sample_size_filter {
+  background: var(--svd-bg-card);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--svd-border);
+}
+
+[data-bs-theme="dark"] .filter-label {
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .checkbox label {
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .checkbox label:hover {
+  color: var(--svd-secondary);
+}
+
+[data-bs-theme="dark"] .checkbox input[type='checkbox'] {
+  accent-color: var(--svd-primary);
+}
+
+/* =============================================================================
+   DARK MODE - FORM CONTROLS
+   ============================================================================= */
+
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+  background: #1e1e3f !important;
+  border: 1px solid var(--svd-secondary) !important;
+  color: var(--svd-text) !important;
+}
+
+[data-bs-theme="dark"] .form-control::placeholder {
+  color: var(--svd-text-muted) !important;
+}
+
+[data-bs-theme="dark"] .form-select option {
+  background: #1e1e3f;
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+  background: #1e1e3f !important;
+  border-color: var(--svd-secondary) !important;
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.3) !important;
+}
+
+/* =============================================================================
+   DARK MODE - SLIDER (IRS)
+   ============================================================================= */
+
+[data-bs-theme="dark"] .irs--shiny .irs-bar {
+  background: var(--svd-primary);
+}
+
+[data-bs-theme="dark"] .irs--shiny .irs-handle {
+  background: var(--svd-primary);
+  border-color: var(--svd-secondary);
+}
+
+[data-bs-theme="dark"] .irs--shiny .irs-line {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-bs-theme="dark"] .irs--shiny .irs-min,
+[data-bs-theme="dark"] .irs--shiny .irs-max,
+[data-bs-theme="dark"] .irs--shiny .irs-from,
+[data-bs-theme="dark"] .irs--shiny .irs-to,
+[data-bs-theme="dark"] .irs--shiny .irs-single {
+  background: var(--svd-primary);
+  color: white;
+}
+
+[data-bs-theme="dark"] .irs .custom-grid .irs-grid-text {
+  color: var(--svd-text-muted);
+}
+
+[data-bs-theme="dark"] .irs .custom-grid .irs-grid-pol {
+  background: var(--svd-text-muted);
+}
+
+/* =============================================================================
+   DARK MODE - HISTOGRAM
+   ============================================================================= */
+
+[data-bs-theme="dark"] #sample_size_histogram {
+  background: transparent;
+}
+
+/* =============================================================================
+   DARK MODE - NAVBAR ADJUSTMENTS
+   ============================================================================= */
+
+/* Navbar styling */
+.navbar {
+  border-radius: 20px;
+  margin: 1rem 2rem 0 2rem;
+  padding: 1rem 2rem !important;
+  border: 1px solid var(--svd-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  align-items: center;
+}
+
+/* Vertically center navbar content */
+.navbar > .container-fluid {
+  display: flex;
+  align-items: center !important;
+}
+
+.navbar > .container-fluid > ul.nav.navbar-nav {
+  display: flex !important;
+  align-items: center !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Remove bslib/Bootstrap navbar bottom separator line and extra spacing */
+.bslib-page-navbar > .navbar + .container-fluid,
+.bslib-page-navbar > .navbar + div {
+  border-top: none !important;
+  padding-top: 0 !important;
+}
+
+.navbar.navbar-expand-md {
+  border-bottom: none !important;
+}
+
+/* Remove any extra spacing from bslib page content container */
+.bslib-page-navbar > .container-fluid {
+  padding-top: 0 !important;
+}
+
+[data-bs-theme="dark"] .navbar {
+  background: rgba(26, 26, 46, 0.95) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--svd-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+[data-bs-theme="dark"] .navbar-brand {
+  color: var(--svd-text) !important;
+}
+
+/* Copyright/license text in navbar */
+.header-info {
+  font-size: 0.875rem;
+  color: var(--svd-text-muted);
+}
+
+.header-info .divider {
+  color: var(--svd-text-muted);
+}
+
+.header-link {
+  color: var(--svd-primary) !important;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.header-link:hover {
+  text-decoration: underline;
+  color: var(--svd-accent) !important;
+}
+
+[data-bs-theme="dark"] .header-info {
+  color: var(--svd-text-muted);
+}
+
+[data-bs-theme="dark"] .header-link {
+  color: var(--svd-secondary) !important;
+}
+
+[data-bs-theme="dark"] .header-link:hover {
+  color: var(--svd-accent) !important;
+}
+
+/* =============================================================================
+   BSLIB SIDEBAR ADJUSTMENTS
+   ============================================================================= */
+
+.bslib-sidebar-layout>.main {
+  background: var(--bs-body-bg, white);
+  border-radius: 20px !important;
+  overflow: hidden;
+}
+
+[data-bs-theme="dark"] .bslib-sidebar-layout>.main {
+  background: transparent;
+}
+
+/* Main content area */
+.main-content {
+  flex: 1;
+  padding: 2rem 3rem;
+  overflow-x: auto;
+  background: var(--bs-body-bg, white);
+  border-radius: 20px;
+}
+
+[data-bs-theme="dark"] .main-content {
+  background: transparent;
+}
+
+/* =============================================================================
+   FILTER MESSAGE STYLES
+   ============================================================================= */
+
+.filter-message {
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 0.75rem;
+  border-radius: 8px;
+  display: inline-block;
+  width: auto;
+  margin-bottom: 1.5rem;
+}
+
+.filter-active {
+  color: #ff0000;
+  background-color: #fff5f5;
+  border: 1px solid #ff0000;
+}
+
+.filter-none {
+  color: #008000;
+  background-color: #f0fff0;
+  border: 1px solid #008000;
+}
+
+[data-bs-theme="dark"] .filter-active {
+  color: #f87171;
+  background-color: rgba(248, 113, 113, 0.15);
+  border-color: #f87171;
+}
+
+[data-bs-theme="dark"] .filter-none {
+  color: #4ade80;
+  background-color: rgba(74, 222, 128, 0.15);
+  border-color: #4ade80;
+}
+
+/* =============================================================================
+   BSLIB TABLE CONTROLS (Show entries + Search)
+   ============================================================================= */
+
+.dt-bslib-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.5rem;
+  background: var(--svd-bg-light, #f8f9fc);
+  border-radius: 12px;
+  border: 1px solid var(--svd-border, #e1e4e8);
+  box-sizing: border-box;
+  position: relative;
+  z-index: 10;
+}
+
+.dt-bslib-control-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dt-bslib-label {
+  font-weight: 500;
+  color: var(--svd-text, #4b5563);
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+/* Style the bslib selectInput and textInput */
+.dt-bslib-controls .form-group {
+  margin-bottom: 0;
+}
+
+.dt-bslib-controls .form-control,
+.dt-bslib-controls .form-select {
+  border-radius: 8px;
+  border: 2px solid var(--svd-border, #e1e4e8);
+  padding: 0.4rem 0.75rem;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.dt-bslib-controls .form-control:focus,
+.dt-bslib-controls .form-select:focus {
+  border-color: var(--svd-secondary, #667eea);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  outline: none;
+}
+
+/* Dark mode for bslib table controls */
+[data-bs-theme="dark"] .dt-bslib-controls {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--svd-border);
+}
+
+[data-bs-theme="dark"] .dt-bslib-label {
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .dt-bslib-controls .form-control,
+[data-bs-theme="dark"] .dt-bslib-controls .form-select {
+  background: #1e1e3f;
+  border: 2px solid var(--svd-secondary);
+  color: var(--svd-text);
+}
+
+[data-bs-theme="dark"] .dt-bslib-controls .form-control:focus,
+[data-bs-theme="dark"] .dt-bslib-controls .form-select:focus {
+  border-color: var(--svd-secondary);
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.3);
+}
+
+/* =============================================================================
+   CLINICAL TRIALS MAP STYLING
+   ============================================================================= */
+
+/* Map container */
+.map-container {
+  width: 100%;
+  min-height: 700px;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  margin-top: 1rem;
+}
+
+#trials_map {
+  min-height: 700px !important;
+}
+
+.map-content {
+  padding: 2rem;
+}
+
+/* Leaflet container styling */
+.map-container .leaflet-container {
+  border-radius: 20px;
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Map statistics display */
+.map-stats {
+  text-align: center;
+  padding: 1rem;
+  margin: 1rem 0;
+  font-size: 1.1rem;
+  color: var(--svd-text, #4b5563);
+}
+
+/* Map popup styling - Light mode */
+.map-popup {
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 4px;
+  max-width: 320px;
+  min-width: 260px;
+}
+
+/* Popup title - trial name */
+.map-popup .popup-title {
+  color: var(--svd-primary, #2d287a);
+  font-size: 14px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+/* Popup status badge */
+.map-popup .popup-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+.map-popup .popup-status-recruiting {
+  background-color: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.map-popup .popup-status-active {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.map-popup .popup-status-completed {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+}
+
+.map-popup .popup-status-terminated {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.map-popup .popup-status-unknown {
+  background-color: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+}
+
+/* Popup divider */
+.map-popup .popup-divider {
+  border-top: 1px solid #e5e7eb;
+  margin: 10px 0;
+}
+
+/* Popup trial info section */
+.map-popup .popup-trial-info {
+  margin: 8px 0;
+}
+
+.map-popup .popup-info-row {
+  margin-bottom: 4px;
+  color: var(--svd-text, #4b5563);
+}
+
+.map-popup .popup-label {
+  font-weight: 600;
+  color: var(--svd-primary, #2d287a);
+}
+
+/* Popup facility section */
+.map-popup .popup-facility {
+  font-weight: 600;
+  color: var(--svd-primary, #2d287a);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.map-popup .popup-facility-icon {
+  margin-right: 4px;
+}
+
+.map-popup .popup-location {
+  color: var(--svd-text, #4b5563);
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* Popup link */
+.map-popup .popup-link {
+  color: var(--svd-link, #347bb7);
+  text-decoration: none;
+  font-weight: 500;
+  display: block;
+  text-align: center;
+  padding: 6px 0;
+}
+
+.map-popup .popup-link:hover {
+  text-decoration: underline;
+  color: var(--svd-primary, #2d287a);
+}
+
+/* Legacy selectors for backwards compatibility */
+.map-popup strong {
+  color: var(--svd-primary, #2d287a);
+  font-size: 15px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.map-popup a {
+  color: var(--svd-link, #347bb7);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.map-popup a:hover {
+  text-decoration: underline;
+  color: var(--svd-primary, #2d287a);
+}
+
+/* Leaflet popup styling overrides */
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.leaflet-popup-tip {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Leaflet cluster styling */
+.marker-cluster-small {
+  background-color: rgba(102, 126, 234, 0.6);
+}
+
+.marker-cluster-small div {
+  background-color: rgba(45, 40, 122, 0.8);
+  color: white;
+}
+
+.marker-cluster-medium {
+  background-color: rgba(102, 126, 234, 0.7);
+}
+
+.marker-cluster-medium div {
+  background-color: rgba(45, 40, 122, 0.85);
+  color: white;
+}
+
+.marker-cluster-large {
+  background-color: rgba(102, 126, 234, 0.8);
+}
+
+.marker-cluster-large div {
+  background-color: rgba(45, 40, 122, 0.9);
+  color: white;
+}
+
+/* Dark mode map styling */
+[data-bs-theme="dark"] .map-container {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-bs-theme="dark"] .map-stats {
+  color: var(--svd-text, #e0e0e0);
+}
+
+[data-bs-theme="dark"] .leaflet-popup-content-wrapper {
+  background: rgba(26, 26, 46, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--svd-border, rgba(255, 255, 255, 0.1));
+}
+
+[data-bs-theme="dark"] .leaflet-popup-tip {
+  background: rgba(26, 26, 46, 0.95);
+}
+
+/* Dark mode popup title */
+[data-bs-theme="dark"] .map-popup .popup-title {
+  color: var(--svd-secondary, #818cf8);
+}
+
+/* Dark mode popup status badges */
+[data-bs-theme="dark"] .map-popup .popup-status-recruiting {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+[data-bs-theme="dark"] .map-popup .popup-status-active {
+  background-color: rgba(251, 191, 36, 0.2);
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+[data-bs-theme="dark"] .map-popup .popup-status-completed {
+  background-color: rgba(156, 163, 175, 0.2);
+  color: #d1d5db;
+  border-color: rgba(156, 163, 175, 0.4);
+}
+
+[data-bs-theme="dark"] .map-popup .popup-status-terminated {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+[data-bs-theme="dark"] .map-popup .popup-status-unknown {
+  background-color: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+  border-color: rgba(107, 114, 128, 0.4);
+}
+
+/* Dark mode popup divider */
+[data-bs-theme="dark"] .map-popup .popup-divider {
+  border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Dark mode popup info rows */
+[data-bs-theme="dark"] .map-popup .popup-info-row {
+  color: var(--svd-text, #e0e0e0);
+}
+
+[data-bs-theme="dark"] .map-popup .popup-label {
+  color: var(--svd-secondary, #818cf8);
+}
+
+/* Dark mode popup facility */
+[data-bs-theme="dark"] .map-popup .popup-facility {
+  color: var(--svd-secondary, #818cf8);
+}
+
+[data-bs-theme="dark"] .map-popup strong {
+  color: var(--svd-secondary, #818cf8);
+}
+
+[data-bs-theme="dark"] .map-popup .popup-location {
+  color: var(--svd-text, #e0e0e0);
+}
+
+/* Dark mode popup link */
+[data-bs-theme="dark"] .map-popup .popup-link,
+[data-bs-theme="dark"] .map-popup a {
+  color: var(--svd-link, #93c5fd);
+}
+
+[data-bs-theme="dark"] .map-popup .popup-link:hover,
+[data-bs-theme="dark"] .map-popup a:hover {
+  color: var(--svd-secondary, #818cf8);
+}
+
+/* Dark mode cluster markers */
+[data-bs-theme="dark"] .marker-cluster-small {
+  background-color: rgba(129, 140, 248, 0.5);
+}
+
+[data-bs-theme="dark"] .marker-cluster-small div {
+  background-color: rgba(99, 102, 241, 0.9);
+}
+
+[data-bs-theme="dark"] .marker-cluster-medium {
+  background-color: rgba(129, 140, 248, 0.6);
+}
+
+[data-bs-theme="dark"] .marker-cluster-medium div {
+  background-color: rgba(99, 102, 241, 0.95);
+}
+
+[data-bs-theme="dark"] .marker-cluster-large {
+  background-color: rgba(129, 140, 248, 0.7);
+}
+
+[data-bs-theme="dark"] .marker-cluster-large div {
+  background-color: rgba(99, 102, 241, 1);
+}
+
+/* Dark mode leaflet controls */
+[data-bs-theme="dark"] .leaflet-control-zoom a {
+  background: rgba(26, 26, 46, 0.9);
+  color: var(--svd-text, #e0e0e0);
+  border-color: var(--svd-border, rgba(255, 255, 255, 0.1));
+}
+
+[data-bs-theme="dark"] .leaflet-control-zoom a:hover {
+  background: rgba(99, 102, 241, 0.3);
+  color: white;
+}
+
+[data-bs-theme="dark"] .leaflet-control-attribution {
+  background: rgba(26, 26, 46, 0.8);
+  color: var(--svd-text-muted, #9ca3af);
+}
+
+[data-bs-theme="dark"] .leaflet-control-attribution a {
+  color: var(--svd-link, #93c5fd);
+}
+
+/* =============================================================================
+   THEME TOGGLE BUTTON - Unified appearance
+   Makes the "Theme" label and toggle icon appear as one cohesive clickable button
+   ============================================================================= */
+
+/* Theme Toggle Button - Light mode */
+.theme-toggle-btn {
+  cursor: pointer;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+  background-color: transparent;
+  margin-left: 1rem;
+}
+
+.theme-toggle-btn:hover {
+  background-color: rgba(102, 126, 234, 0.15);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+}
+
+/* Theme Toggle Button - Dark mode */
+[data-bs-theme="dark"] .theme-toggle-btn:hover {
+  background-color: rgba(129, 140, 248, 0.2);
+  box-shadow: 0 4px 12px rgba(129, 140, 248, 0.3);
+}
+
+/* =============================================================================
+   REDUCED MOTION PREFERENCES
+   Simplify animations and effects for users who prefer reduced motion.
+   ============================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Simplify box shadows on hover */
+  .tooltip-box:hover,
+  .tooltip-box-italic:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    transform: none !important;
+  }
+
+  /* Simplify card hover effects */
+  .bslib-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+    transform: none !important;
+  }
+
+  /* Disable glassmorphism blur for performance */
+  [data-bs-theme="dark"] .bslib-card,
+  [data-bs-theme="dark"] .bslib-value-box {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 }

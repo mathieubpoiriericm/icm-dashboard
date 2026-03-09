@@ -2,22 +2,22 @@
 # Server logic for Table 1 (Gene Table)
 # nolint start: object_usage_linter.
 
-#' Build Table 1 Filtered Data Reactive
-#'
-#' Creates a reactive expression that filters table1 based on MR, GWAS trait,
-#' and omics filter selections.
-#'
-#' @param table1 data.table. The main gene data table.
-#' @param table1_display Data frame. Pre-computed display table with tooltips.
-#' @param gwas_trait_rows fastmap. Pre-computed row indices for GWAS traits.
-#' @param omics_type_rows fastmap. Pre-computed row indices for omics types.
-#' @param mr_filter Reactive. Mendelian randomization filter values.
-#' @param gwas_trait_filter Reactive. GWAS trait filter values.
-#' @param omics_filter Reactive. Omics study filter values.
-#'
-#' @return A cached reactive expression returning filtered display data.
-#'
-#' @keywords internal
+# Build Table 1 Filtered Data Reactive
+#
+# Creates a reactive expression that filters table1 based on MR, GWAS trait,
+# and omics filter selections.
+#
+# Args:
+#   table1: data.table. The main gene data table.
+#   table1_display: Data frame. Pre-computed display table with tooltips.
+#   gwas_trait_rows: fastmap. Pre-computed row indices for GWAS traits.
+#   omics_type_rows: fastmap. Pre-computed row indices for omics types.
+#   mr_filter: Reactive. Mendelian randomization filter values.
+#   gwas_trait_filter: Reactive. GWAS trait filter values.
+#   omics_filter: Reactive. Omics study filter values.
+#
+# Returns:
+#   A cached reactive expression returning filtered display data.
 build_table1_filtered_data <- function(
   table1,
   table1_display,
@@ -28,13 +28,19 @@ build_table1_filtered_data <- function(
   omics_filter
 ) {
   shiny::reactive({
-    filtered_table1 <- data.table::copy(table1)[, row_id := .I]
+    # Validate required data is available
+    shiny::req(table1, table1_display)
+
+    # Start with all row IDs, filter by intersection (avoids data.table copy)
+    kept_rows <- table1$row_id
 
     # MR filter (skip if both Yes and No are selected - means show all)
     if (!is.null(mr_filter()) && length(mr_filter()) == 1L) {
-      filtered_table1 <- filtered_table1[
-        get("Mendelian Randomization") %in% mr_filter()
+      mr_rows <- table1[
+        get("Mendelian Randomization") %in% mr_filter(),
+        row_id
       ]
+      kept_rows <- intersect(kept_rows, mr_rows)
     }
 
     # GWAS trait filter (using fastmap $mget for O(1) lookups)
@@ -43,10 +49,8 @@ build_table1_filtered_data <- function(
         length(gwas_trait_filter()) > 0L &&
         !"all" %in% gwas_trait_filter()
     ) {
-      matching_rows <- unique(
-        unlist(gwas_trait_rows$mget(gwas_trait_filter()))
-      )
-      filtered_table1 <- filtered_table1[row_id %in% matching_rows]
+      gwas_rows <- unique(unlist(gwas_trait_rows$mget(gwas_trait_filter())))
+      kept_rows <- intersect(kept_rows, gwas_rows)
     }
 
     # Omics filter (using fastmap $mget for O(1) lookups)
@@ -55,13 +59,14 @@ build_table1_filtered_data <- function(
         length(omics_filter()) > 0L &&
         !"all" %in% omics_filter()
     ) {
-      matching_rows <- unique(unlist(omics_type_rows$mget(omics_filter())))
-      filtered_table1 <- filtered_table1[row_id %in% matching_rows]
+      omics_rows <- unique(unlist(omics_type_rows$mget(omics_filter())))
+      kept_rows <- intersect(kept_rows, omics_rows)
     }
 
-    kept_rows <- filtered_table1$row_id
     result <- table1_display[kept_rows, , drop = FALSE]
     row.names(result) <- NULL
+    # Remove row_id column (used for filtering) before display
+    result <- result[, !names(result) %in% "row_id", drop = FALSE]
     result <- cbind(
       data.frame(`#` = seq_len(nrow(result)), check.names = FALSE),
       result
@@ -75,18 +80,18 @@ build_table1_filtered_data <- function(
     )
 }
 
-#' Build Table 1 Filter Message UI
-#'
-#' Creates a reactive UI expression that displays active filter status
-#' for Table 1.
-#'
-#' @param mr_filter Reactive. Mendelian randomization filter values.
-#' @param gwas_trait_filter Reactive. GWAS trait filter values.
-#' @param omics_filter Reactive. Omics study filter values.
-#'
-#' @return A cached renderUI expression.
-#'
-#' @keywords internal
+# Build Table 1 Filter Message UI
+#
+# Creates a reactive UI expression that displays active filter status
+# for Table 1.
+#
+# Args:
+#   mr_filter: Reactive. Mendelian randomization filter values.
+#   gwas_trait_filter: Reactive. GWAS trait filter values.
+#   omics_filter: Reactive. Omics study filter values.
+#
+# Returns:
+#   A cached renderUI expression.
 build_table1_filter_message <- function(
   mr_filter,
   gwas_trait_filter,
@@ -118,88 +123,31 @@ build_table1_filter_message <- function(
     shiny::bindCache(mr_filter(), gwas_trait_filter(), omics_filter())
 }
 
-#' Build Filter List from Filter Specifications
-#'
-#' Helper function to build a character vector of active filter descriptions.
-#'
-#' @param filter_specs List of lists, each containing:
-#'   - name: Display name for the filter
-#'   - value: Current filter value(s)
-#'   - is_single: If TRUE, only show when exactly one value selected
-#'   - exclude_all: If TRUE, exclude "all" from display
-#'
-#' @return Character vector of filter descriptions.
-#'
-#' @keywords internal
-build_filter_list <- function(filter_specs) {
-  filters_applied <- character(0L)
-
-  for (spec in filter_specs) {
-    value <- spec$value
-    name <- spec$name
-    is_single <- isTRUE(spec$is_single)
-    exclude_all <- isTRUE(spec$exclude_all)
-
-    if (is.null(value) || length(value) == 0L) {
-      next
-    }
-
-    if (is_single && length(value) != 1L) {
-      next
-    }
-
-    if (exclude_all && "all" %in% value) {
-      next
-    }
-
-    filters_applied <- c(
-      filters_applied,
-      paste0(name, ": ", paste(value, collapse = ", "))
-    )
-  }
-
-  filters_applied
-}
-
-#' Render Filter Message HTML
-#'
-#' Creates the styled div for displaying active filter status.
-#'
-#' @param filters_applied Character vector of filter descriptions.
-#'
-#' @return A Shiny div element.
-#'
-#' @keywords internal
-render_filter_message <- function(filters_applied) {
-  if (length(filters_applied) > 0L) {
-    shiny::div(
-      style = filter_active_style,
-      shiny::HTML(paste0(
-        "<strong>Active Filters:</strong> ",
-        paste(filters_applied, collapse = " | ")
-      ))
-    )
-  } else {
-    shiny::div(
-      style = filter_none_style,
-      shiny::HTML("<strong>Active Filters:</strong> None")
-    )
-  }
-}
-
-#' Build Table 1 DataTable Output
-#'
-#' Creates the DT::renderDT expression for Table 1 with custom header,
-#' column definitions, and tooltip initialization.
-#'
-#' @param filtered_data Reactive. The filtered display data.
-#'
-#' @return A DT::renderDT expression.
-#'
-#' @keywords internal
+# Build Table 1 DataTable Output
+#
+# Creates the DT::renderDT expression for Table 1 with custom header,
+# column definitions, and tooltip initialization.
+#
+# Args:
+#   filtered_data: Reactive. The filtered display data.
+#
+# Returns:
+#   A DT::renderDT expression.
 build_table1_datatable <- function(filtered_data) {
   DT::renderDT(
     {
+      # Get filtered data and validate it's not empty
+      data <- filtered_data()
+      shiny::validate(
+        shiny::need(
+          !is.null(data) && nrow(data) > 0L,
+          paste(
+            "No genes match the selected filters.",
+            "Try adjusting your filter criteria."
+          )
+        )
+      )
+
       # Create custom header with spanning column for Gene Information
       sketch <- htmltools::withTags(table(
         class = "display",
@@ -210,8 +158,7 @@ build_table1_datatable <- function(filtered_data) {
               colspan = 3L,
               style = paste0(
                 "text-align: center; ",
-                "border-right: 2px solid #e1e4e8; ",
-                "border-bottom: 2px solid #e1e4e8;"
+                "border-right: 2px solid #e1e4e8;"
               ),
               "Putative Causal Genes"
             ),
@@ -219,14 +166,13 @@ build_table1_datatable <- function(filtered_data) {
               colspan = 4L,
               style = paste0(
                 "text-align: center; ",
-                "border-right: 2px solid #e1e4e8; ",
-                "border-bottom: 2px solid #e1e4e8;"
+                "border-right: 2px solid #e1e4e8;"
               ),
               "Evidence From Omics Studies"
             ),
             th(
               colspan = 2L,
-              style = "text-align: center; border-bottom: 2px solid #e1e4e8;",
+              style = "text-align: center;",
               "Expression Context"
             ),
             th(rowspan = 2L, "References")
@@ -252,15 +198,13 @@ build_table1_datatable <- function(filtered_data) {
       ))
 
       dt <- DT::datatable(
-        filtered_data(),
+        data,
         container = sketch,
         escape = FALSE,
         rownames = FALSE,
+        plugins = "natural",
         options = list(
           columnDefs = list(
-            list(orderable = FALSE, targets = c(4L, 6L, 7L, 10L)),
-            list(width = "25px", targets = 0L),
-            list(width = "300px", targets = 10L),
             list(
               targets = c(6L, 7L, 8L, 9L, 10L),
               render = DT::JS(
@@ -294,10 +238,10 @@ build_table1_datatable <- function(filtered_data) {
               )
             )
           ),
-          autoWidth = FALSE,
+          autoWidth = TRUE,
           pageLength = DATATABLE_PAGE_LENGTH,
           deferRender = TRUE,
-          dom = "lfrtip",
+          dom = "rtip",
           scrollX = TRUE,
           scrollCollapse = TRUE,
           searchDelay = DATATABLE_SEARCH_DELAY,
@@ -341,7 +285,7 @@ build_table1_datatable <- function(filtered_data) {
 
       dt
     },
-    server = FALSE
+    server = DATATABLE_SERVER_SIDE
   )
 }
 # nolint end: object_usage_linter.

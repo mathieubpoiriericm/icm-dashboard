@@ -1,0 +1,80 @@
+{{- if .Values.notifications.ntfy.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-ntfy
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ntfy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ntfy
+  template:
+    metadata:
+      labels:
+        {{- include "svd-dashboard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ntfy
+    spec:
+      containers:
+        - name: ntfy
+          image: "{{ .Values.notifications.ntfy.image.repository }}:{{ .Values.notifications.ntfy.image.tag }}"
+          command: ["ntfy", "serve"]
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: NTFY_UPSTREAM_BASE_URL
+              value: {{ .Values.notifications.ntfy.upstreamBaseUrl | quote }}
+            - name: NTFY_BASE_URL
+              value: "{{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.hosts.ntfy }}"
+            - name: NTFY_CACHE_FILE
+              value: "/var/cache/ntfy/cache.db"
+            - name: NTFY_AUTH_DEFAULT_ACCESS
+              value: {{ .Values.notifications.ntfy.auth | quote }}
+            - name: NTFY_BEHIND_PROXY
+              value: "true"
+            {{- if .Values.notifications.ntfy.metrics.enabled }}
+            - name: NTFY_ENABLE_METRICS
+              value: "true"
+            {{- end }}
+            - name: NTFY_ENABLE_SIGNUP
+              value: "false"
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 80
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 80
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/ntfy
+          resources:
+            {{- toYaml .Values.notifications.ntfy.resources | nindent 12 }}
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: {{ include "svd-dashboard.fullname" . }}-ntfy-cache
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-ntfy-cache
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ntfy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.notifications.ntfy.cache.size }}
+{{- end }}

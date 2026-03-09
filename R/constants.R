@@ -6,59 +6,73 @@
 # DATA COLUMN INDICES
 # =============================================================================
 # Table 2 column positions (used in data_prep.R)
-#' @description Column index for Trial Name in table2
+# Column index for Trial Name in table2
 TABLE2_TRIAL_NAME_COL <- 5L
-#' @description Column index for Primary Outcome in table2
+# Column index for Primary Outcome in table2
 TABLE2_PRIMARY_OUTCOME_COL <- 12L
 
 # =============================================================================
 # SAMPLE SIZE FILTER BOUNDS
 # =============================================================================
 # These values represent the min/max target sample sizes in clinical trials
-#' @description Minimum target sample size in clinical trials dataset
+# Minimum target sample size in clinical trials dataset
 SAMPLE_SIZE_MIN <- 15L
-#' @description Maximum target sample size in clinical trials dataset
+# Maximum target sample size in clinical trials dataset
 SAMPLE_SIZE_MAX <- 3156L
 
 # =============================================================================
 # HISTOGRAM CONFIGURATION
 # =============================================================================
-#' @description Number of histogram breaks for sample size distribution
+# Number of histogram breaks for sample size distribution
 HISTOGRAM_BREAKS <- 15L
-#' @description X-axis maximum for sample size histogram
+# X-axis maximum for sample size histogram
 HISTOGRAM_XLIM_MAX <- 3500L
-#' @description X-axis tick interval for sample size histogram
+# X-axis tick interval for sample size histogram
 HISTOGRAM_TICK_INTERVAL <- 500L
 
 # =============================================================================
 # DEBOUNCE DELAYS (milliseconds)
 # =============================================================================
-#' @description Debounce delay for slider input (ms)
+# Debounce delay for slider input (ms)
 SLIDER_DEBOUNCE_MS <- 500L
-#' @description Debounce delay for checkbox filters (ms)
+# Debounce delay for checkbox filters (ms)
 CHECKBOX_DEBOUNCE_MS <- 150L
-#' @description DataTable search delay (ms)
-DATATABLE_SEARCH_DELAY <- 750L
+# DataTable search delay (ms)
+DATATABLE_SEARCH_DELAY <- 500L
 
 # =============================================================================
 # DATATABLE CONFIGURATION
 # =============================================================================
-#' @description Default page length for DataTables
+# Default page length for DataTables
 DATATABLE_PAGE_LENGTH <- 10L
+
+# Server-side processing for DataTables
+# Set to TRUE for large datasets (>1000 rows) to improve initial load time
+# Set to FALSE for smaller datasets for better client-side search/filter
+DATATABLE_SERVER_SIDE <- FALSE
+
+# =============================================================================
+# PRELOAD CONFIGURATION
+# =============================================================================
+# Preload Table 2 data at app startup
+# This eliminates the delay when first accessing Clinical Trials tabs
+# Can be disabled via environment variable for memory-constrained environments:
+#   PRELOAD_TABLE2=FALSE docker run ...
+PRELOAD_TABLE2 <- as.logical(Sys.getenv("PRELOAD_TABLE2", unset = "TRUE"))
 
 # =============================================================================
 # CACHE CONFIGURATION
 # =============================================================================
-#' @description Maximum size for in-memory tooltip cache (bytes)
+# Maximum size for in-memory tooltip cache (bytes)
 MEMO_CACHE_SIZE <- 50 * 1024^2 # 50MB
 
 # =============================================================================
 # CLINICAL TRIAL REGISTRIES
 # =============================================================================
-#' @description Supported clinical trial registry ID patterns
+# Supported clinical trial registry ID patterns
 REGISTRY_PATTERNS <- c("NCT", "ISRCTN", "ACTRN", "ChiCTR")
 
-#' @description Registry URL templates
+# Registry URL templates
 REGISTRY_URLS <- list(
   NCT = "https://clinicaltrials.gov/study/",
   ISRCTN = "https://www.isrctn.com/",
@@ -69,41 +83,41 @@ REGISTRY_URLS <- list(
 # =============================================================================
 # EXTERNAL URLS
 # =============================================================================
-#' @description Base URL for NCBI Gene pages
+# Base URL for NCBI Gene pages
 NCBI_GENE_BASE_URL <- "https://www.ncbi.nlm.nih.gov/gene/"
-#' @description Base URL for PubMed pages
+# Base URL for PubMed pages
 PUBMED_BASE_URL <- "https://pubmed.ncbi.nlm.nih.gov/"
 
 # =============================================================================
 # DATA FILE PATHS
 # =============================================================================
-#' @description Paths to RData files
+# Paths to data files (qs format by default, falls back to rds)
 DATA_PATHS <- list(
-  table1_clean = "data/rdata/table1_clean.RData",
-  table2_clean = "data/rdata/table2_clean.RData",
-  gene_info = "data/rdata/gene_info_results_df.RData",
-  gene_info_table2 = "data/rdata/gene_info_table2.RData",
-  prot_info = "data/rdata/prot_info_clean.RData",
-  refs = "data/rdata/refs.RData",
-  gwas_trait_names = "data/rdata/gwas_trait_names.RData",
+  table1_clean = "data/qs/table1_clean.qs",
+  table2_clean = "data/qs/table2_clean.qs",
+  gene_info = "data/qs/gene_info_results_df.qs",
+  gene_info_table2 = "data/qs/gene_info_table2.qs",
+  prot_info = "data/qs/prot_info_clean.qs",
+  refs = "data/qs/refs.qs",
+  gwas_trait_names = "data/qs/gwas_trait_names.qs",
   omim_info = "data/csv/omim_info.csv"
 )
 
 # =============================================================================
 # DISPLAY CONSTANTS
 # =============================================================================
-#' @description Placeholder text for missing data
+# Placeholder text for missing data
 PLACEHOLDER_NONE_FOUND <- "(none found)"
 PLACEHOLDER_UNKNOWN <- "(unknown)"
 PLACEHOLDER_REFERENCE_NEEDED <- "(reference needed)"
 
-#' @description Special completion date text
+# Special completion date text
 COMPLETION_UNPUBLISHED <- "Completed (unpublished)"
 
 # =============================================================================
 # OMICS TYPE FULL NAMES
 # =============================================================================
-#' @description Mapping of omics type abbreviations to full names
+# Mapping of omics type abbreviations to full names
 OMICS_FULL_NAMES <- c(
   PWAS = "Proteome-Wide Association Study",
   EWAS = "Epigenome-Wide Association Study",
@@ -113,7 +127,7 @@ OMICS_FULL_NAMES <- c(
 # =============================================================================
 # BRAIN CELL TYPE MAPPINGS
 # =============================================================================
-#' @description Mapping of brain cell type abbreviations to full names
+# Mapping of brain cell type abbreviations to full names
 CELL_TYPE_MAP <- list(
   EC = "Endothelial Cells",
   SMC = "Smooth Muscle Cells",
@@ -128,11 +142,30 @@ CELL_TYPE_MAP <- list(
 # =============================================================================
 # GWAS TRAITS REQUIRING TITLE CASE
 # =============================================================================
-#' @description GWAS traits that should be displayed in title case
+# GWAS traits that should be displayed in title case
 GWAS_TRAITS_TITLE_CASE <- c(
   "extreme-cSVD",
   "lacunes",
   "stroke",
   "lacunar stroke"
 )
+# =============================================================================
+# CLINICAL TRIALS MAP CONFIGURATION
+# =============================================================================
+# Geocoded trials cache file path
+MAP_CACHE_PATH <- "data/qs/geocoded_trials.qs"
+
+# ClinicalTrials.gov API v2 base URL
+MAP_CT_API_BASE_URL <- "https://clinicaltrials.gov/api/v2/studies/"
+
+# API request delay (milliseconds) to avoid rate limiting
+MAP_API_DELAY_MS <- 100L
+
+# Map default view (centered on Atlantic to show both Americas and Europe)
+MAP_DEFAULT_LAT <- 30
+MAP_DEFAULT_LNG <- 0
+MAP_DEFAULT_ZOOM <- 2
+
+# Map container height in pixels
+MAP_HEIGHT_PX <- 700L
 # nolint end: object_name_linter.

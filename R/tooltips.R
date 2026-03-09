@@ -6,18 +6,15 @@
 # Uses in-memory cache (faster than disk for session-scoped data)
 memo_cache <- cachem::cache_mem(max_size = MEMO_CACHE_SIZE)
 
-#' Get full cell type name from abbreviation
-#'
-#' Maps brain cell type abbreviations to their full names for tooltip display.
-#'
-#' @param cell_abbrev Character. Cell type abbreviation (e.g., "EC", "MG").
-#'
-#' @return Character. Full cell type name (e.g., "Endothelial Cells").
-#'
-#' @export
-#' @examples
-#' get_cell_type_tooltip("EC")
-#' # Returns: "Endothelial Cells"
+# Get full cell type name from abbreviation
+#
+# Maps brain cell type abbreviations to their full names for tooltip display.
+#
+# Args:
+#   cell_abbrev: Character. Cell type abbreviation (e.g., "EC", "MG").
+#
+# Returns:
+#   Character. Full cell type name (e.g., "Endothelial Cells").
 get_cell_type_tooltip <- function(cell_abbrev) {
   if (cell_abbrev %in% names(CELL_TYPE_MAP)) {
     CELL_TYPE_MAP[[cell_abbrev]]
@@ -26,21 +23,20 @@ get_cell_type_tooltip <- function(cell_abbrev) {
   }
 }
 
-#' Add tooltip HTML to cell type string
-#'
-#' Parses a cell type string containing abbreviations separated by
-#' comparison operators (< or >) and wraps each abbreviation in a
-#' Tippy.js tooltip span.
-#'
-#' @param cell_types_string Character. Cell types separated by < or >
-#'   (e.g., "EC > MG > AC").
-#' @param tooltip_style Character. CSS style string for the tooltip span.
-#'
-#' @return Character. HTML string with Tippy tooltip data attributes.
-#'
-#' @export
-#' @seealso \code{\link{get_cell_type_tooltip}}
-add_cell_type_tooltip <- function(cell_types_string, tooltip_style) {
+# Add tooltip HTML to cell type string
+#
+# Parses a cell type string containing abbreviations separated by
+# comparison operators (< or >) and wraps each abbreviation in a
+# Tippy.js tooltip span.
+#
+# Args:
+#   cell_types_string: Character. Cell types separated by < or >
+#     (e.g., "EC > MG > AC").
+#   tooltip_class: Character. CSS class name for the tooltip span.
+#
+# Returns:
+#   Character. HTML string with Tippy tooltip data attributes.
+add_cell_type_tooltip <- function(cell_types_string, tooltip_class) {
   if (
     is.na(cell_types_string) ||
       cell_types_string == "" ||
@@ -64,7 +60,7 @@ add_cell_type_tooltip <- function(cell_types_string, tooltip_style) {
 
       as.character(shiny::tags$span(
         `data-tippy-content` = tooltip_text,
-        style = tooltip_style,
+        class = tooltip_class,
         cell_type
       ))
     },
@@ -88,17 +84,17 @@ add_cell_type_tooltip <- function(cell_types_string, tooltip_style) {
   }
 }
 
-#' Get reference tooltip information by PMID
-#'
-#' Looks up publication information from the refs data frame for a given PMID.
-#'
-#' @param pmid_hover Character. The PubMed ID to look up.
-#' @param refs Data frame. Reference data with PMID in column 1 and
-#'   tooltip HTML in column 2.
-#'
-#' @return Character. HTML tooltip content or "No info available".
-#'
-#' @export
+# Get reference tooltip information by PMID
+#
+# Looks up publication information from the refs data frame for a given PMID.
+#
+# Args:
+#   pmid_hover: Character. The PubMed ID to look up.
+#   refs: Data frame. Reference data with PMID in column 1 and
+#     tooltip HTML in column 2.
+#
+# Returns:
+#   Character. HTML tooltip content or "No info available".
 get_ref_tooltip_info <- function(pmid_hover, refs) {
   match_row <- refs[refs[[1L]] == pmid_hover, ]
 
@@ -109,37 +105,36 @@ get_ref_tooltip_info <- function(pmid_hover, refs) {
   }
 }
 
-#' Memoised version of get_ref_tooltip_info
-#'
-#' Caches reference tooltip lookups to avoid repeated data frame searches.
-#' The cache persists for the session lifetime.
-#'
-#' @param pmid_hover Character. The PubMed ID to look up.
-#' @param refs Data frame. Reference data with PMID in column 1 and
-#'   tooltip HTML in column 2.
-#'
-#' @return Character. HTML tooltip content or "No info available".
-#'
-#' @export
+# Memoised version of get_ref_tooltip_info
+#
+# Caches reference tooltip lookups to avoid repeated data frame searches.
+# The cache persists for the session lifetime.
+#
+# Args:
+#   pmid_hover: Character. The PubMed ID to look up.
+#   refs: Data frame. Reference data with PMID in column 1 and
+#     tooltip HTML in column 2.
+#
+# Returns:
+#   Character. HTML tooltip content or "No info available".
 get_ref_tooltip_info_memo <- memoise::memoise(
   get_ref_tooltip_info,
   cache = memo_cache
 )
 
-#' Add reference tooltip with PubMed link
-#'
-#' Creates HTML anchor tags linking to PubMed with Tippy.js tooltips
-#' showing publication details (title, journal, authors).
-#'
-#' @param split_pmid List. List containing character vector of PMIDs.
-#' @param refs Data frame. Reference data for tooltip lookup.
-#' @param tooltip_style Character. CSS style string for tooltip spans.
-#'
-#' @return Character. HTML string with linked references separated by <br>.
-#'
-#' @export
-#' @seealso \code{\link{get_ref_tooltip_info}}
-add_ref_tooltip <- function(split_pmid, refs, tooltip_style) {
+# Add reference tooltip with PubMed link
+#
+# Creates HTML anchor tags linking to PubMed with Tippy.js tooltips
+# showing publication details (title, journal, authors).
+#
+# Args:
+#   split_pmid: List. List containing character vector of PMIDs.
+#   refs: Data frame. Reference data for tooltip lookup.
+#   tooltip_class: Character. CSS class name for tooltip spans.
+#
+# Returns:
+#   Character. HTML string with linked references separated by <br>.
+add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
   split_pmid <- split_pmid[[1L]]
 
   html_parts <- vapply(
@@ -224,7 +219,7 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_style) {
         shiny::tags$span(
           `data-tippy-content` = modified_tooltip,
           `data-tippy-maxWidth` = "400px",
-          style = tooltip_style,
+          class = tooltip_class,
           shiny::HTML(display_text)
         )
       ))
@@ -235,45 +230,51 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_style) {
   paste(html_parts, collapse = "<br>")
 }
 
-#' Prepare Table 1 display with pre-computed tooltips
-#'
-#' Transforms table1 data by adding Tippy.js tooltip HTML to all columns
-#' that require interactive tooltips: gene symbols, proteins, OMIM IDs,
-#' cell types, references, GWAS traits, and omics evidence.
-#'
-#' @param table1 Data frame or data.table. Main gene data table.
-#' @param gene_info_results_df Data frame. NCBI gene info with URL column.
-#' @param prot_info_clean Data frame. UniProt protein info with accession
-#'   and URL.
-#' @param omim_info Data frame. OMIM phenotype information.
-#' @param refs Data frame. Publication references for tooltip content.
-#' @param omics_df Data frame. Omics types with full names.
-#' @param gwas_trait_mapping Named character vector. Maps trait abbreviations
-#'   to full names.
-#' @param tooltip_style Character. CSS style for standard tooltips.
-#' @param tooltip_style_italic Character. CSS style for italic tooltips
-#'   (gene symbols).
-#'
-#' @return Data frame. table1 with HTML tooltip markup in display columns.
-#'
-#' @export
-#' @seealso \code{\link{prepare_table2_display}}
+# Prepare Table 1 display with pre-computed tooltips
+#
+# Transforms table1 data by adding Tippy.js tooltip HTML to all columns
+# that require interactive tooltips: gene symbols, proteins, OMIM IDs,
+# cell types, references, GWAS traits, and omics evidence.
+#
+# Args:
+#   table1: Data frame or data.table. Main gene data table.
+#   gene_info_results_df: Data frame. NCBI gene info with URL column.
+#   prot_info_clean: Data frame. UniProt protein info with accession
+#     and URL. Kept for backwards compatibility; use prot_info_lookup instead.
+#   prot_info_lookup: fastmap. Pre-computed protein lookup map for O(1)
+#     access by gene name. If NULL, falls back to prot_info_clean data frame.
+#   omim_lookup: fastmap. Pre-computed OMIM lookup map for O(1) access.
+#   refs: Data frame. Publication references for tooltip content.
+#   omics_df: Data frame. Omics types with full names.
+#   gwas_trait_mapping: Named character vector. Maps trait abbreviations
+#     to full names.
+#   tooltip_class: Character. CSS class name for standard tooltips.
+#   tooltip_class_italic: Character. CSS class name for italic tooltips
+#     (gene symbols).
+#
+# Returns:
+#   Data frame. table1 with HTML tooltip markup in display columns.
 prepare_table1_display <- function(
   table1,
   gene_info_results_df,
   prot_info_clean,
-  omim_info,
+  prot_info_lookup = NULL,
+  omim_lookup,
   refs,
   omics_df,
   gwas_trait_mapping,
-  tooltip_style,
-  tooltip_style_italic
+  tooltip_class,
+  tooltip_class_italic
 ) {
   table1_display <- as.data.frame(table1)
 
   # Vectorized gene symbol tooltip
   # Store original gene names for sorting before HTML transformation
   original_gene_names <- table1_display[[1L]]
+
+  # Pre-extract column names for sprintf (avoid repeated lookup)
+  # Skip column 1 (Name) since it's redundant with the gene symbol being hovered
+  gene_col_names <- names(gene_info_results_df)[2L:4L]
 
   table1_display[[1L]] <- purrr::pmap_chr(
     list(
@@ -282,21 +283,15 @@ prepare_table1_display <- function(
       original_gene_names
     ),
     function(gene_symbol, i, sort_name) {
-      tooltip_content <- paste0(
-        "<strong>",
-        names(gene_info_results_df)[1L],
-        "</strong> ",
-        gene_info_results_df[i, 1L],
-        "<br>",
-        "<strong>",
-        names(gene_info_results_df)[2L],
-        "</strong> ",
-        gene_info_results_df[i, 2L],
-        "<br>",
-        "<strong>",
-        names(gene_info_results_df)[3L],
-        "</strong> ",
-        gene_info_results_df[i, 3L]
+      tooltip_content <- sprintf(
+        paste0(
+          "<strong>%s</strong> %s<br>",
+          "<strong>%s</strong> %s<br>",
+          "<strong>%s</strong> %s"
+        ),
+        gene_col_names[1L], gene_info_results_df[i, 2L],
+        gene_col_names[2L], gene_info_results_df[i, 3L],
+        gene_col_names[3L], gene_info_results_df[i, 4L]
       )
 
       gene_url <- gene_info_results_df[i, "URL"]
@@ -310,7 +305,7 @@ prepare_table1_display <- function(
             shiny::tags$span(
               gene_symbol,
               `data-tippy-content` = tooltip_content,
-              style = tooltip_style_italic
+              class = tooltip_class_italic
             )
           )
         )
@@ -318,7 +313,7 @@ prepare_table1_display <- function(
     }
   )
 
-  # Vectorized protein tooltip
+  # Vectorized protein tooltip (using fastmap for O(1) lookups)
   # Store original protein names for sorting before HTML transformation
   original_protein_names <- table1_display[[2L]]
 
@@ -329,27 +324,34 @@ prepare_table1_display <- function(
       original_protein_names
     ),
     function(protein_name, gene_name, sort_name) {
-      prot_match <- prot_info_clean[prot_info_clean$gene == gene_name, ]
+      # Use fastmap O(1) lookup if available, otherwise fall back to data frame
+      prot_info <- if (!is.null(prot_info_lookup)) {
+        prot_info_lookup$get(gene_name)
+      } else {
+        prot_match <- prot_info_clean[prot_info_clean$gene == gene_name, ]
+        if (nrow(prot_match) > 0L) {
+          list(accession = prot_match$accession, url = prot_match$url)
+        } else {
+          NULL
+        }
+      }
 
-      if (nrow(prot_match) > 0L) {
-        accession_number <- prot_match$accession
-        protein_url <- prot_match$url
-
-        protein_tooltip_content <- paste0(
-          "<strong>UniProt Accession Number</strong> ",
-          accession_number
+      if (!is.null(prot_info)) {
+        protein_tooltip_content <- sprintf(
+          "<strong>UniProt Accession Number</strong> %s",
+          prot_info$accession
         )
 
         as.character(
           shiny::tags$span(
             `data-order` = tolower(sort_name),
             shiny::tags$a(
-              href = protein_url,
+              href = prot_info$url,
               target = "_blank",
               shiny::tags$span(
                 protein_name,
                 `data-tippy-content` = protein_tooltip_content,
-                style = tooltip_style
+                class = tooltip_class
               )
             )
           )
@@ -365,8 +367,9 @@ prepare_table1_display <- function(
     }
   )
 
-  # Vectorized OMIM tooltip
-  table1_display[[7L]] <- purrr::map_chr(
+  # Vectorized OMIM tooltip (using fastmap for O(1) lookups)
+  # Optimized: use vapply instead of purrr::map_chr
+  table1_display[[7L]] <- vapply(
     table1_display[[7L]],
     function(omim_value) {
       is_empty <- is.null(omim_value) || length(omim_value) == 0L
@@ -375,7 +378,7 @@ prepare_table1_display <- function(
         omim_value[1L] %in% c("(none found)", "")
 
       if (is_empty || is_single_na || is_single_placeholder) {
-        return(omim_value)
+        return(as.character(omim_value))
       }
 
       if (length(omim_value) > 1L) {
@@ -387,56 +390,31 @@ prepare_table1_display <- function(
       omim_html_parts <- vapply(
         omim_numbers,
         function(single_omim) {
-          info <- omim_info |>
-            # nolint next: object_usage_linter.
-            dplyr::filter(.data$omim_num == single_omim)
+          # Use fastmap O(1) lookup instead of dplyr::filter
+          info <- omim_lookup$get(single_omim)
 
-          if (nrow(info) > 0L) {
-            phenotype_clean <- iconv(
-              as.character(info$phenotype),
-              to = "UTF-8",
-              sub = ""
+          if (!is.null(info)) {
+            tooltip_content <- sprintf(
+              paste0(
+                "<strong>Phenotype</strong> %s<br>",
+                "<strong>Inheritance</strong> %s<br>",
+                "<strong>Gene/Locus</strong> %s<br>",
+                "<strong>Gene/Locus OMIM</strong> %s"
+              ),
+              info$phenotype,
+              info$inheritance,
+              info$gene_or_locus,
+              info$gene_or_locus_mim_number
             )
-            inheritance_clean <- iconv(
-              as.character(info$inheritance),
-              to = "UTF-8",
-              sub = ""
-            )
-            gene_locus_clean <- iconv(
-              as.character(info$gene_or_locus),
-              to = "UTF-8",
-              sub = ""
-            )
-            gene_locus_mim_clean <- iconv(
-              as.character(info$gene_or_locus_mim_number),
-              to = "UTF-8",
-              sub = ""
-            )
-
-            tooltip_content <- paste0(
-              "<strong>Phenotype</strong> ",
-              phenotype_clean,
-              "<br>",
-              "<strong>Inheritance</strong> ",
-              inheritance_clean,
-              "<br>",
-              "<strong>Gene/Locus</strong> ",
-              gene_locus_clean,
-              "<br>",
-              "<strong>Gene/Locus OMIM</strong> ",
-              gene_locus_mim_clean
-            )
-
-            omim_link <- as.character(info$omim_link)
 
             as.character(
               shiny::tags$a(
-                href = omim_link,
+                href = info$omim_link,
                 target = "_blank",
                 shiny::tags$span(
                   single_omim,
                   `data-tippy-content` = tooltip_content,
-                  style = tooltip_style
+                  class = tooltip_class
                 )
               )
             )
@@ -448,7 +426,8 @@ prepare_table1_display <- function(
       )
 
       paste(omim_html_parts, collapse = "<br>")
-    }
+    },
+    character(1L)
   )
 
   # Brain cell type tooltip (vectorized)
@@ -456,23 +435,25 @@ prepare_table1_display <- function(
     table1_display[[8L]],
     add_cell_type_tooltip,
     character(1L),
-    tooltip_style = tooltip_style
+    tooltip_class = tooltip_class
   )
 
   # References tooltip (vectorized)
   table1_display[[10L]] <- vapply(
     seq_len(nrow(table1_display)),
     function(i) {
-      add_ref_tooltip(table1_display[i, 10L], refs, tooltip_style)
+      add_ref_tooltip(table1_display[i, 10L], refs, tooltip_class)
     },
     character(1L)
   )
 
   # GWAS Trait tooltip (vectorized)
+  # Optimized: use vapply instead of purrr::map_chr
   table1_df <- as.data.frame(table1)
+  gwas_trait_col <- table1_df[["GWAS Trait"]]
 
-  table1_display[["GWAS Trait"]] <- purrr::map_chr(
-    table1_df[["GWAS Trait"]],
+  table1_display[["GWAS Trait"]] <- vapply(
+    gwas_trait_col,
     function(gwas_traits) {
       if (is.list(gwas_traits)) {
         gwas_traits <- gwas_traits[[1L]]
@@ -495,7 +476,7 @@ prepare_table1_display <- function(
             full_name <- gwas_trait_mapping[[trait_trimmed]]
             as.character(shiny::tags$span(
               `data-tippy-content` = full_name,
-              style = tooltip_style,
+              class = tooltip_class,
               trait_display
             ))
           } else {
@@ -506,12 +487,16 @@ prepare_table1_display <- function(
       )
 
       paste(gwas_traits_html, collapse = ", ")
-    }
+    },
+    character(1L)
   )
 
   # Evidence From Other Omics Studies tooltip (vectorized)
-  table1_display[["Evidence From Other Omics Studies"]] <- purrr::map_chr(
-    table1_df[["Evidence From Other Omics Studies"]],
+  # Optimized: use vapply instead of purrr::map_chr
+  omics_evidence_col <- table1_df[["Evidence From Other Omics Studies"]]
+
+  table1_display[["Evidence From Other Omics Studies"]] <- vapply(
+    omics_evidence_col,
     function(omics_evidence) {
       if (is.list(omics_evidence)) {
         omics_evidence <- omics_evidence[[1L]]
@@ -538,7 +523,7 @@ prepare_table1_display <- function(
             ) {
               as.character(shiny::tags$span(
                 `data-tippy-content` = full_name_match,
-                style = tooltip_style,
+                class = tooltip_class,
                 omics_type
               ))
             } else {
@@ -560,7 +545,7 @@ prepare_table1_display <- function(
             if (length(full_name_match) > 0L && !is.na(full_name_match)) {
               as.character(shiny::tags$span(
                 `data-tippy-content` = full_name_match,
-                style = tooltip_style,
+                class = tooltip_class,
                 omics_type
               ))
             } else if (
@@ -576,32 +561,38 @@ prepare_table1_display <- function(
       )
 
       paste(omics_evidence_html, collapse = ", ")
-    }
+    },
+    character(1L)
   )
 
   table1_display
 }
 
-#' Prepare Table 2 display with pre-computed tooltips
-#'
-#' Transforms table2 clinical trial data by adding Tippy.js tooltip HTML
-#' to registry IDs (with links to trial registries) and genetic targets
-#' (with NCBI gene info).
-#'
-#' @param table2 Data frame or data.table. Clinical trial data.
-#' @param ct_info Data frame. Trial name and primary outcome for tooltips.
-#' @param gene_info_results_df Data frame. NCBI gene info with URL column.
-#' @param gene_symbols_lookup Character vector. Gene symbols for matching.
-#'
-#' @return data.table. table2 with HTML tooltip markup in display columns.
-#'
-#' @export
-#' @seealso \code{\link{prepare_table1_display}}
+# Prepare Table 2 display with pre-computed tooltips
+#
+# Transforms table2 clinical trial data by adding Tippy.js tooltip HTML
+# to registry IDs (with links to trial registries) and genetic targets
+# (with NCBI gene info).
+#
+# Args:
+#   table2: Data frame or data.table. Clinical trial data.
+#   ct_info: Data frame. Trial name and primary outcome for tooltips.
+#   gene_info_results_df: Data frame. NCBI gene info with URL column.
+#   gene_symbols_lookup: Character vector. Gene symbols for matching.
+#   tooltip_class: Character. CSS class name for standard tooltips.
+#     Defaults to the global tooltip_class constant.
+#   tooltip_class_italic: Character. CSS class name for italic tooltips
+#     (gene symbols). Defaults to the global tooltip_class_italic constant.
+#
+# Returns:
+#   data.table. table2 with HTML tooltip markup in display columns.
 prepare_table2_display <- function(
   table2,
   ct_info,
   gene_info_results_df,
-  gene_symbols_lookup
+  gene_symbols_lookup,
+  tooltip_class = tooltip_class,
+  tooltip_class_italic = tooltip_class_italic
 ) {
   table2_display <- as.data.frame(table2)
 
@@ -616,17 +607,20 @@ prepare_table2_display <- function(
     NA_character_
   }
 
-  table2_display[[5L]] <- purrr::map2_chr(
-    table2_display[[5L]],
-    seq_len(nrow(table2_display)),
-    function(ct_id, row_id) {
+  # Optimized: use mapply instead of purrr::map2_chr
+  registry_col <- which(names(table2_display) == "Registry ID")
+  registry_ids <- table2_display[[registry_col]]
+  n_rows <- nrow(table2_display)
+
+  table2_display[[registry_col]] <- vapply(
+    seq_len(n_rows),
+    function(row_id) {
+      ct_id <- registry_ids[row_id]
       ct_tooltip_info <- ct_info$ct_info[[row_id]][[1L]]
 
-      ct_tooltip_content <- paste0(
-        "<strong>Trial Name</strong> ",
+      ct_tooltip_content <- sprintf(
+        "<strong>Trial Name</strong> %s<br><strong>Primary Outcome</strong> %s",
         ct_tooltip_info[1L],
-        "<br>",
-        "<strong>Primary Outcome</strong> ",
         ct_tooltip_info[2L]
       )
 
@@ -650,21 +644,25 @@ prepare_table2_display <- function(
           shiny::HTML(link_html),
           `data-tippy-content` = ct_tooltip_content,
           `data-tippy-maxWidth` = "400px",
-          style = tooltip_style
+          class = tooltip_class
         )
       )
-    }
+    },
+    character(1L)
   )
 
   # Genetic Target tooltip (similar to Table 1 gene tooltips)
+  # Optimized: use vapply instead of purrr::map_chr
   genetic_target_col <- which(names(table2_display) == "Genetic Target")
   if (length(genetic_target_col) > 0L) {
-    table2_display[[genetic_target_col]] <- purrr::map_chr(
-      table2_display[[genetic_target_col]],
+    genetic_target_values <- table2_display[[genetic_target_col]]
+
+    table2_display[[genetic_target_col]] <- vapply(
+      genetic_target_values,
       function(cell_value) {
         # Handle empty or NA values
         if (is.na(cell_value) || cell_value == "" || cell_value == "(none)") {
-          return(cell_value)
+          return(as.character(cell_value))
         }
 
         # Split by comma to handle multiple genes per cell
@@ -680,21 +678,19 @@ prepare_table2_display <- function(
             if (length(match_idx) > 0L) {
               match_idx <- match_idx[1L]
 
-              tooltip_content <- paste0(
-                "<strong>",
-                names(gene_info_results_df)[1L],
-                "</strong> ",
-                gene_info_results_df[match_idx, 1L],
-                "<br>",
-                "<strong>",
+              # Skip column 1 (Name) since it's redundant with the gene symbol
+              tooltip_content <- sprintf(
+                paste0(
+                  "<strong>%s</strong> %s<br>",
+                  "<strong>%s</strong> %s<br>",
+                  "<strong>%s</strong> %s"
+                ),
                 names(gene_info_results_df)[2L],
-                "</strong> ",
                 gene_info_results_df[match_idx, 2L],
-                "<br>",
-                "<strong>",
                 names(gene_info_results_df)[3L],
-                "</strong> ",
-                gene_info_results_df[match_idx, 3L]
+                gene_info_results_df[match_idx, 3L],
+                names(gene_info_results_df)[4L],
+                gene_info_results_df[match_idx, 4L]
               )
 
               gene_url <- gene_info_results_df[match_idx, "URL"]
@@ -706,7 +702,7 @@ prepare_table2_display <- function(
                   shiny::tags$span(
                     gene_symbol,
                     `data-tippy-content` = tooltip_content,
-                    style = tooltip_style_italic
+                    class = tooltip_class_italic
                   )
                 )
               )
@@ -731,9 +727,14 @@ prepare_table2_display <- function(
           lines <- vapply(chunks, paste, character(1L), collapse = " ")
           paste(lines, collapse = "<br>")
         }
-      }
+      },
+      character(1L)
     )
   }
+
+  # Remove internal columns not meant for display
+  table2_display$sample_size_numeric <- NULL
+  table2_display$original_row_num <- NULL
 
   data.table::setDT(table2_display)
   table2_display

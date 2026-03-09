@@ -1,0 +1,63 @@
+{{- if .Values.observability.grafanaImageRenderer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-grafana-image-renderer
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana-image-renderer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: grafana-image-renderer
+  template:
+    metadata:
+      labels:
+        {{- include "svd-dashboard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: grafana-image-renderer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+      containers:
+        - name: renderer
+          image: "{{ .Values.observability.grafanaImageRenderer.image.repository }}:{{ .Values.observability.grafanaImageRenderer.image.tag }}"
+          ports:
+            - containerPort: 8081
+          env:
+            - name: ENABLE_METRICS
+              value: "true"
+            - name: RENDERING_MODE
+              value: "clustered"
+            - name: RENDERING_CLUSTERING_MAX_CONCURRENCY
+              value: "2"
+            - name: RENDERING_VERBOSE_LOGGING
+              value: "true"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            periodSeconds: 10
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+{{- end }}

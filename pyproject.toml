@@ -1,0 +1,35 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+src = ["pipeline"]
+extend-exclude = ["pipeline/alembic"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# E = pycodestyle errors, F = pyflakes, I = isort
+# UP = pyupgrade, B = flake8-bugbear, SIM = flake8-simplify
+
+[tool.ruff.lint.per-file-ignores]
+# SVG string literals make short lines impractical
+"scripts/python_plot.py" = ["E501", "SIM108"]
+# LLM prompt strings — line wrapping breaks readability
+"pipeline/prompts.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pipeline"]
+
+[tool.pytest]
+testpaths = ["tests/pipeline"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks integration tests",
+]
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.rules]
+# Third-party packages may not have type stubs available
+unresolved-import = "warn"
