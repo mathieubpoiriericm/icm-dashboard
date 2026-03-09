@@ -86,7 +86,26 @@ ALLOWED_TABLES: Final[frozenset[str]] = frozenset(
 )
 ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
 
-PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,8}$")
+PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,9}$")
+
+
+def validate_pmid(pmid: str) -> str:
+    """Validate and normalize a PubMed ID.
+
+    Args:
+        pmid: The PubMed identifier to validate.
+
+    Returns:
+        The validated PMID string.
+
+    Raises:
+        ValueError: If the PMID format is invalid.
+    """
+    pmid = pmid.strip()
+    if not PMID_PATTERN.match(pmid):
+        raise ValueError(f"Invalid PMID format: {pmid!r}")
+    return pmid
+
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 

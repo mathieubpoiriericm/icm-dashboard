@@ -369,8 +369,8 @@ prepare_table1_display <- function(
 
   # Vectorized OMIM tooltip (using fastmap for O(1) lookups)
   # Optimized: use vapply instead of purrr::map_chr
-  table1_display[[7L]] <- vapply(
-    table1_display[[7L]],
+  table1_display[["Link to Monogenetic Disease"]] <- vapply(
+    table1_display[["Link to Monogenetic Disease"]],
     function(omim_value) {
       is_empty <- is.null(omim_value) || length(omim_value) == 0L
       is_single_na <- length(omim_value) == 1L && is.na(omim_value[1L])
@@ -431,18 +431,18 @@ prepare_table1_display <- function(
   )
 
   # Brain cell type tooltip (vectorized)
-  table1_display[[8L]] <- vapply(
-    table1_display[[8L]],
+  table1_display[["Brain Cell Types"]] <- vapply(
+    table1_display[["Brain Cell Types"]],
     add_cell_type_tooltip,
     character(1L),
     tooltip_class = tooltip_class
   )
 
   # References tooltip (vectorized)
-  table1_display[[10L]] <- vapply(
+  table1_display[["References"]] <- vapply(
     seq_len(nrow(table1_display)),
     function(i) {
-      add_ref_tooltip(table1_display[i, 10L], refs, tooltip_class)
+      add_ref_tooltip(table1_display[i, "References"], refs, tooltip_class)
     },
     character(1L)
   )

@@ -81,6 +81,7 @@ async def close_validation_client() -> None:
         _http_client = None
 
 _gene_cache: dict[str, dict[str, Any] | None] = {}
+_MAX_CACHE_SIZE: Final[int] = 10_000
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
 
@@ -284,6 +285,8 @@ async def verify_ncbi_gene(
         result = await _fetch_ncbi_gene_uncached(symbol, config=config)
 
     async with _get_cache_lock():
+        if len(_gene_cache) >= _MAX_CACHE_SIZE:
+            _gene_cache.clear()
         _gene_cache[symbol_upper] = result
 
     return result

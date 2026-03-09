@@ -220,6 +220,12 @@
     return luminance >= 185;
   }
 
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   function ensureTooltip() {
     let tip = document.getElementById('tooltip');
     if (!tip) {
@@ -416,8 +422,8 @@
     const wedges = document.querySelectorAll('.wedge');
     wedges.forEach(w => {
       w.addEventListener('mouseover', (ev) => {
-        const pop = w.getAttribute('data-pop') || '–';
-        const phase = w.getAttribute('data-phase') || '–';
+        const pop = escapeHtml(w.getAttribute('data-pop') || '–');
+        const phase = escapeHtml(w.getAttribute('data-phase') || '–');
 
         // Read exact wedge fill & opacity from the SVG element
         const fill = w.getAttribute('fill') || '#000';
@@ -459,19 +465,19 @@
     });
     nodes.forEach(node => {
       node.addEventListener('click', (ev) => {
-        const name    = node.getAttribute('data-drug')    || 'Unknown';
-        const phase   = node.getAttribute('data-phase')    || '–';
-        const pop     = node.getAttribute('data-pop')      || '–';
-        const mech    = node.getAttribute('data-mech')     || '–';
-        const gtarget = node.getAttribute('data-gtarget')  || '–';
-        const gevid   = node.getAttribute('data-ge')       || '–';
-        const tname   = node.getAttribute('data-tname')    || '–';
-        const regid   = node.getAttribute('data-regid')    || '–';
-        const svdpopd = node.getAttribute('data-svdpopd')  || '–';
-        const ssize   = node.getAttribute('data-ssize')    || '–';
-        const estcomp = node.getAttribute('data-estcomp')  || '–';
-        const pco     = node.getAttribute('data-pco')      || '–';
-        const sptype  = node.getAttribute('data-sptype')   || '–';
+        const name    = escapeHtml(node.getAttribute('data-drug')    || 'Unknown');
+        const phase   = escapeHtml(node.getAttribute('data-phase')    || '–');
+        const pop     = escapeHtml(node.getAttribute('data-pop')      || '–');
+        const mech    = escapeHtml(node.getAttribute('data-mech')     || '–');
+        const gtarget = escapeHtml(node.getAttribute('data-gtarget')  || '–');
+        const gevid   = escapeHtml(node.getAttribute('data-ge')       || '–');
+        const tname   = escapeHtml(node.getAttribute('data-tname')    || '–');
+        const regid   = escapeHtml(node.getAttribute('data-regid')    || '–');
+        const svdpopd = escapeHtml(node.getAttribute('data-svdpopd')  || '–');
+        const ssize   = escapeHtml(node.getAttribute('data-ssize')    || '–');
+        const estcomp = escapeHtml(node.getAttribute('data-estcomp')  || '–');
+        const pco     = escapeHtml(node.getAttribute('data-pco')      || '–');
+        const sptype  = escapeHtml(node.getAttribute('data-sptype')   || '–');
 
         const html = `
           <h2 style="margin-top:0; font-size:16px;">${name}</h2>
@@ -507,19 +513,19 @@
         });
       });
       node.addEventListener('mouseover', (ev) => {
-        const name    = node.getAttribute('data-drug')    || 'Unknown';
-        const phase   = node.getAttribute('data-phase')    || '–';
-        const pop     = node.getAttribute('data-pop')      || '–';
-        const mech    = node.getAttribute('data-mech')     || '–';
-        const gtarget = node.getAttribute('data-gtarget')  || '–';
-        const gevid   = node.getAttribute('data-ge')       || '–';
-        const tname   = node.getAttribute('data-tname')    || '–';
-        const regid   = node.getAttribute('data-regid')    || '–';
-        const svdpopd = node.getAttribute('data-svdpopd')  || '–';
-        const ssize   = node.getAttribute('data-ssize')    || '–';
-        const estcomp = node.getAttribute('data-estcomp')  || '–';
-        const pco     = node.getAttribute('data-pco')      || '–';
-        const sptype  = node.getAttribute('data-sptype')   || '–';
+        const name    = escapeHtml(node.getAttribute('data-drug')    || 'Unknown');
+        const phase   = escapeHtml(node.getAttribute('data-phase')    || '–');
+        const pop     = escapeHtml(node.getAttribute('data-pop')      || '–');
+        const mech    = escapeHtml(node.getAttribute('data-mech')     || '–');
+        const gtarget = escapeHtml(node.getAttribute('data-gtarget')  || '–');
+        const gevid   = escapeHtml(node.getAttribute('data-ge')       || '–');
+        const tname   = escapeHtml(node.getAttribute('data-tname')    || '–');
+        const regid   = escapeHtml(node.getAttribute('data-regid')    || '–');
+        const svdpopd = escapeHtml(node.getAttribute('data-svdpopd')  || '–');
+        const ssize   = escapeHtml(node.getAttribute('data-ssize')    || '–');
+        const estcomp = escapeHtml(node.getAttribute('data-estcomp')  || '–');
+        const pco     = escapeHtml(node.getAttribute('data-pco')      || '–');
+        const sptype  = escapeHtml(node.getAttribute('data-sptype')   || '–');
 
         const html = `
   <div style="padding:2px 4px;">

@@ -156,6 +156,11 @@ async def reset_sequence(table: str, column: str = "id") -> None:
             "SELECT quote_literal($1)", f"{table}_{column}_seq"
         )
 
+        if safe_table is None or safe_column is None or safe_seq is None:
+            raise RuntimeError(
+                f"quote_ident/quote_literal returned NULL for {table}.{column}"
+            )
+
         await conn.execute(f"""
             SELECT setval({safe_seq}, COALESCE(
                 (SELECT MAX({safe_column}) FROM {safe_table}), 0

@@ -15,7 +15,7 @@ from typing import Any, Final, Literal, TypedDict
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
-from pipeline.config import PMID_PATTERN
+from pipeline.config import validate_pmid
 
 logger = logging.getLogger(__name__)
 
@@ -85,24 +85,6 @@ async def close_http_client() -> None:
         _http_client = None
 
 
-def _validate_pmid(pmid: str) -> str:
-    """Validate and normalize a PubMed ID.
-
-    Args:
-        pmid: The PubMed identifier to validate.
-
-    Returns:
-        The validated PMID string.
-
-    Raises:
-        ValueError: If the PMID format is invalid.
-    """
-    pmid = pmid.strip()
-    if not PMID_PATTERN.match(pmid):
-        raise ValueError(f"Invalid PMID format: {pmid!r}")
-    return pmid
-
-
 def _validate_doi(doi: str) -> str:
     """Validate and normalize a DOI.
 
@@ -145,7 +127,7 @@ async def get_fulltext(pmid: str, doi: str | None) -> FulltextResult:
     Returns:
         FulltextResult with text content and source information.
     """
-    pmid = _validate_pmid(pmid)
+    pmid = validate_pmid(pmid)
 
     # Try PubMed Central first
     if pmc_text := await fetch_pmc_fulltext(pmid):

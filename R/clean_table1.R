@@ -51,7 +51,7 @@ clean_table1 <- function(
   table1[!nzchar(table1, keepNA = TRUE)] <- NA
   table1[table1 == " "] <- NA
 
-  # Replace NA in `Link to Monogenetic Disease` column by char N
+  # Replace NA in `mendelian_randomization` column with "N" (not a Mendelian gene)
   table1$mendelian_randomization[is.na(table1$mendelian_randomization)] <- "N"
 
   # Reorder and clean column names

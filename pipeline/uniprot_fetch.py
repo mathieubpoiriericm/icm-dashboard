@@ -56,6 +56,7 @@ class SyncResult:
 # Module-level shared HTTP client (30s timeout for UniProt's slower API)
 _client_manager = AsyncHttpClientManager(timeout=30.0)
 _uniprot_cache: dict[str, UniProtInfo | None] = {}
+_MAX_CACHE_SIZE: Final[int] = 10_000
 _cache_lock: asyncio.Lock | None = None
 _uniprot_semaphore: asyncio.Semaphore | None = None
 
@@ -278,6 +279,8 @@ async def fetch_uniprot_info(gene_symbol: str) -> UniProtInfo | None:
 
         async with _get_uniprot_semaphore():
             result = await _fetch_uniprot_uncached(gene_symbol)
+            if len(_uniprot_cache) >= _MAX_CACHE_SIZE:
+                _uniprot_cache.clear()
             _uniprot_cache[symbol_upper] = result
             return result
 

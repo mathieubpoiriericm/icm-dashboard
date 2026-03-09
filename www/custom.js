@@ -103,8 +103,10 @@ window.initializeTippy = function() {
         }
       });
 
-      // Store instances for potential cleanup later
-      window.tippyInstances = window.tippyInstances.concat(newInstances);
+      // Clean up destroyed instances before adding new ones
+      window.tippyInstances = window.tippyInstances.filter(
+        function(inst) { return inst && !inst.state.isDestroyed; }
+      ).concat(newInstances);
     }
   }, 100);
 };

@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 import httpx
 
@@ -51,6 +51,7 @@ class SyncResult:
 # Module-level shared HTTP client
 _client_manager = AsyncHttpClientManager(timeout=15.0)
 _gene_cache: dict[str, NCBIGeneInfo | None] = {}
+_MAX_CACHE_SIZE: Final[int] = 10_000
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
 
@@ -112,6 +113,8 @@ async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
 
         async with _get_ncbi_semaphore():
             result = await _fetch_ncbi_gene_uncached(gene_symbol)
+            if len(_gene_cache) >= _MAX_CACHE_SIZE:
+                _gene_cache.clear()
             _gene_cache[symbol_upper] = result
             return result
 
@@ -206,6 +209,9 @@ async def fetch_ncbi_genes_batch(
 ) -> list[NCBIGeneInfo]:
     """Fetch NCBI gene info for multiple genes concurrently.
 
+    Uses the module-level semaphore (via fetch_ncbi_gene_info) to
+    rate-limit concurrent requests.
+
     Args:
         gene_symbols: List of gene symbols to fetch.
         progress_callback: Optional callback(current, total) for progress updates.
@@ -213,28 +219,29 @@ async def fetch_ncbi_genes_batch(
     Returns:
         List of NCBIGeneInfo objects (some may have None fields if lookup failed).
     """
-    results: list[NCBIGeneInfo] = []
     total = len(gene_symbols)
+    completed = 0
+    completed_lock = asyncio.Lock()
 
-    for i, symbol in enumerate(gene_symbols):
+    async def _fetch_one(symbol: str) -> NCBIGeneInfo:
+        nonlocal completed
         info = await fetch_ncbi_gene_info(symbol)
-        if info is not None:
-            results.append(info)
-        else:
-            # Return placeholder for failed lookups
-            results.append(
-                NCBIGeneInfo(
-                    gene_symbol=symbol,
-                    ncbi_uid=None,
-                    description=None,
-                    aliases=None,
-                )
-            )
+        result = info if info is not None else NCBIGeneInfo(
+            gene_symbol=symbol,
+            ncbi_uid=None,
+            description=None,
+            aliases=None,
+        )
+        async with completed_lock:
+            completed += 1
+            if progress_callback:
+                progress_callback(completed, total)
+        return result
 
-        if progress_callback:
-            progress_callback(i + 1, total)
+    async with asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(_fetch_one(s)) for s in gene_symbols]
 
-    return results
+    return [t.result() for t in tasks]
 
 
 # ---------------------------------------------------------------------------

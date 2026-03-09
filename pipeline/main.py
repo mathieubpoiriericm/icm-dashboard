@@ -106,7 +106,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 import os  # noqa: E402
 
 from pipeline.batch_validation import batch_validate  # noqa: E402
-from pipeline.config import PMID_PATTERN, PipelineConfig  # noqa: E402
+from pipeline.config import PipelineConfig, validate_pmid  # noqa: E402
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
 from pipeline.database import (  # noqa: E402
     Database,
@@ -244,14 +244,6 @@ async def _close_metadata_client() -> None:
         _metadata_client = None
 
 
-def _validate_pmid(pmid: str) -> str:
-    """Validate and normalize a PubMed ID."""
-    pmid = pmid.strip()
-    if not PMID_PATTERN.match(pmid):
-        raise ValueError(f"Invalid PMID format: {pmid!r}")
-    return pmid
-
-
 async def fetch_paper_metadata(pmid: str) -> MetadataResult:
     """Fetch DOI and other metadata for a PMID using NCBI efetch.
 
@@ -261,7 +253,7 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
     Returns:
         MetadataResult with pmid and doi.
     """
-    pmid = _validate_pmid(pmid)
+    pmid = validate_pmid(pmid)
 
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params: dict[str, str] = {"db": "pubmed", "id": pmid, "retmode": "xml"}
@@ -916,7 +908,7 @@ async def run_pmid_pipeline(
         if not stripped or stripped.startswith("#"):
             continue
         try:
-            pmid = _validate_pmid(stripped)
+            pmid = validate_pmid(stripped)
         except ValueError:
             logger.warning(f"Skipping invalid PMID: {stripped!r}")
             continue

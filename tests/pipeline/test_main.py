@@ -7,47 +7,47 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from pipeline.config import validate_pmid
 from pipeline.main import (
     PaperResult,
-    _validate_pmid,
     fetch_paper_metadata,
     run_pipeline,
 )
 from pipeline.quality_metrics import TokenUsage
 
 # ---------------------------------------------------------------------------
-# _validate_pmid
+# validate_pmid
 # ---------------------------------------------------------------------------
 
 
 class TestValidatePmid:
     def test_valid_pmid(self):
-        assert _validate_pmid("12345678") == "12345678"
+        assert validate_pmid("12345678") == "12345678"
 
     def test_valid_short_pmid(self):
-        assert _validate_pmid("1") == "1"
+        assert validate_pmid("1") == "1"
 
     def test_strips_whitespace(self):
-        assert _validate_pmid("  12345678  ") == "12345678"
+        assert validate_pmid("  12345678  ") == "12345678"
 
     def test_invalid_format_letters(self):
         with pytest.raises(ValueError, match="Invalid PMID"):
-            _validate_pmid("abc123")
+            validate_pmid("abc123")
 
     def test_invalid_format_empty(self):
         with pytest.raises(ValueError, match="Invalid PMID"):
-            _validate_pmid("")
+            validate_pmid("")
 
     def test_invalid_format_too_long(self):
         with pytest.raises(ValueError, match="Invalid PMID"):
-            _validate_pmid("123456789")  # 9 digits
+            validate_pmid("1234567890")  # 10 digits
 
     def test_invalid_format_special_chars(self):
         with pytest.raises(ValueError, match="Invalid PMID"):
-            _validate_pmid("1234-5678")
+            validate_pmid("1234-5678")
 
     def test_max_length_pmid(self):
-        assert _validate_pmid("12345678") == "12345678"  # 8 digits
+        assert validate_pmid("123456789") == "123456789"  # 9 digits
 
 
 # ---------------------------------------------------------------------------

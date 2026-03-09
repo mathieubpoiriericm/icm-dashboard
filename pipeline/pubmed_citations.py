@@ -65,6 +65,7 @@ class SyncResult:
 # Module-level shared HTTP client (30s timeout for PubMed efetch XML responses)
 _client_manager = AsyncHttpClientManager(timeout=30.0)
 _citation_cache: dict[str, PubMedCitation | None] = {}
+_MAX_CACHE_SIZE: Final[int] = 10_000
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
 
@@ -189,6 +190,8 @@ async def fetch_pubmed_citation(pmid: str) -> PubMedCitation | None:
 
         async with _get_ncbi_semaphore():
             result = await _fetch_pubmed_uncached(pmid)
+            if len(_citation_cache) >= _MAX_CACHE_SIZE:
+                _citation_cache.clear()
             _citation_cache[pmid] = result
             return result
 

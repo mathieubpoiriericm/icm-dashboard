@@ -680,15 +680,13 @@ load_table2_data <- function() {
     table2$`Estimated Completion Date`
   )
 
-  # Mark unpublished completed trials using constant
-  # Note: Row 14 contains a trial that is completed but unpublished
-  # This is a known data quirk that should be handled in data cleaning
+  # Mark unpublished completed trials (have a drug but no completion date)
   unpublished_idx <- which(
     is.na(table2$`Estimated Completion Date`) &
       !is.na(table2$Drug)
   )
-  if (length(unpublished_idx) > 0L && 14L %in% seq_len(nrow(table2))) {
-    table2$`Estimated Completion Date`[14L] <- COMPLETION_UNPUBLISHED
+  if (length(unpublished_idx) > 0L) {
+    table2$`Estimated Completion Date`[unpublished_idx] <- COMPLETION_UNPUBLISHED
   }
 
   # Use constant for registry patterns
