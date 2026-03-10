@@ -100,13 +100,13 @@ if (length(failed_packages) > 0) {
 
 message("All packages loaded successfully.")
 
-# Load Inter font from local file (faster than font_add_google)
-font_path <- "www/fonts/Inter-Regular.ttf"
-font_path_bold <- "www/fonts/Inter-Bold.ttf"
+# Load Raleway font from local file (faster than font_add_google)
+font_path <- "www/fonts/Raleway-Regular.ttf"
+font_path_bold <- "www/fonts/Raleway-Bold.ttf"
 if (file.exists(font_path) && file.exists(font_path_bold)) {
-  font_add("Inter", regular = font_path, bold = font_path_bold)
+  font_add("Raleway", regular = font_path, bold = font_path_bold)
 } else {
-  warning("Inter font files not found, using system default")
+  warning("Raleway font files not found, using system default")
 }
 showtext_auto()
 

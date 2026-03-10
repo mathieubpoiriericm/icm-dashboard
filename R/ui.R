@@ -11,15 +11,15 @@
 light_theme <- bslib::bs_theme(
   version = 5,
   bg = "#ffffff",
-  fg = "#1f2937",
-  primary = "#312e81",
-  secondary = "#4f46e5",
+  fg = "#2D2926",
+  primary = BRAND_COLOR_PRIMARY,
+  secondary = BRAND_COLOR_ACCENT,
   success = "#16a34a",
-  danger = "#ef4444",
-  base_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  heading_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  "navbar-bg" = "#f8f7ff",
-  "navbar-light-color" = "#1f2937"
+  danger = BRAND_COLOR_DANGER,
+  base_font = "Raleway, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  heading_font = "Raleway, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  "navbar-bg" = "rgba(255, 255, 255, 0.65)",
+  "navbar-light-color" = "#2D2926"
 )
 
 # Build UI Function for SVD Dashboard
@@ -38,14 +38,11 @@ light_theme <- bslib::bs_theme(
 build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
   bslib::page_navbar(
     id = "tabs",
-    # Use WebP with PNG fallback for better performance
-    title = shiny::tags$picture(
-      shiny::tags$source(srcset = "images/icm_logo.webp", type = "image/webp"),
-      shiny::tags$img(
-        src = "images/icm_logo.png",
-        alt = "ICM Logo",
-        height = "40"
-      )
+    # SVG logo (vector, no fallback needed)
+    title = shiny::tags$img(
+      src = "images/ICM-logo.svg",
+      alt = "ICM Logo",
+      height = "40"
     ),
     window_title = "ICM Cerebral SVD Dashboard",
     theme = light_theme,

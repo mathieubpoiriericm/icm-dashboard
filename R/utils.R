@@ -154,7 +154,7 @@ build_css_style <- function(...) {
 # Returns:
 #   A CSS style string.
 create_box_style <- function(
-  bg_color = "#f8f7ff",
+  bg_color = "rgba(255, 255, 255, 0.65)",
   text_color = "#4b5563",
   border_color = NULL,
   font_size = "1rem",

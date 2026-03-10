@@ -104,6 +104,16 @@ DATA_PATHS <- list(
 )
 
 # =============================================================================
+# BRAND COLORS (ICM Visual Identity)
+# =============================================================================
+# ICM navy — primary brand color (maps to CSS --svd-primary)
+BRAND_COLOR_PRIMARY <- "#281E78"
+# ICM orange — accent brand color (maps to CSS --svd-accent)
+BRAND_COLOR_ACCENT <- "#FA4616"
+# Danger red (maps to CSS --svd-danger)
+BRAND_COLOR_DANGER <- "#DC3545"
+
+# =============================================================================
 # DISPLAY CONSTANTS
 # =============================================================================
 # Placeholder text for missing data
