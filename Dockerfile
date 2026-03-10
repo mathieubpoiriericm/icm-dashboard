@@ -1,14 +1,30 @@
-FROM rocker/shiny:4.4.3
+FROM rocker/shiny:4.5.2
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=2 update \
+  && apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=2 \
+  install -y --no-install-recommends \
   libfreetype6-dev \
   libpng-dev \
   libfontconfig1-dev \
   libwebp-dev \
   libcurl4-openssl-dev \
   libssl-dev \
+  libpq-dev \
   libzstd-dev \
   liblz4-dev \
+  libxml2-dev \
+  libharfbuzz-dev \
+  libfribidi-dev \
+  libtiff-dev \
+  libjpeg-dev \
+  libgdal-dev \
+  libgeos-dev \
+  libproj-dev \
+  libsqlite3-dev \
+  libudunits2-dev \
+  libtbb-dev \
+  zlib1g-dev \
+  cmake \
   curl \
   && rm -rf /var/lib/apt/lists/*
 
@@ -17,7 +33,10 @@ RUN rm -rf /srv/shiny-server/*
 
 # Install R dependencies from renv.lock for reproducible builds
 COPY renv.lock /tmp/renv.lock
-RUN R -e "install.packages('renv'); renv::restore(lockfile = '/tmp/renv.lock', prompt = FALSE)" \
+RUN R -e "\
+  options(timeout = 60, download.file.method = 'libcurl'); \
+  install.packages('renv'); \
+  renv::restore(lockfile = '/tmp/renv.lock', prompt = FALSE)" \
   && R -e "if (!requireNamespace('qs', quietly = TRUE)) stop('qs package failed to install')" \
   && rm /tmp/renv.lock
 
