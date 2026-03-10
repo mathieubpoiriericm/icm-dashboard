@@ -49,9 +49,16 @@ clean_table2 <- function(
   # Clean column names using utility function
   names(table2) <- clean_column_names(names(table2))
 
-  # Handle NA values
+  # Handle NA values in all nullable display columns
 
   table2$`Genetic Target`[is.na(table2$`Genetic Target`)] <- "(none)"
+  table2$`Clinical Trial Phase`[is.na(table2$`Clinical Trial Phase`)] <-
+    "(unknown)"
+  table2$`SVD Population`[is.na(table2$`SVD Population`)] <- "(unknown)"
+  table2$`Sponsor Type`[is.na(table2$`Sponsor Type`)] <- "(unknown)"
+  table2$`Genetic Evidence`[is.na(table2$`Genetic Evidence`)] <- "(unknown)"
+  table2$`Mechanism Of Action`[is.na(table2$`Mechanism Of Action`)] <-
+    "(unknown)"
 
   # Convert types
   table2$`Target Sample Size` <- as.character(table2$`Target Sample Size`)

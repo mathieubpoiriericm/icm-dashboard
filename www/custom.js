@@ -1,13 +1,15 @@
 // Dashboard Custom JavaScript
 
-// Utility: Debounced retry - executes immediately then once after delay
-// Reduced from multiple retries to minimize mid-scroll disruption
+// Utility: Progressive retry - executes immediately then retries at each delay
 function progressiveRetry(fn, delays) {
-  // Execute immediately
   fn();
-  // Single delayed retry (use last delay value for stability, or default 200ms)
-  var finalDelay = (delays && delays.length > 0) ? delays[delays.length - 1] : 200;
-  setTimeout(fn, finalDelay);
+  if (delays && delays.length > 0) {
+    delays.forEach(function(delay) {
+      setTimeout(fn, delay);
+    });
+  } else {
+    setTimeout(fn, 200);
+  }
 }
 
 // =============================================================================
@@ -157,7 +159,7 @@ $(document).on('draw.dt', function(e, settings) {
   }
 
   // 3. Sync control widths
-  var tableId = settings.sTableId;
+  var tableId = $(e.target).closest('.dataTables_wrapper').parent().attr('id');
   progressiveRetry(function() {
     syncControlsWidth(tableId);
   }, [50, 200]);
@@ -256,8 +258,9 @@ function initializeTopScrollbar(e, settings) {
     // Set initial width and retry for dynamic content
     progressiveRetry(updateTopScrollbarWidth, [100, 300, 1000]);
 
-    // Update on window resize
-    $(window).on('resize.topScrollbar', updateTopScrollbarWidth);
+    // Update on window resize (table-specific namespace prevents cross-table removal)
+    var resizeNs = 'resize.topScrollbar_' + (wrapper.parent().attr('id') || settings.sTableId);
+    $(window).off(resizeNs).on(resizeNs, updateTopScrollbarWidth);
 
     // Insert top scrollbar before the scroll container
     scrollContainer.before(topScrollbar);
@@ -367,6 +370,22 @@ function connectBslibControlsForTable(tableId, table) {
   // Skip if already connected to this exact table instance
   if (config.currentTable === table) return;
   config.currentTable = table;
+
+  // Sync current control values into the new table instance (single draw)
+  var currentLen = parseInt($('#' + config.pageLengthInputId).val(), 10);
+  var currentSearch = $('#' + config.searchInputId).val();
+  var needsDraw = false;
+  if (!isNaN(currentLen) && currentLen !== table.page.len()) {
+    table.page.len(currentLen);
+    needsDraw = true;
+  }
+  if (currentSearch) {
+    table.search(currentSearch);
+    needsDraw = true;
+  }
+  if (needsDraw) {
+    table.draw(false);
+  }
 
   // Connect page length select
   $('#' + config.pageLengthInputId).off('change.dtBslib').on('change.dtBslib', function() {

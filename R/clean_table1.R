@@ -213,12 +213,10 @@ clean_table1 <- function(
     fixed = TRUE
   )
 
-  table1$`GWAS Trait`[[39L]][2L] <- gsub(
-    "small vessel stroke",
-    "SVS",
-    table1$`GWAS Trait`[[39L]][2L],
-    fixed = TRUE
-  )
+  # Replace "small vessel stroke" with "SVS" across all rows
+  table1$`GWAS Trait` <- lapply(table1$`GWAS Trait`, function(traits) {
+    gsub("small vessel stroke", "SVS", traits, fixed = TRUE)
+  })
 
   names(table1) <- gsub(
     "Link to Monogenetic Disease",

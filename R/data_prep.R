@@ -466,15 +466,6 @@ load_and_prepare_data <- function() {
   message("Loading GWAS trait mappings...")
   gwas_trait_names <- safe_read_rds(DATA_PATHS$gwas_trait_names)
 
-  first_mapping <- data.frame(
-    abbrev = names(gwas_trait_names)[1L],
-    full_name = names(gwas_trait_names)[2L],
-    stringsAsFactors = FALSE
-  )
-
-  colnames(gwas_trait_names) <- c("abbrev", "full_name")
-  gwas_trait_names <- rbind(first_mapping, gwas_trait_names)
-
   gwas_trait_mapping <- setNames(
     gwas_trait_names$full_name,
     gwas_trait_names$abbrev

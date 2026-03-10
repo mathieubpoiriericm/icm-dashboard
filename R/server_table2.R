@@ -512,8 +512,8 @@ build_table2_datatable <- function(filtered_data2) {
               // Cache stripe colors at init (runs once, not on every draw)
               var rows = this.api().rows().nodes();
               if (rows.length >= 2) {
-                this._stripeColor = $(rows[0]).css('background-color');
-                this._whiteColor = $(rows[1]).css('background-color');
+                this._stripeColor = $(rows[1]).css('background-color');
+                this._whiteColor = $(rows[0]).css('background-color');
               }
             }"
           ),
@@ -531,7 +531,7 @@ build_table2_datatable <- function(filtered_data2) {
               if (numRows === 0) return;
 
               // Columns to merge (Drug, Target, Phase, Population)
-              var columnsToMerge = [0, 1, 2, 3];
+              var columnsToMerge = [0, 2, 5, 6];
 
               // Reset all mergeable cells to default state first
               for (var i = 0; i < numRows; i++) {
@@ -548,7 +548,8 @@ build_table2_datatable <- function(filtered_data2) {
               // Check if sorted by Drug column (column 0)
               // Only apply row merging when sorted by Drug
               var order = api.order();
-              var sortedByDrug = order.length === 0 || order[0][0] === 0;
+              var sortedByDrug = order.length === 0 ||
+                (order[0][0] === 0 && order[0][1] === 'asc');
 
               if (!sortedByDrug) {
                 return;
@@ -581,7 +582,8 @@ build_table2_datatable <- function(filtered_data2) {
                   var cell = rowCells.eq(columnsToMerge[c]);
                   cell.css('background-color', bgColor);
 
-                  var span = rowspans[c];
+                  // Clamp to remaining rows on page (handles groups spanning page boundaries)
+                  var span = Math.min(rowspans[c], numRows - i);
                   if (span === 0) {
                     // Hidden cell (merged into previous)
                     cell.css('display', 'none');

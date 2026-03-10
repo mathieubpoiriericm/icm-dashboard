@@ -137,6 +137,14 @@ get_ref_tooltip_info_memo <- memoise::memoise(
 add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
   split_pmid <- split_pmid[[1L]]
 
+  # Return bare placeholder so formatStyle italic check can match
+  if (
+    length(split_pmid) == 1L &&
+      split_pmid[1L] == PLACEHOLDER_REFERENCE_NEEDED
+  ) {
+    return(PLACEHOLDER_REFERENCE_NEEDED)
+  }
+
   html_parts <- vapply(
     split_pmid,
     function(pmid) {

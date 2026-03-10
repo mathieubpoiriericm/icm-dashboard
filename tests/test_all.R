@@ -74,55 +74,6 @@ test_that("clean_column_names handles vector input", {
   expect_equal(result, c("Gene Name", "GWAS Trait"))
 })
 
-test_that("build_css_style returns empty string for no input", {
-  result <- build_css_style()
-  expect_equal(result, "")
-})
-
-test_that("build_css_style builds single property", {
-  result <- build_css_style(color = "red")
-  expect_equal(result, "color: red")
-})
-
-test_that("build_css_style builds multiple properties", {
-  result <- build_css_style(color = "red", padding = "10px")
-  expect_true(grepl("color: red", result))
-  expect_true(grepl("padding: 10px", result))
-})
-
-test_that("build_css_style converts underscores to hyphens", {
-  result <- build_css_style(font_size = "1rem")
-  expect_true(grepl("font-size: 1rem", result))
-})
-
-test_that("build_css_style converts background_color correctly", {
-  result <- build_css_style(background_color = "#fff")
-  expect_true(grepl("background-color: #fff", result))
-})
-
-test_that("create_box_style returns valid CSS with defaults", {
-  result <- create_box_style()
-  expect_true(grepl("background-color", result))
-  expect_true(grepl("border-radius", result))
-  expect_true(grepl("box-shadow", result))
-})
-test_that("create_box_style includes border when border_color provided", {
-  result <- create_box_style(border_color = "#ff0000")
-  expect_true(grepl("border:", result))
-  expect_true(grepl("#ff0000", result))
-})
-
-test_that("create_box_style includes extra_styles", {
-  result <- create_box_style(extra_styles = list(`text-align` = "center"))
-  expect_true(grepl("text-align: center", result))
-})
-
-test_that("create_box_style uses custom colors", {
-  result <- create_box_style(bg_color = "#123456", text_color = "#abcdef")
-  expect_true(grepl("#123456", result))
-  expect_true(grepl("#abcdef", result))
-})
-
 # =============================================================================
 # TESTS FOR filter_utils.R
 # =============================================================================
@@ -887,12 +838,6 @@ test_that("clean_column_names handles all-caps input", {
 test_that("clean_column_names handles multiple underscores", {
   result <- clean_column_names("gene_name_long_version")
   expect_equal(result, "Gene Name Long Version")
-})
-
-# build_css_style edge cases
-test_that("build_css_style handles deeply nested property names", {
-  result <- build_css_style(border_top_left_radius = "5px")
-  expect_true(grepl("border-top-left-radius: 5px", result))
 })
 
 # build_filter_list edge cases

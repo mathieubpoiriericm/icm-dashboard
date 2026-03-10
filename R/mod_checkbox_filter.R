@@ -172,6 +172,18 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
         selected <- input$filter
         prev <- shiny::isolate(previous_selection())
 
+        # If all deselected, reset to both choices
+        if (is.null(selected)) {
+          shiny::isolate(previous_selection(choices))
+          shiny::freezeReactiveValue(input, "filter")
+          shinyWidgets::updatePrettyCheckboxGroup(
+            session,
+            "filter",
+            selected = choices
+          )
+          return()
+        }
+
         if (identical(selected, prev)) {
           return()
         }
