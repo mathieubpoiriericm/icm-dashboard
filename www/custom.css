@@ -13,6 +13,12 @@
   --svd-bg-row-even: rgba(40, 30, 120, 0.02);
   --svd-bg-group: rgba(40, 30, 120, 0.04);
   --svd-border: rgba(40, 30, 120, 0.08);
+  --svd-bg-white: #ffffff;
+  --svd-bg-hover-accent: rgba(250, 70, 22, 0.1);
+  --svd-bg-active-accent: rgba(250, 70, 22, 0.12);
+  --svd-bg-row-stripe: rgba(40, 30, 120, 0.03);
+  --svd-bg-tooltip-hover: #eeedf5;
+  --svd-border-section: #9ca3af;
   --svd-link: #FA4616;
   --svd-link-visited: #281E78;
   --svd-success: #16a34a;
@@ -82,8 +88,8 @@ html {
 }
 
 body {
-  background: linear-gradient(160deg, #FFFFFF 0%, var(--svd-bg-page) 100%) !important;
-  min-width: 1000px;
+  background: linear-gradient(160deg, var(--svd-bg-white) 0%, var(--svd-bg-page) 100%) !important;
+  min-width: 768px;
   min-height: 100vh;
   padding: 2rem;
   margin: 0;
@@ -258,7 +264,7 @@ html h2 {
 }
 
 .bslib-page-navbar .navbar .navbar-nav .nav-link:hover {
-  background-color: rgba(250, 70, 22, 0.1);
+  background-color: var(--svd-bg-hover-accent);
   color: var(--svd-accent);
 }
 
@@ -268,7 +274,7 @@ html h2 {
 }
 
 .bslib-page-navbar .navbar .navbar-nav .nav-link.active {
-  background: rgba(250, 70, 22, 0.12);
+  background: var(--svd-bg-active-accent);
   color: var(--svd-accent);
   font-weight: 600;
   border: 1px solid rgba(250, 70, 22, 0.2);
@@ -322,7 +328,7 @@ html h2 {
 
 .section-divider {
   border: none;
-  border-top: 2px solid #9ca3af;
+  border-top: 2px solid var(--svd-border-section);
   margin: 1.5rem 0;
 }
 
@@ -347,8 +353,6 @@ html h2 {
   flex-direction: column;
   align-self: stretch;
   background: rgba(255, 255, 255, 0.85) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 .bslib-sidebar-layout {
@@ -736,7 +740,7 @@ body #sample_size_filter_card strong {
 .tooltip-box:hover {
   transform: translateY(-2px);
   box-shadow: var(--svd-shadow-md);
-  background-color: #eeedf5;
+  background-color: var(--svd-bg-tooltip-hover);
   border-bottom-color: var(--svd-primary);
   border-bottom-width: 2px;
 }
@@ -856,7 +860,7 @@ table.dataTable tbody td a:visited {
 }
 
 table.dataTable tbody tr:nth-child(even) {
-  background: rgba(40, 30, 120, 0.03);
+  background: var(--svd-bg-row-stripe);
 }
 
 table.dataTable tbody tr:hover {

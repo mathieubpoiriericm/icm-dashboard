@@ -35,6 +35,89 @@ spec:
           port: {{ .Values.postgresql.exporter.port }}
     {{- end }}
 ---
+# --- Pipeline: restrict outbound to PostgreSQL, DNS, and known APIs ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-pipeline-egress
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pipeline
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "svd-dashboard.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # HTTPS for external APIs (PubMed, NCBI, UniProt, Anthropic, Unpaywall)
+    - ports:
+        - protocol: TCP
+          port: 443
+---
+# --- Dashboard: restrict outbound to DNS and ClinicalTrials.gov API ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-dashboard-egress
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dashboard
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS for ClinicalTrials.gov API and geocoding
+    - ports:
+        - protocol: TCP
+          port: 443
+---
+# --- PostgreSQL: restrict outbound to DNS only ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-postgresql-egress
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution only
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
 # --- Dashboard: only accept connections from ingress-nginx ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

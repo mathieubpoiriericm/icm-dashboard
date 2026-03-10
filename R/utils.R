@@ -213,6 +213,44 @@ about_info_card <- function(label, content) {
   )
 }
 
+# Create DataTable Controls UI
+#
+# Generates the page-length select and search input controls for DataTables.
+# Used by both Table 1 and Table 2 to avoid HTML duplication.
+#
+# Args:
+#   page_length_id: Character. Input ID for the page length select.
+#   search_id: Character. Input ID for the search text input.
+#
+# Returns:
+#   A shiny div with the dt-bslib-controls class.
+datatable_controls_ui <- function(page_length_id, search_id) {
+  shiny::div(
+    class = "dt-bslib-controls",
+    shiny::div(
+      class = "dt-bslib-control-group",
+      shiny::tags$label(class = "dt-bslib-label", "Show"),
+      shiny::selectInput(
+        page_length_id,
+        label = NULL,
+        choices = c(10L, 25L, 50L, 100L),
+        selected = 10L,
+        width = "80px"
+      ),
+      shiny::tags$label(class = "dt-bslib-label", "entries")
+    ),
+    shiny::div(
+      class = "dt-bslib-control-group",
+      shiny::tags$label(class = "dt-bslib-label", "Search:"),
+      shiny::textInput(
+        search_id,
+        label = NULL,
+        width = "200px"
+      )
+    )
+  )
+}
+
 # Create Sidebar Filters Header
 #
 # Creates the standard "Filters" header with a horizontal rule used at the

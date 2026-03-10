@@ -22,11 +22,22 @@ spec:
         spec:
           serviceAccountName: {{ include "svd-dashboard.fullname" . }}-pipeline
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
           initContainers:
             # Step 1: Run the ETL pipeline
             - name: run-pipeline
               image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
               imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               command: ["python", "pipeline/main.py", "--days-back", "{{ .Values.pipeline.daysBack }}"]
               envFrom:
                 - secretRef:
@@ -43,6 +54,11 @@ spec:
             - name: sync-external
               image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
               imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               command: ["python", "pipeline/main.py", "--sync-external-data"]
               envFrom:
                 - secretRef:
@@ -59,6 +75,11 @@ spec:
             - name: generate-qs
               image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
               imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               command: ["Rscript", "scripts/trigger_update.R"]
               envFrom:
                 - secretRef:
@@ -84,6 +105,11 @@ spec:
             - name: restart-dashboard
               image: "{{ .Values.pipeline.image.repository }}:{{ .Values.pipeline.image.tag }}"
               imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               command:
                 - kubectl
                 - rollout

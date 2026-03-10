@@ -89,7 +89,7 @@ import time  # noqa: E402
 import traceback  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from datetime import datetime  # noqa: E402
-from typing import Final, TypedDict  # noqa: E402
+from typing import Any, Final, TypedDict  # noqa: E402
 
 import httpx  # noqa: E402
 from lxml import etree  # type: ignore[import-untyped]  # noqa: E402
@@ -106,7 +106,12 @@ load_dotenv(PROJECT_ROOT / ".env")
 import os  # noqa: E402
 
 from pipeline.batch_validation import batch_validate  # noqa: E402
-from pipeline.config import SAFE_XML_PARSER, PipelineConfig, validate_pmid  # noqa: E402
+from pipeline.config import (  # noqa: E402
+    NCBI_EFETCH_URL,
+    SAFE_XML_PARSER,
+    PipelineConfig,
+    validate_pmid,
+)
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
 from pipeline.database import (  # noqa: E402
     Database,
@@ -234,7 +239,7 @@ async def _validate_genes(
             logger.error(f"  Validation error for {gene.gene_symbol}: {result}")
             metrics.genes_rejected += 1
             rejected_genes.append(RejectedGene(gene=gene, reasons=[str(result)]))
-        elif result.is_valid:
+        elif result.is_valid and result.normalized_data is not None:
             validated_genes.append(result.normalized_data)
             metrics.genes_validated += 1
         else:
@@ -279,7 +284,7 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
     """
     pmid = validate_pmid(pmid)
 
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    url = NCBI_EFETCH_URL
     params: dict[str, str] = {"db": "pubmed", "id": pmid, "retmode": "xml"}
 
     if api_key := os.getenv("NCBI_API_KEY"):
@@ -307,6 +312,23 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
     except etree.XMLSyntaxError as e:
         logger.error(f"XML parsing failed for PMID {pmid}: {e}")
         return {"pmid": pmid, "doi": None}
+
+
+def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
+    """Record pipeline run to event log and send notification.
+
+    Args:
+        config: Pipeline configuration with event_db_path and healthcheck_url.
+        run_data: Pipeline run data dict for logging and notification.
+    """
+    event_log = EventLog(config.event_db_path)
+    try:
+        event_id = event_log.record("pipeline_completed", run_data)
+        send_pipeline_notification(run_data, config)
+        event_log.mark_notified([event_id])
+    finally:
+        event_log.close()
+    ping_success(config.healthcheck_url)
 
 
 async def process_paper(
@@ -599,14 +621,7 @@ async def run_pipeline(
             logger.info(f"JSON report written to: {report_path}")
             print_rich_summary(run_data)
 
-            event_log = EventLog(config.event_db_path)
-            try:
-                event_id = event_log.record("pipeline_completed", run_data)
-                send_pipeline_notification(run_data, config)
-                event_log.mark_notified([event_id])
-            finally:
-                event_log.close()
-            ping_success(config.healthcheck_url)
+            _record_and_notify(config, run_data)
 
             return metrics
 
@@ -652,14 +667,7 @@ async def run_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        event_log = EventLog(config.event_db_path)
-        try:
-            event_id = event_log.record("pipeline_completed", run_data)
-            send_pipeline_notification(run_data, config)
-            event_log.mark_notified([event_id])
-        finally:
-            event_log.close()
-        ping_success(config.healthcheck_url)
+        _record_and_notify(config, run_data)
 
         return metrics
 
@@ -843,14 +851,7 @@ async def run_local_pdf_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        event_log = EventLog(config.event_db_path)
-        try:
-            event_id = event_log.record("pipeline_completed", run_data)
-            send_pipeline_notification(run_data, config)
-            event_log.mark_notified([event_id])
-        finally:
-            event_log.close()
-        ping_success(config.healthcheck_url)
+        _record_and_notify(config, run_data)
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())
@@ -1041,14 +1042,7 @@ async def run_pmid_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        event_log = EventLog(config.event_db_path)
-        try:
-            event_id = event_log.record("pipeline_completed", run_data)
-            send_pipeline_notification(run_data, config)
-            event_log.mark_notified([event_id])
-        finally:
-            event_log.close()
-        ping_success(config.healthcheck_url)
+        _record_and_notify(config, run_data)
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())

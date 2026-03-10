@@ -28,13 +28,19 @@ class AsyncRateLimiter:
         self._rpm = rpm
         self._tpm = tpm
         self._request_times: deque[float] = deque()
-        self._token_log: deque[tuple[float, int]] = deque()
+        self._token_log: deque[tuple[float, int, int]] = deque()
         self._token_total: int = 0  # Running sum for O(1) TPM checks
         self._lock = asyncio.Lock()
         self._global_backoff_until: float = 0.0
+        self._next_request_id: int = 0
 
-    async def acquire(self, estimated_tokens: int = 2000) -> None:
-        """Wait until both RPM and TPM budgets allow a new request."""
+    async def acquire(self, estimated_tokens: int = 2000) -> int:
+        """Wait until both RPM and TPM budgets allow a new request.
+
+        Returns:
+            A request ID that must be passed to ``record_actual_usage()``
+            to correct the token estimate for this specific request.
+        """
         while True:
             async with self._lock:
                 now = asyncio.get_running_loop().time()
@@ -51,7 +57,7 @@ class AsyncRateLimiter:
                     while self._request_times and self._request_times[0] <= cutoff:
                         self._request_times.popleft()
                     while self._token_log and self._token_log[0][0] <= cutoff:
-                        _, pruned_tokens = self._token_log.popleft()
+                        _, pruned_tokens, _ = self._token_log.popleft()
                         self._token_total -= pruned_tokens
 
                     rpm_ok = self._rpm == 0 or len(self._request_times) < self._rpm
@@ -61,10 +67,12 @@ class AsyncRateLimiter:
                     )
 
                     if rpm_ok and tpm_ok:
+                        request_id = self._next_request_id
+                        self._next_request_id += 1
                         self._request_times.append(now)
-                        self._token_log.append((now, estimated_tokens))
+                        self._token_log.append((now, estimated_tokens, request_id))
                         self._token_total += estimated_tokens
-                        return
+                        return request_id
 
                     # Compute precise sleep: time until the oldest request expires
                     if self._request_times and self._rpm > 0:
@@ -76,21 +84,20 @@ class AsyncRateLimiter:
             await asyncio.sleep(sleep_time)
 
     async def record_actual_usage(
-        self, estimated_tokens: int, actual_tokens: int
+        self, request_id: int, actual_tokens: int
     ) -> None:
         """Correct the pre-estimated token count with actual usage.
 
-        Finds the most recent token log entry matching *estimated_tokens* and replaces
-        it with *actual_tokens*. This improves TPM tracking accuracy for subsequent
-        calls in the same 60s window.
+        Finds the token log entry matching *request_id* and replaces
+        its token count with *actual_tokens*. Pass ``actual_tokens=0``
+        to release a reservation after a failed API call.
         """
         async with self._lock:
-            # Walk backwards to find and correct the matching estimate
             for i in range(len(self._token_log) - 1, -1, -1):
-                ts, tokens = self._token_log[i]
-                if tokens == estimated_tokens:
-                    self._token_log[i] = (ts, actual_tokens)
-                    self._token_total += actual_tokens - estimated_tokens
+                ts, tokens, rid = self._token_log[i]
+                if rid == request_id:
+                    self._token_log[i] = (ts, actual_tokens, rid)
+                    self._token_total += actual_tokens - tokens
                     return
 
     def signal_rate_limit(self, backoff_seconds: float) -> None:

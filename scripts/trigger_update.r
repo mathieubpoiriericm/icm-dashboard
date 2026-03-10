@@ -103,7 +103,7 @@ message("\n[6/7] Reading PubMed references from database...")
 extract_unique_pmids <- function(references_column) {
   valid <- !is.na(references_column) & nchar(references_column) > 0L
   all_pmids <- unlist(
-    regmatches(references_column[valid], gregexpr("\\b\\d{7,8}\\b", references_column[valid])),
+    regmatches(references_column[valid], gregexpr("\\b\\d{4,8}\\b", references_column[valid])),
     use.names = FALSE
   )
   unique(all_pmids)

@@ -7,13 +7,54 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from pipeline.config import validate_pmid
+from pipeline.config import PipelineConfig, validate_pmid
 from pipeline.main import (
     PaperResult,
+    _validate_genes,
     fetch_paper_metadata,
     run_pipeline,
 )
-from pipeline.quality_metrics import TokenUsage
+from pipeline.quality_metrics import PipelineMetrics, TokenUsage
+from pipeline.validation import ValidationResult
+
+# ---------------------------------------------------------------------------
+# _validate_genes — None guard (Bug 5)
+# ---------------------------------------------------------------------------
+
+
+class TestValidateGenesNoneGuard:
+    async def test_none_normalized_data_skipped(self, make_gene_entry, mocker):
+        """Bug 5: is_valid=True with normalized_data=None must not crash."""
+        gene = make_gene_entry(confidence=0.9)
+        # Return a valid result but with None normalized_data
+        mocker.patch(
+            "pipeline.main.validate_gene_entry",
+            return_value=ValidationResult(
+                is_valid=True, errors=[], warnings=[], normalized_data=None
+            ),
+        )
+        config = PipelineConfig()
+        metrics = PipelineMetrics()
+        validated, rejected = await _validate_genes([gene], metrics, config)
+        assert validated == []
+        # Gene with None data should not be counted as validated
+        assert metrics.genes_validated == 0
+
+    async def test_valid_normalized_data_included(self, make_gene_entry, mocker):
+        """Normal case: is_valid=True with actual normalized_data."""
+        gene = make_gene_entry(confidence=0.9)
+        mocker.patch(
+            "pipeline.main.validate_gene_entry",
+            return_value=ValidationResult(
+                is_valid=True, errors=[], warnings=[], normalized_data=gene
+            ),
+        )
+        config = PipelineConfig()
+        metrics = PipelineMetrics()
+        validated, rejected = await _validate_genes([gene], metrics, config)
+        assert len(validated) == 1
+        assert metrics.genes_validated == 1
+
 
 # ---------------------------------------------------------------------------
 # validate_pmid

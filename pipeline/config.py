@@ -90,6 +90,17 @@ ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
 
 PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,9}$")
 
+# NCBI E-utilities base URLs
+NCBI_ESEARCH_URL: Final[str] = (
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+)
+NCBI_ESUMMARY_URL: Final[str] = (
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+)
+NCBI_EFETCH_URL: Final[str] = (
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+)
+
 # Defense-in-depth: disable external entity resolution and network access
 # to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
 SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(

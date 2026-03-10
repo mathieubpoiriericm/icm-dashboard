@@ -78,6 +78,13 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         shiny::tags$script(src = "js/popper.min.js", defer = NA),
         shiny::tags$script(src = "js/tippy.min.js", defer = NA),
 
+        # Inject slider bounds from R constants into JS (avoids hardcoding)
+        shiny::tags$script(shiny::HTML(sprintf(
+          "window.SLIDER_MIN=%d;window.SLIDER_MAX=%d;window.SLIDER_TICKS=[%d,500,1000,1500,2000,2500,3000,%d];",
+          SAMPLE_SIZE_MIN, SAMPLE_SIZE_MAX,
+          SAMPLE_SIZE_MIN, SAMPLE_SIZE_MAX
+        ))),
+
         # External JavaScript (minified for faster loading, defer for
         # non-blocking)
         shiny::tags$script(src = "custom.min.js", defer = NA)
@@ -320,31 +327,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             ))
           ),
           shiny::uiOutput("filter_message_table1"),
-          # bslib table controls
-          shiny::div(
-            class = "dt-bslib-controls",
-            shiny::div(
-              class = "dt-bslib-control-group",
-              shiny::tags$label(class = "dt-bslib-label", "Show"),
-              shiny::selectInput(
-                "table1_page_length",
-                label = NULL,
-                choices = c(10L, 25L, 50L, 100L),
-                selected = 10L,
-                width = "80px"
-              ),
-              shiny::tags$label(class = "dt-bslib-label", "entries")
-            ),
-            shiny::div(
-              class = "dt-bslib-control-group",
-              shiny::tags$label(class = "dt-bslib-label", "Search:"),
-              shiny::textInput(
-                "table1_search",
-                label = NULL,
-                width = "200px"
-              )
-            )
-          ),
+          datatable_controls_ui("table1_page_length", "table1_search"),
           DT::dataTableOutput("firstTable")
         )
       )
@@ -488,31 +471,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             ))
           ),
           shiny::uiOutput("filter_message_table2"),
-          # bslib table controls
-          shiny::div(
-            class = "dt-bslib-controls",
-            shiny::div(
-              class = "dt-bslib-control-group",
-              shiny::tags$label(class = "dt-bslib-label", "Show"),
-              shiny::selectInput(
-                "table2_page_length",
-                label = NULL,
-                choices = c(10L, 25L, 50L, 100L),
-                selected = 10L,
-                width = "80px"
-              ),
-              shiny::tags$label(class = "dt-bslib-label", "entries")
-            ),
-            shiny::div(
-              class = "dt-bslib-control-group",
-              shiny::tags$label(class = "dt-bslib-label", "Search:"),
-              shiny::textInput(
-                "table2_search",
-                label = NULL,
-                width = "200px"
-              )
-            )
-          ),
+          datatable_controls_ui("table2_page_length", "table2_search"),
           DT::dataTableOutput("secondTable")
         )
       )

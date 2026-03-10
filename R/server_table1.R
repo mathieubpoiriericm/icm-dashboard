@@ -242,19 +242,12 @@ build_table1_datatable <- function(filtered_data) {
           scrollCollapse = TRUE,
           searchDelay = DATATABLE_SEARCH_DELAY,
           orderCellsTop = FALSE,
-          initComplete = DT::JS(
-            "function() {
-              $(this.api().table().header())
-                .find('th').css('text-align', 'center');
-            }"
-          ),
-          drawCallback = DT::JS(
-            "function() {
-              if (typeof initializeTippy === 'function') {
-                initializeTippy();
-              }
-            }"
-          )
+          initComplete = DT::JS(sprintf(
+            "function() { %s }", DATATABLE_INIT_HEADER_JS
+          )),
+          drawCallback = DT::JS(sprintf(
+            "function() { %s }", DATATABLE_TIPPY_CALLBACK_JS
+          ))
         )
       ) |>
         DT::formatStyle(
@@ -264,19 +257,23 @@ build_table1_datatable <- function(filtered_data) {
             "Link to Monogenic Disease"
           ),
           target = "cell",
-          fontStyle = DT::JS("value == '(none found)' ? 'italic' : 'normal'")
+          fontStyle = DT::JS(sprintf(
+            "value == '%s' ? 'italic' : 'normal'", PLACEHOLDER_NONE_FOUND
+          ))
         ) |>
         DT::formatStyle(
           columns = c("Brain Cell Types", "Affected Pathway"),
           target = "cell",
-          fontStyle = DT::JS("value == '(unknown)' ? 'italic' : 'normal'")
+          fontStyle = DT::JS(sprintf(
+            "value == '%s' ? 'italic' : 'normal'", PLACEHOLDER_UNKNOWN
+          ))
         ) |>
         DT::formatStyle(
           columns = "References",
           target = "cell",
-          fontStyle = DT::JS(
-            "value == '(reference needed)' ? 'italic' : 'normal'"
-          )
+          fontStyle = DT::JS(sprintf(
+            "value == '%s' ? 'italic' : 'normal'", PLACEHOLDER_REFERENCE_NEEDED
+          ))
         )
 
       dt

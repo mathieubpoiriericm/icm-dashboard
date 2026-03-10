@@ -33,7 +33,17 @@ build_table2_loader <- function(
     if (is.null(table2_data())) {
       message("Loading Table 2 data...")
 
-      data <- load_table2_data()
+      data <- tryCatch(
+        load_table2_data(),
+        error = function(e) {
+          message(sprintf("Failed to load Table 2 data: %s", e$message))
+          NULL
+        }
+      )
+      shiny::validate(shiny::need(
+        !is.null(data),
+        "Clinical trials data is currently unavailable. Please try again later."
+      ))
 
       table2_display <- prepare_table2_display(
         data$table2,
@@ -222,9 +232,11 @@ build_table2_filtered_data <- function(
     }
 
     # Sponsor Type filter (special logic for Academic/Industry)
-    spon_filtered <- apply_sponsor_type_filter(table2, spon_filter())
-    if (nrow(spon_filtered) < nrow(table2)) {
-      kept_rows <- intersect(kept_rows, spon_filtered$original_row_num)
+    if (!"all" %in% spon_filter() && length(spon_filter()) > 0L) {
+      spon_filtered <- apply_sponsor_type_filter(table2, spon_filter())
+      if (nrow(spon_filtered) < nrow(table2)) {
+        kept_rows <- intersect(kept_rows, spon_filtered$original_row_num)
+      }
     }
 
     # Sample size range filter
@@ -488,10 +500,9 @@ build_table2_datatable <- function(filtered_data2) {
           scrollX = TRUE,
           scrollCollapse = TRUE,
           searchDelay = DATATABLE_SEARCH_DELAY,
-          initComplete = DT::JS(
+          initComplete = DT::JS(sprintf(
             "function() {
-              $(this.api().table().header())
-                .find('th').css('text-align', 'center');
+              %s
 
               // Cache stripe colors at init (runs once, not on every draw)
               var rows = this.api().rows().nodes();
@@ -499,14 +510,12 @@ build_table2_datatable <- function(filtered_data2) {
                 this._stripeColor = $(rows[1]).css('background-color');
                 this._whiteColor = $(rows[0]).css('background-color');
               }
-            }"
-          ),
+            }",
+            DATATABLE_INIT_HEADER_JS
+          )),
           drawCallback = DT::JS(sprintf(
             "function(settings) {
-              // Initialize tooltips
-              if (typeof initializeTippy === 'function') {
-                initializeTippy();
-              }
+              %s
 
               var api = this.api();
               var rows = api.rows({page: 'current'}).nodes();
@@ -582,6 +591,7 @@ build_table2_datatable <- function(filtered_data2) {
                 }
               }
             }",
+            DATATABLE_TIPPY_CALLBACK_JS,
             color_class_col_idx,
             rowspans_col_idx
           ))

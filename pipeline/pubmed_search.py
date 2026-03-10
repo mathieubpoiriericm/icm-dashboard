@@ -158,6 +158,7 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
 
         if web_env and query_key:
             fetched = len(pmids)
+            pagination_error = False
             while fetched < total_count and fetched < MAX_TOTAL_RESULTS:
                 try:
                     handle = await asyncio.to_thread(
@@ -177,6 +178,7 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
                     logger.warning(
                         f"PubMed pagination failed at offset {fetched}: {e}"
                     )
+                    pagination_error = True
                     break
 
                 batch_ids = batch.get("IdList", [])
@@ -185,7 +187,13 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
                 pmids.extend(batch_ids)
                 fetched += len(batch_ids)
 
-            if fetched >= MAX_TOTAL_RESULTS:
+            if pagination_error:
+                logger.warning(
+                    f"PubMed results TRUNCATED due to pagination error: "
+                    f"retrieved {len(pmids)} of {total_count} total available. "
+                    f"Some papers may be missing from this pipeline run."
+                )
+            elif fetched >= MAX_TOTAL_RESULTS:
                 logger.warning(
                     f"PubMed results capped at {MAX_TOTAL_RESULTS} "
                     f"(total available: {total_count})"

@@ -11,7 +11,7 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any
 
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
@@ -23,7 +23,7 @@ from pipeline.cache_utils import (
     evict_lru,
     make_log_progress,
 )
-from pipeline.config import SAFE_XML_PARSER, PipelineConfig
+from pipeline.config import NCBI_EFETCH_URL, SAFE_XML_PARSER, PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
@@ -32,9 +32,8 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
-NCBI_EFETCH_URL: Final[str] = (
-    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-)
+
+# NCBI_EFETCH_URL imported from pipeline.config
 
 
 @dataclass(slots=True)

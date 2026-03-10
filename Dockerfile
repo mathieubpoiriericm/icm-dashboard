@@ -12,21 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   curl \
   && rm -rf /var/lib/apt/lists/*
 
-RUN R -e " \
-  install.packages('qs', verbose = TRUE); \
-  if (!requireNamespace('qs', quietly = TRUE)) stop('qs package failed to install') \
-  "
-
-RUN R -e "install.packages(c( \
-  'bslib', 'dplyr', 'purrr', 'stringr', 'DT', \
-  'data.table', 'sysfonts', 'showtext', 'fastmap', 'memoise', \
-  'cachem', 'digest', 'jsonlite', 'shinyWidgets', \
-  'httr2', 'htmltools', 'leaflet', 'tidygeocoder', \
-  'future', 'future.apply' \
-  ))"
-
 RUN rm -rf /opt/shiny-server/samples
 RUN rm -rf /srv/shiny-server/*
+
+# Install R dependencies from renv.lock for reproducible builds
+COPY renv.lock /tmp/renv.lock
+RUN R -e "install.packages('renv'); renv::restore(lockfile = '/tmp/renv.lock', prompt = FALSE)" \
+  && R -e "if (!requireNamespace('qs', quietly = TRUE)) stop('qs package failed to install')" \
+  && rm /tmp/renv.lock
 
 COPY app.R /srv/shiny-server
 COPY R /srv/shiny-server/R

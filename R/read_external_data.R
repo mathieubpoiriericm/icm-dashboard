@@ -24,7 +24,7 @@ pg_placeholders <- function(n) paste0("$", seq_len(n), collapse = ", ")
 #   Data frame with columns: name, uid, description, otheraliases
 #   Matching the format expected by the dashboard.
 read_ncbi_gene_info_from_db <- function(gene_symbols, con = NULL, ...) {
-  if (length(gene_symbols) == 0) {
+  if (length(gene_symbols) == 0L) {
     return(data.frame(
       name = character(0),
       uid = character(0),
@@ -104,7 +104,7 @@ read_table2_ncbi_info_db <- function(con = NULL, ...) {
     unique(all_genes)
   }, con = con, ...)
 
-  if (length(genes) == 0) {
+  if (length(genes) == 0L) {
     return(data.frame(
       name = character(0),
       uid = character(0),
@@ -138,7 +138,7 @@ read_table2_ncbi_info_db <- function(con = NULL, ...) {
 #   molecular_function, cellular_component, url, protein_name
 #   Matching the format expected by the dashboard.
 read_uniprot_data_from_db <- function(gene_symbols, con = NULL, ...) {
-  if (length(gene_symbols) == 0) {
+  if (length(gene_symbols) == 0L) {
     return(data.frame(
       gene = character(0),
       accession = character(0),
@@ -207,7 +207,7 @@ read_uniprot_data_from_db <- function(gene_symbols, con = NULL, ...) {
 #   Data frame with columns: pmid, formatted_ref
 #   Matching the format expected by the dashboard.
 read_pubmed_refs_from_db <- function(pmids, con = NULL, ...) {
-  if (length(pmids) == 0) {
+  if (length(pmids) == 0L) {
     return(data.frame(
       pmid = character(0),
       formatted_ref = character(0),

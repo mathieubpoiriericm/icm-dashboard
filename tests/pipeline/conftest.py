@@ -264,7 +264,7 @@ def _reset_validation_client():
     yield
     import pipeline.validation as val
 
-    val._http_client = None
+    val._client_manager.reset()
     val._ncbi_semaphore = None
     val._last_request_time = 0.0
     val._throttle_lock = None

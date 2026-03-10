@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS pubmed_refs (
 
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_genes_gene ON genes(gene);
+CREATE INDEX IF NOT EXISTS idx_genes_gene_upper ON genes(UPPER(gene));
 CREATE INDEX IF NOT EXISTS idx_trials_registry ON clinical_trials(registry_id);
 CREATE INDEX IF NOT EXISTS idx_trials_drug ON clinical_trials(drug);
 CREATE INDEX IF NOT EXISTS idx_pubmed_refs_pmid ON pubmed_refs(pmid);

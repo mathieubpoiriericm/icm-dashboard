@@ -105,13 +105,32 @@ window.initializeTippy = function() {
         }
       });
 
-      // Clean up destroyed instances before adding new ones
+      // Clean up instances for elements no longer in the DOM
       window.tippyInstances = window.tippyInstances.filter(
-        function(inst) { return inst && !inst.state.isDestroyed; }
+        function(inst) {
+          if (!inst || inst.state.isDestroyed) return false;
+          if (!document.body.contains(inst.reference)) {
+            inst.destroy();
+            return false;
+          }
+          return true;
+        }
       ).concat(newInstances);
     }
   }, 100);
 };
+
+// Destroy all Tippy instances on page unload to prevent memory leaks
+window.addEventListener('beforeunload', function() {
+  if (window.tippyInstances && window.tippyInstances.length > 0) {
+    window.tippyInstances.forEach(function(inst) {
+      if (inst && !inst.state.isDestroyed) {
+        inst.destroy();
+      }
+    });
+    window.tippyInstances = [];
+  }
+});
 
 // =============================================================================
 // UNIFIED DATATABLE EVENT HANDLERS
@@ -186,11 +205,11 @@ $(document).on('shiny:connected', function() {
         }
       });
 
-      // Create custom tick marks at 500 intervals plus min/max
-      var min = 15;
-      var max = 3156;
+      // Use slider bounds injected from R constants (window.SLIDER_*)
+      var min = window.SLIDER_MIN || 15;
+      var max = window.SLIDER_MAX || 3156;
       var range = max - min;
-      var tickValues = [15, 500, 1000, 1500, 2000, 2500, 3000, 3156];
+      var tickValues = window.SLIDER_TICKS || [15, 500, 1000, 1500, 2000, 2500, 3000, 3156];
 
       // Create custom grid container
       var customGrid = $('<div class="irs-grid custom-grid" style="display: block;"></div>');
@@ -438,9 +457,7 @@ $(window).on('resize', function() {
 
 // Fix orphan DataTable "entries" labels that have no associated form field
 // These generate accessibility warnings in Chrome DevTools
-var labelsFixed = false;
 function fixOrphanDtLabels() {
-  if (labelsFixed) return;
   $('.dt-bslib-label').each(function() {
     var $label = $(this);
     // Only convert if it's actually a label element (not already fixed)
@@ -449,7 +466,6 @@ function fixOrphanDtLabels() {
       $label.replaceWith($span);
     }
   });
-  labelsFixed = true;
 }
 
 // Run on Shiny connect (init.dt handled in unified handler above)

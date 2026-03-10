@@ -25,8 +25,10 @@
     // Prevent label boxes from overlapping their own drug markers
   function adjustMarkerLabelOverlap() {
     const markers = document.querySelectorAll('g.drug use');
+    if (!markers || markers.length === 0) return;
     markers.forEach(mk => {
       const g = mk.closest('g.drug');
+      if (!g) return;
       const text = g.querySelector('text');
       const rect = g.querySelector('rect.label-bg');
       if (!text || !rect) return;
@@ -236,6 +238,44 @@
     return tip;
   }
 
+  // Shared tooltip positioning logic
+  function computeTooltipPosition(x, y, tipWidth, tipHeight) {
+    const margin = 10;
+    const cursorOffset = 5;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let finalX = x - tipWidth / 2;
+    let finalY = y - tipHeight - cursorOffset;
+    const fitsAbove = finalY >= margin;
+
+    if (fitsAbove) {
+      if (finalX < margin) {
+        finalX = margin;
+      } else if (finalX + tipWidth > viewportWidth - margin) {
+        finalX = viewportWidth - tipWidth - margin;
+      }
+    } else {
+      finalX = x + cursorOffset + 15;
+      finalY = y - tipHeight / 2;
+
+      if (finalY < margin) {
+        finalY = margin;
+      } else if (finalY + tipHeight > viewportHeight - margin) {
+        finalY = viewportHeight - tipHeight - margin;
+      }
+
+      if (finalX + tipWidth > viewportWidth - margin) {
+        finalX = x - tipWidth - cursorOffset - 15;
+        if (finalX < margin) {
+          finalX = margin;
+        }
+      }
+    }
+
+    return { left: finalX, top: finalY };
+  }
+
   function showTooltip(html, x, y, accentColor) {
     const tip = ensureTooltip();
     tip.innerHTML = html;
@@ -256,53 +296,9 @@
     tip.style.visibility = 'hidden';
     tip.style.display = 'flex';
 
-    const tipWidth = tip.offsetWidth;
-    const tipHeight = tip.offsetHeight;
-    const margin = 10; // margin from viewport edges
-    const cursorOffset = 5; // offset from cursor
-
-    // Get viewport dimensions
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Calculate initial position (centered above cursor)
-    let finalX = x - tipWidth / 2;
-    let finalY = y - tipHeight - cursorOffset;
-
-    // Check if tooltip fits above cursor
-    const fitsAbove = finalY >= margin;
-
-    if (fitsAbove) {
-      // Tooltip fits above - adjust horizontal position to stay within viewport
-      if (finalX < margin) {
-        finalX = margin;
-      } else if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = viewportWidth - tipWidth - margin;
-      }
-    } else {
-      // Doesn't fit above - show to the right of cursor (avoid below due to
-      // iframe clipping issues)
-      finalX = x + cursorOffset + 15;
-      finalY = y - tipHeight / 2; // vertically centered on cursor
-
-      // Clamp vertical position
-      if (finalY < margin) {
-        finalY = margin;
-      } else if (finalY + tipHeight > viewportHeight - margin) {
-        finalY = viewportHeight - tipHeight - margin;
-      }
-
-      // If right side doesn't fit, try left side
-      if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = x - tipWidth - cursorOffset - 15;
-        if (finalX < margin) {
-          finalX = margin;
-        }
-      }
-    }
-
-    tip.style.left = finalX + 'px';
-    tip.style.top = finalY + 'px';
+    const pos = computeTooltipPosition(x, y, tip.offsetWidth, tip.offsetHeight);
+    tip.style.left = pos.left + 'px';
+    tip.style.top = pos.top + 'px';
     tip.style.visibility = '';
 
     tip.classList.remove('show');
@@ -351,52 +347,12 @@
         height: tip.offsetHeight
       };
     }
-    const tipWidth = cachedTipDimensions.width;
-    const tipHeight = cachedTipDimensions.height;
-    const margin = 10;
-    const cursorOffset = 5;
 
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Calculate initial position (centered above cursor)
-    let finalX = x - tipWidth / 2;
-    let finalY = y - tipHeight - cursorOffset;
-
-    // Check if tooltip fits above cursor
-    const fitsAbove = finalY >= margin;
-
-    if (fitsAbove) {
-      // Tooltip fits above - adjust horizontal position to stay within viewport
-      if (finalX < margin) {
-        finalX = margin;
-      } else if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = viewportWidth - tipWidth - margin;
-      }
-    } else {
-      // Doesn't fit above - show to the right of cursor (avoid below due to
-      // iframe clipping issues)
-      finalX = x + cursorOffset + 15;
-      finalY = y - tipHeight / 2; // vertically centered on cursor
-
-      // Clamp vertical position
-      if (finalY < margin) {
-        finalY = margin;
-      } else if (finalY + tipHeight > viewportHeight - margin) {
-        finalY = viewportHeight - tipHeight - margin;
-      }
-
-      // If right side doesn't fit, try left side
-      if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = x - tipWidth - cursorOffset - 15;
-        if (finalX < margin) {
-          finalX = margin;
-        }
-      }
-    }
-
-    tip.style.left = finalX + 'px';
-    tip.style.top = finalY + 'px';
+    const pos = computeTooltipPosition(
+      x, y, cachedTipDimensions.width, cachedTipDimensions.height
+    );
+    tip.style.left = pos.left + 'px';
+    tip.style.top = pos.top + 'px';
   }
 
   function initTooltipHandlers() {
@@ -463,36 +419,43 @@
         hideTooltip();
       });
     });
+    // Extract drug data attributes from a node (shared by click/mouseover)
+    function readDrugAttributes(node) {
+      return {
+        name:    escapeHtml(node.getAttribute('data-drug')    || 'Unknown'),
+        phase:   escapeHtml(node.getAttribute('data-phase')    || '–'),
+        pop:     escapeHtml(node.getAttribute('data-pop')      || '–'),
+        mech:    escapeHtml(node.getAttribute('data-mech')     || '–'),
+        gtarget: escapeHtml(node.getAttribute('data-gtarget')  || '–'),
+        gevid:   escapeHtml(node.getAttribute('data-ge')       || '–'),
+        tname:   escapeHtml(node.getAttribute('data-tname')    || '–'),
+        regid:   escapeHtml(node.getAttribute('data-regid')    || '–'),
+        svdpopd: escapeHtml(node.getAttribute('data-svdpopd')  || '–'),
+        ssize:   escapeHtml(node.getAttribute('data-ssize')    || '–'),
+        estcomp: escapeHtml(node.getAttribute('data-estcomp')  || '–'),
+        pco:     escapeHtml(node.getAttribute('data-pco')      || '–'),
+        sptype:  escapeHtml(node.getAttribute('data-sptype')   || '–')
+      };
+    }
+
     nodes.forEach(node => {
       node.addEventListener('click', (ev) => {
-        const name    = escapeHtml(node.getAttribute('data-drug')    || 'Unknown');
-        const phase   = escapeHtml(node.getAttribute('data-phase')    || '–');
-        const pop     = escapeHtml(node.getAttribute('data-pop')      || '–');
-        const mech    = escapeHtml(node.getAttribute('data-mech')     || '–');
-        const gtarget = escapeHtml(node.getAttribute('data-gtarget')  || '–');
-        const gevid   = escapeHtml(node.getAttribute('data-ge')       || '–');
-        const tname   = escapeHtml(node.getAttribute('data-tname')    || '–');
-        const regid   = escapeHtml(node.getAttribute('data-regid')    || '–');
-        const svdpopd = escapeHtml(node.getAttribute('data-svdpopd')  || '–');
-        const ssize   = escapeHtml(node.getAttribute('data-ssize')    || '–');
-        const estcomp = escapeHtml(node.getAttribute('data-estcomp')  || '–');
-        const pco     = escapeHtml(node.getAttribute('data-pco')      || '–');
-        const sptype  = escapeHtml(node.getAttribute('data-sptype')   || '–');
+        const d = readDrugAttributes(node);
 
         const html = `
-          <h2 style="margin-top:0; font-size:16px;">${name}</h2>
+          <h2 style="margin-top:0; font-size:16px;">${d.name}</h2>
           <hr>
-          <p><strong>Mechanism of Action:</strong> ${mech}</p>
-          <p><strong>Genetic Target:</strong> ${gtarget}</p>
-          <p><strong>Genetic Evidence:</strong> ${gevid}</p>
-          <p><strong>Clinical Trial Name:</strong> ${tname}</p>
-          <p><strong>Registry ID:</strong> ${regid}</p>
-          <p><strong>Clinical Trial Phase:</strong> ${phase}</p>
-          <p><strong>SVD Population Details:</strong> ${svdpopd}</p>
-          <p><strong>Target Sample Size:</strong> ${ssize}</p>
-          <p><strong>Estimated Completion Date:</strong> ${estcomp}</p>
-          <p><strong>Primary Outcome:</strong> ${pco}</p>
-          <p><strong>Sponsor Type:</strong> ${sptype}</p>
+          <p><strong>Mechanism of Action:</strong> ${d.mech}</p>
+          <p><strong>Genetic Target:</strong> ${d.gtarget}</p>
+          <p><strong>Genetic Evidence:</strong> ${d.gevid}</p>
+          <p><strong>Clinical Trial Name:</strong> ${d.tname}</p>
+          <p><strong>Registry ID:</strong> ${d.regid}</p>
+          <p><strong>Clinical Trial Phase:</strong> ${d.phase}</p>
+          <p><strong>SVD Population Details:</strong> ${d.svdpopd}</p>
+          <p><strong>Target Sample Size:</strong> ${d.ssize}</p>
+          <p><strong>Estimated Completion Date:</strong> ${d.estcomp}</p>
+          <p><strong>Primary Outcome:</strong> ${d.pco}</p>
+          <p><strong>Sponsor Type:</strong> ${d.sptype}</p>
         `;
 
         const sb = document.getElementById('sidebar');
@@ -513,37 +476,25 @@
         });
       });
       node.addEventListener('mouseover', (ev) => {
-        const name    = escapeHtml(node.getAttribute('data-drug')    || 'Unknown');
-        const phase   = escapeHtml(node.getAttribute('data-phase')    || '–');
-        const pop     = escapeHtml(node.getAttribute('data-pop')      || '–');
-        const mech    = escapeHtml(node.getAttribute('data-mech')     || '–');
-        const gtarget = escapeHtml(node.getAttribute('data-gtarget')  || '–');
-        const gevid   = escapeHtml(node.getAttribute('data-ge')       || '–');
-        const tname   = escapeHtml(node.getAttribute('data-tname')    || '–');
-        const regid   = escapeHtml(node.getAttribute('data-regid')    || '–');
-        const svdpopd = escapeHtml(node.getAttribute('data-svdpopd')  || '–');
-        const ssize   = escapeHtml(node.getAttribute('data-ssize')    || '–');
-        const estcomp = escapeHtml(node.getAttribute('data-estcomp')  || '–');
-        const pco     = escapeHtml(node.getAttribute('data-pco')      || '–');
-        const sptype  = escapeHtml(node.getAttribute('data-sptype')   || '–');
+        const d = readDrugAttributes(node);
 
         const html = `
   <div style="padding:2px 4px;">
     <div style="font-size:14px; font-weight:600; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid var(--tip-divider-color, #ddd);">
-      ${name}
+      ${d.name}
     </div>
     <div style="font-size:12px; line-height:1.6;">
-      <div><strong>Mechanism of Action:</strong> ${mech}</div>
-      <div><strong>Genetic Target:</strong> ${gtarget}</div>
-      <div><strong>Genetic Evidence:</strong> ${gevid}</div>
-      <div><strong>Clinical Trial Name:</strong> ${tname}</div>
-      <div><strong>Registry ID:</strong> ${regid}</div>
-      <div><strong>Clinical Trial Phase:</strong> ${phase}</div>
-      <div><strong>SVD Population Details:</strong> ${svdpopd}</div>
-      <div><strong>Target Sample Size:</strong> ${ssize}</div>
-      <div><strong>Estimated Completion Date:</strong> ${estcomp}</div>
-      <div><strong>Primary Outcome:</strong> ${pco}</div>
-      <div><strong>Sponsor Type:</strong> ${sptype}</div>
+      <div><strong>Mechanism of Action:</strong> ${d.mech}</div>
+      <div><strong>Genetic Target:</strong> ${d.gtarget}</div>
+      <div><strong>Genetic Evidence:</strong> ${d.gevid}</div>
+      <div><strong>Clinical Trial Name:</strong> ${d.tname}</div>
+      <div><strong>Registry ID:</strong> ${d.regid}</div>
+      <div><strong>Clinical Trial Phase:</strong> ${d.phase}</div>
+      <div><strong>SVD Population Details:</strong> ${d.svdpopd}</div>
+      <div><strong>Target Sample Size:</strong> ${d.ssize}</div>
+      <div><strong>Estimated Completion Date:</strong> ${d.estcomp}</div>
+      <div><strong>Primary Outcome:</strong> ${d.pco}</div>
+      <div><strong>Sponsor Type:</strong> ${d.sptype}</div>
     </div>
   </div>`;
         const popColor = node.getAttribute('data-pop-color') || '#444444';
@@ -564,25 +515,15 @@
     try {
       await waitForFonts();
       await nextFrame();
-      adjustTwoLinePopLabels();
-      adjustLabelBackgrounds();
       adjustMarkerLabelOverlap();
       adjustLegendBox();
       adjustLegendBoxMOA();
-      if (typeof adjustDrugLabelCollisions === 'function') {
-        adjustDrugLabelCollisions();
-      }
       avoidCognitiveOverlap();
       await nextFrame();
       setTimeout(() => {
-        adjustTwoLinePopLabels();
-        adjustLabelBackgrounds();
         adjustMarkerLabelOverlap();
         adjustLegendBox();
         adjustLegendBoxMOA();
-        if (typeof adjustDrugLabelCollisions === 'function') {
-          adjustDrugLabelCollisions();
-        }
         avoidCognitiveOverlap();
       }, 140);
       initTooltipHandlers();

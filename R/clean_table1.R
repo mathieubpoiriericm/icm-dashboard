@@ -66,63 +66,26 @@ clean_table1 <- function(
   table1$`GWAS Trait` <- strsplit(table1$`GWAS Trait`, ", ", fixed = TRUE)
 
   # Clean up "Evidence from Other Omics Studies" column
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    "*",
-    "",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
-  )
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    ";(?=[^[:alnum:]]|$)",
-    "",
-    table1$`Evidence from Other Omics Studies`,
-    perl = TRUE
-  )
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    ";",
-    ", ",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
-  )
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    ":",
-    ";",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
-  )
-  table1$`Evidence from Other Omics Studies` <- gsub(
+  # Extract to local variable, apply all transforms, assign back once
+  omics_col <- table1$`Evidence from Other Omics Studies`
+  omics_col <- gsub("*", "", omics_col, fixed = TRUE)
+  omics_col <- gsub(";(?=[^[:alnum:]]|$)", "", omics_col, perl = TRUE)
+  omics_col <- gsub(";", ", ", omics_col, fixed = TRUE)
+  omics_col <- gsub(":", ";", omics_col, fixed = TRUE)
+  omics_col <- gsub(
     paste0(
       "Evidence for causal implication from ML-based ",
       "functional prediction (MENTR)"
     ),
     "mutation effect prediction on ncRNA transcription",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
+    omics_col, fixed = TRUE
   )
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    "YFS.BLOOD.RNAARR",
-    "",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
-  )
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    "GTEX - Cross-tissue sCCA3",
-    "cross-tissue",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
-  )
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    "GTEx.",
-    "",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
-  )
-  table1$`Evidence from Other Omics Studies` <- gsub(
-    "_",
-    " ",
-    table1$`Evidence from Other Omics Studies`,
-    fixed = TRUE
-  )
+  omics_col <- gsub("YFS.BLOOD.RNAARR", "", omics_col, fixed = TRUE)
+  omics_col <- gsub("GTEX - Cross-tissue sCCA3", "cross-tissue", omics_col,
+                     fixed = TRUE)
+  omics_col <- gsub("GTEx.", "", omics_col, fixed = TRUE)
+  omics_col <- gsub("_", " ", omics_col, fixed = TRUE)
+  table1$`Evidence from Other Omics Studies` <- omics_col
   table1$`Evidence from Other Omics Studies`[is.na(
     table1$`Evidence from Other Omics Studies`
   )] <- "(none found)"
@@ -201,16 +164,16 @@ clean_table1 <- function(
   table1$`Affected Pathway` <- tolower(table1$`Affected Pathway`)
 
   table1$`Mendelian Randomization` <- gsub(
-    "Y",
+    "^Y$",
     "Yes",
     table1$`Mendelian Randomization`,
-    fixed = TRUE
+    perl = TRUE
   )
   table1$`Mendelian Randomization` <- gsub(
-    "N",
+    "^N$",
     "No",
     table1$`Mendelian Randomization`,
-    fixed = TRUE
+    perl = TRUE
   )
 
   # Replace "small vessel stroke" with "SVS" across all rows

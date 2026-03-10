@@ -18,6 +18,9 @@
 # Returns:
 #   A Shiny server function.
 build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
+  if (!is.null(preloaded_table2)) {
+    message("Using preloaded Table 2 data (direct reference)")
+  }
   function(input, output, session) {
     # Extract data from app_data
     table1 <- app_data$table1
@@ -39,7 +42,6 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
       load_table2 <- shiny::reactive({
         preloaded_table2
       })
-      message("Using preloaded Table 2 data (direct reference)")
     } else {
       # Lazy loading: create reactiveVals to track loading state
       table2_reactive_vals <- create_table2_reactive_vals()

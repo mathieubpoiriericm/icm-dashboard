@@ -2,8 +2,6 @@
 # Data loading and preprocessing
 # nolint start: object_usage_linter.
 
-.N_THREADS <- parallel::detectCores()
-
 # =============================================================================
 # DATA FILE VERIFICATION
 # =============================================================================
@@ -219,61 +217,6 @@ safe_read_data <- function(file_path) {
   stop(sprintf("File not found: %s", file_path), call. = FALSE)
 }
 
-# Alias for backward compatibility with existing code
-safe_read_rds <- safe_read_data
-
-# Convert RDS files to qs format for faster loading
-#
-# Converts all RDS files to qs format based on DATA_PATHS configuration.
-# Run this once after deployment or when data files are updated.
-#
-# Args:
-#   overwrite: Logical. Overwrite existing qs files. Defaults to FALSE.
-#
-# Returns:
-#   Invisible NULL. Prints conversion status.
-convert_rds_to_qs <- function(overwrite = FALSE) {
-  message("Converting RDS files to QS format...")
-
-  # Get qs paths from DATA_PATHS and derive rds paths
-  qs_paths <- unlist(
-    DATA_PATHS[grep("\\.qs$", DATA_PATHS, ignore.case = TRUE)]
-  )
-
-  for (qs_path in qs_paths) {
-    rds_path <- sub("\\.qs$", ".rds", qs_path, ignore.case = TRUE)
-
-    if (!file.exists(rds_path)) {
-      message(sprintf("  Skipping (RDS not found): %s", rds_path))
-      next
-    }
-
-    if (file.exists(qs_path) && !overwrite) {
-      message(sprintf("  Skipping (QS exists): %s", basename(qs_path)))
-      next
-    }
-
-    tryCatch({
-      obj <- readRDS(rds_path)
-      qs::qsave(obj, qs_path, nthreads = .N_THREADS)
-      rds_size <- file.size(rds_path)
-      qs_size <- file.size(qs_path)
-      message(sprintf(
-        "  Converted: %s (%.1f KB -> %.1f KB, %.0f%% smaller)",
-        basename(rds_path),
-        rds_size / 1024,
-        qs_size / 1024,
-        (1 - qs_size / rds_size) * 100
-      ))
-    }, error = function(e) {
-      message(sprintf("  Failed: %s - %s", rds_path, e$message))
-    })
-  }
-
-  message("Conversion complete.")
-  invisible(NULL)
-}
-
 # Safely read a CSV file with error handling
 #
 # Wraps data.table::fread with tryCatch to provide informative
@@ -366,7 +309,7 @@ load_and_prepare_data <- function() {
 
   # Load required data with error handling
   message("Loading Table 1 data...")
-  table1 <- safe_read_rds(DATA_PATHS$table1_clean)
+  table1 <- safe_read_data(DATA_PATHS$table1_clean)
 
   # Fix empty Mendelian Randomization values (should be "No")
   table1$`Mendelian Randomization`[
@@ -376,12 +319,12 @@ load_and_prepare_data <- function() {
 
   # Load pre-fetched NCBI gene info
   message("Loading gene info...")
-  gene_info_results_df <- safe_read_rds(DATA_PATHS$gene_info)
+  gene_info_results_df <- safe_read_data(DATA_PATHS$gene_info)
   gene_info_results_df <- prepare_gene_info_df(gene_info_results_df)
 
   # Load pre-fetched protein info
   message("Loading protein info...")
-  prot_info_clean <- safe_read_rds(DATA_PATHS$prot_info)
+  prot_info_clean <- safe_read_data(DATA_PATHS$prot_info)
 
   # Create fastmap for O(1) protein lookups by gene name
   message("Pre-computing protein info lookup map...")
@@ -397,15 +340,9 @@ load_and_prepare_data <- function() {
     )
   }
 
-  # Title casing for the Affected Pathway column
-  table1$`Affected Pathway` <- tools::toTitleCase(table1$`Affected Pathway`)
-
-  # Preserve WNT capitalization after title case conversion
-  table1$`Affected Pathway` <- gsub(
-    "Wnt",
-    "WNT",
-    table1$`Affected Pathway`,
-    fixed = TRUE
+  # Title casing for the Affected Pathway column, preserving WNT capitalization
+  table1$`Affected Pathway` <- preserve_wnt_capitalization(
+    table1$`Affected Pathway`
   )
 
   # Standardize proteomics capitalization - must handle list column properly
@@ -422,7 +359,7 @@ load_and_prepare_data <- function() {
         length(omics_evidence) > 0L &&
           omics_evidence[1L] != PLACEHOLDER_NONE_FOUND
       ) {
-        vapply(omics_evidence, function(x) sub(";.*", "", x), character(1L))
+        vapply(omics_evidence, extract_omics_type, character(1L))
       } else {
         character(0L)
       }
@@ -465,7 +402,7 @@ load_and_prepare_data <- function() {
 
   # Load GWAS trait full names for tooltips
   message("Loading GWAS trait mappings...")
-  gwas_trait_names <- safe_read_rds(DATA_PATHS$gwas_trait_names)
+  gwas_trait_names <- safe_read_data(DATA_PATHS$gwas_trait_names)
 
   gwas_trait_mapping <- setNames(
     gwas_trait_names$full_name,
@@ -513,8 +450,7 @@ load_and_prepare_data <- function() {
       data.table::data.table(row_id = i, omics_type = PLACEHOLDER_NONE_FOUND)
     } else {
       # Extract omics type prefix (before semicolon)
-      omics_types <- vapply(omics_evidence, function(x) sub(";.*", "", x),
-                            character(1L))
+      omics_types <- vapply(omics_evidence, extract_omics_type, character(1L))
       data.table::data.table(row_id = i, omics_type = omics_types)
     }
   }))
@@ -574,7 +510,7 @@ load_and_prepare_data <- function() {
 
   # Load pre-fetched references data
   message("Loading publication references...")
-  refs <- safe_read_rds(DATA_PATHS$refs)
+  refs <- safe_read_data(DATA_PATHS$refs)
 
   # Convert table1 to data.table for faster filtering
   data.table::setDT(table1)
@@ -626,11 +562,13 @@ load_and_prepare_data <- function() {
 #   - sample_sizes: Numeric vector of sample sizes for histogram
 #   - sample_sizes_hash: Pre-computed digest hash for caching
 load_table2_data <- function() {
+  verify_data_files()
+
   message("Loading Table 2 clinical trial data...")
-  table2 <- safe_read_rds(DATA_PATHS$table2_clean)
+  table2 <- safe_read_data(DATA_PATHS$table2_clean)
 
   message("Loading Table 2 gene info...")
-  gene_info_table2 <- safe_read_rds(DATA_PATHS$gene_info_table2)
+  gene_info_table2 <- safe_read_data(DATA_PATHS$gene_info_table2)
 
   # Rename columns and add URL (same as Table 1 gene info)
   gene_info_table2 <- prepare_gene_info_df(gene_info_table2)
@@ -660,25 +598,11 @@ load_table2_data <- function() {
     table2$`Estimated Completion Date`[unpublished_idx] <- COMPLETION_UNPUBLISHED
   }
 
-  # Use constant for registry patterns
-  # Optimized: use vapply instead of purrr::map_chr
+  # Use match_registry_pattern() for pattern matching
   registry_matches <- data.frame(
     matched_pattern = vapply(
       table2$`Registry ID`,
-      function(registry_id) {
-        matches <- vapply(
-          REGISTRY_PATTERNS,
-          grepl,
-          logical(1L),
-          x = registry_id,
-          ignore.case = TRUE
-        )
-        if (any(matches)) {
-          REGISTRY_PATTERNS[matches][1L]
-        } else {
-          NA_character_
-        }
-      },
+      match_registry_pattern,
       character(1L)
     ),
     stringsAsFactors = FALSE

@@ -105,9 +105,20 @@ build_trials_map_base <- function() {
 # Returns:
 #   Observer (side effects only).
 build_map_marker_observer <- function(map_data_reactive, input, session) {
+  markers_drawn <- shiny::reactiveVal(FALSE)
+
+  # Reset drawn flag when underlying data changes (skip if not yet drawn)
+  shiny::observe({
+    map_data_reactive()
+    if (shiny::isolate(markers_drawn())) {
+      markers_drawn(FALSE)
+    }
+  })
+
   shiny::observe({
     # Only fire when map tab is active (ensures leaflet widget exists)
     shiny::req(identical(input$tabs, "Clinical Trials Map"))
+    shiny::req(!markers_drawn())
     map_data <- map_data_reactive()
 
     # Clear existing markers and add new ones
@@ -132,6 +143,8 @@ build_map_marker_observer <- function(map_data_reactive, input, session) {
           clusterOptions = map_cluster_options
         )
     }
+
+    markers_drawn(TRUE)
   })
 }
 

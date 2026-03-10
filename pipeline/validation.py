@@ -18,7 +18,13 @@ from typing import Any, Final
 import httpx
 
 from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
-from pipeline.config import VALID_GWAS_TRAITS, PipelineConfig, get_ncbi_params
+from pipeline.config import (
+    NCBI_ESEARCH_URL,
+    NCBI_ESUMMARY_URL,
+    VALID_GWAS_TRAITS,
+    PipelineConfig,
+    get_ncbi_params,
+)
 from pipeline.http_client import AsyncHttpClientManager
 from pipeline.llm_extraction import GeneEntry
 
@@ -307,7 +313,7 @@ async def _fetch_ncbi_gene_uncached(
     Returns:
         Gene info dict if found, None otherwise.
     """
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    url = NCBI_ESEARCH_URL
     params = {
         "db": "gene",
         "term": f"{symbol}[Gene Name] AND Homo sapiens[Organism]",
@@ -345,7 +351,7 @@ async def fetch_gene_details(
     Returns:
         Gene metadata dict if successful, None otherwise.
     """
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+    url = NCBI_ESUMMARY_URL
     params = {"db": "gene", "id": gene_id, "retmode": "json"}
 
     resp = await _ncbi_get_with_retry(
@@ -366,9 +372,17 @@ async def fetch_gene_details(
         if not gene_data or "error" in gene_data:
             return None
 
+        symbol = gene_data.get("name", "")
+        if not symbol:
+            logger.warning(
+                f"NCBI gene_id {gene_id} has no symbol "
+                f"(name field missing or empty)"
+            )
+            return None
+
         return {
             "gene_id": gene_id,
-            "symbol": gene_data.get("name", ""),
+            "symbol": symbol,
             "description": gene_data.get("description", ""),
             "chromosome": gene_data.get("chromosome", ""),
             "aliases": (

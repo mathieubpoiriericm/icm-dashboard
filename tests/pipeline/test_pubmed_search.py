@@ -175,3 +175,31 @@ class TestSearchRecentPapers:
         )
         result = await search_recent_papers(7)
         assert len(result) == 700
+
+    async def test_pagination_error_logs_truncation_warning(self, mocker, caplog):
+        """Bug 4: pagination failure logs a clear truncation warning."""
+        from urllib.error import URLError
+
+        mock_handle = MagicMock()
+        mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
+        # First call returns initial batch with WebEnv/QueryKey
+        first_batch = {
+            "IdList": [str(i) for i in range(500)],
+            "Count": "1000",
+            "WebEnv": "WEBENV123",
+            "QueryKey": "1",
+        }
+        mocker.patch(
+            "pipeline.pubmed_search.Entrez.read",
+            side_effect=[first_batch, URLError("Network error")],
+        )
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            result = await search_recent_papers(7)
+
+        # Should return partial results
+        assert len(result) == 500
+        # Should log a clear truncation warning
+        assert any("TRUNCATED" in record.message for record in caplog.records)

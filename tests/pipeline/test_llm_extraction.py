@@ -263,7 +263,7 @@ class TestExtractFromPaper:
         )
 
         rate_limiter = AsyncMock()
-        rate_limiter.acquire = AsyncMock()
+        rate_limiter.acquire = AsyncMock(return_value=0)
         rate_limiter.record_actual_usage = AsyncMock()
 
         await extract_from_paper(
@@ -273,6 +273,90 @@ class TestExtractFromPaper:
             rate_limiter=rate_limiter,
         )
         rate_limiter.acquire.assert_awaited_once()
+
+    async def test_rate_limiter_zeroed_on_rate_limit_error(
+        self, mocker, mock_anthropic_response
+    ):
+        """Bug 2: rate limiter reservation released on 429 error."""
+        # First call raises RateLimitError, second succeeds
+        good_response = mock_anthropic_response(text='{"genes": []}')
+
+        good_stream = AsyncMock()
+        good_stream.get_final_message = AsyncMock(return_value=good_response)
+        good_cm = MagicMock()
+        good_cm.__aenter__ = AsyncMock(return_value=good_stream)
+        good_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.headers = {"retry-after": "0.01"}
+        mock_client.messages.stream.side_effect = [
+            anthropic.RateLimitError(
+                message="rate limited",
+                response=mock_response,
+                body=None,
+            ),
+            good_cm,
+        ]
+        mocker.patch(
+            "pipeline.llm_extraction._get_async_client",
+            return_value=mock_client,
+        )
+        mocker.patch("asyncio.sleep", new_callable=AsyncMock)
+
+        rate_limiter = AsyncMock()
+        # Return different request IDs for each acquire call
+        rate_limiter.acquire = AsyncMock(side_effect=[0, 1])
+        rate_limiter.record_actual_usage = AsyncMock()
+
+        from pipeline.config import PipelineConfig
+
+        cfg = PipelineConfig(max_rate_limit_retries=3)
+        await extract_from_paper(
+            "Paper text", "12345678", config=cfg, rate_limiter=rate_limiter
+        )
+
+        # First call should zero out reservation (request_id=0, actual=0)
+        first_call = rate_limiter.record_actual_usage.call_args_list[0]
+        assert first_call.args == (0, 0)
+
+    async def test_rate_limiter_zeroed_on_connection_error(
+        self, mocker, mock_anthropic_response
+    ):
+        """Bug 2: rate limiter reservation released on connection error."""
+        good_response = mock_anthropic_response(text='{"genes": []}')
+
+        good_stream = AsyncMock()
+        good_stream.get_final_message = AsyncMock(return_value=good_response)
+        good_cm = MagicMock()
+        good_cm.__aenter__ = AsyncMock(return_value=good_stream)
+        good_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client = MagicMock()
+        mock_client.messages.stream.side_effect = [
+            httpx.RemoteProtocolError("connection lost"),
+            good_cm,
+        ]
+        mocker.patch(
+            "pipeline.llm_extraction._get_async_client",
+            return_value=mock_client,
+        )
+        mocker.patch("asyncio.sleep", new_callable=AsyncMock)
+
+        rate_limiter = AsyncMock()
+        rate_limiter.acquire = AsyncMock(side_effect=[0, 1])
+        rate_limiter.record_actual_usage = AsyncMock()
+
+        from pipeline.config import PipelineConfig
+
+        cfg = PipelineConfig(max_connection_retries=3)
+        await extract_from_paper(
+            "Paper text", "12345678", config=cfg, rate_limiter=rate_limiter
+        )
+
+        # First call should zero out reservation (request_id=0, actual=0)
+        first_call = rate_limiter.record_actual_usage.call_args_list[0]
+        assert first_call.args == (0, 0)
 
     async def test_validation_retry_on_bad_confidence(
         self, mocker, mock_anthropic_response

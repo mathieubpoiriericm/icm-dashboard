@@ -177,10 +177,11 @@ async def extract_from_paper(
     connection_retries = 0
 
     while True:
+        request_id: int | None = None
         try:
             # Proactive rate limiting
             if rate_limiter is not None:
-                await rate_limiter.acquire(
+                request_id = await rate_limiter.acquire(
                     estimated_tokens=config.estimated_tokens_per_call
                 )
 
@@ -211,13 +212,12 @@ async def extract_from_paper(
             # Correct rate limiter estimate with actual usage
             if (
                 rate_limiter is not None
+                and request_id is not None
                 and hasattr(response, "usage")
                 and response.usage
             ):
                 actual = response.usage.input_tokens + response.usage.output_tokens
-                await rate_limiter.record_actual_usage(
-                    config.estimated_tokens_per_call, actual
-                )
+                await rate_limiter.record_actual_usage(request_id, actual)
 
             # Detect truncation: with adaptive thinking, max_tokens covers
             # both thinking + text output. If thinking consumed most of the
@@ -274,6 +274,10 @@ async def extract_from_paper(
             return result.genes, usage
 
         except anthropic.RateLimitError as e:
+            # Zero out the unused rate limiter reservation
+            if rate_limiter is not None and request_id is not None:
+                await rate_limiter.record_actual_usage(request_id, 0)
+
             rate_limit_retries += 1
             if rate_limit_retries > config.max_rate_limit_retries:
                 logger.error(
@@ -302,6 +306,10 @@ async def extract_from_paper(
             httpx.ReadError,
             httpx.ConnectError,
         ) as e:
+            # Zero out the unused rate limiter reservation
+            if rate_limiter is not None and request_id is not None:
+                await rate_limiter.record_actual_usage(request_id, 0)
+
             connection_retries += 1
             if connection_retries > config.max_connection_retries:
                 logger.error(

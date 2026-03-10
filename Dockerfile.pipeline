@@ -27,6 +27,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN R -e "install.packages(c('DBI', 'RPostgres', 'data.table', 'qs', 'jsonlite'))"
 
 # kubectl (for rollout restart of dashboard deployment)
-RUN curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+ENV KUBECTL_VERSION=v1.32.3
+RUN curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" \
+    && echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check \
     && install kubectl /usr/local/bin/ \
-    && rm kubectl
+    && rm kubectl kubectl.sha256
+
+# Run as non-root user
+RUN useradd -r -s /usr/sbin/nologin pipeline
+USER pipeline

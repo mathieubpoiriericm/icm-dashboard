@@ -6,6 +6,23 @@
 # Uses in-memory cache (faster than disk for session-scoped data)
 memo_cache <- cachem::cache_mem(max_size = MEMO_CACHE_SIZE)
 
+# Wrap content in a sortable cell span with data-order attribute
+#
+# Creates a span with `data-order` for DataTable custom sort, wrapping
+# arbitrary content (HTML links, plain text, etc.).
+#
+# Args:
+#   sort_name: Character. The value to sort by (lowercased automatically).
+#   ...: Content to wrap inside the span.
+#
+# Returns:
+#   Character. HTML string with data-order attribute.
+make_sortable_cell <- function(sort_name, ...) {
+  as.character(
+    shiny::tags$span(`data-order` = tolower(sort_name), ...)
+  )
+}
+
 # Get full cell type name from abbreviation
 #
 # Maps brain cell type abbreviations to their full names for tooltip display.
@@ -122,6 +139,82 @@ get_ref_tooltip_info_memo <- memoise::memoise(
   cache = memo_cache
 )
 
+# Parse reference tooltip HTML into display components
+#
+# Extracts authors, publication date, and builds modified tooltip HTML
+# from the raw cached tooltip text. Memoized to avoid repeated regex
+# work across rows sharing the same PMID.
+#
+# Args:
+#   pmid: Character. The PubMed ID.
+#   ref_tooltip_text: Character. Raw tooltip HTML from get_ref_tooltip_info.
+#
+# Returns:
+#   List with authors, pub_date, and modified_tooltip.
+parse_ref_tooltip <- function(pmid, ref_tooltip_text) {
+  authors <- ""
+  if (grepl("Authors:", ref_tooltip_text)) {
+    authors_match <- regmatches(
+      ref_tooltip_text,
+      regexpr("<strong>Authors:\\s*</strong>.*?<br>", ref_tooltip_text)
+    )
+    if (length(authors_match) > 0L) {
+      authors <- gsub("<strong>Authors:\\s*</strong>", "", authors_match)
+      authors <- gsub("<br>", "", authors, fixed = TRUE)
+      authors <- gsub("<[^>]+>", "", authors)
+      authors <- trimws(authors)
+    }
+  }
+
+  pub_date <- ""
+  if (grepl("Publication Date:", ref_tooltip_text)) {
+    pub_date_match <- regmatches(
+      ref_tooltip_text,
+      regexpr(
+        "<strong>Publication Date:\\s*</strong>.*?<br>",
+        ref_tooltip_text
+      )
+    )
+    if (length(pub_date_match) > 0L) {
+      pub_date_raw <- gsub(
+        "<strong>Publication Date:\\s*</strong>", "", pub_date_match
+      )
+      pub_date_raw <- gsub("<br>", "", pub_date_raw, fixed = TRUE)
+      pub_date_raw <- gsub("<[^>]+>", "", pub_date_raw)
+      pub_date_raw <- trimws(pub_date_raw)
+
+      if (grepl("\\d{4}-\\w+", pub_date_raw)) {
+        parts <- strsplit(pub_date_raw, "-")[[1L]]
+        if (length(parts) == 2L) {
+          pub_date <- paste0(" (", parts[2L], " ", parts[1L], ")")
+        }
+      }
+    }
+  }
+
+  modified_tooltip <- sub(
+    "<strong>Authors:\\s*</strong>.*?<br>",
+    paste0("<strong>PMID</strong> ", pmid, "<br>"),
+    ref_tooltip_text
+  )
+  modified_tooltip <- sub(
+    "<strong>Publication Date:\\s*</strong>.*?<br>",
+    "",
+    modified_tooltip
+  )
+
+  list(
+    authors = authors,
+    pub_date = pub_date,
+    modified_tooltip = modified_tooltip
+  )
+}
+
+parse_ref_tooltip_memo <- memoise::memoise(
+  parse_ref_tooltip,
+  cache = memo_cache
+)
+
 # Add reference tooltip with PubMed link
 #
 # Creates HTML anchor tags linking to PubMed with Tippy.js tooltips
@@ -151,64 +244,13 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
       # Use memoised version for faster repeated lookups
       ref_tooltip_text <- get_ref_tooltip_info_memo(pmid, refs)
 
-      authors <- ""
-      if (grepl("Authors:", ref_tooltip_text)) {
-        authors_match <- regmatches(
-          ref_tooltip_text,
-          regexpr("<strong>Authors:\\s*</strong>.*?<br>", ref_tooltip_text)
-        )
-        if (length(authors_match) > 0L) {
-          authors <- gsub(
-            "<strong>Authors:\\s*</strong>",
-            "",
-            authors_match
-          )
-          authors <- gsub("<br>", "", authors, fixed = TRUE)
-          authors <- gsub("<[^>]+>", "", authors)
-          authors <- trimws(authors)
-        }
-      }
+      # Use memoised parser to avoid repeated regex work per PMID
+      parsed <- parse_ref_tooltip_memo(pmid, ref_tooltip_text)
+      authors <- parsed$authors
+      pub_date <- parsed$pub_date
+      modified_tooltip <- parsed$modified_tooltip
 
-      pub_date <- ""
-      if (grepl("Publication Date:", ref_tooltip_text)) {
-        pub_date_match <- regmatches(
-          ref_tooltip_text,
-          regexpr(
-            "<strong>Publication Date:\\s*</strong>.*?<br>",
-            ref_tooltip_text
-          )
-        )
-        if (length(pub_date_match) > 0L) {
-          pub_date_raw <- gsub(
-            "<strong>Publication Date:\\s*</strong>",
-            "",
-            pub_date_match
-          )
-          pub_date_raw <- gsub("<br>", "", pub_date_raw, fixed = TRUE)
-          pub_date_raw <- gsub("<[^>]+>", "", pub_date_raw)
-          pub_date_raw <- trimws(pub_date_raw)
-
-          if (grepl("\\d{4}-\\w+", pub_date_raw)) {
-            parts <- strsplit(pub_date_raw, "-")[[1L]]
-            if (length(parts) == 2L) {
-              pub_date <- paste0(" (", parts[2L], " ", parts[1L], ")")
-            }
-          }
-        }
-      }
-
-      modified_tooltip <- sub(
-        "<strong>Authors:\\s*</strong>.*?<br>",
-        paste0("<strong>PMID</strong> ", pmid, "<br>"),
-        ref_tooltip_text
-      )
-      modified_tooltip <- sub(
-        "<strong>Publication Date:\\s*</strong>.*?<br>",
-        "",
-        modified_tooltip
-      )
-
-      pmid_url <- paste0("https://pubmed.ncbi.nlm.nih.gov/", pmid, "/")
+      pmid_url <- paste0(PUBMED_BASE_URL, pmid, "/")
 
       if (authors != "") {
         display_text <- paste0(authors, pub_date)
@@ -316,8 +358,10 @@ prepare_table1_display <- function(
 ) {
   table1_display <- as.data.frame(table1)
 
-  # Keep an unmodified data.frame copy for extracting original list columns
-  table1_df <- table1_display
+  # Extract original list columns before they're transformed to HTML
+  gene_names_orig <- table1_display[[1L]]
+  gwas_orig <- table1_display[["GWAS Trait"]]
+  omics_orig <- table1_display[["Evidence From Other Omics Studies"]]
 
   # Vectorized gene symbol tooltip
   # Store original gene names for sorting before HTML transformation
@@ -341,12 +385,7 @@ prepare_table1_display <- function(
         tooltip_class_italic
       )
 
-      as.character(
-        shiny::tags$span(
-          `data-order` = tolower(sort_name),
-          shiny::HTML(gene_link)
-        )
-      )
+      make_sortable_cell(sort_name, shiny::HTML(gene_link))
     }
   )
 
@@ -357,7 +396,7 @@ prepare_table1_display <- function(
   table1_display[[2L]] <- purrr::pmap_chr(
     list(
       table1_display[[2L]],
-      table1_df[[1L]],
+      gene_names_orig,
       original_protein_names
     ),
     function(protein_name, gene_name, sort_name) {
@@ -379,27 +418,20 @@ prepare_table1_display <- function(
           prot_info$accession
         )
 
-        as.character(
-          shiny::tags$span(
-            `data-order` = tolower(sort_name),
-            shiny::tags$a(
-              href = prot_info$url,
-              target = "_blank",
-              shiny::tags$span(
-                protein_name,
-                `data-tippy-content` = protein_tooltip_content,
-                class = tooltip_class
-              )
+        make_sortable_cell(
+          sort_name,
+          shiny::tags$a(
+            href = prot_info$url,
+            target = "_blank",
+            shiny::tags$span(
+              protein_name,
+              `data-tippy-content` = protein_tooltip_content,
+              class = tooltip_class
             )
           )
         )
       } else {
-        as.character(
-          shiny::tags$span(
-            `data-order` = tolower(sort_name),
-            protein_name
-          )
-        )
+        make_sortable_cell(sort_name, protein_name)
       }
     }
   )
@@ -415,7 +447,7 @@ prepare_table1_display <- function(
         omim_value[1L] %in% c(PLACEHOLDER_NONE_FOUND, "")
 
       if (is_empty || is_single_na || is_single_placeholder) {
-        return(as.character(omim_value))
+        return(PLACEHOLDER_NONE_FOUND)
       }
 
       if (length(omim_value) > 1L) {
@@ -486,7 +518,7 @@ prepare_table1_display <- function(
 
   # GWAS Trait tooltip (vectorized)
   # Optimized: use vapply instead of purrr::map_chr
-  gwas_trait_col <- table1_df[["GWAS Trait"]]
+  gwas_trait_col <- gwas_orig
 
   table1_display[["GWAS Trait"]] <- vapply(
     gwas_trait_col,
@@ -529,7 +561,7 @@ prepare_table1_display <- function(
 
   # Evidence From Other Omics Studies tooltip (vectorized)
   # Optimized: use vapply instead of purrr::map_chr
-  omics_evidence_col <- table1_df[["Evidence From Other Omics Studies"]]
+  omics_evidence_col <- omics_orig
 
   table1_display[["Evidence From Other Omics Studies"]] <- vapply(
     omics_evidence_col,
@@ -549,10 +581,7 @@ prepare_table1_display <- function(
             parts <- trimws(parts)
             omics_type <- parts[1L]
 
-            full_name_match <- omics_df[
-              omics_df$Omics_Type == omics_type,
-              "Full_Name"
-            ]
+            full_name_match <- unname(OMICS_FULL_NAMES[omics_type])
 
             omics_type_html <- if (
               length(full_name_match) > 0L && !is.na(full_name_match)
@@ -573,10 +602,7 @@ prepare_table1_display <- function(
             }
           } else {
             omics_type <- trimws(item)
-            full_name_match <- omics_df[
-              omics_df$Omics_Type == omics_type,
-              "Full_Name"
-            ]
+            full_name_match <- unname(OMICS_FULL_NAMES[omics_type])
 
             if (length(full_name_match) > 0L && !is.na(full_name_match)) {
               as.character(shiny::tags$span(
@@ -627,8 +653,8 @@ prepare_table2_display <- function(
   ct_info,
   gene_info_results_df,
   gene_symbols_lookup,
-  tooltip_class = tooltip_class,
-  tooltip_class_italic = tooltip_class_italic
+  tooltip_class = TOOLTIP_CLASS,
+  tooltip_class_italic = TOOLTIP_CLASS_ITALIC
 ) {
   table2_display <- as.data.frame(table2)
 

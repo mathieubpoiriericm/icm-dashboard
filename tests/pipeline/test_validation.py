@@ -320,6 +320,51 @@ class TestFetchGeneDetails:
         assert result["symbol"] == "NOTCH3"
         assert "CADASIL" in result["aliases"]
 
+    async def test_missing_name_field_returns_none(self, mocker):
+        """Bug 3: NCBI response with no 'name' field should return None."""
+        mock_client = AsyncMock()
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "result": {
+                "4854": {
+                    "description": "notch receptor 3",
+                    "chromosome": "19",
+                }
+            }
+        }
+        mock_client.get = AsyncMock(return_value=response)
+        mocker.patch(
+            "pipeline.validation._client_manager.get",
+            return_value=mock_client,
+        )
+
+        result = await fetch_gene_details("4854")
+        assert result is None
+
+    async def test_empty_name_field_returns_none(self, mocker):
+        """Bug 3: NCBI response with empty 'name' field should return None."""
+        mock_client = AsyncMock()
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "result": {
+                "4854": {
+                    "name": "",
+                    "description": "notch receptor 3",
+                    "chromosome": "19",
+                }
+            }
+        }
+        mock_client.get = AsyncMock(return_value=response)
+        mocker.patch(
+            "pipeline.validation._client_manager.get",
+            return_value=mock_client,
+        )
+
+        result = await fetch_gene_details("4854")
+        assert result is None
+
     async def test_error_in_response(self, mocker):
         mock_client = AsyncMock()
         response = MagicMock()

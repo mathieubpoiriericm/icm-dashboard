@@ -147,19 +147,18 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
 
     try:
         async with asyncio.timeout(3600):
-            # Step 1: Get gene symbols
-            logger.info("Collecting gene symbols from database...")
-            table1_genes = await get_table1_gene_symbols()
-            table2_genes = await get_table2_gene_symbols()
+            # Step 1: Get gene symbols and PMIDs concurrently
+            logger.info("Collecting gene symbols and PMIDs from database...")
+            table1_genes, table2_genes, pmids = await asyncio.gather(
+                get_table1_gene_symbols(),
+                get_table2_gene_symbols(),
+                get_all_pmids(),
+            )
             all_genes = list(dict.fromkeys(table1_genes + table2_genes))  # Deduplicate
 
             logger.info(f"Found {len(table1_genes)} genes in Table 1")
             logger.info(f"Found {len(table2_genes)} genes in Table 2")
             logger.info(f"Total unique genes: {len(all_genes)}")
-
-            # Step 2: Get PMIDs
-            logger.info("Extracting PMIDs from references...")
-            pmids = await get_all_pmids()
             logger.info(f"Found {len(pmids)} unique PMIDs")
 
             # Step 3: Sync NCBI gene info

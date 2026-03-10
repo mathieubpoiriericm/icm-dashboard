@@ -15,7 +15,12 @@ from typing import Any, Final, Literal, TypedDict
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
-from pipeline.config import SAFE_XML_PARSER, get_ncbi_params, validate_pmid
+from pipeline.config import (
+    NCBI_EFETCH_URL,
+    SAFE_XML_PARSER,
+    get_ncbi_params,
+    validate_pmid,
+)
 from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
@@ -200,10 +205,9 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
         pmcid = records[0]["pmcid"]
 
         # Step 2: Fetch full text from PMC
-        pmc_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
         pmc_params = get_ncbi_params({"db": "pmc", "id": pmcid, "rettype": "xml"})
 
-        pmc_resp = await client.get(pmc_url, params=pmc_params)
+        pmc_resp = await client.get(NCBI_EFETCH_URL, params=pmc_params)
 
         if pmc_resp.status_code != 200:
             logger.debug(f"PMC fetch failed for {pmcid}: {pmc_resp.status_code}")
@@ -436,7 +440,7 @@ async def fetch_abstract(pmid: str) -> str | None:
     Returns:
         Abstract text if available, None otherwise.
     """
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    url = NCBI_EFETCH_URL
     params = get_ncbi_params(
         {
             "db": "pubmed",

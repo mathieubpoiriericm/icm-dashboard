@@ -190,4 +190,19 @@ MAP_DEFAULT_ZOOM <- 2
 
 # Map container height in pixels
 MAP_HEIGHT_PX <- 700L
+# =============================================================================
+# PARALLELISM CONFIGURATION
+# =============================================================================
+# Number of threads for qs serialization (detected at source time)
+.N_THREADS <- parallel::detectCores()
+
+# =============================================================================
+# SHARED DATATABLE JS SNIPPETS
+# =============================================================================
+# Center-align all header cells (used in initComplete callback)
+DATATABLE_INIT_HEADER_JS <- "$(this.api().table().header()).find('th').css('text-align', 'center');"
+
+# Initialize Tippy.js tooltips (used in drawCallback)
+DATATABLE_TIPPY_CALLBACK_JS <- "if (typeof initializeTippy === 'function') { initializeTippy(); }"
+
 # nolint end: object_name_linter.

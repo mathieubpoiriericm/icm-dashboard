@@ -3,8 +3,6 @@
 # and geocoding them for map display
 # nolint start: object_usage_linter.
 
-.N_THREADS <- parallel::detectCores()
-
 # Load constants from constants.R (imported via source() in app.R)
 # Uses: MAP_CT_API_BASE_URL, MAP_API_DELAY_MS, MAP_CACHE_PATH
 
@@ -95,17 +93,16 @@ fetch_trial_locations <- function(
           retry_after <- httr2::resp_header(response, "Retry-After")
           delay <- if (!is.null(retry_after)) as.integer(retry_after) else 60L
           Sys.sleep(delay)
-          return(NULL)  # Retry on next iteration
-        }
-
-        if (status_code >= 500L && attempt < max_retries) {
+          NULL
+        } else if (status_code >= 500L && attempt < max_retries) {
           # Server error - retry with backoff
           delay <- retry_base_delay_seconds * (2L ^ (attempt - 1L))
           Sys.sleep(delay)
-          return(NULL)
+          NULL
+        } else {
+          stop(sprintf("HTTP %d error", status_code))
         }
-        stop(sprintf("HTTP %d error", status_code))
-      }
+      } else {
 
       content <- httr2::resp_body_string(response)
       parsed <- jsonlite::fromJSON(content, simplifyVector = TRUE)
@@ -154,6 +151,7 @@ fetch_trial_locations <- function(
           stringsAsFactors = FALSE
         )
       )
+      }
     }, error = function(e) {
       if (attempt < max_retries) {
         delay <- retry_base_delay_seconds * (2L ^ (attempt - 1L))
@@ -576,6 +574,10 @@ jitter_duplicate_coordinates <- function(map_data, radius = 0.003) {
   }
 
 
+  # Seed for deterministic jitter across sessions
+  set.seed(42L)
+  on.exit(set.seed(NULL), add = TRUE)
+
   # Process each duplicate location
   for (key in duplicate_keys) {
     indices <- which(coord_key == key)
@@ -725,11 +727,13 @@ build_popup_content_vectorized <- function(map_data) {
   # Replace NA facility with default
   facility_name[is.na(facility_name)] <- "Unknown Facility"
 
-  # HTML escape all text fields (vectorized via vapply)
+  # HTML escape all text fields (vectorized, preserving NAs)
   esc <- function(x) {
-    vapply(x, function(v) {
-      if (is.na(v)) NA_character_ else htmltools::htmlEscape(as.character(v))
-    }, character(1L), USE.NAMES = FALSE)
+    x <- as.character(x)
+    na_mask <- is.na(x)
+    x <- htmltools::htmlEscape(x)
+    x[na_mask] <- NA_character_
+    x
   }
 
   trial_title_esc <- esc(trial_title)
