@@ -136,8 +136,8 @@ build_map_marker_observer <- function(map_data_reactive, input, session) {
           lat = ~lat,
           popup = ~popup_content,
           radius = 8,
-          color = "#2d287a",
-          fillColor = "#667eea",
+          color = "#312e81",
+          fillColor = "#4f46e5",
           fillOpacity = 0.7,
           weight = 2,
           clusterOptions = map_cluster_options
@@ -187,8 +187,8 @@ build_trials_map <- function(map_data_reactive) {
           lat = ~lat,
           popup = ~popup_content,
           radius = 8,
-          color = "#2d287a",
-          fillColor = "#667eea",
+          color = "#312e81",
+          fillColor = "#4f46e5",
           fillOpacity = 0.7,
           weight = 2,
           clusterOptions = map_cluster_options

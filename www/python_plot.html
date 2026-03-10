@@ -3,9 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Cache-Control" content="public, max-age=86400">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+@font-face {
+    font-family: 'Inter';
+    src: url('fonts/Inter-Regular.woff2') format('woff2'),
+         url('fonts/Inter-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Inter';
+    src: url('fonts/Inter-Medium.woff2') format('woff2'),
+         url('fonts/Inter-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Inter';
+    src: url('fonts/Inter-Bold.woff2') format('woff2'),
+         url('fonts/Inter-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+</style>
 <style>
   body {
     margin: 0;
@@ -40,13 +63,13 @@
     width: 0;
     background: rgba(200, 200, 200, 0.4);
     color: #000;
-    font-family: "Roboto", Arial, sans-serif;
+    font-family: "Inter", Arial, sans-serif;
     overflow-x: hidden;
     overflow-y: auto;
     transition: width 0.3s ease, padding 0.3s ease;
     padding: 0;
     box-shadow: 2px 0 8px rgba(0,0,0,0.15);
-    border-radius: 0 20px 20px 0;
+    border-radius: 0 14px 14px 0;
   }
   #sidebar.open {
     width: auto;
@@ -63,7 +86,7 @@
     line-height: 1.55;
   }
   svg {
-    font-family: "Roboto", Arial, sans-serif;
+    font-family: "Inter", Arial, sans-serif;
   }
   g.drug text {
     visibility: visible;
@@ -82,7 +105,7 @@
     border-radius: 20px;
     min-width: 240px;
     max-width: 320px;
-    font-family: "Roboto", Arial, sans-serif;
+    font-family: "Inter", Arial, sans-serif;
     font-size: 13px;
     line-height: 1.5;
     pointer-events: none;
@@ -92,7 +115,6 @@
       0 18px 35px rgba(0,0,0,0.55),
       0 0 22px var(--tip-color-rgba);
     border: 1px solid rgba(255,255,255,0.12);
-    backdrop-filter: blur(10px);
     color: #fff;
     z-index: 9999;
     opacity: 0;
@@ -179,7 +201,7 @@
 <g class="phase-label" data-phase="III"><rect class="label-bg phase-bg" x="461.84" y="296.40" width="76.32" height="27.20" rx="6" fill="#ffffff" fill-opacity="1" pointer-events="none"/><text x="500.00" y="310.00" fill="#000" font-size="16" text-anchor="middle" dominant-baseline="middle">Phase III</text></g>
 <g class="phase-label" data-phase="II"><rect class="label-bg phase-bg" x="463.84" y="171.40" width="72.32" height="27.20" rx="6" fill="#ffffff" fill-opacity="1" pointer-events="none"/><text x="500.00" y="185.00" fill="#000" font-size="16" text-anchor="middle" dominant-baseline="middle">Phase II</text></g>
 <g class="phase-label" data-phase="I"><rect class="label-bg phase-bg" x="465.84" y="101.40" width="68.32" height="27.20" rx="6" fill="#ffffff" fill-opacity="1" pointer-events="none"/><text x="500.00" y="115.00" fill="#000" font-size="16" text-anchor="middle" dominant-baseline="middle">Phase I</text></g>
-<g id="drugs" font-family="Roboto" font-size="12" fill="#000">
+<g id="drugs" font-family="Inter" font-size="12" fill="#000">
 <circle cx="565.64" cy="338.36" r="9" fill="#000000" fill-opacity="0.2"/>
 <rect x="580.64" y="328.56" width="120.20" height="19.60" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>
 <circle cx="609.50" cy="215.80" r="9" fill="#000000" fill-opacity="0.2"/>
@@ -231,8 +253,8 @@
 </g>
 <rect x="952.0" y="72.0" width="156.85" height="90.00" rx="10" fill="#000000" fill-opacity="0.2"/>
 <rect x="952.0" y="182.0" width="261.68" height="437.00" rx="10" fill="#000000" fill-opacity="0.2"/>
-<rect id="legend-bg" x="950.0" y="70.0" width="156.85" height="90.00" rx="10" fill="#e8e8e8" fill-opacity="1"/>
-<rect id="legend-moa-bg" x="950.0" y="180.0" width="261.68" height="437.00" rx="10" fill="#e8e8e8" fill-opacity="1"/>
+<rect id="legend-bg" x="950.0" y="70.0" width="156.85" height="90.00" rx="10" fill="#f8f7ff" fill-opacity="1"/>
+<rect id="legend-moa-bg" x="950.0" y="180.0" width="261.68" height="437.00" rx="10" fill="#f8f7ff" fill-opacity="1"/>
 <rect x="1010.42" y="104.0" width="40" height="20" rx="6" fill="#000000" fill-opacity="0.2"/>
 <rect x="1010.42" y="132.0" width="40" height="20" rx="6" fill="#000000" fill-opacity="0.2"/>
 <circle cx="972.0" cy="228.0" r="9" fill="#000000" fill-opacity="0.2"/>
@@ -246,19 +268,19 @@
 <circle cx="972.0" cy="516.0" r="9" fill="#000000" fill-opacity="0.2"/>
 <circle cx="972.0" cy="552.0" r="9" fill="#000000" fill-opacity="0.2"/>
 <circle cx="972.0" cy="588.0" r="9" fill="#000000" fill-opacity="0.2"/>
-<g id="legend" font-size="14" fill="#000" font-family="Roboto"><text x="1028.42" y="88.0" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Genetic Evidence</text><g class="legend-item"><rect x="1008.42" y="102.0" width="40" height="20" rx="6" fill="#90ee90" fill-opacity="1"/><text x="1028.42" y="112.0" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">Yes</text></g><g class="legend-item"><rect x="1008.42" y="130.0" width="40" height="20" rx="6" fill="#ffffff" fill-opacity="1"/><text x="1028.42" y="140.0" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">No</text></g></g>
-<g id="legend-moa" font-size="14" fill="#000" font-family="Roboto"><text x="1080.84" y="198.0" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Mechanism of Action</text>
-<g class="legend-item"><circle cx="970.0" cy="226.0" r="9" fill="#e41a1c"/><text x="994.0" y="226.0" font-family="Roboto">Neuroprotective, antioxidant<tspan x="994.0" dy="1.2em">(multiple mechanisms)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="262.0" r="9" fill="#377eb8"/><text x="994.0" y="262.0" font-family="Roboto">Neuroprotective, neurotrophic<tspan x="994.0" dy="1.2em">(neuropeptide drug)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="298.0" r="9" fill="#4daf4a"/><text x="994.0" y="298.0" font-family="Roboto">Antiplatelet, vasodilator<tspan x="994.0" dy="1.2em">(phosphodiesterase 3 inhibitor)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="334.0" r="9" fill="#984ea3"/><text x="994.0" y="334.0" font-family="Roboto">Anti-inflammatory<tspan x="994.0" dy="1.2em">(tubulin beta chain inhibitor)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="370.0" r="9" fill="#ff7f00"/><text x="994.0" y="370.0" font-family="Roboto">Neuroprotective, antioxidant<tspan x="994.0" dy="1.2em">(free radical scavenger)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="406.0" r="9" fill="#ffff33"/><text x="994.0" y="406.0" font-family="Roboto">Blood glucose lowering agent<tspan x="994.0" dy="1.2em">(GLP-1 agonist)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="442.0" r="9" fill="#a65628"/><text x="994.0" y="442.0" font-family="Roboto">Vasodilator<tspan x="994.0" dy="1.2em">(nitrate)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="478.0" r="9" fill="#f781bf"/><text x="994.0" y="478.0" font-family="Roboto">APP mRNA reduction<tspan x="994.0" dy="1.2em">(RNA interference therapy)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="514.0" r="9" fill="#999999"/><text x="994.0" y="514.0" font-family="Roboto">Neuroprotective, antioxidant<tspan x="994.0" dy="1.2em">(vitamin E analogs)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="550.0" r="9" fill="#e41a1c"/><text x="994.0" y="550.0" font-family="Roboto">Anti-fibrin<tspan x="994.0" dy="1.2em">(humanized monoclonal antibody)</tspan></text></g>
-<g class="legend-item"><circle cx="970.0" cy="586.0" r="9" fill="#377eb8"/><text x="994.0" y="586.0" font-family="Roboto">Antifibrinolytic<tspan x="994.0" dy="1.2em">(plasminogen inhibitor)</tspan></text></g>
+<g id="legend" font-size="14" fill="#000" font-family="Inter"><text x="1028.42" y="88.0" text-anchor="middle" font-family="Inter" font-size="15" font-weight="500">Genetic Evidence</text><g class="legend-item"><rect x="1008.42" y="102.0" width="40" height="20" rx="6" fill="#90ee90" fill-opacity="1"/><text x="1028.42" y="112.0" text-anchor="middle" dominant-baseline="middle" font-family="Inter">Yes</text></g><g class="legend-item"><rect x="1008.42" y="130.0" width="40" height="20" rx="6" fill="#ffffff" fill-opacity="1"/><text x="1028.42" y="140.0" text-anchor="middle" dominant-baseline="middle" font-family="Inter">No</text></g></g>
+<g id="legend-moa" font-size="14" fill="#000" font-family="Inter"><text x="1080.84" y="198.0" text-anchor="middle" font-family="Inter" font-size="15" font-weight="500">Mechanism of Action</text>
+<g class="legend-item"><circle cx="970.0" cy="226.0" r="9" fill="#e41a1c"/><text x="994.0" y="226.0" font-family="Inter">Neuroprotective, antioxidant<tspan x="994.0" dy="1.2em">(multiple mechanisms)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="262.0" r="9" fill="#377eb8"/><text x="994.0" y="262.0" font-family="Inter">Neuroprotective, neurotrophic<tspan x="994.0" dy="1.2em">(neuropeptide drug)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="298.0" r="9" fill="#4daf4a"/><text x="994.0" y="298.0" font-family="Inter">Antiplatelet, vasodilator<tspan x="994.0" dy="1.2em">(phosphodiesterase 3 inhibitor)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="334.0" r="9" fill="#984ea3"/><text x="994.0" y="334.0" font-family="Inter">Anti-inflammatory<tspan x="994.0" dy="1.2em">(tubulin beta chain inhibitor)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="370.0" r="9" fill="#ff7f00"/><text x="994.0" y="370.0" font-family="Inter">Neuroprotective, antioxidant<tspan x="994.0" dy="1.2em">(free radical scavenger)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="406.0" r="9" fill="#ffff33"/><text x="994.0" y="406.0" font-family="Inter">Blood glucose lowering agent<tspan x="994.0" dy="1.2em">(GLP-1 agonist)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="442.0" r="9" fill="#a65628"/><text x="994.0" y="442.0" font-family="Inter">Vasodilator<tspan x="994.0" dy="1.2em">(nitrate)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="478.0" r="9" fill="#f781bf"/><text x="994.0" y="478.0" font-family="Inter">APP mRNA reduction<tspan x="994.0" dy="1.2em">(RNA interference therapy)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="514.0" r="9" fill="#999999"/><text x="994.0" y="514.0" font-family="Inter">Neuroprotective, antioxidant<tspan x="994.0" dy="1.2em">(vitamin E analogs)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="550.0" r="9" fill="#e41a1c"/><text x="994.0" y="550.0" font-family="Inter">Anti-fibrin<tspan x="994.0" dy="1.2em">(humanized monoclonal antibody)</tspan></text></g>
+<g class="legend-item"><circle cx="970.0" cy="586.0" r="9" fill="#377eb8"/><text x="994.0" y="586.0" font-family="Inter">Antifibrinolytic<tspan x="994.0" dy="1.2em">(plasminogen inhibitor)</tspan></text></g>
 </g>
 </svg>
   </div>

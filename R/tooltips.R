@@ -369,8 +369,8 @@ prepare_table1_display <- function(
 
   # Vectorized OMIM tooltip (using fastmap for O(1) lookups)
   # Optimized: use vapply instead of purrr::map_chr
-  table1_display[["Link to Monogenetic Disease"]] <- vapply(
-    table1_display[["Link to Monogenetic Disease"]],
+  table1_display[["Link to Monogenic Disease"]] <- vapply(
+    table1_display[["Link to Monogenic Disease"]],
     function(omim_value) {
       is_empty <- is.null(omim_value) || length(omim_value) == 0L
       is_single_na <- length(omim_value) == 1L && is.na(omim_value[1L])
@@ -632,7 +632,7 @@ prepare_table2_display <- function(
           href = registry_url,
           target = "_blank",
           rel = "noopener",
-          style = "color: #347bb7;",
+          style = "color: #4f46e5;",
           ct_id_trimmed
         ))
       } else {

@@ -154,7 +154,7 @@ build_css_style <- function(...) {
 # Returns:
 #   A CSS style string.
 create_box_style <- function(
-  bg_color = "#f3f4f6",
+  bg_color = "#f8f7ff",
   text_color = "#4b5563",
   border_color = NULL,
   font_size = "1rem",
@@ -166,7 +166,7 @@ create_box_style <- function(
     color = text_color,
     `font-size` = font_size,
     padding = padding,
-    `border-radius` = "20px",
+    `border-radius` = "10px",
     display = "inline-block",
     `box-shadow` = "0 2px 4px rgba(0, 0, 0, 0.1)"
   )
@@ -188,12 +188,12 @@ create_box_style <- function(
 # =============================================================================
 # These styles use the create_box_style() helper for consistency.
 # Common color palette:
-#   - Primary: #2d287a (dark purple)
-#   - Accent: #667eea (purple)
-#   - Background: #f3f4f6, #f8f9fc (light grays)
-#   - Text: #4b5563 (gray)
-#   - Success: #008000 (green)
-#   - Warning: #ff0000 (red)
+#   - Primary: #312e81 (deep indigo)
+#   - Accent: #4f46e5 (indigo)
+#   - Background: #f8f7ff (indigo-tinted light)
+#   - Text: #1f2937 (near-black)
+#   - Success: #16a34a (green)
+#   - Danger: #ef4444 (red)
 
 # CSS Class for Tooltips
 # CSS class name for elements with tooltips.
@@ -215,14 +215,14 @@ tip_box_style <- create_box_style(
 # CSS style string for warning message boxes.
 warning_box_style <- create_box_style(
   bg_color = "rgba(255, 0, 0, 0.1)",
-  text_color = "#ff0000",
-  border_color = "#ff0000",
+  text_color = "#ef4444",
+  border_color = "#ef4444",
   font_size = "1.5rem",
   padding = "1rem 2rem",
   extra_styles = list(
     `font-weight` = "700",
     `text-align` = "center",
-    border = "2px solid #ff0000"
+    border = "2px solid #ef4444"
   )
 )
 
@@ -248,24 +248,24 @@ filter_none_class <- "filter-message filter-none"
 # Legacy style exports (kept for backwards compatibility)
 # These may be removed in a future version
 filter_active_style <- build_css_style(
-  color = "#ff0000",
+  color = "#ef4444",
   font_size = "1rem",
   font_weight = "500",
   padding = "0.75rem",
   background_color = "#fff5f5",
-  border = "1px solid #ff0000",
+  border = "1px solid #ef4444",
   border_radius = "8px",
   display = "inline-block",
   width = "auto"
 )
 
 filter_none_style <- build_css_style(
-  color = "#008000",
+  color = "#16a34a",
   font_size = "1rem",
   font_weight = "500",
   padding = "0.75rem",
   background_color = "#f0fff0",
-  border = "1px solid #008000",
+  border = "1px solid #16a34a",
   border_radius = "8px",
   display = "inline-block",
   width = "auto"
@@ -274,7 +274,7 @@ filter_none_style <- build_css_style(
 # CSS Style for About Section Header
 # CSS style string for the About page header.
 about_header_style <- build_css_style(
-  color = "#2d287a",
+  color = "#312e81",
   font_size = "2.0rem",
   font_weight = "700",
   margin = "0"
@@ -283,10 +283,10 @@ about_header_style <- build_css_style(
 # CSS Style for About Section Text
 # CSS style string for the About page text content.
 about_text_style <- create_box_style(
-  bg_color = "#f8f9fc",
+  bg_color = "#f8f7ff",
   font_size = "1.5rem",
   padding = "2rem 3rem",
-  border_color = "#e1e4e8",
+  border_color = "#e5e7eb",
   extra_styles = list(
     `margin-top` = "1rem",
     `line-height` = "1.6",
@@ -297,11 +297,11 @@ about_text_style <- create_box_style(
 # CSS Style for About Section Boxes
 # CSS style string for boxes on the About page.
 about_box_style <- create_box_style(
-  bg_color = "#f8f9fc",
-  text_color = "#2d287a",
+  bg_color = "#f8f7ff",
+  text_color = "#312e81",
   font_size = "1.5rem",
   padding = "1rem",
-  border_color = "#e1e4e8",
+  border_color = "#e5e7eb",
   extra_styles = list(`line-height` = "1.6")
 )
 

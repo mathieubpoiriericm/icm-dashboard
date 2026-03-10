@@ -100,12 +100,13 @@ if (length(failed_packages) > 0) {
 
 message("All packages loaded successfully.")
 
-# Load Roboto font from local file (faster than font_add_google)
-font_path <- "www/fonts/Roboto-Regular.ttf"
-if (file.exists(font_path)) {
-  font_add("Roboto", font_path)
+# Load Inter font from local file (faster than font_add_google)
+font_path <- "www/fonts/Inter-Regular.ttf"
+font_path_bold <- "www/fonts/Inter-Bold.ttf"
+if (file.exists(font_path) && file.exists(font_path_bold)) {
+  font_add("Inter", regular = font_path, bold = font_path_bold)
 } else {
-  warning("Roboto font not found at ", font_path, ", using system default")
+  warning("Inter font files not found, using system default")
 }
 showtext_auto()
 

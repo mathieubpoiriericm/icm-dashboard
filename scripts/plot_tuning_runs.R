@@ -12,11 +12,11 @@ library(ggrepel)
 library(ggtext)
 library(systemfonts)
 
-# -- Register Roboto from local TTF ------------------------------------------
+# -- Register Inter from local TTF -------------------------------------------
 systemfonts::register_font(
-  name    = "Roboto",
-  plain   = "www/fonts/Roboto-Regular.ttf",
-  bold    = "www/fonts/Roboto-Bold.ttf"
+  name    = "Inter",
+  plain   = "www/fonts/Inter-Regular.ttf",
+  bold    = "www/fonts/Inter-Bold.ttf"
 )
 
 # -- Read data ----------------------------------------------------------------
@@ -95,7 +95,7 @@ gene_weight_colors <- c(
 theme_pub <- function(base_size = 11) {
   theme_minimal(base_size = base_size) %+replace%
     theme(
-      text = element_text(family = "Roboto", color = "grey20"),
+      text = element_text(family = "Inter", color = "grey20"),
       plot.title = element_text(
         size = base_size + 2, face = "bold", color = "grey10",
         margin = margin(b = 3), hjust = 0
@@ -141,7 +141,7 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
   ) +
   geom_text(
     aes(label = paste0("t=", confidence_threshold)),
-    vjust = -1.5, size = 2.8, color = "grey50", family = "Roboto"
+    vjust = -1.5, size = 2.8, color = "grey50", family = "Inter"
   ) +
   annotate(
     "label",
@@ -154,7 +154,7 @@ p1 <- ggplot(runs, aes(x = reorder(run_label, run_id), y = composite_score)) +
       "\nScore: ", sprintf("%.4f", best_run$composite_score)
     ),
     hjust = dplyr::if_else(best_idx > nrow(runs) * 0.6, 1, 0.5),
-    size = 2.8, fontface = "bold", family = "Roboto",
+    size = 2.8, fontface = "bold", family = "Inter",
     fill = "#fdf6e3", color = "grey20",
     label.r = unit(0.25, "lines"),
     label.padding = unit(0.35, "lines")
@@ -226,7 +226,7 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
     data = iso_labels,
     aes(x = recall, y = precision, label = paste0("F1=", f1_val)),
     size = 2.4, color = "grey72", hjust = -0.1, vjust = -0.4,
-    family = "Roboto", inherit.aes = FALSE
+    family = "Inter", inherit.aes = FALSE
   ) +
   geom_point(
     aes(fill = prompt_version, shape = model_family, size = f1),
@@ -238,7 +238,7 @@ p2 <- ggplot(runs, aes(x = recall, y = precision)) +
   ) +
   geom_text_repel(
     aes(label = paste0("#", run_id), color = prompt_version),
-    size = 3.0, fontface = "bold", family = "Roboto",
+    size = 3.0, fontface = "bold", family = "Inter",
     point.padding = 0.5, box.padding = 0.55,
     min.segment.length = 0.3, segment.color = "grey75",
     segment.size = 0.3, max.overlaps = 20,
@@ -395,7 +395,7 @@ gene_bar <- make_bar(
 # Color helper: wrap text in colored span
 clr <- function(txt, hex) paste0("<span style='color:", hex, "'>", txt, "</span>")
 
-# Formula bodies only (headers rendered separately in Roboto)
+# Formula bodies only (headers rendered separately in Inter)
 composite_formula <- paste0(
   "= ", clr("0.40", weight_colors["F1"]), " \u00b7 <i>F</i><sub>1</sub>",
   " + ", clr("0.15", weight_colors["GWAS_J"]), " \u00b7 <i>GWAS</i><sub><i>J</i></sub>",
@@ -460,12 +460,12 @@ header_size   <- 10 / .pt
 p4 <- ggplot() +
   coord_cartesian(xlim = c(0, 100), ylim = c(0, 100), expand = FALSE) +
 
-  # -- Section headers (all Roboto) --
+  # -- Section headers (all Inter) --
   geom_text(
     data = headers,
     aes(x = x, y = y, label = label),
     hjust = 0, vjust = 1, size = header_size,
-    fontface = "bold", family = "Roboto", color = "grey20"
+    fontface = "bold", family = "Inter", color = "grey20"
   ) +
 
   # -- Top zone: Composite formula (serif) --
@@ -484,13 +484,13 @@ p4 <- ggplot() +
   geom_text(
     data = comp_bar,
     aes(x = (xmin + xmax) / 2, y = (ymin + ymax) / 2, label = label),
-    size = 2.0, color = "white", fontface = "bold", family = "Roboto"
+    size = 2.0, color = "white", fontface = "bold", family = "Inter"
   ) +
   geom_text(
     data = comp_bar,
     aes(x = (xmin + xmax) / 2, y = ymin - 1.8,
         label = c("F1", "GWAS", "MR", "Omics", "PMID", "Gene")),
-    size = 2.0, color = "grey50", family = "Roboto"
+    size = 2.0, color = "grey50", family = "Inter"
   ) +
 
   # -- Top zone: Per-Gene formula (serif) --
@@ -509,13 +509,13 @@ p4 <- ggplot() +
   geom_text(
     data = gene_bar,
     aes(x = (xmin + xmax) / 2, y = (ymin + ymax) / 2, label = label),
-    size = 2.0, color = "white", fontface = "bold", family = "Roboto"
+    size = 2.0, color = "white", fontface = "bold", family = "Inter"
   ) +
   geom_text(
     data = gene_bar,
     aes(x = (xmin + xmax) / 2, y = ymin - 1.8,
         label = c("Detect", "GWAS", "MR", "Omics", "PMID")),
-    size = 2.0, color = "grey50", family = "Roboto"
+    size = 2.0, color = "grey50", family = "Inter"
   ) +
 
   # -- Middle zone: Standard Metrics formulas (serif) --
@@ -542,11 +542,11 @@ p4 <- ggplot() +
     label.padding = unit(0, "lines")
   ) +
 
-  # -- Bottom zone: Robustness Properties (Roboto, plain text) --
+  # -- Bottom zone: Robustness Properties (Inter, plain text) --
   annotate(
     "text", x = 54, y = 28, label = robustness,
     hjust = 0, vjust = 1, size = richtext_size,
-    family = "Roboto", color = "grey20", lineheight = 1.2
+    family = "Inter", color = "grey20", lineheight = 1.2
   ) +
 
   labs(
@@ -609,7 +609,7 @@ if (has_cost) {
     ) +
     geom_text_repel(
       aes(label = paste0("#", run_id), color = prompt_version),
-      size = 3.0, fontface = "bold", family = "Roboto",
+      size = 3.0, fontface = "bold", family = "Inter",
       point.padding = 0.4, box.padding = 0.45,
       min.segment.length = 0.3, segment.color = "grey75",
       segment.size = 0.3, max.overlaps = 20,
@@ -673,7 +673,7 @@ if (has_cost) {
       ) +
       geom_text_repel(
         aes(label = paste0("#", run_id), color = prompt_version),
-        size = 3.0, fontface = "bold", family = "Roboto",
+        size = 3.0, fontface = "bold", family = "Inter",
         point.padding = 0.4, box.padding = 0.45,
         min.segment.length = 0.3, segment.color = "grey75",
         segment.size = 0.3, max.overlaps = 20,
@@ -764,11 +764,11 @@ combined <- combined +
     subtitle = anno_subtitle,
     theme = theme(
       plot.title = element_text(
-        family = "Roboto", size = 17, face = "bold", color = "grey10",
+        family = "Inter", size = 17, face = "bold", color = "grey10",
         margin = margin(b = 2)
       ),
       plot.subtitle = element_text(
-        family = "Roboto", size = 11, color = "grey50", margin = margin(b = 12)
+        family = "Inter", size = 11, color = "grey50", margin = margin(b = 12)
       ),
       plot.margin = margin(12, 12, 10, 12)
     )

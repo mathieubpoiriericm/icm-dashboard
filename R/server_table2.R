@@ -86,11 +86,11 @@ build_sample_size_histogram <- function(load_table2, sample_size_input) {
       shiny::req(data)
       sample_sizes <- data$sample_sizes
 
-      par(mar = c(3L, 3L, 1L, 1L), bg = "white", family = "Roboto")
+      par(mar = c(3L, 3L, 1L, 1L), bg = "white", family = "Inter")
       hist(
         sample_sizes,
         breaks = HISTOGRAM_BREAKS,
-        col = "#2d287a",
+        col = "#312e81",
         border = "white",
         main = "",
         xlab = "",
@@ -116,13 +116,13 @@ build_sample_size_histogram <- function(load_table2, sample_size_input) {
       if (!is.null(sample_size_input())) {
         abline(
           v = sample_size_input()[1L],
-          col = "#e52f12",
+          col = "#ef4444",
           lwd = 2L,
           lty = 2L
         )
         abline(
           v = sample_size_input()[2L],
-          col = "#e52f12",
+          col = "#ef4444",
           lwd = 2L,
           lty = 2L
         )

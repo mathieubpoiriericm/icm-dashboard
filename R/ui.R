@@ -6,44 +6,26 @@
 # BSLIB THEME DEFINITIONS
 # =============================================================================
 
-# Light Theme
-# Bootstrap 5 theme matching the current light appearance.
+# Theme
+# Bootstrap 5 theme for the dashboard.
 light_theme <- bslib::bs_theme(
   version = 5,
   bg = "#ffffff",
   fg = "#1f2937",
-  primary = "#2d287a",
-  secondary = "#667eea",
-  success = "#008000",
-  danger = "#ff0000",
-  # Use local Roboto font (loaded in app.R) instead of font_google() for speed
-  base_font = "Roboto, sans-serif",
-  heading_font = "Roboto, sans-serif",
-  "navbar-bg" = "#f8f9fc",
+  primary = "#312e81",
+  secondary = "#4f46e5",
+  success = "#16a34a",
+  danger = "#ef4444",
+  base_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  heading_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  "navbar-bg" = "#f8f7ff",
   "navbar-light-color" = "#1f2937"
-)
-
-# Dark Theme with Glassmorphism
-# Bootstrap 5 dark theme with glassmorphism support.
-dark_theme <- bslib::bs_theme(
-  version = 5,
-  bg = "#121212",
-  fg = "#e0e0e0",
-  primary = "#6366f1",
-  secondary = "#818cf8",
-  success = "#4ade80",
-  danger = "#f87171",
-  # Use local Roboto font (loaded in app.R) instead of font_google() for speed
-  base_font = "Roboto, sans-serif",
-  heading_font = "Roboto, sans-serif",
-  "navbar-bg" = "#1a1a2e",
-  "navbar-dark-color" = "#e0e0e0"
 )
 
 # Build UI Function for SVD Dashboard
 #
 # Creates the UI definition for the Shiny application using bslib for
-# Bootstrap 5 theming with light/dark mode support.
+# Bootstrap 5 theming.
 #
 # Args:
 #   n_genes: Integer. Number of unique genes in the Gene Table.
@@ -103,7 +85,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
       )
     ),
 
-    # Header info (centered) and dark mode toggle in navbar
+    # Header info (centered) in navbar
     bslib::nav_spacer(),
     bslib::nav_item(
       shiny::tags$span(
@@ -124,13 +106,6 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
       )
     ),
     bslib::nav_spacer(),
-    bslib::nav_item(
-      shiny::tags$span(
-        id = "theme-toggle-btn",
-        class = "theme-toggle-btn d-flex align-items-center gap-2",
-        bslib::input_dark_mode(id = "dark_mode", mode = "light")
-      )
-    ),
 
     # About tab
     bslib::nav_panel(

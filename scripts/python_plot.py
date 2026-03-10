@@ -46,10 +46,10 @@ pop_label_config = {
 
 def estimate_text_width(text, font_size):
     """
-    Estimate text width in pixels for Roboto font.
-    Uses approximate character widths based on Roboto metrics.
+    Estimate text width in pixels for Inter font.
+    Uses approximate character widths based on Inter metrics.
     """
-    # Approximate character widths as fraction of font size for Roboto
+    # Approximate character widths as fraction of font size for Inter
     char_widths = {
         "i": 0.25,
         "l": 0.25,
@@ -584,7 +584,7 @@ for pop in populations:
                 }
             )
 
-svg_parts.append('<g id="drugs" font-family="Roboto" font-size="12" fill="#000">')
+svg_parts.append('<g id="drugs" font-family="Inter" font-size="12" fill="#000">')
 
 # FIRST PASS: Render ALL shadows
 for d in drug_render_data:
@@ -689,11 +689,11 @@ svg_parts.append(
 # Layer 2: Legend background rects
 svg_parts.append(
     f'<rect id="legend-bg" x="{legend_x - 20}" y="{legend_y - 30}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
-    f'rx="10" fill="#e8e8e8" fill-opacity="1"/>'
+    f'rx="10" fill="#f8f7ff" fill-opacity="1"/>'
 )
 svg_parts.append(
     f'<rect id="legend-moa-bg" x="{legend_moa_x - 20}" y="{legend_moa_y - 30}" width="{moa_legend_width:.2f}" height="{moa_legend_height:.2f}" '
-    f'rx="10" fill="#e8e8e8" fill-opacity="1"/>'
+    f'rx="10" fill="#f8f7ff" fill-opacity="1"/>'
 )
 
 # Layer 3: Inner element shadows (Yes/No boxes, mechanism circles)
@@ -717,25 +717,25 @@ for i, _mech in enumerate(mechanisms):
 # Layer 4: Inner elements (Yes/No boxes, mechanism circles, text)
 # Genetic Evidence legend content
 svg_parts.append(
-    f'<g id="legend" font-size="14" fill="#000" font-family="Roboto">'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Genetic Evidence</text>'
+    f'<g id="legend" font-size="14" fill="#000" font-family="Inter">'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y - 12}" text-anchor="middle" font-family="Inter" font-size="15" font-weight="500">Genetic Evidence</text>'
     f'<g class="legend-item">'
     f'<rect x="{yes_box_x:.2f}" y="{legend_y + 2}" width="{box_width}" height="20" rx="6" '
     f'fill="#90ee90" fill-opacity="1"/>'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">Yes</text>'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dominant-baseline="middle" font-family="Inter">Yes</text>'
     f"</g>"
     f'<g class="legend-item">'
     f'<rect x="{no_box_x:.2f}" y="{legend_y + 30}" width="{box_width}" height="20" rx="6" '
     f'fill="#ffffff" fill-opacity="1"/>'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dominant-baseline="middle" font-family="Roboto">No</text>'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dominant-baseline="middle" font-family="Inter">No</text>'
     f"</g>"
     f"</g>"
 )
 
 # MOA legend content
 svg_parts.append(
-    f'<g id="legend-moa" font-size="14" fill="#000" font-family="Roboto">'
-    f'<text x="{legend_moa_x + moa_legend_width / 2 - 20:.2f}" y="{legend_moa_y - 12}" text-anchor="middle" font-family="Roboto" font-size="15" font-weight="500">Mechanism of Action</text>'
+    f'<g id="legend-moa" font-size="14" fill="#000" font-family="Inter">'
+    f'<text x="{legend_moa_x + moa_legend_width / 2 - 20:.2f}" y="{legend_moa_y - 12}" text-anchor="middle" font-family="Inter" font-size="15" font-weight="500">Mechanism of Action</text>'
 )
 
 for i, mech in enumerate(mechanisms):
@@ -746,13 +746,13 @@ for i, mech in enumerate(mechanisms):
         mech_main = mech[:paren_index].rstrip()
         mech_paren = mech[paren_index:].strip()
         text_block = (
-            f'<text x="{legend_moa_x + 24}" y="{y}" font-family="Roboto">'
+            f'<text x="{legend_moa_x + 24}" y="{y}" font-family="Inter">'
             f"{mech_main}"
             f'<tspan x="{legend_moa_x + 24}" dy="1.2em">{mech_paren}</tspan>'
             f"</text>"
         )
     else:
-        text_block = f'<text x="{legend_moa_x + 24}" y="{y}" dominant-baseline="middle" font-family="Roboto">{mech}</text>'
+        text_block = f'<text x="{legend_moa_x + 24}" y="{y}" dominant-baseline="middle" font-family="Inter">{mech}</text>'
 
     svg_parts.append(
         f'<g class="legend-item">'
@@ -772,7 +772,32 @@ html = f"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Cache-Control" content="public, max-age=86400">
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+@font-face {{
+    font-family: 'Inter';
+    src: url('fonts/Inter-Regular.woff2') format('woff2'),
+         url('fonts/Inter-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}}
+@font-face {{
+    font-family: 'Inter';
+    src: url('fonts/Inter-Medium.woff2') format('woff2'),
+         url('fonts/Inter-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}}
+@font-face {{
+    font-family: 'Inter';
+    src: url('fonts/Inter-Bold.woff2') format('woff2'),
+         url('fonts/Inter-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}}
+</style>
 <style>
   body {{
     margin: 0;
@@ -807,7 +832,7 @@ html = f"""<!DOCTYPE html>
     width: 0;
     background: rgba(200, 200, 200, 0.4);
     color: #000;
-    font-family: "Roboto", Arial, sans-serif;
+    font-family: "Inter", Arial, sans-serif;
     overflow-x: hidden;
     overflow-y: auto;
     transition: width 0.3s ease, padding 0.3s ease;
@@ -830,7 +855,7 @@ html = f"""<!DOCTYPE html>
     line-height: 1.55;
   }}
   svg {{
-    font-family: "Roboto", Arial, sans-serif;
+    font-family: "Inter", Arial, sans-serif;
   }}
   g.drug text {{
     visibility: visible;
@@ -849,7 +874,7 @@ html = f"""<!DOCTYPE html>
     border-radius: 20px;
     min-width: 240px;
     max-width: 320px;
-    font-family: "Roboto", Arial, sans-serif;
+    font-family: "Inter", Arial, sans-serif;
     font-size: 13px;
     line-height: 1.5;
     pointer-events: none;

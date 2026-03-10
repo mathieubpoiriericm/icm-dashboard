@@ -25,19 +25,6 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     omics_type_rows <- app_data$omics_type_rows
 
     # =========================================================================
-    # THEME SWITCHING (BSLIB DARK MODE)
-    # =========================================================================
-    shiny::observeEvent(
-      input$dark_mode,
-      {
-        session$setCurrentTheme(
-          if (isTRUE(input$dark_mode)) dark_theme else light_theme
-        )
-      },
-      ignoreNULL = FALSE
-    )
-
-    # =========================================================================
     # PYTHON PLOT HANDLER
     # =========================================================================
     setup_python_plot_handler(input, session)
