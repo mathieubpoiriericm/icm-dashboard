@@ -242,11 +242,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         sidebar = bslib::sidebar(
           width = "auto",
           class = "sidebar-section",
-          shiny::div(
-            class = "sidebar-filters-header",
-            "Filters",
-            shiny::tags$hr()
-          ),
+          sidebar_filters_header(),
           checkbox_filter_ui(
             "mr_filter",
             "Mendelian Randomization Performed?",
@@ -389,11 +385,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         sidebar = bslib::sidebar(
           width = "auto",
           class = "sidebar-section",
-          shiny::div(
-            class = "sidebar-filters-header",
-            "Filters",
-            shiny::tags$hr()
-          ),
+          sidebar_filters_header(),
           checkbox_filter_ui(
             "ge_filter",
             "Genetic Evidence?",

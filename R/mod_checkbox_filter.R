@@ -47,6 +47,23 @@ checkbox_filter_ui <- function(
   )
 }
 
+# Render Filter Count Badge
+#
+# Shared helper for rendering the active filter count badge.
+# Returns NULL when the filter is in its default (inactive) state,
+# or a styled span with the count when filters are active.
+#
+# Args:
+#   sel: Character vector. Current filter selection.
+#   is_inactive: Logical. TRUE when no badge should be shown.
+#
+# Returns:
+#   NULL or a shiny span tag with the badge count.
+render_filter_count_badge <- function(sel, is_inactive) {
+  if (is_inactive) return(NULL)
+  shiny::span(class = "filter-count-badge", length(sel))
+}
+
 # Checkbox Filter Module Server (with "Show All" toggle)
 #
 # Handles the toggle behavior where selecting "Show All" deselects others
@@ -62,14 +79,13 @@ checkbox_filter_server <- function(id, default_selection = "all") {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(default_selection)
 
-    # Render active filter count badge
+    # Debounced filter value (shared by badge and return value)
+    debounced_filter <- shiny::reactive(input$filter) |> shiny::debounce(150)
+
+    # Render active filter count badge from debounced signal
     output$filter_count <- shiny::renderUI({
-      sel <- input$filter
-      if (is.null(sel) || "all" %in% sel) {
-        return(NULL)
-      }
-      n <- length(sel)
-      shiny::span(class = "filter-count-badge", n)
+      sel <- debounced_filter()
+      render_filter_count_badge(sel, is.null(sel) || "all" %in% sel)
     })
 
     shiny::observeEvent(
@@ -121,8 +137,8 @@ checkbox_filter_server <- function(id, default_selection = "all") {
       ignoreNULL = FALSE
     )
 
-    # Return the reactive filter value (debounced to avoid rapid re-filtering)
-    shiny::reactive(input$filter) |> shiny::debounce(150)
+    # Return the debounced reactive filter value
+    debounced_filter
   })
 }
 
@@ -140,14 +156,16 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(choices)
 
-    # Render active filter count badge
+    # Debounced filter value (shared by badge and return value)
+    debounced_filter <- shiny::reactive(input$filter) |> shiny::debounce(150)
+
+    # Render active filter count badge from debounced signal
     output$filter_count <- shiny::renderUI({
-      sel <- input$filter
-      if (is.null(sel) || length(sel) == length(choices)) {
-        return(NULL)
-      }
-      n <- length(sel)
-      shiny::span(class = "filter-count-badge", n)
+      sel <- debounced_filter()
+      render_filter_count_badge(
+        sel,
+        is.null(sel) || length(sel) == length(choices)
+      )
     })
 
     shiny::observeEvent(
@@ -185,7 +203,7 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
       ignoreNULL = FALSE
     )
 
-    # Debounced to avoid rapid re-filtering
-    shiny::reactive(input$filter) |> shiny::debounce(150)
+    # Return the debounced reactive filter value
+    debounced_filter
   })
 }

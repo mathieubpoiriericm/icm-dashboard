@@ -400,3 +400,18 @@ about_info_card <- function(label, content) {
     }
   )
 }
+
+# Create Sidebar Filters Header
+#
+# Creates the standard "Filters" header with a horizontal rule used at the
+# top of sidebar filter panels.
+#
+# Returns:
+#   A shiny div with the sidebar-filters-header class.
+sidebar_filters_header <- function() {
+  shiny::div(
+    class = "sidebar-filters-header",
+    "Filters",
+    shiny::tags$hr()
+  )
+}

@@ -222,6 +222,10 @@ apply_single_value_filter <- function(dt, column, filter_value) {
 # FILTER MESSAGE UTILITIES
 # =============================================================================
 
+# Pre-built icon tags (avoids regenerating on every render)
+ICON_FILTER <- shiny::icon("filter")
+ICON_CHECK <- shiny::icon("check-circle")
+
 # Build Filter List from Filter Specifications
 #
 # Helper function to build a character vector of active filter descriptions.
@@ -281,7 +285,7 @@ render_filter_message <- function(filters_applied) {
   if (length(filters_applied) > 0L) {
     shiny::div(
       class = filter_active_class,
-      shiny::icon("filter"),
+      ICON_FILTER,
       shiny::HTML(paste0(
         "<strong>Active Filters:</strong> ",
         paste(filters_applied, collapse = " | ")
@@ -290,7 +294,7 @@ render_filter_message <- function(filters_applied) {
   } else {
     shiny::div(
       class = filter_none_class,
-      shiny::icon("check-circle"),
+      ICON_CHECK,
       shiny::HTML("<strong>Active Filters:</strong> None")
     )
   }
