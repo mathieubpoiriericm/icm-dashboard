@@ -226,7 +226,7 @@ class TestFetchNcbiGene:
             side_effect=[search_response, summary_response]
         )
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -244,7 +244,7 @@ class TestFetchNcbiGene:
         }
         mock_client.get = AsyncMock(return_value=search_response)
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -255,7 +255,7 @@ class TestFetchNcbiGene:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -268,7 +268,7 @@ class TestFetchNcbiGene:
             side_effect=httpx.RequestError("connection failed")
         )
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -281,7 +281,7 @@ class TestFetchNcbiGene:
         response.status_code = 500
         mock_client.get = AsyncMock(return_value=response)
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -311,7 +311,7 @@ class TestFetchGeneDetails:
         }
         mock_client.get = AsyncMock(return_value=response)
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -329,7 +329,7 @@ class TestFetchGeneDetails:
         }
         mock_client.get = AsyncMock(return_value=response)
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -352,7 +352,7 @@ class TestFetchGeneDetails:
         }
         mock_client.get = AsyncMock(return_value=response)
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
 
@@ -381,7 +381,7 @@ class TestNcbiRetryOn429:
 
         mock_client.get = AsyncMock(side_effect=[resp_429, resp_200])
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
         mocker.patch("pipeline.validation.asyncio.sleep", new_callable=AsyncMock)
@@ -408,7 +408,7 @@ class TestNcbiRetryOn429:
 
         mock_client.get = AsyncMock(return_value=resp_429)
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
         mocker.patch("pipeline.validation.asyncio.sleep", new_callable=AsyncMock)
@@ -433,10 +433,10 @@ class TestNcbiRetryOn429:
 
         mock_client.get = AsyncMock(return_value=resp_200)
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
-        mocker.patch("pipeline.validation.NCBI_API_KEY", "test-key-123")
+        mocker.patch.dict("os.environ", {"NCBI_API_KEY": "test-key-123"})
 
         await _ncbi_get_with_retry(
             "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
@@ -461,7 +461,7 @@ class TestNcbiRetryOn429:
 
         mock_client.get = AsyncMock(side_effect=[resp_429, resp_200])
         mocker.patch(
-            "pipeline.validation._get_http_client",
+            "pipeline.validation._client_manager.get",
             return_value=mock_client,
         )
         mock_sleep = mocker.patch(

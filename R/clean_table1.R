@@ -171,7 +171,7 @@ clean_table1 <- function(
   table1$References <- vapply(
     table1$References,
     function(x) {
-      pmid_match <- stringr::str_extract_all(x, "\\b\\d{8}\\b")[[1L]]
+      pmid_match <- stringr::str_extract_all(x, "\\b\\d{7,8}\\b")[[1L]]
 
       if (length(pmid_match) == 0L) {
         NA_character_

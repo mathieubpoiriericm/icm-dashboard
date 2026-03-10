@@ -56,7 +56,8 @@ class EventLog:
             (event_type, payload_json, now),
         )
         self._conn.commit()
-        assert cur.lastrowid is not None
+        if cur.lastrowid is None:
+            raise RuntimeError("INSERT did not return a lastrowid")
         return cur.lastrowid
 
     def mark_notified(self, event_ids: list[int]) -> None:

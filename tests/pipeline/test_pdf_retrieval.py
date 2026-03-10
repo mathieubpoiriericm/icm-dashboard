@@ -164,7 +164,7 @@ class TestCheckUnpaywall:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_resp)
         mocker.patch(
-            "pipeline.pdf_retrieval._get_http_client",
+            "pipeline.pdf_retrieval._client_manager.get",
             return_value=mock_client,
         )
 
@@ -179,7 +179,7 @@ class TestCheckUnpaywall:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_resp)
         mocker.patch(
-            "pipeline.pdf_retrieval._get_http_client",
+            "pipeline.pdf_retrieval._client_manager.get",
             return_value=mock_client,
         )
 
@@ -193,7 +193,7 @@ class TestCheckUnpaywall:
             side_effect=httpx.TimeoutException("timeout")
         )
         mocker.patch(
-            "pipeline.pdf_retrieval._get_http_client",
+            "pipeline.pdf_retrieval._client_manager.get",
             return_value=mock_client,
         )
 

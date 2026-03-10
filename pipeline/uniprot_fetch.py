@@ -15,7 +15,13 @@ from typing import Any, Final
 
 import httpx
 
-from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
+from pipeline.cache_utils import (
+    DEFAULT_EVICT_FRACTION,
+    DEFAULT_MAX_SIZE,
+    SyncResult,
+    evict_lru,
+    make_log_progress,
+)
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
 
@@ -39,16 +45,6 @@ class UniProtInfo:
     molecular_function: str | None
     cellular_component: str | None
     url: str | None
-
-
-@dataclass(slots=True)
-class SyncResult:
-    """Result of sync operation."""
-
-    fetched: int
-    cached: int
-    failed: int
-    errors: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -280,12 +276,16 @@ async def fetch_uniprot_info(gene_symbol: str) -> UniProtInfo | None:
             _uniprot_cache.move_to_end(symbol_upper)
             return _uniprot_cache[symbol_upper]
 
-        async with _get_uniprot_semaphore():
-            result = await _fetch_uniprot_uncached(gene_symbol)
-            evict_lru(_uniprot_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
-                      "UniProt cache")
-            _uniprot_cache[symbol_upper] = result
-            return result
+    # Lock released before I/O
+    async with _get_uniprot_semaphore():
+        result = await _fetch_uniprot_uncached(gene_symbol)
+
+    async with _get_cache_lock():
+        evict_lru(
+            _uniprot_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION, "UniProt cache"
+        )
+        _uniprot_cache[symbol_upper] = result
+    return result
 
 
 async def _fetch_uniprot_uncached(gene_symbol: str) -> UniProtInfo:
@@ -321,7 +321,10 @@ async def fetch_uniprot_batch(
     gene_symbols: list[str],
     progress_callback: Any | None = None,
 ) -> list[UniProtInfo]:
-    """Fetch UniProt info for multiple genes.
+    """Fetch UniProt info for multiple genes concurrently.
+
+    Uses the module-level semaphore (via fetch_uniprot_info) to
+    rate-limit concurrent requests.
 
     Args:
         gene_symbols: List of gene symbols to fetch.
@@ -330,30 +333,36 @@ async def fetch_uniprot_batch(
     Returns:
         List of UniProtInfo objects.
     """
-    results: list[UniProtInfo] = []
     total = len(gene_symbols)
+    completed = 0
+    completed_lock = asyncio.Lock()
 
-    for i, symbol in enumerate(gene_symbols):
+    async def _fetch_one(symbol: str) -> UniProtInfo:
+        nonlocal completed
         info = await fetch_uniprot_info(symbol)
-        if info is not None:
-            results.append(info)
-        else:
-            results.append(
-                UniProtInfo(
-                    gene_symbol=symbol,
-                    accession=None,
-                    protein_name=None,
-                    biological_process=None,
-                    molecular_function=None,
-                    cellular_component=None,
-                    url=None,
-                )
+        result = (
+            info
+            if info is not None
+            else UniProtInfo(
+                gene_symbol=symbol,
+                accession=None,
+                protein_name=None,
+                biological_process=None,
+                molecular_function=None,
+                cellular_component=None,
+                url=None,
             )
+        )
+        async with completed_lock:
+            completed += 1
+            if progress_callback:
+                progress_callback(completed, total)
+        return result
 
-        if progress_callback:
-            progress_callback(i + 1, total)
+    async with asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(_fetch_one(s)) for s in gene_symbols]
 
-    return results
+    return [t.result() for t in tasks]
 
 
 # ---------------------------------------------------------------------------
@@ -389,11 +398,9 @@ async def sync_uniprot_info(gene_symbols: list[str]) -> SyncResult:
         )
 
     # Fetch missing genes
-    def log_progress(current: int, total: int) -> None:
-        if current % 10 == 0 or current == total:
-            logger.info(f"  UniProt fetch progress: {current}/{total}")
-
-    fetched_genes = await fetch_uniprot_batch(symbols_to_fetch, log_progress)
+    fetched_genes = await fetch_uniprot_batch(
+        symbols_to_fetch, make_log_progress("UniProt fetch")
+    )
 
     # Store in database
     successful = [g for g in fetched_genes if g.accession is not None]

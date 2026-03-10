@@ -238,6 +238,46 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
   paste(html_parts, collapse = "<br>")
 }
 
+# Build gene tooltip HTML link
+#
+# Creates an HTML anchor tag with Tippy.js tooltip showing NCBI gene info.
+#
+# Args:
+#   gene_symbol: Character. The gene symbol to display.
+#   gene_info_row: Data frame row. Gene info with columns 2-4 and URL.
+#   col_names: Character vector. Column names for tooltip labels (length 3).
+#   tooltip_class: Character. CSS class for the tooltip span.
+#
+# Returns:
+#   Character. HTML string with linked gene symbol and tooltip.
+make_gene_tooltip_html <- function(gene_symbol, gene_info_row, col_names,
+                                   tooltip_class) {
+  tooltip_content <- sprintf(
+    paste0(
+      "<strong>%s</strong> %s<br>",
+      "<strong>%s</strong> %s<br>",
+      "<strong>%s</strong> %s"
+    ),
+    col_names[1L], gene_info_row[2L],
+    col_names[2L], gene_info_row[3L],
+    col_names[3L], gene_info_row[4L]
+  )
+
+  gene_url <- gene_info_row[["URL"]]
+
+  as.character(
+    shiny::tags$a(
+      href = gene_url,
+      target = "_blank",
+      shiny::tags$span(
+        gene_symbol,
+        `data-tippy-content` = tooltip_content,
+        class = tooltip_class
+      )
+    )
+  )
+}
+
 # Prepare Table 1 display with pre-computed tooltips
 #
 # Transforms table1 data by adding Tippy.js tooltip HTML to all columns
@@ -276,6 +316,9 @@ prepare_table1_display <- function(
 ) {
   table1_display <- as.data.frame(table1)
 
+  # Keep an unmodified data.frame copy for extracting original list columns
+  table1_df <- table1_display
+
   # Vectorized gene symbol tooltip
   # Store original gene names for sorting before HTML transformation
   original_gene_names <- table1_display[[1L]]
@@ -291,31 +334,17 @@ prepare_table1_display <- function(
       original_gene_names
     ),
     function(gene_symbol, i, sort_name) {
-      tooltip_content <- sprintf(
-        paste0(
-          "<strong>%s</strong> %s<br>",
-          "<strong>%s</strong> %s<br>",
-          "<strong>%s</strong> %s"
-        ),
-        gene_col_names[1L], gene_info_results_df[i, 2L],
-        gene_col_names[2L], gene_info_results_df[i, 3L],
-        gene_col_names[3L], gene_info_results_df[i, 4L]
+      gene_link <- make_gene_tooltip_html(
+        gene_symbol,
+        gene_info_results_df[i, ],
+        gene_col_names,
+        tooltip_class_italic
       )
-
-      gene_url <- gene_info_results_df[i, "URL"]
 
       as.character(
         shiny::tags$span(
           `data-order` = tolower(sort_name),
-          shiny::tags$a(
-            href = gene_url,
-            target = "_blank",
-            shiny::tags$span(
-              gene_symbol,
-              `data-tippy-content` = tooltip_content,
-              class = tooltip_class_italic
-            )
-          )
+          shiny::HTML(gene_link)
         )
       )
     }
@@ -328,7 +357,7 @@ prepare_table1_display <- function(
   table1_display[[2L]] <- purrr::pmap_chr(
     list(
       table1_display[[2L]],
-      as.data.frame(table1)[[1L]],
+      table1_df[[1L]],
       original_protein_names
     ),
     function(protein_name, gene_name, sort_name) {
@@ -383,7 +412,7 @@ prepare_table1_display <- function(
       is_empty <- is.null(omim_value) || length(omim_value) == 0L
       is_single_na <- length(omim_value) == 1L && is.na(omim_value[1L])
       is_single_placeholder <- length(omim_value) == 1L &&
-        omim_value[1L] %in% c("(none found)", "")
+        omim_value[1L] %in% c(PLACEHOLDER_NONE_FOUND, "")
 
       if (is_empty || is_single_na || is_single_placeholder) {
         return(as.character(omim_value))
@@ -457,7 +486,6 @@ prepare_table1_display <- function(
 
   # GWAS Trait tooltip (vectorized)
   # Optimized: use vapply instead of purrr::map_chr
-  table1_df <- as.data.frame(table1)
   gwas_trait_col <- table1_df[["GWAS Trait"]]
 
   table1_display[["GWAS Trait"]] <- vapply(
@@ -628,8 +656,8 @@ prepare_table2_display <- function(
 
       ct_tooltip_content <- sprintf(
         "<strong>Trial Name</strong> %s<br><strong>Primary Outcome</strong> %s",
-        ct_tooltip_info[1L],
-        ct_tooltip_info[2L]
+        htmltools::htmlEscape(ct_tooltip_info[1L]),
+        htmltools::htmlEscape(ct_tooltip_info[2L])
       )
 
       registry_url <- get_registry_url(ct_id)
@@ -685,33 +713,11 @@ prepare_table2_display <- function(
             if (length(match_idx) > 0L) {
               match_idx <- match_idx[1L]
 
-              # Skip column 1 (Name) since it's redundant with the gene symbol
-              tooltip_content <- sprintf(
-                paste0(
-                  "<strong>%s</strong> %s<br>",
-                  "<strong>%s</strong> %s<br>",
-                  "<strong>%s</strong> %s"
-                ),
-                names(gene_info_results_df)[2L],
-                gene_info_results_df[match_idx, 2L],
-                names(gene_info_results_df)[3L],
-                gene_info_results_df[match_idx, 3L],
-                names(gene_info_results_df)[4L],
-                gene_info_results_df[match_idx, 4L]
-              )
-
-              gene_url <- gene_info_results_df[match_idx, "URL"]
-
-              as.character(
-                shiny::tags$a(
-                  href = gene_url,
-                  target = "_blank",
-                  shiny::tags$span(
-                    gene_symbol,
-                    `data-tippy-content` = tooltip_content,
-                    class = tooltip_class_italic
-                  )
-                )
+              make_gene_tooltip_html(
+                gene_symbol,
+                gene_info_results_df[match_idx, ],
+                names(gene_info_results_df)[2L:4L],
+                tooltip_class_italic
               )
             } else {
               # No match found, return gene symbol as-is

@@ -101,14 +101,11 @@ message("\n[6/7] Reading PubMed references from database...")
 # Extract unique PMIDs from table1 References column
 # Helper function to extract PMIDs from text
 extract_unique_pmids <- function(references_column) {
-  all_pmids <- character(0)
-  for (ref in references_column) {
-    if (!is.na(ref) && nchar(ref) > 0) {
-      # Find all 7-8 digit numbers (typical PMID format)
-      pmids <- regmatches(ref, gregexpr("\\b\\d{7,8}\\b", ref))[[1]]
-      all_pmids <- c(all_pmids, pmids)
-    }
-  }
+  valid <- !is.na(references_column) & nchar(references_column) > 0L
+  all_pmids <- unlist(
+    regmatches(references_column[valid], gregexpr("\\b\\d{7,8}\\b", references_column[valid])),
+    use.names = FALSE
+  )
   unique(all_pmids)
 }
 

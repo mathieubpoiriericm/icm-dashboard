@@ -228,6 +228,38 @@ def build_run_data(
     return data
 
 
+def _build_offline_run_data(
+    metrics: PipelineMetrics,
+    results: list[Any],
+    batch_warnings: list[str],
+    config: PipelineConfig,
+    total_duration: float,
+    extra_config: dict[str, Any],
+) -> PipelineRunData:
+    """Shared builder for local-PDF and PMID-list runs."""
+    failed_count = sum(1 for r in results if not r.succeeded)
+    pipeline_config = {
+        "model": config.llm_model,
+        "model_version": config.model_version,
+        "skip_validation": extra_config.pop("skip_validation", False),
+        "confidence_threshold": config.confidence_threshold,
+        "thinking_mode": "adaptive",
+        "effort": config.llm_effort,
+        "prompt_version": config.prompt_version,
+        **extra_config,
+    }
+    data = _build_common_run_data(
+        metrics,
+        results,
+        batch_warnings,
+        config,
+        total_duration,
+        pipeline_config=pipeline_config,
+    )
+    data["papers"]["total"] = failed_count + metrics.papers_processed
+    return data
+
+
 def build_local_pdf_run_data(
     metrics: PipelineMetrics,
     results: list[Any],
@@ -239,27 +271,11 @@ def build_local_pdf_run_data(
     total_duration: float = 0.0,
 ) -> PipelineRunData:
     """Assemble run data for a local-PDF extraction run."""
-    failed_count = sum(1 for r in results if not r.succeeded)
-    data = _build_common_run_data(
-        metrics,
-        results,
-        batch_warnings,
-        config,
-        total_duration,
-        pipeline_config={
-            "mode": "local_pdf",
-            "model": config.llm_model,
-            "model_version": config.model_version,
-            "pdf_directory": str(pdf_dir),
-            "skip_validation": skip_validation,
-            "confidence_threshold": config.confidence_threshold,
-            "thinking_mode": "adaptive",
-            "effort": config.llm_effort,
-            "prompt_version": config.prompt_version,
-        },
+    return _build_offline_run_data(
+        metrics, results, batch_warnings, config, total_duration,
+        {"mode": "local_pdf", "pdf_directory": str(pdf_dir),
+         "skip_validation": skip_validation},
     )
-    data["papers"]["total"] = failed_count + metrics.papers_processed
-    return data
 
 
 def build_pmid_run_data(
@@ -273,27 +289,11 @@ def build_pmid_run_data(
     total_duration: float = 0.0,
 ) -> PipelineRunData:
     """Assemble run data for a PMID-list extraction run."""
-    failed_count = sum(1 for r in results if not r.succeeded)
-    data = _build_common_run_data(
-        metrics,
-        results,
-        batch_warnings,
-        config,
-        total_duration,
-        pipeline_config={
-            "mode": "pmid_list",
-            "model": config.llm_model,
-            "model_version": config.model_version,
-            "pmid_file": str(pmid_file),
-            "skip_validation": skip_validation,
-            "confidence_threshold": config.confidence_threshold,
-            "thinking_mode": "adaptive",
-            "effort": config.llm_effort,
-            "prompt_version": config.prompt_version,
-        },
+    return _build_offline_run_data(
+        metrics, results, batch_warnings, config, total_duration,
+        {"mode": "pmid_list", "pmid_file": str(pmid_file),
+         "skip_validation": skip_validation},
     )
-    data["papers"]["total"] = failed_count + metrics.papers_processed
-    return data
 
 
 def write_comprehensive_report(data: PipelineRunData, log_dir: Path) -> Path:

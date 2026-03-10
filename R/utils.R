@@ -108,28 +108,14 @@ clean_column_names <- function(
 }
 
 # =============================================================================
-# CSS CLASS CONSTANTS
+# CSS CLASS CONSTANTS (aliases for backwards compatibility)
 # =============================================================================
-
-# CSS Class for Tooltips
-# CSS class name for elements with tooltips.
-# Styles are defined in www/custom.css for hover effect support.
-tooltip_class <- "tooltip-box"
-
-# CSS Class for Italic Tooltips
-# CSS class name for italic elements with tooltips (e.g., gene symbols).
-# Styles are defined in www/custom.css for hover effect support.
-tooltip_class_italic <- "tooltip-box tooltip-box-italic"
-
-# CSS Class for Active Filter Messages
-# CSS class name for displaying active filter status.
-# Styles are defined in custom.css for theme support.
-filter_active_class <- "filter-message filter-active"
-
-# CSS Class for No Active Filters
-# CSS class name for displaying when no filters are active.
-# Styles are defined in custom.css for theme support.
-filter_none_class <- "filter-message filter-none"
+# Canonical definitions are in constants.R (SCREAMING_SNAKE_CASE).
+# These snake_case aliases keep existing callers working.
+tooltip_class <- TOOLTIP_CLASS
+tooltip_class_italic <- TOOLTIP_CLASS_ITALIC
+filter_active_class <- FILTER_ACTIVE_CLASS
+filter_none_class <- FILTER_NONE_CLASS
 
 # =============================================================================
 # UI COMPONENT HELPERS

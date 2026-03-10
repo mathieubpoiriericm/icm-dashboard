@@ -129,6 +129,11 @@ def _render_markdown(run_data: PipelineRunData) -> str:
 
 def _make_send_notification(config: PipelineConfig):
     """Return a Tenacity-wrapped sender function bound to *config*."""
+    ap = apprise.Apprise()
+    for url in config.notify_urls.split(","):
+        url = url.strip()
+        if url:
+            ap.add(url)
 
     @retry(
         stop=stop_after_attempt(config.notify_max_retries),
@@ -144,11 +149,6 @@ def _make_send_notification(config: PipelineConfig):
         body_html: str,
         notify_type: apprise.NotifyType = apprise.NotifyType.INFO,
     ) -> bool | None:
-        ap = apprise.Apprise()
-        for url in config.notify_urls.split(","):
-            url = url.strip()
-            if url:
-                ap.add(url)
         return ap.notify(
             title=title,
             body=body_text,

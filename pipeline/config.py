@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from lxml import etree  # type: ignore[import-untyped]
+
 
 def _env_int(name: str, default: int) -> int:
     """Read an integer from an environment variable, falling back to *default*."""
@@ -87,6 +89,20 @@ ALLOWED_TABLES: Final[frozenset[str]] = frozenset(
 ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
 
 PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,9}$")
+
+# Defense-in-depth: disable external entity resolution and network access
+# to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
+SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
+    resolve_entities=False, no_network=True
+)
+
+
+def get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
+    """Add NCBI API key to params if available."""
+    api_key = os.getenv("NCBI_API_KEY")
+    if api_key:
+        return {**base_params, "api_key": api_key}
+    return base_params
 
 
 def validate_pmid(pmid: str) -> str:
@@ -262,9 +278,7 @@ class PipelineConfig:
         )
     )
     email_admin: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_EMAIL_ADMIN", ""
-        )
+        default_factory=lambda: _env_str("PIPELINE_EMAIL_ADMIN", "")
     )
 
     @property

@@ -4,12 +4,41 @@ from __future__ import annotations
 
 import logging
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_SIZE: Final[int] = 10_000
 DEFAULT_EVICT_FRACTION: Final[float] = 0.2
+
+
+@dataclass(slots=True)
+class SyncResult:
+    """Result of sync operation."""
+
+    fetched: int
+    cached: int
+    failed: int
+    errors: list[str]
+
+
+def make_log_progress(label: str, interval: int = 10):
+    """Create a progress callback that logs every *interval* items.
+
+    Args:
+        label: Prefix for the log message (e.g. "NCBI fetch").
+        interval: Log every N items (also logs the final item).
+
+    Returns:
+        A callback(current, total) suitable for batch fetch functions.
+    """
+
+    def _log_progress(current: int, total: int) -> None:
+        if current % interval == 0 or current == total:
+            logger.info(f"  {label} progress: {current}/{total}")
+
+    return _log_progress
 
 
 def evict_lru(

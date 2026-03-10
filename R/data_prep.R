@@ -2,6 +2,8 @@
 # Data loading and preprocessing
 # nolint start: object_usage_linter.
 
+.N_THREADS <- parallel::detectCores()
+
 # =============================================================================
 # DATA FILE VERIFICATION
 # =============================================================================
@@ -78,21 +80,6 @@ verify_data_files <- function(data_paths = DATA_PATHS) {
 # =============================================================================
 # TESTABLE HELPER FUNCTIONS
 # =============================================================================
-
-# Normalize Mendelian Randomization Values
-#
-# Replaces NA or empty string values with "No" in the Mendelian Randomization
-# column. This ensures consistent filtering behavior.
-#
-# Args:
-#   column: Character vector. The Mendelian Randomization column values.
-#
-# Returns:
-#   Character vector with NA/"" replaced by "No".
-normalize_mr_values <- function(column) {
-  column[is.na(column) | column == ""] <- "No"
-  column
-}
 
 # Convert Month/Year Date String to Display Format
 #
@@ -196,7 +183,7 @@ safe_read_data <- function(file_path) {
   if (grepl("\\.qs$", file_path, ignore.case = TRUE)) {
     if (file.exists(file_path)) {
       return(tryCatch(
-        qs::qread(file_path, nthreads = parallel::detectCores()),
+        qs::qread(file_path, nthreads = .N_THREADS),
         error = function(e) {
           stop(
             sprintf("Failed to load qs file '%s': %s", file_path, e$message),
@@ -221,7 +208,7 @@ safe_read_data <- function(file_path) {
   if (grepl("\\.rds$", file_path, ignore.case = TRUE)) {
     qs_path <- sub("\\.rds$", ".qs", file_path, ignore.case = TRUE)
     if (file.exists(qs_path)) {
-      return(qs::qread(qs_path, nthreads = parallel::detectCores()))
+      return(qs::qread(qs_path, nthreads = .N_THREADS))
     }
     # Fall back to .rds
     if (file.exists(file_path)) {
@@ -268,7 +255,7 @@ convert_rds_to_qs <- function(overwrite = FALSE) {
 
     tryCatch({
       obj <- readRDS(rds_path)
-      qs::qsave(obj, qs_path, nthreads = parallel::detectCores())
+      qs::qsave(obj, qs_path, nthreads = .N_THREADS)
       rds_size <- file.size(rds_path)
       qs_size <- file.size(qs_path)
       message(sprintf(
@@ -316,6 +303,35 @@ safe_read_csv <- function(file_path) {
   )
 }
 
+# Prepare gene info data frame with standard column names
+#
+# Renames columns from NCBI raw names to display names, applies title case
+# to protein descriptions, and adds NCBI Gene URL.
+#
+# Args:
+#   gene_info_df: Data frame. Raw NCBI gene info with columns: name, uid,
+#     description, otheraliases.
+#
+# Returns:
+#   Data frame with renamed columns and URL.
+prepare_gene_info_df <- function(gene_info_df) {
+  gene_info_df <- dplyr::rename(
+    gene_info_df,
+    `Name` = "name",
+    `NCBI Gene ID` = "uid",
+    `Protein Coded by This Gene` = "description",
+    `Other Aliases` = "otheraliases"
+  )
+  gene_info_df$`Protein Coded by This Gene` <- tools::toTitleCase(
+    gene_info_df$`Protein Coded by This Gene`
+  )
+  gene_info_df$URL <- paste0(
+    NCBI_GENE_BASE_URL,
+    gene_info_df$`NCBI Gene ID`
+  )
+  gene_info_df
+}
+
 # Load and prepare Table 1 data
 #
 # Loads pre-cleaned RDS files and external data sources, applies formatting
@@ -361,22 +377,7 @@ load_and_prepare_data <- function() {
   # Load pre-fetched NCBI gene info
   message("Loading gene info...")
   gene_info_results_df <- safe_read_rds(DATA_PATHS$gene_info)
-  gene_info_results_df <- dplyr::rename(
-    gene_info_results_df,
-    `Name` = "name",
-    `NCBI Gene ID` = "uid",
-    `Protein Coded by This Gene` = "description",
-    `Other Aliases` = "otheraliases"
-  )
-  gene_info_results_df$`Protein Coded by This Gene` <- tools::toTitleCase(
-    gene_info_results_df$`Protein Coded by This Gene`
-  )
-
-  # Add URL to NCBI Gene webpage using constant
-  gene_info_results_df$URL <- paste0(
-    NCBI_GENE_BASE_URL,
-    gene_info_results_df$`NCBI Gene ID`
-  )
+  gene_info_results_df <- prepare_gene_info_df(gene_info_results_df)
 
   # Load pre-fetched protein info
   message("Loading protein info...")
@@ -632,20 +633,7 @@ load_table2_data <- function() {
   gene_info_table2 <- safe_read_rds(DATA_PATHS$gene_info_table2)
 
   # Rename columns and add URL (same as Table 1 gene info)
-  gene_info_table2 <- dplyr::rename(
-    gene_info_table2,
-    `Name` = "name",
-    `NCBI Gene ID` = "uid",
-    `Protein Coded by This Gene` = "description",
-    `Other Aliases` = "otheraliases"
-  )
-  gene_info_table2$`Protein Coded by This Gene` <- tools::toTitleCase(
-    gene_info_table2$`Protein Coded by This Gene`
-  )
-  gene_info_table2$URL <- paste0(
-    NCBI_GENE_BASE_URL,
-    gene_info_table2$`NCBI Gene ID`
-  )
+  gene_info_table2 <- prepare_gene_info_df(gene_info_table2)
 
   # Extract trial name and primary outcome using column names
   ct_info <- data.frame(
@@ -659,15 +647,7 @@ load_table2_data <- function() {
   table2$`Trial Name` <- NULL
   table2$`Primary Outcome` <- NULL
 
-  convert_to_date <- function(date_column) {
-    is_month_year <- grepl("^\\d{1,2}/\\d{4}$", date_column)
-    date_column[is_month_year] <- paste0(date_column[is_month_year], "-01")
-    date_column[!is_month_year] <- NA
-    date_vals <- as.Date(date_column, format = "%m/%Y-%d")
-    format(date_vals, "%B %Y")
-  }
-
-  table2$`Estimated Completion Date` <- convert_to_date(
+  table2$`Estimated Completion Date` <- convert_month_year_date(
     table2$`Estimated Completion Date`
   )
 

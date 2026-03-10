@@ -5,11 +5,12 @@ Provides connection pooling, batch operations, and safe SQL execution.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, ClassVar
 
 import asyncpg
 
@@ -28,6 +29,7 @@ class Database:
     __slots__ = ()
     _pool: asyncpg.Pool | None = None
     _config: PipelineConfig | None = None
+    _pool_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     @classmethod
     def set_config(cls, config: PipelineConfig) -> None:
@@ -45,47 +47,50 @@ class Database:
             DatabaseConfigError: If required environment variables are missing.
             asyncpg.PostgresError: If connection fails.
         """
-        if cls._pool is None:
-            db_host = os.getenv("DB_HOST")
-            db_name = os.getenv("DB_NAME")
-            db_user = os.getenv("DB_USER")
-            db_password = os.getenv("DB_PASSWORD")
-            db_port_raw = os.getenv("DB_PORT", "5432")
-            try:
-                db_port = int(db_port_raw)
-            except ValueError:
-                raise DatabaseConfigError(
-                    f"DB_PORT must be an integer, got {db_port_raw!r}"
-                ) from None
+        if cls._pool is not None:
+            return cls._pool
+        async with cls._pool_lock:
+            if cls._pool is None:
+                db_host = os.getenv("DB_HOST")
+                db_name = os.getenv("DB_NAME")
+                db_user = os.getenv("DB_USER")
+                db_password = os.getenv("DB_PASSWORD")
+                db_port_raw = os.getenv("DB_PORT", "5432")
+                try:
+                    db_port = int(db_port_raw)
+                except ValueError:
+                    raise DatabaseConfigError(
+                        f"DB_PORT must be an integer, got {db_port_raw!r}"
+                    ) from None
 
-            # Validate required config
-            missing = [
-                name
-                for name, val in [
-                    ("DB_HOST", db_host),
-                    ("DB_NAME", db_name),
-                    ("DB_USER", db_user),
-                    ("DB_PASSWORD", db_password),
+                # Validate required config
+                missing = [
+                    name
+                    for name, val in [
+                        ("DB_HOST", db_host),
+                        ("DB_NAME", db_name),
+                        ("DB_USER", db_user),
+                        ("DB_PASSWORD", db_password),
+                    ]
+                    if not val
                 ]
-                if not val
-            ]
-            if missing:
-                raise DatabaseConfigError(
-                    f"Missing required database environment variables: {missing}"
+                if missing:
+                    raise DatabaseConfigError(
+                        f"Missing required database environment variables: {missing}"
+                    )
+
+                cfg = cls._config or PipelineConfig()
+
+                cls._pool = await asyncpg.create_pool(
+                    host=db_host,
+                    port=db_port,
+                    user=db_user,
+                    password=db_password,
+                    database=db_name,
+                    min_size=cfg.db_pool_min_size,
+                    max_size=cfg.db_pool_max_size,
+                    command_timeout=cfg.db_command_timeout,
                 )
-
-            cfg = cls._config or PipelineConfig()
-
-            cls._pool = await asyncpg.create_pool(
-                host=db_host,
-                port=db_port,
-                user=db_user,
-                password=db_password,
-                database=db_name,
-                min_size=cfg.db_pool_min_size,
-                max_size=cfg.db_pool_max_size,
-                command_timeout=cfg.db_command_timeout,
-            )
         return cls._pool
 
     @classmethod

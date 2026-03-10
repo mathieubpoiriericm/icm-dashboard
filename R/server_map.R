@@ -173,40 +173,21 @@ build_map_stats <- function(map_data_reactive) {
   })
 }
 
-# Minimum interval between map data fetches (seconds)
-map_min_fetch_interval_seconds <- 10L
-
 # Setup Map Tab Lazy Load Trigger
 #
 # Creates an observer that triggers map data loading when the
-# Clinical Trials Map tab is first accessed. Includes rate limiting
-# to prevent API abuse from rapid tab switching.
+# Clinical Trials Map tab is first accessed. The map_data_loader
+# reactive caches its result, so subsequent triggers are no-ops.
 #
 # Args:
 #   input: Shiny input object.
-#   map_data_loader: Reactive that loads map data.
+#   map_data_loader: Reactive that loads map data (with internal caching).
 #
 # Returns:
 #   NULL (side effects only).
 setup_map_lazy_load_trigger <- function(input, map_data_loader) {
-  # Track last fetch time for rate limiting
-  last_fetch_time <- shiny::reactiveVal(NULL)
-
   shiny::observeEvent(input$tabs, {
     if (identical(input$tabs, "Clinical Trials Map")) {
-      # Rate limiting: enforce minimum interval between fetches
-      last <- last_fetch_time()
-      now <- Sys.time()
-
-      if (!is.null(last)) {
-        elapsed <- as.numeric(difftime(now, last, units = "secs"))
-        if (elapsed < map_min_fetch_interval_seconds) {
-          return()
-        }
-      }
-
-      # Update last fetch time and trigger loading
-      last_fetch_time(now)
       map_data_loader()
     }
   })

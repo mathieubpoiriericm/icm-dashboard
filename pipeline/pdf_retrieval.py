@@ -15,7 +15,8 @@ from typing import Any, Final, Literal, TypedDict
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
-from pipeline.config import validate_pmid
+from pipeline.config import SAFE_XML_PARSER, get_ncbi_params, validate_pmid
+from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,6 @@ logger = logging.getLogger(__name__)
 # CONSTANTS
 # ---------------------------------------------------------------------------
 
-# Defense-in-depth: disable external entity resolution and network access
-# to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
-_SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
-    resolve_entities=False, no_network=True
-)
 DOI_PATTERN: Final[re.Pattern[str]] = re.compile(r"^10\.\d{4,}/[^\s]+$")
 
 # Timeout configurations
@@ -47,7 +43,6 @@ DEFAULT_LIMITS: Final[httpx.Limits] = httpx.Limits(
 
 # Environment config
 UNPAYWALL_EMAIL: Final[str] = os.getenv("UNPAYWALL_EMAIL", "")
-NCBI_API_KEY: Final[str | None] = os.getenv("NCBI_API_KEY")
 
 
 class FulltextResult(TypedDict):
@@ -62,27 +57,16 @@ class FulltextResult(TypedDict):
 # HTTP CLIENT
 # ---------------------------------------------------------------------------
 
-_http_client: httpx.AsyncClient | None = None
-
-
-async def _get_http_client() -> httpx.AsyncClient:
-    """Get or create shared HTTP client with connection pooling."""
-    global _http_client
-    if _http_client is None:
-        _http_client = httpx.AsyncClient(
-            timeout=DEFAULT_TIMEOUT,
-            follow_redirects=True,
-            limits=DEFAULT_LIMITS,
-        )
-    return _http_client
+_client_manager = AsyncHttpClientManager(
+    timeout=DEFAULT_TIMEOUT,
+    limits=DEFAULT_LIMITS,
+    follow_redirects=True,
+)
 
 
 async def close_http_client() -> None:
     """Close shared HTTP client (call at shutdown)."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
+    await _client_manager.close()
 
 
 def _validate_doi(doi: str) -> str:
@@ -101,13 +85,6 @@ def _validate_doi(doi: str) -> str:
     if not DOI_PATTERN.match(doi):
         raise ValueError(f"Invalid DOI format: {doi!r}")
     return doi
-
-
-def _get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
-    """Add NCBI API key to params if available."""
-    if NCBI_API_KEY:
-        return {**base_params, "api_key": NCBI_API_KEY}
-    return base_params
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +143,7 @@ async def check_unpaywall(doi: str) -> str | None:
     params = {"email": UNPAYWALL_EMAIL}
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(url, params=params)
 
         match resp.status_code:
@@ -206,7 +183,7 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
     params = {"ids": pmid, "format": "json"}
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(convert_url, params=params)
 
         if resp.status_code != 200:
@@ -224,7 +201,7 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
 
         # Step 2: Fetch full text from PMC
         pmc_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-        pmc_params = _get_ncbi_params({"db": "pmc", "id": pmcid, "rettype": "xml"})
+        pmc_params = get_ncbi_params({"db": "pmc", "id": pmcid, "rettype": "xml"})
 
         pmc_resp = await client.get(pmc_url, params=pmc_params)
 
@@ -233,7 +210,7 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
             return None
 
         # Parse XML and extract body text
-        root = etree.fromstring(pmc_resp.content, parser=_SAFE_XML_PARSER)
+        root = etree.fromstring(pmc_resp.content, parser=SAFE_XML_PARSER)
 
         # Use namespace-wildcard XPath so queries work regardless of whether
         # the PMC JATS XML uses explicit namespace prefixes.
@@ -284,7 +261,7 @@ async def download_and_parse_pdf(url: str) -> str | None:
         return None
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
 
         # Stream the response to avoid loading oversized PDFs into memory
         async with client.stream("GET", url, timeout=PDF_TIMEOUT) as resp:
@@ -460,7 +437,7 @@ async def fetch_abstract(pmid: str) -> str | None:
         Abstract text if available, None otherwise.
     """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params = _get_ncbi_params(
+    params = get_ncbi_params(
         {
             "db": "pubmed",
             "id": pmid,
@@ -470,14 +447,14 @@ async def fetch_abstract(pmid: str) -> str | None:
     )
 
     try:
-        client = await _get_http_client()
+        client = await _client_manager.get()
         resp = await client.get(url, params=params)
 
         if resp.status_code != 200:
             logger.debug(f"Abstract fetch failed for PMID {pmid}: {resp.status_code}")
             return None
 
-        root = etree.fromstring(resp.content, parser=_SAFE_XML_PARSER)
+        root = etree.fromstring(resp.content, parser=SAFE_XML_PARSER)
 
         # Find abstract text
         abstract_elem = root.find(".//AbstractText")

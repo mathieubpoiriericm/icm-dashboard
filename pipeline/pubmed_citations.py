@@ -16,8 +16,14 @@ from typing import Any, Final
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
-from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
-from pipeline.config import PipelineConfig
+from pipeline.cache_utils import (
+    DEFAULT_EVICT_FRACTION,
+    DEFAULT_MAX_SIZE,
+    SyncResult,
+    evict_lru,
+    make_log_progress,
+)
+from pipeline.config import SAFE_XML_PARSER, PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
@@ -25,12 +31,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-
-# Defense-in-depth: disable external entity resolution and network access
-# to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
-_SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
-    resolve_entities=False, no_network=True
-)
 
 NCBI_EFETCH_URL: Final[str] = (
     "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -48,16 +48,6 @@ class PubMedCitation:
     publication_date: str | None
     doi: str | None
     formatted_ref: str
-
-
-@dataclass(slots=True)
-class SyncResult:
-    """Result of sync operation."""
-
-    fetched: int
-    cached: int
-    failed: int
-    errors: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -191,12 +181,19 @@ async def fetch_pubmed_citation(pmid: str) -> PubMedCitation | None:
             _citation_cache.move_to_end(pmid)
             return _citation_cache[pmid]
 
-        async with _get_ncbi_semaphore():
-            result = await _fetch_pubmed_uncached(pmid)
-            evict_lru(_citation_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
-                      "PubMed citation cache")
-            _citation_cache[pmid] = result
-            return result
+    # Lock released before I/O
+    async with _get_ncbi_semaphore():
+        result = await _fetch_pubmed_uncached(pmid)
+
+    async with _get_cache_lock():
+        evict_lru(
+            _citation_cache,
+            DEFAULT_MAX_SIZE,
+            DEFAULT_EVICT_FRACTION,
+            "PubMed citation cache",
+        )
+        _citation_cache[pmid] = result
+    return result
 
 
 async def _fetch_pubmed_uncached(pmid: str) -> PubMedCitation | None:
@@ -228,7 +225,7 @@ async def _fetch_pubmed_uncached(pmid: str) -> PubMedCitation | None:
 def _parse_pubmed_xml(pmid: str, xml_content: bytes) -> PubMedCitation | None:
     """Parse PubMed XML response to extract citation details."""
     try:
-        root = etree.fromstring(xml_content, parser=_SAFE_XML_PARSER)
+        root = etree.fromstring(xml_content, parser=SAFE_XML_PARSER)
         article = root.find(".//PubmedArticle")
 
         if article is None:
@@ -299,7 +296,10 @@ async def fetch_pubmed_citations_batch(
     pmids: list[str],
     progress_callback: Any | None = None,
 ) -> list[PubMedCitation]:
-    """Fetch citations for multiple PMIDs.
+    """Fetch citations for multiple PMIDs concurrently.
+
+    Uses the module-level semaphore (via fetch_pubmed_citation) to
+    rate-limit concurrent requests.
 
     Args:
         pmids: List of PubMed IDs to fetch.
@@ -308,31 +308,36 @@ async def fetch_pubmed_citations_batch(
     Returns:
         List of PubMedCitation objects.
     """
-    results: list[PubMedCitation] = []
     total = len(pmids)
+    completed = 0
+    completed_lock = asyncio.Lock()
 
-    for i, pmid in enumerate(pmids):
+    async def _fetch_one(pmid: str) -> PubMedCitation:
+        nonlocal completed
         citation = await fetch_pubmed_citation(pmid)
-        if citation is not None:
-            results.append(citation)
-        else:
-            # Return placeholder for failed lookups
-            results.append(
-                PubMedCitation(
-                    pmid=pmid,
-                    authors=None,
-                    title=None,
-                    journal=None,
-                    publication_date=None,
-                    doi=None,
-                    formatted_ref=f"PMID: {pmid} (citation fetch failed)",
-                )
+        result = (
+            citation
+            if citation is not None
+            else PubMedCitation(
+                pmid=pmid,
+                authors=None,
+                title=None,
+                journal=None,
+                publication_date=None,
+                doi=None,
+                formatted_ref=f"PMID: {pmid} (citation fetch failed)",
             )
+        )
+        async with completed_lock:
+            completed += 1
+            if progress_callback:
+                progress_callback(completed, total)
+        return result
 
-        if progress_callback:
-            progress_callback(i + 1, total)
+    async with asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(_fetch_one(p)) for p in pmids]
 
-    return results
+    return [t.result() for t in tasks]
 
 
 def extract_pmids_from_text(text: str) -> list[str]:
@@ -396,11 +401,9 @@ async def sync_pubmed_citations(pmids: list[str]) -> SyncResult:
         )
 
     # Fetch missing citations
-    def log_progress(current: int, total: int) -> None:
-        if current % 10 == 0 or current == total:
-            logger.info(f"  PubMed fetch progress: {current}/{total}")
-
-    fetched_citations = await fetch_pubmed_citations_batch(pmids_to_fetch, log_progress)
+    fetched_citations = await fetch_pubmed_citations_batch(
+        pmids_to_fetch, make_log_progress("PubMed fetch")
+    )
 
     # Store in database - all citations are stored, even placeholder ones
     await upsert_pubmed_citations_batch(fetched_citations)

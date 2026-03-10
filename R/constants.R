@@ -114,6 +114,18 @@ BRAND_COLOR_ACCENT <- "#FA4616"
 BRAND_COLOR_DANGER <- "#DC3545"
 
 # =============================================================================
+# CSS CLASS CONSTANTS
+# =============================================================================
+# CSS class name for elements with tooltips (styled in www/custom.css)
+TOOLTIP_CLASS <- "tooltip-box"
+# CSS class name for italic elements with tooltips (e.g., gene symbols)
+TOOLTIP_CLASS_ITALIC <- "tooltip-box tooltip-box-italic"
+# CSS class name for displaying active filter status
+FILTER_ACTIVE_CLASS <- "filter-message filter-active"
+# CSS class name for displaying when no filters are active
+FILTER_NONE_CLASS <- "filter-message filter-none"
+
+# =============================================================================
 # DISPLAY CONSTANTS
 # =============================================================================
 # Placeholder text for missing data

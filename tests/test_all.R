@@ -576,28 +576,6 @@ test_that("binary_checkbox_filter_server starts with both options", {
 # TESTS FOR data_prep.R - Data Transformation Helpers
 # =============================================================================
 
-# normalize_mr_values() tests
-test_that("normalize_mr_values converts NA to 'No'", {
-  result <- normalize_mr_values(NA)
-  expect_equal(result, "No")
-})
-
-test_that("normalize_mr_values converts empty string to 'No'", {
-  result <- normalize_mr_values("")
-  expect_equal(result, "No")
-})
-
-test_that("normalize_mr_values preserves 'Yes' values", {
-  result <- normalize_mr_values("Yes")
-  expect_equal(result, "Yes")
-})
-
-test_that("normalize_mr_values handles vector input", {
-  input <- c("Yes", NA, "", "No", "Yes")
-  result <- normalize_mr_values(input)
-  expect_equal(result, c("Yes", "No", "No", "No", "Yes"))
-})
-
 # convert_month_year_date() tests
 test_that("convert_month_year_date formats '1/2024' as 'January 2024'", {
   result <- convert_month_year_date("1/2024")

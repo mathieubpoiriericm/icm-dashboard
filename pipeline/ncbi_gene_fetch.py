@@ -15,7 +15,13 @@ from typing import Any
 
 import httpx
 
-from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
+from pipeline.cache_utils import (
+    DEFAULT_EVICT_FRACTION,
+    DEFAULT_MAX_SIZE,
+    SyncResult,
+    evict_lru,
+    make_log_progress,
+)
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
 
@@ -34,16 +40,6 @@ class NCBIGeneInfo:
     ncbi_uid: str | None
     description: str | None
     aliases: str | None
-
-
-@dataclass(slots=True)
-class SyncResult:
-    """Result of sync operation."""
-
-    fetched: int
-    cached: int
-    failed: int
-    errors: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -132,12 +128,16 @@ async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
             _gene_cache.move_to_end(symbol_upper)
             return _gene_cache[symbol_upper]
 
-        async with _get_ncbi_semaphore():
-            result = await _fetch_ncbi_gene_uncached(gene_symbol)
-            evict_lru(_gene_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
-                      "NCBI gene cache")
-            _gene_cache[symbol_upper] = result
-            return result
+    # Lock released before I/O
+    async with _get_ncbi_semaphore():
+        result = await _fetch_ncbi_gene_uncached(gene_symbol)
+
+    async with _get_cache_lock():
+        evict_lru(
+            _gene_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION, "NCBI gene cache"
+        )
+        _gene_cache[symbol_upper] = result
+    return result
 
 
 async def _fetch_ncbi_gene_uncached(gene_symbol: str) -> NCBIGeneInfo | None:
@@ -247,11 +247,15 @@ async def fetch_ncbi_genes_batch(
     async def _fetch_one(symbol: str) -> NCBIGeneInfo:
         nonlocal completed
         info = await fetch_ncbi_gene_info(symbol)
-        result = info if info is not None else NCBIGeneInfo(
-            gene_symbol=symbol,
-            ncbi_uid=None,
-            description=None,
-            aliases=None,
+        result = (
+            info
+            if info is not None
+            else NCBIGeneInfo(
+                gene_symbol=symbol,
+                ncbi_uid=None,
+                description=None,
+                aliases=None,
+            )
         )
         async with completed_lock:
             completed += 1
@@ -298,11 +302,9 @@ async def sync_ncbi_gene_info(gene_symbols: list[str]) -> SyncResult:
         )
 
     # Fetch missing genes
-    def log_progress(current: int, total: int) -> None:
-        if current % 10 == 0 or current == total:
-            logger.info(f"  NCBI fetch progress: {current}/{total}")
-
-    fetched_genes = await fetch_ncbi_genes_batch(symbols_to_fetch, log_progress)
+    fetched_genes = await fetch_ncbi_genes_batch(
+        symbols_to_fetch, make_log_progress("NCBI fetch")
+    )
 
     # Store in database
     successful = [g for g in fetched_genes if g.ncbi_uid is not None]

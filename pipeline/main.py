@@ -1,4 +1,4 @@
-#!/Library/Frameworks/Python.framework/Versions/3.14/bin/python3
+#!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 """
 Main entry point for the SVD Dashboard data pipeline.
@@ -106,7 +106,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 import os  # noqa: E402
 
 from pipeline.batch_validation import batch_validate  # noqa: E402
-from pipeline.config import PipelineConfig, validate_pmid  # noqa: E402
+from pipeline.config import SAFE_XML_PARSER, PipelineConfig, validate_pmid  # noqa: E402
 from pipeline.data_merger import merge_gene_entries  # noqa: E402
 from pipeline.database import (  # noqa: E402
     Database,
@@ -143,11 +143,6 @@ from pipeline.validation import (  # noqa: E402
 
 # --- Constants ---
 LOG_SEPARATOR: Final[str] = "=" * 50
-# Defense-in-depth: disable external entity resolution and network access
-# to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
-_SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
-    resolve_entities=False, no_network=True
-)
 # Configure logging
 LOG_DIR = Path(os.getenv("PIPELINE_LOG_DIR", PROJECT_ROOT / "logs"))
 LOG_DIR.mkdir(exist_ok=True)
@@ -223,6 +218,33 @@ class PaperResult:
         return self.error is None
 
 
+async def _validate_genes(
+    genes: list[GeneEntry],
+    metrics: PipelineMetrics,
+    config: PipelineConfig,
+) -> tuple[list[GeneEntry], list[RejectedGene]]:
+    """Validate genes concurrently against NCBI and return (valid, rejected) lists."""
+    validated_genes: list[GeneEntry] = []
+    rejected_genes: list[RejectedGene] = []
+    validation_tasks = [validate_gene_entry(gene, config=config) for gene in genes]
+    results = await asyncio.gather(*validation_tasks, return_exceptions=True)
+
+    for gene, result in zip(genes, results, strict=True):
+        if isinstance(result, Exception):
+            logger.error(f"  Validation error for {gene.gene_symbol}: {result}")
+            metrics.genes_rejected += 1
+            rejected_genes.append(RejectedGene(gene=gene, reasons=[str(result)]))
+        elif result.is_valid:
+            validated_genes.append(result.normalized_data)
+            metrics.genes_validated += 1
+        else:
+            metrics.genes_rejected += 1
+            logger.debug(f"  Gene rejected: {result.errors}")
+            rejected_genes.append(RejectedGene(gene=gene, reasons=result.errors))
+
+    return validated_genes, rejected_genes
+
+
 # --- Shared HTTP client for metadata ---
 _metadata_client: httpx.AsyncClient | None = None
 
@@ -271,7 +293,7 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
             logger.warning(f"Metadata fetch failed for PMID {pmid}: {resp.status_code}")
             return {"pmid": pmid, "doi": None}
 
-        root = etree.fromstring(resp.content, parser=_SAFE_XML_PARSER)
+        root = etree.fromstring(resp.content, parser=SAFE_XML_PARSER)
         doi_elem = root.find(".//ArticleId[@IdType='doi']")
         doi = doi_elem.text if doi_elem is not None else None
         return {"pmid": pmid, "doi": doi}
@@ -340,23 +362,7 @@ async def process_paper(
         gene.pmid = pmid
 
     # Validate genes concurrently
-    validated_genes: list[GeneEntry] = []
-    rejected_genes: list[RejectedGene] = []
-    validation_tasks = [validate_gene_entry(gene, config=config) for gene in genes]
-    results = await asyncio.gather(*validation_tasks, return_exceptions=True)
-
-    for gene, result in zip(genes, results, strict=True):
-        if isinstance(result, Exception):
-            logger.error(f"  Validation error for gene {gene.gene_symbol}: {result}")
-            metrics.genes_rejected += 1
-            rejected_genes.append(RejectedGene(gene=gene, reasons=[str(result)]))
-        elif result.is_valid:
-            validated_genes.append(result.normalized_data)
-            metrics.genes_validated += 1
-        else:
-            metrics.genes_rejected += 1
-            logger.debug(f"  Gene rejected: {result.errors}")
-            rejected_genes.append(RejectedGene(gene=gene, reasons=result.errors))
+    validated_genes, rejected_genes = await _validate_genes(genes, metrics, config)
 
     return {
         "genes": validated_genes,
@@ -774,35 +780,9 @@ async def run_local_pdf_pipeline(
                         rejected_genes: list[RejectedGene] = []
                         metrics.genes_validated += len(genes)
                     else:
-                        validated_genes = []
-                        rejected_genes = []
-                        # Validate genes concurrently for this paper
-                        validation_tasks = [
-                            validate_gene_entry(gene, config=config) for gene in genes
-                        ]
-                        val_results = await asyncio.gather(
-                            *validation_tasks, return_exceptions=True
+                        validated_genes, rejected_genes = await _validate_genes(
+                            genes, metrics, config
                         )
-
-                        for gene, result in zip(genes, val_results, strict=True):
-                            if isinstance(result, Exception):
-                                logger.error(
-                                    f"  Validation error for {gene.gene_symbol}: "
-                                    f"{result}"
-                                )
-                                metrics.genes_rejected += 1
-                                rejected_genes.append(
-                                    RejectedGene(gene=gene, reasons=[str(result)])
-                                )
-                            elif result.is_valid:
-                                validated_genes.append(result.normalized_data)
-                                metrics.genes_validated += 1
-                            else:
-                                metrics.genes_rejected += 1
-                                logger.debug(f"  Gene rejected: {result.errors}")
-                                rejected_genes.append(
-                                    RejectedGene(gene=gene, reasons=result.errors)
-                                )
                     validation_elapsed = time.monotonic() - validation_start
 
                     metrics.papers_processed += 1
@@ -878,6 +858,7 @@ async def run_local_pdf_pipeline(
 
     finally:
         await close_validation_client()
+        await Database.close()
         clear_gene_cache()
 
 
@@ -996,33 +977,9 @@ async def run_pmid_pipeline(
                         rejected_genes: list[RejectedGene] = []
                         metrics.genes_validated += len(genes)
                     else:
-                        validated_genes = []
-                        rejected_genes = []
-                        validation_tasks = [
-                            validate_gene_entry(gene, config=config) for gene in genes
-                        ]
-                        val_results = await asyncio.gather(
-                            *validation_tasks, return_exceptions=True
+                        validated_genes, rejected_genes = await _validate_genes(
+                            genes, metrics, config
                         )
-                        for gene, result in zip(genes, val_results, strict=True):
-                            if isinstance(result, Exception):
-                                logger.error(
-                                    f"  Validation error for "
-                                    f"{gene.gene_symbol}: {result}"
-                                )
-                                metrics.genes_rejected += 1
-                                rejected_genes.append(
-                                    RejectedGene(gene=gene, reasons=[str(result)])
-                                )
-                            elif result.is_valid:
-                                validated_genes.append(result.normalized_data)
-                                metrics.genes_validated += 1
-                            else:
-                                metrics.genes_rejected += 1
-                                logger.debug(f"  Gene rejected: {result.errors}")
-                                rejected_genes.append(
-                                    RejectedGene(gene=gene, reasons=result.errors)
-                                )
                     validation_elapsed = time.monotonic() - validation_start
 
                     if is_fulltext:
@@ -1101,6 +1058,7 @@ async def run_pmid_pipeline(
         await _close_metadata_client()
         await close_http_client()
         await close_validation_client()
+        await Database.close()
         clear_gene_cache()
 
 

@@ -11,6 +11,7 @@ import logging
 import os
 import warnings
 from datetime import datetime, timedelta
+from functools import partial
 from http.client import HTTPException
 from typing import Final
 from urllib.error import HTTPError, URLError
@@ -133,13 +134,15 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
 
     try:
         handle = await asyncio.to_thread(
-            Entrez.esearch,
-            db="pubmed",
-            term=SVD_QUERY,
-            mindate=mindate,
-            maxdate="3000",
-            retmax=DEFAULT_RETMAX,
-            usehistory="y",
+            partial(
+                Entrez.esearch,
+                db="pubmed",
+                term=SVD_QUERY,
+                mindate=mindate,
+                maxdate="3000",
+                retmax=DEFAULT_RETMAX,
+                usehistory="y",
+            )
         )
         results = await asyncio.to_thread(Entrez.read, handle)
     except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
@@ -158,12 +161,14 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
             while fetched < total_count and fetched < MAX_TOTAL_RESULTS:
                 try:
                     handle = await asyncio.to_thread(
-                        Entrez.esearch,
-                        db="pubmed",
-                        retstart=fetched,
-                        retmax=DEFAULT_RETMAX,
-                        webenv=web_env,
-                        query_key=query_key,
+                        partial(
+                            Entrez.esearch,
+                            db="pubmed",
+                            retstart=fetched,
+                            retmax=DEFAULT_RETMAX,
+                            webenv=web_env,
+                            query_key=query_key,
+                        )
                     )
                     batch = await asyncio.to_thread(Entrez.read, handle)
                 except (

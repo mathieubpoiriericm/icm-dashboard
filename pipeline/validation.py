@@ -18,7 +18,8 @@ from typing import Any, Final
 import httpx
 
 from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
-from pipeline.config import VALID_GWAS_TRAITS, PipelineConfig
+from pipeline.config import VALID_GWAS_TRAITS, PipelineConfig, get_ncbi_params
+from pipeline.http_client import AsyncHttpClientManager
 from pipeline.llm_extraction import GeneEntry
 
 logger = logging.getLogger(__name__)
@@ -27,11 +28,9 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
-NCBI_API_KEY: Final[str | None] = os.getenv("NCBI_API_KEY")
-
 # With API key: 10 req/s → 0.1s minimum interval
 # Without API key: 3 req/s → 0.34s minimum interval
-_MIN_REQUEST_INTERVAL: Final[float] = 0.1 if NCBI_API_KEY else 0.34
+_MIN_REQUEST_INTERVAL: Final[float] = 0.1 if os.getenv("NCBI_API_KEY") else 0.34
 
 _last_request_time: float = 0.0
 _throttle_lock: asyncio.Lock | None = None
@@ -79,28 +78,13 @@ class ValidationResult:
 # HTTP CLIENT AND CACHE
 # ---------------------------------------------------------------------------
 
-_http_client: httpx.AsyncClient | None = None
-
-
-async def _get_http_client() -> httpx.AsyncClient:
-    """Get or create shared HTTP client with connection pooling."""
-    global _http_client
-    if _http_client is None:
-        # 15s timeout: NCBI esearch responses are small JSON; longer
-        # would mask network issues without improving availability.
-        _http_client = httpx.AsyncClient(
-            timeout=15.0,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
-    return _http_client
+_client_manager = AsyncHttpClientManager(timeout=15.0)
 
 
 async def close_validation_client() -> None:
     """Close shared HTTP client (call at shutdown)."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
+    await _client_manager.close()
+
 
 _gene_cache: OrderedDict[str, dict[str, Any] | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
@@ -128,13 +112,6 @@ def clear_gene_cache() -> None:
     """Clear the gene validation cache."""
     global _gene_cache
     _gene_cache = OrderedDict()
-
-
-def _get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
-    """Add NCBI API key to params if available."""
-    if NCBI_API_KEY:
-        return {**base_params, "api_key": NCBI_API_KEY}
-    return base_params
 
 
 # ---------------------------------------------------------------------------
@@ -174,8 +151,8 @@ async def _ncbi_get_with_retry(
     if config is None:
         config = PipelineConfig()
 
-    full_params = _get_ncbi_params(params)
-    client = await _get_http_client()
+    full_params = get_ncbi_params(params)
+    client = await _client_manager.get()
 
     for attempt in range(1, config.max_rate_limit_retries + 1):
         await _throttle()
@@ -307,8 +284,12 @@ async def verify_ncbi_gene(
         result = await _fetch_ncbi_gene_uncached(symbol, config=config)
 
     async with _get_cache_lock():
-        evict_lru(_gene_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
-                  "gene validation cache")
+        evict_lru(
+            _gene_cache,
+            DEFAULT_MAX_SIZE,
+            DEFAULT_EVICT_FRACTION,
+            "gene validation cache",
+        )
         _gene_cache[symbol_upper] = result
 
     return result

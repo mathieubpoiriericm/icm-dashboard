@@ -3,6 +3,9 @@
 
 # Note: with_db_connection is defined in utils.R and sourced at runtime
 
+# Build PostgreSQL parameterized placeholder string ($1, $2, ...)
+pg_placeholders <- function(n) paste0("$", seq_len(n), collapse = ", ")
+
 # =============================================================================
 # NCBI GENE INFO
 # =============================================================================
@@ -33,7 +36,7 @@ read_ncbi_gene_info_from_db <- function(gene_symbols, con = NULL, ...) {
 
   with_db_connection(function(conn) { # nolint: object_usage_linter.
     # Build parameterized query
-    placeholders <- paste0("$", seq_along(gene_symbols), collapse = ", ")
+    placeholders <- pg_placeholders(length(gene_symbols))
     query <- sprintf(
       "SELECT gene_symbol as name, ncbi_uid as uid,
               description, aliases as otheraliases
@@ -149,7 +152,7 @@ read_uniprot_data_from_db <- function(gene_symbols, con = NULL, ...) {
   }
 
   with_db_connection(function(conn) { # nolint: object_usage_linter.
-    placeholders <- paste0("$", seq_along(gene_symbols), collapse = ", ")
+    placeholders <- pg_placeholders(length(gene_symbols))
     query <- sprintf(
       "SELECT gene_symbol as gene, accession, protein_name,
               biological_process, molecular_function, cellular_component, url
@@ -216,7 +219,7 @@ read_pubmed_refs_from_db <- function(pmids, con = NULL, ...) {
   pmids <- as.character(pmids)
 
   with_db_connection(function(conn) { # nolint: object_usage_linter.
-    placeholders <- paste0("$", seq_along(pmids), collapse = ", ")
+    placeholders <- pg_placeholders(length(pmids))
     query <- sprintf(
       "SELECT pmid, formatted_ref FROM pubmed_citations WHERE pmid IN (%s)",
       placeholders

@@ -6,7 +6,6 @@
 #
 options(
   shiny.sanitize.errors = TRUE,
-  shiny.fullstacktrace = TRUE,
   warn = 1 # Print warnings as they occur
 )
 #
@@ -152,7 +151,9 @@ minify_css <- function(input_path, output_path) {
 
 # Check if source file is newer than output to skip unnecessary minification
 needs_minify <- function(input, output) {
-  !file.exists(output) || file.info(input)$mtime > file.info(output)$mtime
+  if (!file.exists(output)) return(TRUE)
+  mtimes <- file.info(c(input, output))$mtime
+  mtimes[1L] > mtimes[2L]
 }
 
 css_result <- tryCatch(
@@ -199,7 +200,7 @@ minify_js <- function(input_path, output_path) {
   js <- gsub("\\s+", " ", js, perl = TRUE)
   # Remove spaces around operators and braces
 
-  js <- gsub("\\s*([{};:,=+\\-*/<>!&|?])\\s*", "\\1", js, perl = TRUE)
+  js <- gsub("\\s*([{};:,+\\-*/<>!&|?])\\s*", "\\1", js, perl = TRUE)
   # Trim
   js <- trimws(js)
 

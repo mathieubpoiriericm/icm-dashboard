@@ -222,25 +222,9 @@ build_table2_filtered_data <- function(
     }
 
     # Sponsor Type filter (special logic for Academic/Industry)
-    if (
-      !is.null(spon_filter()) &&
-        length(spon_filter()) > 0L &&
-        !"all" %in% spon_filter()
-    ) {
-      if (!("Academic" %in% spon_filter() && "Industry" %in% spon_filter())) {
-        if ("Academic" %in% spon_filter()) {
-          spon_rows <- table2[
-            get("Sponsor Type") == "Academic",
-            original_row_num
-          ]
-        } else {
-          spon_rows <- table2[
-            grepl("^Industry", get("Sponsor Type")),
-            original_row_num
-          ]
-        }
-        kept_rows <- intersect(kept_rows, spon_rows)
-      }
+    spon_filtered <- apply_sponsor_type_filter(table2, spon_filter())
+    if (nrow(spon_filtered) < nrow(table2)) {
+      kept_rows <- intersect(kept_rows, spon_filtered$original_row_num)
     }
 
     # Sample size range filter

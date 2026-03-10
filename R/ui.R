@@ -22,6 +22,16 @@ light_theme <- bslib::bs_theme(
   "navbar-light-color" = "#2D2926"
 )
 
+# Common tooltip/link tip boxes used in both Table 1 and Table 2 tabs
+.TIP_TOOLTIP <- paste0(
+  "Elements with a grey background like this have tooltips. ",
+  "Hover over them to see additional information."
+)
+.TIP_LINKS <- paste0(
+  "Elements with a <span class=\"link-hint\">blue font</span> ",
+  "are clickable links that open in a new tab."
+)
+
 # Build UI Function for SVD Dashboard
 #
 # Creates the UI definition for the Shiny application using bslib for
@@ -282,7 +292,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               EWAS = "EWAS",
               TWAS = "TWAS",
               PWAS = "PWAS",
-              Proteomics = "proteomics",
+              Proteomics = "Proteomics",
               MENTR = "mutation effect prediction on ncRNA transcription"
             ),
             selected = "all"
@@ -300,14 +310,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
           ),
           shiny::br(),
           tip_row_ui(
-            tip_box_ui(paste0(
-              "Elements with a grey background like this have tooltips. ",
-              "Hover over them to see additional information."
-            )),
-            tip_box_ui(paste0(
-              "Elements with a <span class=\"link-hint\">blue font</span> ",
-              "are clickable links that open in a new tab."
-            )),
+            tip_box_ui(.TIP_TOOLTIP),
+            tip_box_ui(.TIP_LINKS),
             tip_box_ui(paste0(
               "Definitions for affected pathways are according to ",
               "<a href=\"https://geneontology.org/docs/",
@@ -473,14 +477,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
           ),
           shiny::br(),
           tip_row_ui(
-            tip_box_ui(paste0(
-              "Elements with a grey background like this have tooltips. ",
-              "Hover over them to see additional information."
-            )),
-            tip_box_ui(paste0(
-              "Elements with a <span class=\"link-hint\">blue font</span> ",
-              "are clickable links that open in a new tab."
-            )),
+            tip_box_ui(.TIP_TOOLTIP),
+            tip_box_ui(.TIP_LINKS),
             tip_box_ui(paste0(
               "Definitions for genetic targets and genetic ",
               "evidence are according to ",
