@@ -17,6 +17,7 @@ logs
 .env
 .Renviron
 CLAUDE.md
+docs/superpowers
 rshiny_dashboard.code-workspace
 secrets-values.yaml
 www/*min.css

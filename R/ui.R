@@ -123,10 +123,11 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
           shiny::div(
             class = "text-center",
             bslib::card(
-              class = "d-inline-block border-danger border-2",
+              class = "d-inline-block warning-card-amber",
               fill = FALSE,
               bslib::card_body(
-                class = "text-danger fw-bold fs-5 py-3 px-4",
+                class = "fw-bold fs-5 py-3 px-4",
+                shiny::icon("exclamation-triangle", class = "me-2"),
                 paste0(
                   "This is a preview of a dashboard ",
                   "that is still a work in progress!"
@@ -172,7 +173,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               bslib::value_box(
                 title = "Putative Causal Genes",
                 value = n_genes,
-                showcase = NULL
+                showcase = NULL,
+                class = "vb-genes"
               ),
               # Connector between Genes and Drugs
               shiny::span(class = "fs-4 fw-bold text-body", "&"),
@@ -180,7 +182,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               bslib::value_box(
                 title = "Drugs Tested",
                 value = n_drugs,
-                showcase = NULL
+                showcase = NULL,
+                class = "vb-drugs"
               ),
               # Connector between Drugs and Trials
               shiny::span(class = "fs-4 fw-bold text-body", "in"),
@@ -188,7 +191,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               bslib::value_box(
                 title = "Clinical Trials",
                 value = n_trials,
-                showcase = NULL
+                showcase = NULL,
+                class = "vb-trials"
               ),
               # Connector between Trials and Publications
               shiny::span(class = "fs-4 fw-bold text-body", "based on"),
@@ -196,7 +200,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               bslib::value_box(
                 title = "Peer-Reviewed Publications",
                 value = n_pubs,
-                showcase = NULL
+                showcase = NULL,
+                class = "vb-pubs"
               )
             ),
             shiny::tags$hr(class = "section-divider"),
@@ -237,6 +242,11 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         sidebar = bslib::sidebar(
           width = "auto",
           class = "sidebar-section",
+          shiny::div(
+            class = "sidebar-filters-header",
+            "Filters",
+            shiny::tags$hr()
+          ),
           checkbox_filter_ui(
             "mr_filter",
             "Mendelian Randomization Performed?",
@@ -379,6 +389,11 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         sidebar = bslib::sidebar(
           width = "auto",
           class = "sidebar-section",
+          shiny::div(
+            class = "sidebar-filters-header",
+            "Filters",
+            shiny::tags$hr()
+          ),
           checkbox_filter_ui(
             "ge_filter",
             "Genetic Evidence?",

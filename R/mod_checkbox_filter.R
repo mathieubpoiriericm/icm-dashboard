@@ -27,7 +27,11 @@ checkbox_filter_ui <- function(
     class = "mb-3",
     bslib::card_body(
       class = "py-3 px-3",
-      shiny::tags$label(label, class = "control-label"),
+      shiny::div(
+        class = "d-flex align-items-center",
+        shiny::tags$label(label, class = "control-label"),
+        shiny::uiOutput(ns("filter_count"), inline = TRUE)
+      ),
       shinyWidgets::prettyCheckboxGroup(
         ns("filter"),
         label = NULL,
@@ -57,6 +61,16 @@ checkbox_filter_ui <- function(
 checkbox_filter_server <- function(id, default_selection = "all") {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(default_selection)
+
+    # Render active filter count badge
+    output$filter_count <- shiny::renderUI({
+      sel <- input$filter
+      if (is.null(sel) || "all" %in% sel) {
+        return(NULL)
+      }
+      n <- length(sel)
+      shiny::span(class = "filter-count-badge", n)
+    })
 
     shiny::observeEvent(
       input$filter,
@@ -125,6 +139,16 @@ checkbox_filter_server <- function(id, default_selection = "all") {
 binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(choices)
+
+    # Render active filter count badge
+    output$filter_count <- shiny::renderUI({
+      sel <- input$filter
+      if (is.null(sel) || length(sel) == length(choices)) {
+        return(NULL)
+      }
+      n <- length(sel)
+      shiny::span(class = "filter-count-badge", n)
+    })
 
     shiny::observeEvent(
       input$filter,

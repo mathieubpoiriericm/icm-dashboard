@@ -2,7 +2,7 @@
 # Unified filter utilities for data.table filtering
 
 # nolint start: object_usage_linter.
-# filter_active_style and filter_none_style are from utils.R
+# filter_active_class and filter_none_class are from utils.R
 # (sourced before this file in app.R)
 
 # Apply Column Filter
@@ -281,6 +281,7 @@ render_filter_message <- function(filters_applied) {
   if (length(filters_applied) > 0L) {
     shiny::div(
       class = filter_active_class,
+      shiny::icon("filter"),
       shiny::HTML(paste0(
         "<strong>Active Filters:</strong> ",
         paste(filters_applied, collapse = " | ")
@@ -289,6 +290,7 @@ render_filter_message <- function(filters_applied) {
   } else {
     shiny::div(
       class = filter_none_class,
+      shiny::icon("check-circle"),
       shiny::HTML("<strong>Active Filters:</strong> None")
     )
   }
