@@ -304,7 +304,7 @@ class TestExtractFromPaper:
         )
         mocker.patch("asyncio.sleep", new_callable=AsyncMock)
 
-        rate_limiter = AsyncMock()
+        rate_limiter = MagicMock()
         # Return different request IDs for each acquire call
         rate_limiter.acquire = AsyncMock(side_effect=[0, 1])
         rate_limiter.record_actual_usage = AsyncMock()

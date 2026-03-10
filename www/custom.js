@@ -53,7 +53,6 @@ Shiny.addCustomMessageHandler('rerunPythonPlotSizing', function(msg) {
   if (typeof win.adjustLabelBackgrounds === 'function') win.adjustLabelBackgrounds();
   if (typeof win.adjustLegendBox === 'function') win.adjustLegendBox();
   if (typeof win.adjustLegendBoxMOA === 'function') win.adjustLegendBoxMOA();
-  if (typeof win.adjustDrugLabelCollisions === 'function') win.adjustDrugLabelCollisions();
   if (typeof win.avoidCognitiveOverlap === 'function') win.avoidCognitiveOverlap();
 });
 

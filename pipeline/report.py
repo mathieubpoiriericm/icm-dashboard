@@ -7,6 +7,7 @@ report structure used for both the JSON file and terminal output.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -21,6 +22,8 @@ from pipeline.config import MODEL_PRICING, PipelineConfig
 from pipeline.data_merger import MergeResult
 from pipeline.llm_extraction import GeneEntry
 from pipeline.quality_metrics import PipelineMetrics
+
+logger = logging.getLogger(__name__)
 
 # Prompt-caching multipliers applied to the base input price.
 # The pipeline uses 1h TTL caches (see prompts.py), so writes cost 2x base.
@@ -82,6 +85,7 @@ def _estimate_cost(
     """
     pricing = MODEL_PRICING.get(model)
     if pricing is None:
+        logger.warning("No pricing data for model %s — cost will be omitted", model)
         return None
     input_price, output_price = pricing
     return (

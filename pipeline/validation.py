@@ -221,7 +221,7 @@ async def validate_gene_entry(
     3. GWAS trait check - warn on unrecognized phenotypes (non-blocking)
 
     Note: Required field validation (Stage 0 in prior versions) is now
-    handled by Pydantic via Instructor at extraction time.
+    handled by Pydantic at extraction time.
 
     Args:
         entry: Gene entry from LLM extraction (Pydantic-validated).
