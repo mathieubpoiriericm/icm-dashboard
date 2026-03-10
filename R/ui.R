@@ -72,13 +72,16 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
         # non-blocking)
         shiny::tags$script(src = "custom.min.js", defer = NA)
       ),
-      # Persistent title section (appears on all tabs)
+      # Main title (visually merges with navbar above)
       shiny::div(
-        class = "title-section",
-        shiny::h2(paste0(
-          "Putative Causal Genes and Clinical Trial Drugs ",
-          "for Cerebral Small Vessel Disease (SVD)"
-        ))
+        class = "navbar-title-row",
+        shiny::h2(
+          class = "navbar-title",
+          paste0(
+            "Putative Causal Genes and Clinical Trial Drugs ",
+            "for Cerebral Small Vessel Disease (SVD)"
+          )
+        )
       )
     ),
 
