@@ -91,43 +91,49 @@ class TestFilterNewPmids:
 
 
 class TestSearchRecentPapers:
-    def test_invalid_days_back_zero(self):
+    async def test_invalid_days_back_zero(self):
         with pytest.raises(ValueError, match="days_back"):
-            search_recent_papers(0)
+            await search_recent_papers(0)
 
-    def test_invalid_days_back_negative(self):
+    async def test_invalid_days_back_negative(self):
         with pytest.raises(ValueError, match="days_back"):
-            search_recent_papers(-1)
+            await search_recent_papers(-1)
 
-    def test_invalid_days_back_too_high(self):
+    async def test_invalid_days_back_too_high(self):
         with pytest.raises(ValueError, match="days_back"):
-            search_recent_papers(365 * 10 + 1)
+            await search_recent_papers(365 * 10 + 1)
 
-    def test_valid_days_back_boundary_low(self, mocker):
-        mock_handle = MagicMock()
-        mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
-        mocker.patch("pipeline.pubmed_search.Entrez.read", return_value={"IdList": []})
-        result = search_recent_papers(1)
-        assert result == []
-
-    def test_valid_days_back_boundary_high(self, mocker):
-        mock_handle = MagicMock()
-        mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
-        mocker.patch("pipeline.pubmed_search.Entrez.read", return_value={"IdList": []})
-        result = search_recent_papers(365 * 10)
-        assert result == []
-
-    def test_returns_pmid_list(self, mocker):
+    async def test_valid_days_back_boundary_low(self, mocker):
         mock_handle = MagicMock()
         mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
         mocker.patch(
             "pipeline.pubmed_search.Entrez.read",
-            return_value={"IdList": ["111", "222", "333"]},
+            return_value={"IdList": [], "Count": "0"},
         )
-        result = search_recent_papers(7)
+        result = await search_recent_papers(1)
+        assert result == []
+
+    async def test_valid_days_back_boundary_high(self, mocker):
+        mock_handle = MagicMock()
+        mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
+        mocker.patch(
+            "pipeline.pubmed_search.Entrez.read",
+            return_value={"IdList": [], "Count": "0"},
+        )
+        result = await search_recent_papers(365 * 10)
+        assert result == []
+
+    async def test_returns_pmid_list(self, mocker):
+        mock_handle = MagicMock()
+        mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
+        mocker.patch(
+            "pipeline.pubmed_search.Entrez.read",
+            return_value={"IdList": ["111", "222", "333"], "Count": "3"},
+        )
+        result = await search_recent_papers(7)
         assert result == ["111", "222", "333"]
 
-    def test_entrez_error_raises(self, mocker):
+    async def test_entrez_error_raises(self, mocker):
         from urllib.error import URLError
 
         mocker.patch(
@@ -135,11 +141,37 @@ class TestSearchRecentPapers:
             side_effect=URLError("Network error"),
         )
         with pytest.raises(PubMedSearchError, match="Entrez API"):
-            search_recent_papers(7)
+            await search_recent_papers(7)
 
-    def test_missing_id_list_key(self, mocker):
+    async def test_missing_id_list_key(self, mocker):
         mock_handle = MagicMock()
         mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
-        mocker.patch("pipeline.pubmed_search.Entrez.read", return_value={})
-        result = search_recent_papers(7)
+        mocker.patch(
+            "pipeline.pubmed_search.Entrez.read",
+            return_value={"Count": "0"},
+        )
+        result = await search_recent_papers(7)
         assert result == []
+
+    async def test_pagination_fetches_all_results(self, mocker):
+        """When total > retmax, pagination fetches remaining results."""
+        mock_handle = MagicMock()
+        mocker.patch("pipeline.pubmed_search.Entrez.esearch", return_value=mock_handle)
+        # First call returns initial batch with WebEnv/QueryKey
+        first_batch = {
+            "IdList": [str(i) for i in range(500)],
+            "Count": "700",
+            "WebEnv": "WEBENV123",
+            "QueryKey": "1",
+        }
+        # Pagination call returns remaining
+        second_batch = {
+            "IdList": [str(i) for i in range(500, 700)],
+            "Count": "700",
+        }
+        mocker.patch(
+            "pipeline.pubmed_search.Entrez.read",
+            side_effect=[first_batch, second_batch],
+        )
+        result = await search_recent_papers(7)
+        assert len(result) == 700

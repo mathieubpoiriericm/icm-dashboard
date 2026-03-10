@@ -117,6 +117,7 @@ from pipeline.database import (  # noqa: E402
 from pipeline.event_log import EventLog  # noqa: E402
 from pipeline.healthcheck import ping_failure, ping_start, ping_success  # noqa: E402
 from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
+from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state  # noqa: E402
 from pipeline.notifications import send_pipeline_notification  # noqa: E402
 from pipeline.pdf_retrieval import (  # noqa: E402
     close_http_client,
@@ -136,6 +137,7 @@ from pipeline.report import (  # noqa: E402
 from pipeline.validation import (  # noqa: E402
     clear_gene_cache,
     close_validation_client,
+    init_validation_state,
     validate_gene_entry,
 )
 
@@ -483,6 +485,10 @@ async def run_pipeline(
     # Set up database config
     Database.set_config(config)
 
+    # Eagerly initialize async locks/semaphores (safe under free-threading)
+    init_validation_state(config)
+    init_ncbi_fetch_state(config)
+
     # Set up rate limiter
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
@@ -499,7 +505,7 @@ async def run_pipeline(
     try:
         # Step 1: Search PubMed for recent papers
         logger.info("Step 1: Searching PubMed for recent SVD genetic papers...")
-        all_pmids = search_recent_papers(days_back)
+        all_pmids = await search_recent_papers(days_back)
         logger.info(f"  Found {len(all_pmids)} papers matching SVD genetic criteria")
 
         if not all_pmids:
@@ -699,6 +705,9 @@ async def run_local_pdf_pipeline(
 
     metrics = PipelineMetrics()
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
+
+    init_validation_state(config)
+    init_ncbi_fetch_state(config)
 
     pipeline_start_time = time.monotonic()
     ping_start(config.healthcheck_url)
@@ -921,6 +930,9 @@ async def run_pmid_pipeline(
 
     metrics = PipelineMetrics()
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
+
+    init_validation_state(config)
+    init_ncbi_fetch_state(config)
 
     pipeline_start_time = time.monotonic()
     ping_start(config.healthcheck_url)

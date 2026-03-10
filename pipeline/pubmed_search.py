@@ -6,6 +6,7 @@ Requires ENTREZ_EMAIL environment variable (NCBI policy).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import warnings
@@ -98,8 +99,15 @@ def _build_query() -> str:
 SVD_QUERY: Final[str] = _build_query()
 
 
-def search_recent_papers(days_back: int = 7) -> list[str]:
+MAX_TOTAL_RESULTS: Final[int] = 5000
+
+
+async def search_recent_papers(days_back: int = 7) -> list[str]:
     """Return PMIDs of papers published in the last N days.
+
+    Uses asyncio.to_thread to avoid blocking the event loop with
+    synchronous BioPython Entrez calls. Paginates through results
+    using WebEnv/QueryKey when more than DEFAULT_RETMAX are available.
 
     Args:
         days_back: Number of days to look back (1 to 3650).
@@ -124,7 +132,8 @@ def search_recent_papers(days_back: int = 7) -> list[str]:
     logger.info(f"PubMed query (last {days_back}d): {SVD_QUERY[:120]}...")
 
     try:
-        handle = Entrez.esearch(
+        handle = await asyncio.to_thread(
+            Entrez.esearch,
             db="pubmed",
             term=SVD_QUERY,
             mindate=mindate,
@@ -132,11 +141,51 @@ def search_recent_papers(days_back: int = 7) -> list[str]:
             retmax=DEFAULT_RETMAX,
             usehistory="y",
         )
-        results = Entrez.read(handle)
+        results = await asyncio.to_thread(Entrez.read, handle)
     except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
         raise PubMedSearchError(f"Entrez API call failed: {e}") from e
 
-    pmids = results.get("IdList", [])
+    pmids: list[str] = list(results.get("IdList", []))
+    total_count = int(results.get("Count", 0))
+
+    # Paginate if there are more results than the initial batch
+    if total_count > DEFAULT_RETMAX:
+        web_env = results.get("WebEnv")
+        query_key = results.get("QueryKey")
+
+        if web_env and query_key:
+            fetched = len(pmids)
+            while fetched < total_count and fetched < MAX_TOTAL_RESULTS:
+                try:
+                    handle = await asyncio.to_thread(
+                        Entrez.esearch,
+                        db="pubmed",
+                        retstart=fetched,
+                        retmax=DEFAULT_RETMAX,
+                        webenv=web_env,
+                        query_key=query_key,
+                    )
+                    batch = await asyncio.to_thread(Entrez.read, handle)
+                except (
+                    URLError, HTTPError, HTTPException, OSError, RuntimeError
+                ) as e:
+                    logger.warning(
+                        f"PubMed pagination failed at offset {fetched}: {e}"
+                    )
+                    break
+
+                batch_ids = batch.get("IdList", [])
+                if not batch_ids:
+                    break
+                pmids.extend(batch_ids)
+                fetched += len(batch_ids)
+
+            if fetched >= MAX_TOTAL_RESULTS:
+                logger.warning(
+                    f"PubMed results capped at {MAX_TOTAL_RESULTS} "
+                    f"(total available: {total_count})"
+                )
+
     logger.info(f"PubMed search returned {len(pmids)} result(s)")
     return pmids
 

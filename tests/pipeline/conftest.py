@@ -241,10 +241,12 @@ def mock_stream_context(mock_anthropic_response):
 @pytest.fixture(autouse=True)
 def _reset_validation_cache():
     """Clear the NCBI gene cache after each test."""
+    from collections import OrderedDict
+
     yield
     import pipeline.validation as val
 
-    val._gene_cache = {}
+    val._gene_cache = OrderedDict()
 
 
 @pytest.fixture(autouse=True)
@@ -267,6 +269,7 @@ def _reset_validation_client():
     val._last_request_time = 0.0
     val._throttle_lock = None
     val._cache_lock = None
+    val._validation_state_initialized = False
 
 
 @pytest.fixture(autouse=True)
@@ -309,23 +312,28 @@ def _reset_main_client():
 @pytest.fixture(autouse=True)
 def _reset_ncbi_gene_client():
     """Clear the shared ncbi_gene_fetch HTTP client and cache after each test."""
+    from collections import OrderedDict
+
     yield
     import pipeline.ncbi_gene_fetch as ncbi
 
     ncbi._client_manager.reset()
-    ncbi._gene_cache = {}
+    ncbi._gene_cache = OrderedDict()
     ncbi._ncbi_semaphore = None
     ncbi._cache_lock = None
+    ncbi._ncbi_fetch_state_initialized = False
 
 
 @pytest.fixture(autouse=True)
 def _reset_uniprot_client():
     """Clear the shared uniprot_fetch HTTP client and cache after each test."""
+    from collections import OrderedDict
+
     yield
     import pipeline.uniprot_fetch as uni
 
     uni._client_manager.reset()
-    uni._uniprot_cache = {}
+    uni._uniprot_cache = OrderedDict()
     uni._uniprot_semaphore = None
     uni._cache_lock = None
 
@@ -333,11 +341,13 @@ def _reset_uniprot_client():
 @pytest.fixture(autouse=True)
 def _reset_pubmed_citations_client():
     """Clear the shared pubmed_citations HTTP client and cache after each test."""
+    from collections import OrderedDict
+
     yield
     import pipeline.pubmed_citations as pc
 
     pc._client_manager.reset()
-    pc._citation_cache = {}
+    pc._citation_cache = OrderedDict()
     pc._ncbi_semaphore = None
     pc._cache_lock = None
 

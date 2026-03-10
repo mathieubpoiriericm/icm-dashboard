@@ -9,11 +9,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any
 
 import httpx
 
+from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
 
@@ -50,14 +52,31 @@ class SyncResult:
 
 # Module-level shared HTTP client
 _client_manager = AsyncHttpClientManager(timeout=15.0)
-_gene_cache: dict[str, NCBIGeneInfo | None] = {}
-_MAX_CACHE_SIZE: Final[int] = 10_000
+_gene_cache: OrderedDict[str, NCBIGeneInfo | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
+_ncbi_fetch_state_initialized: bool = False
+
+
+def init_ncbi_fetch_state(config: PipelineConfig | None = None) -> None:
+    """Eagerly initialize module-level locks and semaphores.
+
+    Must be called once from the running event loop before concurrent use.
+    Safe to call multiple times (idempotent).
+    """
+    global _cache_lock, _ncbi_semaphore, _ncbi_fetch_state_initialized
+    if _ncbi_fetch_state_initialized:
+        return
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    if _ncbi_semaphore is None:
+        limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
+        _ncbi_semaphore = asyncio.Semaphore(limit)
+    _ncbi_fetch_state_initialized = True
 
 
 def _get_cache_lock() -> asyncio.Lock:
-    """Lazy-init cache lock (avoids creating Lock before event loop exists)."""
+    """Get cache lock, initializing lazily if needed."""
     global _cache_lock
     if _cache_lock is None:
         _cache_lock = asyncio.Lock()
@@ -65,7 +84,7 @@ def _get_cache_lock() -> asyncio.Lock:
 
 
 def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
-    """Get or create the NCBI rate-limit semaphore."""
+    """Get NCBI rate-limit semaphore, initializing lazily if needed."""
     global _ncbi_semaphore
     if _ncbi_semaphore is None:
         limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
@@ -81,7 +100,7 @@ async def close_ncbi_client() -> None:
 def clear_ncbi_cache() -> None:
     """Clear the gene info cache."""
     global _gene_cache
-    _gene_cache = {}
+    _gene_cache = OrderedDict()
 
 
 # ---------------------------------------------------------------------------
@@ -102,19 +121,21 @@ async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
     """
     symbol_upper = gene_symbol.upper()
 
-    # Check cache first (without lock for read)
+    # Check cache first (without lock for read — LRU recency not updated,
+    # acceptable tradeoff to avoid lock contention on every read)
     if symbol_upper in _gene_cache:
         return _gene_cache[symbol_upper]
 
     async with _get_cache_lock():
         # Double-check after acquiring lock
         if symbol_upper in _gene_cache:
+            _gene_cache.move_to_end(symbol_upper)
             return _gene_cache[symbol_upper]
 
         async with _get_ncbi_semaphore():
             result = await _fetch_ncbi_gene_uncached(gene_symbol)
-            if len(_gene_cache) >= _MAX_CACHE_SIZE:
-                _gene_cache.clear()
+            evict_lru(_gene_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
+                      "NCBI gene cache")
             _gene_cache[symbol_upper] = result
             return result
 

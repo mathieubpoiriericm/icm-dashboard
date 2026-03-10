@@ -115,6 +115,21 @@ async def get_all_pmids() -> list[str]:
     return sorted(all_pmids)
 
 
+_MAX_ERRORS_PER_SOURCE: int = 10
+
+
+def _append_errors_truncated(
+    target: list[str], source: list[str], label: str
+) -> None:
+    """Append errors from source to target, truncating with a message."""
+    if len(source) <= _MAX_ERRORS_PER_SOURCE:
+        target.extend(source)
+    else:
+        target.extend(source[:_MAX_ERRORS_PER_SOURCE])
+        suppressed = len(source) - _MAX_ERRORS_PER_SOURCE
+        target.append(f"... and {suppressed} more {label} errors suppressed")
+
+
 async def sync_all_external_data() -> ExternalDataSyncResult:
     """Sync all external data sources for dashboard refresh.
 
@@ -153,7 +168,7 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
             result.ncbi_fetched = ncbi_result.fetched
             result.ncbi_cached = ncbi_result.cached
             result.ncbi_failed = ncbi_result.failed
-            result.errors.extend(ncbi_result.errors[:10])  # Limit error list
+            _append_errors_truncated(result.errors, ncbi_result.errors, "NCBI")
 
             # Step 4: Sync UniProt info (Table 1 genes only)
             logger.info("Syncing UniProt info...")
@@ -161,7 +176,7 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
             result.uniprot_fetched = uniprot_result.fetched
             result.uniprot_cached = uniprot_result.cached
             result.uniprot_failed = uniprot_result.failed
-            result.errors.extend(uniprot_result.errors[:10])
+            _append_errors_truncated(result.errors, uniprot_result.errors, "UniProt")
 
             # Step 5: Sync PubMed citations
             if pmids:
@@ -170,7 +185,9 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
                 result.pubmed_fetched = pubmed_result.fetched
                 result.pubmed_cached = pubmed_result.cached
                 result.pubmed_failed = pubmed_result.failed
-                result.errors.extend(pubmed_result.errors[:10])
+                _append_errors_truncated(
+                    result.errors, pubmed_result.errors, "PubMed"
+                )
             else:
                 logger.info("No PMIDs to sync")
 

@@ -166,7 +166,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
             ),
             shiny::tags$hr(class = "section-divider"),
             bslib::layout_columns(
-              col_widths = c(2, 1, 2, 1, 2, 2, 2),
+              col_widths = c(2, 1, 5, 2, 2),
               fill = FALSE,
               class = "align-items-center justify-content-center my-3",
               # Genes value box
@@ -178,21 +178,22 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               ),
               # Connector between Genes and Drugs
               shiny::span(class = "fs-4 fw-bold text-body", "&"),
-              # Drugs value box
-              bslib::value_box(
-                title = "Drugs Tested",
-                value = n_drugs,
-                showcase = NULL,
-                class = "vb-drugs"
-              ),
-              # Connector between Drugs and Trials
-              shiny::span(class = "fs-4 fw-bold text-body", "in"),
-              # Trials value box
-              bslib::value_box(
-                title = "Clinical Trials",
-                value = n_trials,
-                showcase = NULL,
-                class = "vb-trials"
+              # Drug and trial value boxes
+              shiny::div(
+                class = "vb-group",
+                bslib::value_box(
+                  title = "Drugs Tested",
+                  value = n_drugs,
+                  showcase = NULL,
+                  class = "vb-drugs"
+                ),
+                shiny::span(class = "fs-4 fw-bold text-body", "in"),
+                bslib::value_box(
+                  title = "Clinical Trials",
+                  value = n_trials,
+                  showcase = NULL,
+                  class = "vb-trials"
+                )
               ),
               # Connector between Trials and Publications
               shiny::span(class = "fs-4 fw-bold text-body", "based on"),
@@ -205,30 +206,31 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               )
             ),
             shiny::tags$hr(class = "section-divider"),
-            shiny::br(),
-            shiny::br(),
-            about_info_card(
-              "How to Cite:",
-              shiny::span(
-                class = "text-body",
-                shiny::HTML(paste0(
-                  " Last Name, Initial. ",
-                  "<i>et al.</i> Publication Title. <i>Journal.</i> ",
-                  "(Publication Year) DOI"
-                ))
-              )
-            ),
-            about_info_card("Scientific Board:", "TBD"),
-            about_info_card("Contact Us:", "TBD"),
-            about_info_card(
-              "Maintenance:",
-              shiny::tags$a(
-                href = "mailto:mathieu.poirier@icm-institute.org",
-                class = "text-primary text-decoration-none",
-                "mathieu.poirier@icm-institute.org"
-              )
-            ),
-            about_info_card("Acknowledgements:", "TBD")
+            shiny::div(
+              class = "about-info-section",
+              about_info_card(
+                "How to Cite:",
+                shiny::span(
+                  class = "text-body",
+                  shiny::HTML(paste0(
+                    " Last Name, Initial. ",
+                    "<i>et al.</i> Publication Title. <i>Journal.</i> ",
+                    "(Publication Year) DOI"
+                  ))
+                )
+              ),
+              about_info_card("Scientific Board:", "TBD"),
+              about_info_card("Contact Us:", "TBD"),
+              about_info_card(
+                "Maintenance:",
+                shiny::tags$a(
+                  href = "mailto:mathieu.poirier@icm-institute.org",
+                  class = "text-primary text-decoration-none",
+                  "mathieu.poirier@icm-institute.org"
+                )
+              ),
+              about_info_card("Acknowledgements:", "TBD")
+            )
           )
         )
       )

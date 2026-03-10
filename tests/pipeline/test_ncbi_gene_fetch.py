@@ -56,7 +56,7 @@ class TestClearCache:
         mod._gene_cache["TEST"] = NCBIGeneInfo("TEST", "1", None, None)
         assert "TEST" in mod._gene_cache
         clear_ncbi_cache()
-        assert mod._gene_cache == {}
+        assert len(mod._gene_cache) == 0
 
 
 # ---------------------------------------------------------------------------

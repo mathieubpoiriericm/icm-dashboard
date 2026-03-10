@@ -9,12 +9,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Final
 
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
+from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
 
@@ -64,8 +66,7 @@ class SyncResult:
 
 # Module-level shared HTTP client (30s timeout for PubMed efetch XML responses)
 _client_manager = AsyncHttpClientManager(timeout=30.0)
-_citation_cache: dict[str, PubMedCitation | None] = {}
-_MAX_CACHE_SIZE: Final[int] = 10_000
+_citation_cache: OrderedDict[str, PubMedCitation | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
 
@@ -95,7 +96,7 @@ async def close_pubmed_client() -> None:
 def clear_pubmed_cache() -> None:
     """Clear the citation cache."""
     global _citation_cache
-    _citation_cache = {}
+    _citation_cache = OrderedDict()
 
 
 # ---------------------------------------------------------------------------
@@ -179,19 +180,21 @@ async def fetch_pubmed_citation(pmid: str) -> PubMedCitation | None:
     """
     pmid = pmid.strip()
 
-    # Check cache first (without lock for read)
+    # Check cache first (without lock for read — LRU recency not updated,
+    # acceptable tradeoff to avoid lock contention on every read)
     if pmid in _citation_cache:
         return _citation_cache[pmid]
 
     async with _get_cache_lock():
         # Double-check after acquiring lock
         if pmid in _citation_cache:
+            _citation_cache.move_to_end(pmid)
             return _citation_cache[pmid]
 
         async with _get_ncbi_semaphore():
             result = await _fetch_pubmed_uncached(pmid)
-            if len(_citation_cache) >= _MAX_CACHE_SIZE:
-                _citation_cache.clear()
+            evict_lru(_citation_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
+                      "PubMed citation cache")
             _citation_cache[pmid] = result
             return result
 

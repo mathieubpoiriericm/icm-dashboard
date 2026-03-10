@@ -309,7 +309,7 @@ class TestSyncAllExternalData:
         mock_pubmed.assert_not_called()
         assert result.pubmed_fetched == 0
 
-    async def test_errors_limited_to_10(self, mocker):
+    async def test_errors_limited_with_truncation_message(self, mocker):
         mocker.patch(
             "pipeline.external_data_sync.get_table1_gene_symbols",
             return_value=["A"],
@@ -340,7 +340,9 @@ class TestSyncAllExternalData:
         _mock_cleanup(mocker)
 
         result = await sync_all_external_data()
-        assert len(result.errors) == 10
+        # 10 errors + 1 suppression message
+        assert len(result.errors) == 11
+        assert "5 more NCBI errors suppressed" in result.errors[-1]
 
     async def test_cleanup_called_on_exception(self, mocker):
         mocker.patch(

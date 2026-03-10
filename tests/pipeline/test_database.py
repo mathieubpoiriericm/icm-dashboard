@@ -151,3 +151,45 @@ class TestAllowedLists:
     def test_all_columns_are_strings(self):
         for c in ALLOWED_COLUMNS:
             assert isinstance(c, str)
+
+
+# ---------------------------------------------------------------------------
+# SQL correctness: PMID reference matching
+# ---------------------------------------------------------------------------
+
+
+class TestReferenceSqlPatterns:
+    """Verify the reference-matching SQL logic prevents substring false positives.
+
+    These tests inspect the SQL strings in merge_genes_transactional to
+    confirm that exact token matching is used, not substring LIKE.
+    """
+
+    def test_update_uses_exact_token_matching(self):
+        """UPDATE query must NOT use substring LIKE for reference matching."""
+        import inspect
+
+        source = inspect.getsource(merge_genes_transactional)
+        # Old buggy pattern: LIKE '%' || $3 || '%'
+        assert "'%' || $3 || '%'" not in source, (
+            "UPDATE still uses substring LIKE — PMID '1234' would match '12345'"
+        )
+
+    def test_update_has_exact_match_clauses(self):
+        """UPDATE query should use exact semicolon-delimited token matching."""
+        import inspect
+
+        source = inspect.getsource(merge_genes_transactional)
+        # Exact match: "references" = $3
+        assert '"references" = $3' in source
+        # Starts with: "references" LIKE $3 || '; %'
+        assert "$3 || '; %'" in source
+        # Ends with: "references" LIKE '%; ' || $3
+        assert "'%; ' || $3" in source
+
+    def test_insert_has_on_conflict(self):
+        """INSERT query must have ON CONFLICT for concurrent-run safety."""
+        import inspect
+
+        source = inspect.getsource(merge_genes_transactional)
+        assert "ON CONFLICT" in source

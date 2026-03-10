@@ -9,11 +9,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Final
 
 import httpx
 
+from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
 
@@ -55,8 +57,7 @@ class SyncResult:
 
 # Module-level shared HTTP client (30s timeout for UniProt's slower API)
 _client_manager = AsyncHttpClientManager(timeout=30.0)
-_uniprot_cache: dict[str, UniProtInfo | None] = {}
-_MAX_CACHE_SIZE: Final[int] = 10_000
+_uniprot_cache: OrderedDict[str, UniProtInfo | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _uniprot_semaphore: asyncio.Semaphore | None = None
 
@@ -88,7 +89,7 @@ async def close_uniprot_client() -> None:
 def clear_uniprot_cache() -> None:
     """Clear the UniProt info cache."""
     global _uniprot_cache
-    _uniprot_cache = {}
+    _uniprot_cache = OrderedDict()
 
 
 def _clean_go_term(text: str | None) -> str | None:
@@ -268,19 +269,21 @@ async def fetch_uniprot_info(gene_symbol: str) -> UniProtInfo | None:
     """
     symbol_upper = gene_symbol.upper()
 
-    # Check cache first (without lock for read)
+    # Check cache first (without lock for read — LRU recency not updated,
+    # acceptable tradeoff to avoid lock contention on every read)
     if symbol_upper in _uniprot_cache:
         return _uniprot_cache[symbol_upper]
 
     async with _get_cache_lock():
         # Double-check after acquiring lock
         if symbol_upper in _uniprot_cache:
+            _uniprot_cache.move_to_end(symbol_upper)
             return _uniprot_cache[symbol_upper]
 
         async with _get_uniprot_semaphore():
             result = await _fetch_uniprot_uncached(gene_symbol)
-            if len(_uniprot_cache) >= _MAX_CACHE_SIZE:
-                _uniprot_cache.clear()
+            evict_lru(_uniprot_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
+                      "UniProt cache")
             _uniprot_cache[symbol_upper] = result
             return result
 

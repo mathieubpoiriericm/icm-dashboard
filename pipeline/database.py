@@ -197,6 +197,20 @@ async def merge_genes_transactional(
                         link_to_monogenetic_disease, brain_cell_types,
                         affected_pathway, "references"
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    ON CONFLICT (gene) DO UPDATE SET
+                        gwas_trait = EXCLUDED.gwas_trait,
+                        evidence_from_other_omics_studies =
+                            EXCLUDED.evidence_from_other_omics_studies,
+                        "references" = CASE
+                            WHEN genes."references" = EXCLUDED."references"
+                              OR genes."references" LIKE EXCLUDED."references" || '; %'
+                              OR genes."references" LIKE '%; ' || EXCLUDED."references"
+                              OR genes."references" LIKE
+                                  '%; ' || EXCLUDED."references" || '; %'
+                            THEN genes."references"
+                            ELSE genes."references" || '; ' || EXCLUDED."references"
+                        END,
+                        updated_at = CURRENT_TIMESTAMP
                     """,
                 [
                     (
@@ -221,7 +235,11 @@ async def merge_genes_transactional(
                         gwas_trait = $1,
                         evidence_from_other_omics_studies = $2,
                         "references" = CASE
-                            WHEN "references" LIKE '%' || $3 || '%' THEN "references"
+                            WHEN "references" = $3
+                              OR "references" LIKE $3 || '; %'
+                              OR "references" LIKE '%; ' || $3
+                              OR "references" LIKE '%; ' || $3 || '; %'
+                            THEN "references"
                             ELSE "references" || '; ' || $3
                         END,
                         updated_at = CURRENT_TIMESTAMP

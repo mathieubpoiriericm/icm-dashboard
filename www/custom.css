@@ -11,6 +11,7 @@
   --svd-bg-card: #ffffff;
   --svd-bg-light: rgba(255, 255, 255, 0.65);
   --svd-bg-row-even: rgba(40, 30, 120, 0.02);
+  --svd-bg-group: rgba(40, 30, 120, 0.04);
   --svd-border: rgba(40, 30, 120, 0.08);
   --svd-link: #FA4616;
   --svd-link-visited: #281E78;
@@ -527,6 +528,23 @@ body #sample_size_filter_card strong {
   content: "\f02d";
 }
 
+/* Drugs + Trials grouping container */
+.vb-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--svd-bg-group);
+  border: 1px solid var(--svd-border);
+  border-radius: var(--svd-radius-lg);
+  padding: 0.75rem;
+  overflow: hidden;
+}
+
+.vb-group .bslib-value-box {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Custom select styling for "Show X entries" */
 .dt-bslib-controls select,
 .dataTables_wrapper select {
@@ -606,6 +624,21 @@ body #sample_size_filter_card strong {
   flex-direction: column-reverse;
 }
 
+/* === ABOUT INFO SECTION === */
+
+.about-info-section {
+  background: var(--svd-bg-card);
+  border-left: 4px solid var(--svd-primary);
+  border-radius: 0.75rem;
+  padding: 1.5rem 2rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-top: 1.5rem;
+}
+
+.about-info-section > .d-flex:last-child {
+  margin-bottom: 0 !important;
+}
+
 /* === TIP BOXES === */
 
 .tip-row {
@@ -623,7 +656,7 @@ body #sample_size_filter_card strong {
 }
 
 .tip-box {
-  background: linear-gradient(135deg, rgba(40, 30, 120, 0.08) 0%, rgba(250, 70, 22, 0.06) 100%);
+  background: rgba(40, 30, 120, 0.06);
   border: 1px solid rgba(40, 30, 120, 0.18);
   border-left: 4px solid var(--svd-primary);
   border-radius: var(--svd-radius-sm);
@@ -644,7 +677,7 @@ body #sample_size_filter_card strong {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--svd-primary) 0%, var(--svd-accent) 100%);
+  background: var(--svd-primary);
   opacity: 0.5;
 }
 

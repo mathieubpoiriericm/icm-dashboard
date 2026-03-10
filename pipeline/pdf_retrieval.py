@@ -235,10 +235,11 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
         # Parse XML and extract body text
         root = etree.fromstring(pmc_resp.content, parser=_SAFE_XML_PARSER)
 
-        # Extract all paragraph text from the body
-        paragraphs = root.findall(".//body//p")
+        # Use namespace-wildcard XPath so queries work regardless of whether
+        # the PMC JATS XML uses explicit namespace prefixes.
+        paragraphs = root.findall(".//{*}body//{*}p")
         if not paragraphs:
-            paragraphs = root.findall(".//sec//p")
+            paragraphs = root.findall(".//{*}sec//{*}p")
 
         if not paragraphs:
             return None
@@ -283,31 +284,52 @@ async def download_and_parse_pdf(url: str) -> str | None:
         return None
 
     try:
-        # Use longer timeout for PDF downloads
         client = await _get_http_client()
-        resp = await client.get(url, timeout=PDF_TIMEOUT)
 
-        if resp.status_code != 200:
-            logger.debug(f"PDF download failed: {resp.status_code} for {url}")
-            return None
+        # Stream the response to avoid loading oversized PDFs into memory
+        async with client.stream("GET", url, timeout=PDF_TIMEOUT) as resp:
+            if resp.status_code != 200:
+                logger.debug(f"PDF download failed: {resp.status_code} for {url}")
+                return None
 
-        # Check content length to avoid memory exhaustion from oversized PDFs
-        content_length = int(resp.headers.get("content-length", 0))
-        if content_length > MAX_PDF_BYTES:
-            logger.warning(f"PDF too large ({content_length} bytes), skipping: {url}")
-            return None
+            # Check content-length header before downloading body
+            content_length = int(resp.headers.get("content-length", 0))
+            if content_length > MAX_PDF_BYTES:
+                logger.warning(
+                    f"PDF too large ({content_length} bytes), skipping: {url}"
+                )
+                return None
 
-        # Check content type
-        content_type = resp.headers.get("content-type", "")
-        if "pdf" not in content_type.lower() and not url.endswith(".pdf"):
-            logger.debug(f"Not a PDF (content-type: {content_type}): {url}")
-            return None
+            # Check content type
+            content_type = resp.headers.get("content-type", "")
+            if "pdf" not in content_type.lower() and not url.endswith(".pdf"):
+                logger.debug(f"Not a PDF (content-type: {content_type}): {url}")
+                return None
 
-        # Parse PDF from bytes
-        pdf_bytes = resp.content
+            # Stream body with size guard (handles chunked transfers
+            # where content-length is 0 or absent)
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes(65536):
+                total += len(chunk)
+                if total > MAX_PDF_BYTES:
+                    logger.warning(
+                        f"PDF exceeded {MAX_PDF_BYTES} bytes during download, "
+                        f"skipping: {url}"
+                    )
+                    return None
+                chunks.append(chunk)
+
+            pdf_bytes = b"".join(chunks)
+            del chunks
+
+        # Parse PDF from bytes — use try/finally to ensure C-level resources
+        # held by PyMuPDF are released even if _extract_clean_pdf_text raises.
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        text = _extract_clean_pdf_text(doc)
-        doc.close()
+        try:
+            text = _extract_clean_pdf_text(doc)
+        finally:
+            doc.close()
 
         return text if text.strip() else None
 
@@ -347,8 +369,10 @@ def parse_local_pdf(path: Path) -> str | None:
 
     try:
         doc = fitz.open(str(path))
-        text = _extract_clean_pdf_text(doc)
-        doc.close()
+        try:
+            text = _extract_clean_pdf_text(doc)
+        finally:
+            doc.close()
 
         return text if text.strip() else None
 

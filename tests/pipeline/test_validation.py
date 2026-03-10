@@ -189,7 +189,7 @@ class TestVerifyNcbiGeneCache:
 
         val._gene_cache["TEST"] = {"symbol": "TEST"}
         clear_gene_cache()
-        assert val._gene_cache == {}
+        assert len(val._gene_cache) == 0
 
 
 # ---------------------------------------------------------------------------

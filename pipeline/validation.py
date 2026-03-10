@@ -11,11 +11,13 @@ import json
 import logging
 import os
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Final
 
 import httpx
 
+from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
 from pipeline.config import VALID_GWAS_TRAITS, PipelineConfig
 from pipeline.llm_extraction import GeneEntry
 
@@ -33,10 +35,30 @@ _MIN_REQUEST_INTERVAL: Final[float] = 0.1 if NCBI_API_KEY else 0.34
 
 _last_request_time: float = 0.0
 _throttle_lock: asyncio.Lock | None = None
+_validation_state_initialized: bool = False
+
+
+def init_validation_state(config: PipelineConfig | None = None) -> None:
+    """Eagerly initialize module-level locks and semaphores.
+
+    Must be called once from the running event loop before concurrent use.
+    Safe to call multiple times (idempotent).
+    """
+    global _throttle_lock, _cache_lock, _ncbi_semaphore, _validation_state_initialized
+    if _validation_state_initialized:
+        return
+    if _throttle_lock is None:
+        _throttle_lock = asyncio.Lock()
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    if _ncbi_semaphore is None:
+        limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
+        _ncbi_semaphore = asyncio.Semaphore(limit)
+    _validation_state_initialized = True
 
 
 def _get_throttle_lock() -> asyncio.Lock:
-    """Lazy-init throttle lock (avoids creating Lock before event loop exists)."""
+    """Get throttle lock, initializing lazily if needed."""
     global _throttle_lock
     if _throttle_lock is None:
         _throttle_lock = asyncio.Lock()
@@ -80,14 +102,13 @@ async def close_validation_client() -> None:
         await _http_client.aclose()
         _http_client = None
 
-_gene_cache: dict[str, dict[str, Any] | None] = {}
-_MAX_CACHE_SIZE: Final[int] = 10_000
+_gene_cache: OrderedDict[str, dict[str, Any] | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
 
 
 def _get_cache_lock() -> asyncio.Lock:
-    """Lazy-init cache lock (avoids creating Lock before event loop exists)."""
+    """Get cache lock, initializing lazily if needed."""
     global _cache_lock
     if _cache_lock is None:
         _cache_lock = asyncio.Lock()
@@ -95,7 +116,7 @@ def _get_cache_lock() -> asyncio.Lock:
 
 
 def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
-    """Get or create the NCBI rate-limit semaphore."""
+    """Get NCBI rate-limit semaphore, initializing lazily if needed."""
     global _ncbi_semaphore
     if _ncbi_semaphore is None:
         limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
@@ -106,7 +127,7 @@ def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semapho
 def clear_gene_cache() -> None:
     """Clear the gene validation cache."""
     global _gene_cache
-    _gene_cache = {}
+    _gene_cache = OrderedDict()
 
 
 def _get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
@@ -278,6 +299,7 @@ async def verify_ncbi_gene(
     # Check cache (brief lock for dict access only)
     async with _get_cache_lock():
         if symbol_upper in _gene_cache:
+            _gene_cache.move_to_end(symbol_upper)
             return _gene_cache[symbol_upper]
 
     # Semaphore controls concurrent NCBI requests; throttle enforces inter-request delay
@@ -285,8 +307,8 @@ async def verify_ncbi_gene(
         result = await _fetch_ncbi_gene_uncached(symbol, config=config)
 
     async with _get_cache_lock():
-        if len(_gene_cache) >= _MAX_CACHE_SIZE:
-            _gene_cache.clear()
+        evict_lru(_gene_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION,
+                  "gene validation cache")
         _gene_cache[symbol_upper] = result
 
     return result
