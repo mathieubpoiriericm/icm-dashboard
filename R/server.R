@@ -260,6 +260,6 @@ configure_output_options <- function(output) {
   )
   shiny::outputOptions(output, "secondTable", suspendWhenHidden = TRUE)
   shiny::outputOptions(output, "trials_map", suspendWhenHidden = FALSE)
-  shiny::outputOptions(output, "map_stats", suspendWhenHidden = FALSE)
+  shiny::outputOptions(output, "map_stats", suspendWhenHidden = TRUE)
 }
 # nolint end: object_usage_linter.

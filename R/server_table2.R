@@ -352,10 +352,11 @@ add_drug_group_indices <- function(display_df) {
     }
   }
 
-  # Convert rowspans to JSON strings for each row
-  rowspans_json <- apply(rowspans_matrix, 1L, function(row) {
-    jsonlite::toJSON(as.integer(row), auto_unbox = FALSE)
-  })
+  # Convert rowspans to JSON strings (vectorized paste instead of per-row toJSON)
+  rowspans_json <- paste0(
+    "[", rowspans_matrix[, 1L], ",", rowspans_matrix[, 2L], ",",
+    rowspans_matrix[, 3L], ",", rowspans_matrix[, 4L], "]"
+  )
 
   # Add hidden columns
   display_df$`__drug_group__` <- drug_group_idx - 1L  # 0-indexed

@@ -419,7 +419,9 @@ $(window).on('resize', function() {
 
 // Fix orphan DataTable "entries" labels that have no associated form field
 // These generate accessibility warnings in Chrome DevTools
+var labelsFixed = false;
 function fixOrphanDtLabels() {
+  if (labelsFixed) return;
   $('.dt-bslib-label').each(function() {
     var $label = $(this);
     // Only convert if it's actually a label element (not already fixed)
@@ -428,6 +430,7 @@ function fixOrphanDtLabels() {
       $label.replaceWith($span);
     }
   });
+  labelsFixed = true;
 }
 
 // Run on Shiny connect (init.dt handled in unified handler above)

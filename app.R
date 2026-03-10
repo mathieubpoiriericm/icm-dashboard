@@ -150,9 +150,19 @@ minify_css <- function(input_path, output_path) {
   list(original = original_size, minified = minified_size)
 }
 
+# Check if source file is newer than output to skip unnecessary minification
+needs_minify <- function(input, output) {
+  !file.exists(output) || file.info(input)$mtime > file.info(output)$mtime
+}
+
 css_result <- tryCatch(
   {
-    minify_css("www/custom.css", "www/custom.min.css")
+    if (needs_minify("www/custom.css", "www/custom.min.css")) {
+      minify_css("www/custom.css", "www/custom.min.css")
+    } else {
+      message("  CSS already up-to-date, skipping minification")
+      NULL
+    }
   },
   error = function(e) {
     warning("CSS minification failed: ", e$message)
@@ -207,7 +217,12 @@ js_files <- list(
 for (js_file in js_files) {
   js_result <- tryCatch(
     {
-      minify_js(js_file$input, js_file$output)
+      if (needs_minify(js_file$input, js_file$output)) {
+        minify_js(js_file$input, js_file$output)
+      } else {
+        message(sprintf("  %s already up-to-date, skipping", basename(js_file$input)))
+        NULL
+      }
     },
     error = function(e) {
       warning("JS minification failed for ", js_file$input, ": ", e$message)
@@ -299,7 +314,7 @@ if (PRELOAD_TABLE2) {
 
   n_trials <- length(unique(table2_data$table2$`Registry ID`))
   n_drugs <- length(unique(table2_data$table2$Drug))
-  rm(table2_data) # Free intermediate data
+  rm(table2_data) # Free gene_info/gene_symbols not copied to preloaded_table2
 } else {
   # Lazy loading mode - just get counts
   table2 <- safe_read_data(DATA_PATHS$table2_clean)

@@ -8,7 +8,6 @@
 #   label: Label for the checkbox group
 #   choices: Named vector of choices
 #   selected: Initial selected values
-#   has_show_all: Whether to include "Show All" toggle behavior
 #
 # Returns:
 #   A checkbox group input
@@ -16,8 +15,7 @@ checkbox_filter_ui <- function(
   id,
   label,
   choices,
-  selected = NULL,
-  has_show_all = FALSE
+  selected = NULL
 ) {
   ns <- shiny::NS(id)
 

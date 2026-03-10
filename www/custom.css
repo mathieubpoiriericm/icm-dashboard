@@ -352,14 +352,6 @@ h2 {
   overflow: hidden;
 }
 
-.filter-label {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--svd-text);
-  margin-bottom: 1rem;
-  letter-spacing: 0.05em;
-}
-
 .bslib-sidebar-layout .card .control-label,
 #sample_size_filter_card strong {
   font-size: 1.15rem !important;
@@ -734,6 +726,12 @@ h2 {
 
 .tippy-box[data-theme~='custom'] .tippy-arrow {
   color: var(--svd-primary) !important;
+}
+
+/* === DATATABLE COLUMN GROUP BORDERS === */
+
+table.dataTable thead th.col-group-border {
+  border-right: 2px solid var(--svd-border);
 }
 
 /* === DATATABLES === */
@@ -1196,15 +1194,6 @@ table.dataTable tbody tr:hover td:first-child {
   color: #666;
   transform: translateX(-50%);
   white-space: nowrap;
-}
-
-#sample_size_filter_box .form-group {
-  margin-bottom: 0;
-}
-
-#sample_size_filter_box .irs {
-  margin-top: 0;
-  margin-bottom: 25px;
 }
 
 /* === HISTOGRAM === */

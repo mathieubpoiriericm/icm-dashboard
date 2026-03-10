@@ -632,7 +632,6 @@ prepare_table2_display <- function(
           href = registry_url,
           target = "_blank",
           rel = "noopener",
-          style = "color: #4f46e5;",
           ct_id_trimmed
         ))
       } else {

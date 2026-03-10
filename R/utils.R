@@ -184,16 +184,8 @@ create_box_style <- function(
 }
 
 # =============================================================================
-# CSS STYLE CONSTANTS
+# CSS CLASS CONSTANTS
 # =============================================================================
-# These styles use the create_box_style() helper for consistency.
-# Common color palette:
-#   - Primary: #312e81 (deep indigo)
-#   - Accent: #4f46e5 (indigo)
-#   - Background: #f8f7ff (indigo-tinted light)
-#   - Text: #1f2937 (near-black)
-#   - Success: #16a34a (green)
-#   - Danger: #ef4444 (red)
 
 # CSS Class for Tooltips
 # CSS class name for elements with tooltips.
@@ -205,36 +197,6 @@ tooltip_class <- "tooltip-box"
 # Styles are defined in www/custom.css for hover effect support.
 tooltip_class_italic <- "tooltip-box tooltip-box-italic"
 
-# CSS Style for Tip Boxes
-# CSS style string for tip/info boxes in the UI.
-tip_box_style <- create_box_style(
-  extra_styles = list(`text-align` = "center")
-)
-
-# CSS Style for Warning Boxes
-# CSS style string for warning message boxes.
-warning_box_style <- create_box_style(
-  bg_color = "rgba(255, 0, 0, 0.1)",
-  text_color = "#ef4444",
-  border_color = "#ef4444",
-  font_size = "1.5rem",
-  padding = "1rem 2rem",
-  extra_styles = list(
-    `font-weight` = "700",
-    `text-align` = "center",
-    border = "2px solid #ef4444"
-  )
-)
-
-# CSS Style for Titles
-# CSS style string for section titles.
-title_style <- build_css_style(
-  font_size = "2rem",
-  color = "black",
-  margin_bottom = "1rem",
-  text_align = "center"
-)
-
 # CSS Class for Active Filter Messages
 # CSS class name for displaying active filter status.
 # Styles are defined in custom.css for theme support.
@@ -244,66 +206,6 @@ filter_active_class <- "filter-message filter-active"
 # CSS class name for displaying when no filters are active.
 # Styles are defined in custom.css for theme support.
 filter_none_class <- "filter-message filter-none"
-
-# Legacy style exports (kept for backwards compatibility)
-# These may be removed in a future version
-filter_active_style <- build_css_style(
-  color = "#ef4444",
-  font_size = "1rem",
-  font_weight = "500",
-  padding = "0.75rem",
-  background_color = "#fff5f5",
-  border = "1px solid #ef4444",
-  border_radius = "8px",
-  display = "inline-block",
-  width = "auto"
-)
-
-filter_none_style <- build_css_style(
-  color = "#16a34a",
-  font_size = "1rem",
-  font_weight = "500",
-  padding = "0.75rem",
-  background_color = "#f0fff0",
-  border = "1px solid #16a34a",
-  border_radius = "8px",
-  display = "inline-block",
-  width = "auto"
-)
-
-# CSS Style for About Section Header
-# CSS style string for the About page header.
-about_header_style <- build_css_style(
-  color = "#312e81",
-  font_size = "2.0rem",
-  font_weight = "700",
-  margin = "0"
-)
-
-# CSS Style for About Section Text
-# CSS style string for the About page text content.
-about_text_style <- create_box_style(
-  bg_color = "#f8f7ff",
-  font_size = "1.5rem",
-  padding = "2rem 3rem",
-  border_color = "#e5e7eb",
-  extra_styles = list(
-    `margin-top` = "1rem",
-    `line-height` = "1.6",
-    `white-space` = "nowrap"
-  )
-)
-
-# CSS Style for About Section Boxes
-# CSS style string for boxes on the About page.
-about_box_style <- create_box_style(
-  bg_color = "#f8f7ff",
-  text_color = "#312e81",
-  font_size = "1.5rem",
-  padding = "1rem",
-  border_color = "#e5e7eb",
-  extra_styles = list(`line-height` = "1.6")
-)
 
 # =============================================================================
 # UI COMPONENT HELPERS

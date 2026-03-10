@@ -521,56 +521,6 @@ test_that("safe_read_csv throws error for non-existent file", {
   )
 })
 
-# Mock data for aggregate_table2_by_drug tests
-mock_table2 <- data.frame(
-  Drug = c("Drug A", "Drug A", "Drug B"),
-  `Mechanism of Action` = c("MOA1", "MOA1", "MOA2"),
-  `Genetic Target` = c("Gene1", "Gene1", "Gene2"),
-  `Registry ID` = c("NCT001", "NCT002", "NCT003"),
-  Phase = c("Phase 1", "Phase 2", "Phase 1"),
-  stringsAsFactors = FALSE,
-  check.names = FALSE
-)
-
-test_that("aggregate_table2_by_drug groups by Drug correctly", {
-  result <- aggregate_table2_by_drug(mock_table2)
-  expect_equal(nrow(result), 2)
-})
-
-test_that("aggregate_table2_by_drug collapses Registry ID with <br>", {
-  result <- aggregate_table2_by_drug(mock_table2)
-  drug_a_row <- result[result$Drug == "Drug A", ]
-  expect_true(grepl("<br>", drug_a_row$`Registry ID`))
-  expect_true(grepl("NCT001", drug_a_row$`Registry ID`))
-  expect_true(grepl("NCT002", drug_a_row$`Registry ID`))
-})
-
-test_that("aggregate_table2_by_drug collapses Phase with <br>", {
-  result <- aggregate_table2_by_drug(mock_table2)
-  drug_a_row <- result[result$Drug == "Drug A", ]
-  expect_true(grepl("<br>", drug_a_row$Phase))
-})
-
-test_that("aggregate_table2_by_drug keeps single row unchanged", {
-  result <- aggregate_table2_by_drug(mock_table2)
-  drug_b_row <- result[result$Drug == "Drug B", ]
-  expect_false(grepl("<br>", drug_b_row$`Registry ID`))
-  expect_equal(drug_b_row$`Registry ID`, "NCT003")
-})
-
-test_that("aggregate_table2_by_drug preserves column order", {
-  result <- aggregate_table2_by_drug(mock_table2)
-  expect_equal(names(result), names(mock_table2))
-})
-
-test_that("aggregate_table2_by_drug handles NA values", {
-  mock_with_na <- mock_table2
-  mock_with_na$Phase[2] <- NA
-  result <- aggregate_table2_by_drug(mock_with_na)
-  drug_a_row <- result[result$Drug == "Drug A", ]
-  expect_false(grepl("NA", drug_a_row$Phase))
-})
-
 # =============================================================================
 # TESTS FOR mod_checkbox_filter.R (using shinytest2)
 # =============================================================================
@@ -587,8 +537,7 @@ create_checkbox_test_app <- function() {
           "Option 1" = "opt1",
           "Option 2" = "opt2"
         ),
-        selected = "all",
-        has_show_all = TRUE
+        selected = "all"
       ),
       textOutput("selected_value")
     ),
@@ -865,35 +814,6 @@ test_that("render_filter_message uses correct CSS class for no filters", {
 # =============================================================================
 # EDGE CASES - Existing Functions
 # =============================================================================
-
-# aggregate_table2_by_drug edge cases
-test_that("aggregate_table2_by_drug handles empty data frame", {
-  empty_df <- data.frame(
-    Drug = character(0),
-    `Mechanism of Action` = character(0),
-    `Genetic Target` = character(0),
-    `Registry ID` = character(0),
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
-  result <- aggregate_table2_by_drug(empty_df)
-  expect_equal(nrow(result), 0)
-})
-
-test_that("aggregate_table2_by_drug removes duplicate values when collapsing", {
-  dup_df <- data.frame(
-    Drug = c("Drug A", "Drug A"),
-    `Mechanism of Action` = c("MOA1", "MOA1"),
-    `Genetic Target` = c("Gene1", "Gene1"),
-    `Registry ID` = c("NCT001", "NCT001"),
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
-  result <- aggregate_table2_by_drug(dup_df)
-  expect_equal(nrow(result), 1)
-  # Should not have <br> since values are identical
-  expect_false(grepl("<br>", result$`Registry ID`))
-})
 
 # apply_range_filter edge cases
 test_that("apply_range_filter handles NA values in numeric column", {

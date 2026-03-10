@@ -35,23 +35,12 @@ map_cluster_options <- leaflet::markerClusterOptions(
 build_map_data_loader <- function(load_table2) {
   # Use reactiveVal to cache the loaded data
   map_data_cache <- shiny::reactiveVal(NULL)
-  is_loading <- shiny::reactiveVal(FALSE)
-
   shiny::reactive({
     # Return cached data if available
     cached <- map_data_cache()
     if (!is.null(cached)) {
       return(cached)
     }
-
-    # Prevent concurrent loading
-    if (is_loading()) {
-      return(NULL)
-    }
-
-    is_loading(TRUE)
-    # Ensure is_loading is reset even on errors (reactive cleanup)
-    on.exit(is_loading(FALSE), add = TRUE)
 
     # Get Table 2 data with validation
     table2_data <- load_table2()
@@ -143,59 +132,6 @@ build_map_marker_observer <- function(map_data_reactive, input, session) {
           clusterOptions = map_cluster_options
         )
     }
-  })
-}
-
-# Build Leaflet Map Output (Legacy Wrapper)
-#
-# Creates the renderLeaflet output for the clinical trials map.
-# This is a backward-compatible wrapper that creates a base map.
-# For optimal performance, use build_trials_map_base() with
-# build_map_marker_observer() separately.
-#
-# Args:
-#   map_data_reactive: Reactive returning prepared map data.
-#
-# Returns:
-#   Shiny render function for leaflet output.
-build_trials_map <- function(map_data_reactive) {
-  leaflet::renderLeaflet({
-    map_data <- map_data_reactive()
-
-    # Create base map with optimized tile options
-    map <- leaflet::leaflet() |>
-      leaflet::addProviderTiles(
-        leaflet::providers$CartoDB.Positron,
-        options = leaflet::providerTileOptions(
-          noWrap = FALSE,
-          updateWhenIdle = TRUE,
-          updateWhenZooming = FALSE
-        )
-      ) |>
-      leaflet::setView(
-        lng = MAP_DEFAULT_LNG,
-        lat = MAP_DEFAULT_LAT,
-        zoom = MAP_DEFAULT_ZOOM
-      )
-
-    # Add markers if data is available
-    if (!is.null(map_data) && nrow(map_data) > 0L) {
-      map <- map |>
-        leaflet::addCircleMarkers(
-          data = map_data,
-          lng = ~lon,
-          lat = ~lat,
-          popup = ~popup_content,
-          radius = 8,
-          color = "#312e81",
-          fillColor = "#4f46e5",
-          fillOpacity = 0.7,
-          weight = 2,
-          clusterOptions = map_cluster_options
-        )
-    }
-
-    map
   })
 }
 

@@ -156,18 +156,14 @@ build_table1_datatable <- function(filtered_data) {
             th(rowspan = 2L, "#"),
             th(
               colspan = 3L,
-              style = paste0(
-                "text-align: center; ",
-                "border-right: 2px solid #e5e7eb;"
-              ),
+              class = "col-group-border",
+              style = "text-align: center;",
               "Putative Causal Genes"
             ),
             th(
               colspan = 4L,
-              style = paste0(
-                "text-align: center; ",
-                "border-right: 2px solid #e5e7eb;"
-              ),
+              class = "col-group-border",
+              style = "text-align: center;",
               "Evidence From Omics Studies"
             ),
             th(
@@ -181,14 +177,14 @@ build_table1_datatable <- function(filtered_data) {
             th("Gene"),
             th("Protein"),
             th(
-              style = "border-right: 2px solid #e5e7eb;",
+              class = "col-group-border",
               "Chromosomal Location"
             ),
             th("GWAS Trait"),
             th("Mendelian Randomization"),
             th("Evidence From Other Omics Studies"),
             th(
-              style = "border-right: 2px solid #e5e7eb;",
+              class = "col-group-border",
               "Link to Monogenic Disease"
             ),
             th("Brain Cell Types"),
