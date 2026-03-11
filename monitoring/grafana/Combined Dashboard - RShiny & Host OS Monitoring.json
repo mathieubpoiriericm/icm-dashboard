@@ -108,7 +108,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "max(kube_pod_status_ready{namespace=\"svd\", pod=~\"svd-svd-dashboard-dashboard-.*\", condition=\"true\"})",
+          "expr": "max(kube_pod_status_ready{namespace=\"$namespace\", pod=~\"$release-dashboard-.*\", condition=\"true\"})",
           "legendFormat": "Shiny Dashboard",
           "refId": "A"
         }
@@ -274,7 +274,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "max(kube_pod_status_ready{namespace=\"svd\", pod=~\"svd-svd-dashboard-postgresql-.*\", condition=\"true\"})",
+          "expr": "max(kube_pod_status_ready{namespace=\"$namespace\", pod=~\"$release-postgresql-.*\", condition=\"true\"})",
           "legendFormat": "PostgreSQL",
           "refId": "A"
         }
@@ -357,7 +357,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "max(kube_pod_status_ready{pod=~\"svd-svd-dashboard-healthchecks-.*\", condition=\"true\"})",
+          "expr": "max(kube_pod_status_ready{pod=~\"$release-healthchecks-.*\", condition=\"true\"})",
           "legendFormat": "Healthchecks",
           "refId": "A"
         }
@@ -510,7 +510,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "max(kube_pod_status_ready{namespace=~\"svd|monitoring\", pod=~\".*vector.*\", condition=\"true\"})",
+          "expr": "max(kube_pod_status_ready{namespace=~\"$namespace|monitoring\", pod=~\".*vector.*\", condition=\"true\"})",
           "legendFormat": "Vector",
           "refId": "A"
         }
@@ -660,7 +660,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"svd\", pod=~\"svd-svd-dashboard-dashboard-.*\"}) by (pod)",
+          "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"$namespace\", pod=~\"$release-dashboard-.*\"}) by (pod)",
           "legendFormat": "Shiny Dashboard",
           "refId": "A"
         }
@@ -770,7 +770,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "$datasource"
       },
       "fieldConfig": {
         "defaults": {
@@ -825,10 +825,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "$datasource"
           },
           "editorMode": "code",
-          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  sum(rate(container_cpu_usage_seconds_total{pod=~\"svd-svd-dashboard-.*\"}[5m])) by (pod),\n  \"friendly\", \"$1\", \"pod\", \"svd-svd-dashboard-(.*)\"\n),\n  \"friendly\", \"Shiny Dashboard\", \"pod\", \"svd-svd-dashboard-dashboard-.*\"\n),\n  \"friendly\", \"PostgreSQL\", \"pod\", \"svd-svd-dashboard-postgresql-.*\"\n),\n  \"friendly\", \"Healthchecks\", \"pod\", \"svd-svd-dashboard-healthchecks-.*\"\n),\n  \"friendly\", \"Pipeline\", \"pod\", \"svd-svd-dashboard-pipeline-.*\"\n),\n  \"friendly\", \"Ingress\", \"pod\", \"svd-svd-dashboard-ingress-.*\"\n),\n  \"friendly\", \"Blackbox Exporter\", \"pod\", \"svd-svd-dashboard-blackbox-exporter-.*\"\n),\n  \"friendly\", \"ntfy\", \"pod\", \"svd-svd-dashboard-ntfy-.*\"\n)",
+          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  sum(rate(container_cpu_usage_seconds_total{pod=~\"$release-.*\"}[5m])) by (pod),\n  \"friendly\", \"$1\", \"pod\", \"$release-(.*)\"\n),\n  \"friendly\", \"Shiny Dashboard\", \"pod\", \"$release-dashboard-.*\"\n),\n  \"friendly\", \"PostgreSQL\", \"pod\", \"$release-postgresql-.*\"\n),\n  \"friendly\", \"Healthchecks\", \"pod\", \"$release-healthchecks-.*\"\n),\n  \"friendly\", \"Pipeline\", \"pod\", \"$release-pipeline-.*\"\n),\n  \"friendly\", \"Ingress\", \"pod\", \"$release-ingress-.*\"\n),\n  \"friendly\", \"Blackbox Exporter\", \"pod\", \"$release-blackbox-exporter-.*\"\n),\n  \"friendly\", \"ntfy\", \"pod\", \"$release-ntfy-.*\"\n)",
           "instant": false,
           "legendFormat": "{{friendly}}",
           "range": true,
@@ -841,7 +841,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "$datasource"
       },
       "fieldConfig": {
         "defaults": {
@@ -894,10 +894,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "$datasource"
           },
           "editorMode": "code",
-          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  sum(container_memory_working_set_bytes{pod=~\"svd-svd-dashboard-.*\"}) by (pod),\n  \"friendly\", \"$1\", \"pod\", \"svd-svd-dashboard-(.*)\"\n),\n  \"friendly\", \"Shiny Dashboard\", \"pod\", \"svd-svd-dashboard-dashboard-.*\"\n),\n  \"friendly\", \"PostgreSQL\", \"pod\", \"svd-svd-dashboard-postgresql-.*\"\n),\n  \"friendly\", \"Healthchecks\", \"pod\", \"svd-svd-dashboard-healthchecks-.*\"\n),\n  \"friendly\", \"Pipeline\", \"pod\", \"svd-svd-dashboard-pipeline-.*\"\n),\n  \"friendly\", \"Ingress\", \"pod\", \"svd-svd-dashboard-ingress-.*\"\n),\n  \"friendly\", \"Blackbox Exporter\", \"pod\", \"svd-svd-dashboard-blackbox-exporter-.*\"\n),\n  \"friendly\", \"ntfy\", \"pod\", \"svd-svd-dashboard-ntfy-.*\"\n)",
+          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  sum(container_memory_working_set_bytes{pod=~\"$release-.*\"}) by (pod),\n  \"friendly\", \"$1\", \"pod\", \"$release-(.*)\"\n),\n  \"friendly\", \"Shiny Dashboard\", \"pod\", \"$release-dashboard-.*\"\n),\n  \"friendly\", \"PostgreSQL\", \"pod\", \"$release-postgresql-.*\"\n),\n  \"friendly\", \"Healthchecks\", \"pod\", \"$release-healthchecks-.*\"\n),\n  \"friendly\", \"Pipeline\", \"pod\", \"$release-pipeline-.*\"\n),\n  \"friendly\", \"Ingress\", \"pod\", \"$release-ingress-.*\"\n),\n  \"friendly\", \"Blackbox Exporter\", \"pod\", \"$release-blackbox-exporter-.*\"\n),\n  \"friendly\", \"ntfy\", \"pod\", \"$release-ntfy-.*\"\n)",
           "instant": false,
           "legendFormat": "{{friendly}}",
           "range": true,
@@ -1100,7 +1100,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "sum(container_memory_working_set_bytes{pod=~\"svd-svd-dashboard-dashboard-.*\", container=\"\"}) / sum(kube_pod_container_resource_limits{pod=~\"svd-svd-dashboard-dashboard-.*\", resource=\"memory\", container=\"dashboard\"})",
+          "expr": "sum(container_memory_working_set_bytes{pod=~\"$release-dashboard-.*\", container=\"\"}) / sum(kube_pod_container_resource_limits{pod=~\"$release-dashboard-.*\", resource=\"memory\", container=\"dashboard\"})",
           "legendFormat": "Memory %",
           "refId": "A"
         }
@@ -1330,7 +1330,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"svd\", pod=~\"svd-svd-dashboard-postgresql-.*\"}) by (pod)",
+          "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"$namespace\", pod=~\"$release-postgresql-.*\"}) by (pod)",
           "legendFormat": "PostgreSQL",
           "refId": "A"
         }
@@ -1857,7 +1857,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "max(rate(container_cpu_cfs_throttled_periods_total{pod=~\"svd-svd-dashboard-postgresql-.*\"}[5m]) / rate(container_cpu_cfs_periods_total{pod=~\"svd-svd-dashboard-postgresql-.*\"}[5m]))",
+          "expr": "max(rate(container_cpu_cfs_throttled_periods_total{pod=~\"$release-postgresql-.*\"}[5m]) / rate(container_cpu_cfs_periods_total{pod=~\"$release-postgresql-.*\"}[5m]))",
           "legendFormat": "Throttle Ratio",
           "refId": "A"
         }
@@ -1954,7 +1954,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "sum(container_memory_working_set_bytes{pod=~\"svd-svd-dashboard-postgresql-.*\", container=\"\"}) / sum(kube_pod_container_resource_limits{pod=~\"svd-svd-dashboard-postgresql-.*\", resource=\"memory\", container=\"postgresql\"})",
+          "expr": "sum(container_memory_working_set_bytes{pod=~\"$release-postgresql-.*\", container=\"\"}) / sum(kube_pod_container_resource_limits{pod=~\"$release-postgresql-.*\", resource=\"memory\", container=\"postgresql\"})",
           "legendFormat": "Memory %",
           "refId": "A"
         }
@@ -2039,7 +2039,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "time() - kube_cronjob_status_last_schedule_time{namespace=\"svd\", cronjob=\"svd-svd-dashboard-pipeline\"}",
+          "expr": "time() - kube_cronjob_status_last_schedule_time{namespace=\"$namespace\", cronjob=\"$release-pipeline\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -2122,7 +2122,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "kube_cronjob_spec_suspend{namespace=\"svd\", cronjob=\"svd-svd-dashboard-pipeline\"}",
+          "expr": "kube_cronjob_spec_suspend{namespace=\"$namespace\", cronjob=\"$release-pipeline\"}",
           "legendFormat": "{{job_name}}",
           "refId": "A"
         }
@@ -2209,7 +2209,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "kube_cronjob_status_active{namespace=\"svd\", cronjob=\"svd-svd-dashboard-pipeline\"}",
+          "expr": "kube_cronjob_status_active{namespace=\"$namespace\", cronjob=\"$release-pipeline\"}",
           "legendFormat": "{{job_name}}",
           "refId": "A"
         }
@@ -2277,7 +2277,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "kube_cronjob_next_schedule_time{namespace=\"svd\", cronjob=\"svd-svd-dashboard-pipeline\"} - time()",
+          "expr": "kube_cronjob_next_schedule_time{namespace=\"$namespace\", cronjob=\"$release-pipeline\"} - time()",
           "legendFormat": "",
           "refId": "A"
         }
@@ -2341,7 +2341,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "kube_cronjob_status_last_schedule_time{namespace=\"svd\", cronjob=\"svd-svd-dashboard-pipeline\"} * 1000",
+          "expr": "kube_cronjob_status_last_schedule_time{namespace=\"$namespace\", cronjob=\"$release-pipeline\"} * 1000",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3270,7 +3270,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(process_cpu_seconds_total{job=\"svd-svd-dashboard-ingress-nginx-metrics\"}[5m])",
+          "expr": "rate(process_cpu_seconds_total{job=\"$release-ingress-nginx-metrics\"}[5m])",
           "legendFormat": "CPU Usage",
           "refId": "A"
         }
@@ -3365,7 +3365,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "process_resident_memory_bytes{job=\"svd-svd-dashboard-ingress-nginx-metrics\"}",
+          "expr": "process_resident_memory_bytes{job=\"$release-ingress-nginx-metrics\"}",
           "legendFormat": "Resident Memory",
           "refId": "A"
         }
@@ -3444,7 +3444,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=\"svd\", persistentvolumeclaim!~\"data-svd-svd-dashboard-postgresql-.*|.*prometheus.*|.*grafana.*|.*victoria-logs.*\"},\n  \"friendly\", \"$0\", \"persistentvolumeclaim\", \".*\"\n),\n  \"friendly\", \"Healthchecks Data\", \"persistentvolumeclaim\", \"svd-svd-dashboard-healthchecks-data\"\n),\n  \"friendly\", \"ntfy Cache\", \"persistentvolumeclaim\", \"svd-svd-dashboard-ntfy-cache\"\n),\n  \"friendly\", \"QS Data\", \"persistentvolumeclaim\", \"svd-svd-dashboard-qs-data\"\n)",
+          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=\"$namespace\", persistentvolumeclaim!~\"data-$release-postgresql-.*|.*prometheus.*|.*grafana.*|.*victoria-logs.*\"},\n  \"friendly\", \"$0\", \"persistentvolumeclaim\", \".*\"\n),\n  \"friendly\", \"Healthchecks Data\", \"persistentvolumeclaim\", \"$release-healthchecks-data\"\n),\n  \"friendly\", \"ntfy Cache\", \"persistentvolumeclaim\", \"$release-ntfy-cache\"\n),\n  \"friendly\", \"QS Data\", \"persistentvolumeclaim\", \"$release-qs-data\"\n)",
           "instant": true,
           "legendFormat": "{{friendly}}",
           "refId": "A"
@@ -3517,7 +3517,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=\"svd\", persistentvolumeclaim=~\".*prometheus.*|.*grafana.*|.*victoria-logs.*\"},\n  \"friendly\", \"$0\", \"persistentvolumeclaim\", \".*\"\n),\n  \"friendly\", \"Prometheus Data\", \"persistentvolumeclaim\", \".*prometheus.*\"\n),\n  \"friendly\", \"Grafana Data\", \"persistentvolumeclaim\", \".*grafana.*\"\n),\n  \"friendly\", \"VictoriaLogs Data\", \"persistentvolumeclaim\", \".*victoria-logs.*\"\n)",
+          "expr": "label_replace(\n  label_replace(\n  label_replace(\n  label_replace(\n  kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=\"$namespace\", persistentvolumeclaim=~\".*prometheus.*|.*grafana.*|.*victoria-logs.*\"},\n  \"friendly\", \"$0\", \"persistentvolumeclaim\", \".*\"\n),\n  \"friendly\", \"Prometheus Data\", \"persistentvolumeclaim\", \".*prometheus.*\"\n),\n  \"friendly\", \"Grafana Data\", \"persistentvolumeclaim\", \".*grafana.*\"\n),\n  \"friendly\", \"VictoriaLogs Data\", \"persistentvolumeclaim\", \".*victoria-logs.*\"\n)",
           "legendFormat": "{{friendly}}",
           "refId": "A"
         }
@@ -3685,7 +3685,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "sum(kube_pod_container_status_restarts_total{pod=~\"svd-svd-dashboard-healthchecks-.*\"}) by (pod)",
+          "expr": "sum(kube_pod_container_status_restarts_total{pod=~\"$release-healthchecks-.*\"}) by (pod)",
           "legendFormat": "Healthchecks",
           "refId": "A"
         }
@@ -4287,7 +4287,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "max(kube_pod_status_ready{namespace=~\"svd|monitoring\", pod=~\".*victoria-logs-single.*\", condition=\"true\"})",
+          "expr": "max(kube_pod_status_ready{namespace=~\"$namespace|monitoring\", pod=~\".*victoria-logs-single.*\", condition=\"true\"})",
           "legendFormat": "VictoriaLogs",
           "refId": "A"
         }
@@ -4420,6 +4420,45 @@
         "query": "prometheus",
         "refresh": 1,
         "type": "datasource"
+      },
+      {
+        "current": {
+          "text": "svd",
+          "value": "svd"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(kube_pod_status_ready, namespace)",
+        "label": "Namespace",
+        "name": "namespace",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kube_pod_status_ready, namespace)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regexApplyTo": "value",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": "svd-svd-dashboard",
+          "value": "svd-svd-dashboard"
+        },
+        "label": "Release",
+        "name": "release",
+        "options": [
+          {
+            "selected": true,
+            "text": "svd-svd-dashboard",
+            "value": "svd-svd-dashboard"
+          }
+        ],
+        "query": "svd-svd-dashboard",
+        "type": "textbox"
       },
       {
         "allValue": ".*",
