@@ -1,0 +1,21 @@
+{{- if .Values.observability.victoriaLogs.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-vlogs-datasource
+  namespace: {{ .Values.observability.grafana.external.namespace | default "monitoring" }}
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    grafana_datasource: "1"
+data:
+  vlogs-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: VictoriaMetrics Logs
+        type: victoriametrics-logs-datasource
+        uid: {{ .Values.observability.victoriaLogs.datasource.uid }}
+        url: {{ .Values.observability.victoriaLogs.datasource.url }}
+        access: proxy
+        isDefault: false
+        editable: true
+{{- end }}

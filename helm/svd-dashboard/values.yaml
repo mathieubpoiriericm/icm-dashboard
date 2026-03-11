@@ -6,7 +6,7 @@ fullnameOverride: ""
 dashboard:
   image:
     repository: rshiny-dashboard
-    tag: "1.0.0"
+    tag: "2.0.0"
     pullPolicy: Never
   replicas: 1
   resources:
@@ -25,11 +25,11 @@ postgresql:
     tag: "18"
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
       cpu: 500m
       memory: 512Mi
+    limits:
+      cpu: 750m
+      memory: 768Mi
   storage:
     size: 10Gi
     storageClass: ""
@@ -45,17 +45,17 @@ postgresql:
     port: 9187
     resources:
       requests:
-        cpu: 50m
-        memory: 64Mi
+        cpu: 250m
+        memory: 256Mi
       limits:
-        cpu: 200m
-        memory: 128Mi
+        cpu: 500m
+        memory: 512Mi
 
 # --- Pipeline CronJob ---
 pipeline:
   image:
     repository: svd-pipeline
-    tag: "1.0.0"
+    tag: "2.0.0"
     pullPolicy: Never
   schedule: "0 3 * * 1"
   daysBack: 7
@@ -64,8 +64,8 @@ pipeline:
   activeDeadlineSeconds: 7200
   resources:
     requests:
-      cpu: 200m
-      memory: 512Mi
+      cpu: 750m
+      memory: 1Gi
     limits:
       cpu: 1000m
       memory: 2Gi
@@ -140,11 +140,11 @@ monitoring:
     port: 9115
     resources:
       requests:
-        cpu: 50m
-        memory: 32Mi
+        cpu: 250m
+        memory: 128Mi
       limits:
-        cpu: 100m
-        memory: 64Mi
+        cpu: 500m
+        memory: 256Mi
 
 # --- Observability ---
 # Set to false if you already have kube-prometheus-stack and/or
@@ -154,6 +154,9 @@ observability:
     enabled: false
   victoriaLogs:
     enabled: true
+    datasource:
+      uid: "ffffwg4f57a4gd"
+      url: "http://svd-victoria-logs-single-server.svd.svc.cluster.local:9428"
   grafanaImageRenderer:
     enabled: true
     image:
@@ -175,10 +178,10 @@ ingress:
   className: nginx
   # Override these hostnames in your own values file (e.g. -f my-values.yaml)
   hosts:
-    dashboard: csvd-dashboard.example.com
-    ntfy: ntfy.example.com
-    healthchecks: healthchecks.example.com
-    grafana: grafana.example.com
+    dashboard: csvd-dashboard.matbpoirierk8shomelab.net
+    ntfy: ntfy.matbpoirierk8shomelab.net
+    healthchecks: healthchecks.matbpoirierk8shomelab.net
+    grafana: grafana.matbpoirierk8shomelab.net
   tls:
     enabled: true
     # Secret containing TLS certificate (create manually or via cert-manager)
@@ -234,6 +237,6 @@ victoria-logs-single:
     retentionPeriod: 30d
     persistentVolume:
       enabled: true
-      size: 50Gi
+      size: 10Gi
   vector:
     enabled: true
