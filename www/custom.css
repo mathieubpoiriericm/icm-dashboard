@@ -126,7 +126,7 @@ html h2 {
 
 .main-content {
   flex: 1;
-  padding: 2rem 3rem;
+  padding: 1.25rem 2rem;
   overflow-x: auto;
   background: white;
   border-radius: var(--svd-radius-lg);
@@ -334,7 +334,7 @@ html h2 {
 /* === SIDEBAR === */
 
 .sidebar-section {
-  padding: 2rem;
+  padding: 1.25rem;
   min-width: 320px;
   width: auto;
   max-width: 400px;
@@ -392,11 +392,16 @@ body #sample_size_filter_card strong {
   border-left: 3px solid var(--svd-accent-subtle);
   box-shadow: var(--svd-shadow-xs);
   border-radius: var(--svd-radius-md);
+  margin-bottom: 0.5rem;
 }
 
 .bslib-sidebar-layout .bslib-card:hover {
   box-shadow: var(--svd-shadow-sm);
   border-color: rgba(40, 30, 120, 0.2);
+}
+
+.sidebar-section .bslib-card > .card-body {
+  padding: 0.5rem 0.75rem;
 }
 
 /* Sidebar section header */
@@ -1529,7 +1534,7 @@ table.dataTable tbody tr:hover td:first-child {
   }
 
   .main-content {
-    padding: 1.5rem;
+    padding: 1rem;
   }
 }
 
