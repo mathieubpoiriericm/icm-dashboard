@@ -13,48 +13,8 @@ function progressiveRetry(fn, delays) {
 }
 
 // =============================================================================
-// TAB CHANGE HANDLER - Explicit Bootstrap 5 tab event listener
+// TIPPY INITIALIZATION (must be defined before tab handler references it)
 // =============================================================================
-// Using shown.bs.tab for explicit tab change handling instead of relying on
-// indirect init.dt events. This provides better control over tab transitions.
-$(document).on('shown.bs.tab', function(e) {
-  var targetId = $(e.target).attr('data-value') || $(e.target).attr('href');
-
-  // Reinitialize tooltips when switching tabs (elements may have been hidden)
-  window.initializeTippy();
-
-  // Sync scrollbar widths for tables in the newly visible tab
-  progressiveRetry(function() {
-    syncControlsWidth('firstTable');
-    syncControlsWidth('secondTable');
-  }, [100, 300]);
-
-  // Invalidate Leaflet map size when Trials Map tab becomes visible
-  if (targetId === 'Clinical Trials Map') {
-    // Retry multiple times to handle async widget initialization
-    [100, 300, 600, 1000].forEach(function(delay) {
-      setTimeout(function() {
-        var widget = HTMLWidgets.find('#trials_map');
-        if (widget) {
-          var map = widget.getMap();
-          if (map) map.invalidateSize();
-        }
-      }, delay);
-    });
-  }
-});
-
-// Python plot handling
-Shiny.addCustomMessageHandler('rerunPythonPlotSizing', function(msg) {
-  var iframe = document.querySelector('iframe[src="python_plot.html"]');
-  if (!iframe || !iframe.contentWindow) return;
-
-  var win = iframe.contentWindow;
-  if (typeof win.adjustLabelBackgrounds === 'function') win.adjustLabelBackgrounds();
-  if (typeof win.adjustLegendBox === 'function') win.adjustLegendBox();
-  if (typeof win.adjustLegendBoxMOA === 'function') win.adjustLegendBoxMOA();
-  if (typeof win.avoidCognitiveOverlap === 'function') win.avoidCognitiveOverlap();
-});
 
 // Optimized Tippy initialization with debouncing
 window.tippyTimeout = null;
@@ -129,6 +89,50 @@ window.addEventListener('beforeunload', function() {
     });
     window.tippyInstances = [];
   }
+});
+
+// =============================================================================
+// TAB CHANGE HANDLER - Explicit Bootstrap 5 tab event listener
+// =============================================================================
+// Using shown.bs.tab for explicit tab change handling instead of relying on
+// indirect init.dt events. This provides better control over tab transitions.
+$(document).on('shown.bs.tab', function(e) {
+  var targetId = $(e.target).attr('data-value') || $(e.target).attr('href');
+
+  // Reinitialize tooltips when switching tabs (elements may have been hidden)
+  window.initializeTippy();
+
+  // Sync scrollbar widths for tables in the newly visible tab
+  progressiveRetry(function() {
+    syncControlsWidth('firstTable');
+    syncControlsWidth('secondTable');
+  }, [100, 300]);
+
+  // Invalidate Leaflet map size when Trials Map tab becomes visible
+  if (targetId === 'Clinical Trials Map') {
+    // Retry multiple times to handle async widget initialization
+    [100, 300, 600, 1000].forEach(function(delay) {
+      setTimeout(function() {
+        var widget = HTMLWidgets.find('#trials_map');
+        if (widget) {
+          var map = widget.getMap();
+          if (map) map.invalidateSize();
+        }
+      }, delay);
+    });
+  }
+});
+
+// Python plot handling
+Shiny.addCustomMessageHandler('rerunPythonPlotSizing', function(msg) {
+  var iframe = document.querySelector('iframe[src="python_plot.html"]');
+  if (!iframe || !iframe.contentWindow) return;
+
+  var win = iframe.contentWindow;
+  if (typeof win.adjustLabelBackgrounds === 'function') win.adjustLabelBackgrounds();
+  if (typeof win.adjustLegendBox === 'function') win.adjustLegendBox();
+  if (typeof win.adjustLegendBoxMOA === 'function') win.adjustLegendBoxMOA();
+  if (typeof win.avoidCognitiveOverlap === 'function') win.avoidCognitiveOverlap();
 });
 
 // =============================================================================
@@ -286,34 +290,28 @@ function initializeTopScrollbar(e, settings) {
     var topScrollbarEl = topScrollbar[0];
 
     // Unified RAF-based scroll sync to prevent WebKit layout thrashing
-    // Uses a single RAF and tracks which element initiated the scroll
+    // Uses a boolean lock instead of timing to avoid Safari async scroll issues
     var syncRAF = null;
-    var syncSource = null;  // 'top' or 'body'
-    var lastSyncTime = 0;
-    var SYNC_COOLDOWN = 16;  // ~1 frame at 60fps
+    var isSyncing = false;
 
     function syncScroll(source) {
-      var now = performance.now();
-      // Ignore if this is a programmatic scroll from the sync itself
-      if (syncSource && syncSource !== source && (now - lastSyncTime) < SYNC_COOLDOWN) {
-        return;
-      }
+      // Ignore programmatic scroll events triggered by the sync itself
+      if (isSyncing) return;
 
       if (syncRAF) {
         cancelAnimationFrame(syncRAF);
       }
 
-      syncSource = source;
       syncRAF = requestAnimationFrame(function() {
-        lastSyncTime = performance.now();
+        isSyncing = true;
         if (source === 'top') {
           scrollBodyEl.scrollLeft = topScrollbarEl.scrollLeft;
         } else {
           topScrollbarEl.scrollLeft = scrollBodyEl.scrollLeft;
         }
         syncRAF = null;
-        // Reset source after a brief delay to allow the programmatic scroll to settle
-        setTimeout(function() { syncSource = null; }, SYNC_COOLDOWN);
+        // Clear lock after the next frame to let the programmatic scroll settle
+        requestAnimationFrame(function() { isSyncing = false; });
       });
     }
 
@@ -469,5 +467,3 @@ function fixOrphanDtLabels() {
 
 // Run on Shiny connect (init.dt handled in unified handler above)
 $(document).on('shiny:connected', fixOrphanDtLabels);
-
-

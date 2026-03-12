@@ -300,9 +300,9 @@ make_gene_tooltip_html <- function(gene_symbol, gene_info_row, col_names,
       "<strong>%s</strong> %s<br>",
       "<strong>%s</strong> %s"
     ),
-    col_names[1L], gene_info_row[2L],
-    col_names[2L], gene_info_row[3L],
-    col_names[3L], gene_info_row[4L]
+    htmltools::htmlEscape(col_names[1L]), htmltools::htmlEscape(gene_info_row[2L]),
+    htmltools::htmlEscape(col_names[2L]), htmltools::htmlEscape(gene_info_row[3L]),
+    htmltools::htmlEscape(col_names[3L]), htmltools::htmlEscape(gene_info_row[4L])
   )
 
   gene_url <- gene_info_row[["URL"]]
@@ -415,7 +415,7 @@ prepare_table1_display <- function(
       if (!is.null(prot_info)) {
         protein_tooltip_content <- sprintf(
           "<strong>UniProt Accession Number</strong> %s",
-          prot_info$accession
+          htmltools::htmlEscape(prot_info$accession)
         )
 
         make_sortable_cell(
@@ -470,10 +470,10 @@ prepare_table1_display <- function(
                 "<strong>Gene/Locus</strong> %s<br>",
                 "<strong>Gene/Locus OMIM</strong> %s"
               ),
-              info$phenotype,
-              info$inheritance,
-              info$gene_or_locus,
-              info$gene_or_locus_mim_number
+              htmltools::htmlEscape(info$phenotype),
+              htmltools::htmlEscape(info$inheritance),
+              htmltools::htmlEscape(info$gene_or_locus),
+              htmltools::htmlEscape(info$gene_or_locus_mim_number)
             )
 
             as.character(

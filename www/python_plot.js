@@ -1,4 +1,3 @@
-// python_plot.js — Clinical trials timeline SVG interaction handlers
 
 (function() {
   document.body.classList.add('svg-loading');
@@ -22,13 +21,23 @@
     return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }
 
+  // Safe getBBox wrapper — returns null on exception or zero-size result
+  function safeGetBBox(el) {
+    let bbox;
+    try { bbox = el.getBBox(); } catch(e) { return null; }
+    if (!bbox || bbox.width === 0) return null;
+    return bbox;
+  }
+
     // Prevent label boxes from overlapping their own drug markers
   function adjustMarkerLabelOverlap() {
     const markers = document.querySelectorAll('g.drug use');
-    if (!markers || markers.length === 0) return;
+    const svg = document.querySelector('svg');
+    if (!svg) return;
+    const cx = parseFloat(svg.getAttribute('width')) / 2;
+    const cy = parseFloat(svg.getAttribute('height')) / 2;
     markers.forEach(mk => {
       const g = mk.closest('g.drug');
-      if (!g) return;
       const text = g.querySelector('text');
       const rect = g.querySelector('rect.label-bg');
       if (!text || !rect) return;
@@ -50,12 +59,8 @@
         mkY - mkR < ry + rh;
 
       if (overlap) {
-        // Nudge label outward radially
-        const svg = document.querySelector('svg');
-        const cx = parseFloat(svg.getAttribute('width')) / 2;
-        const cy = parseFloat(svg.getAttribute('height')) / 2;
-
-        const bbox = text.getBBox();
+        const bbox = safeGetBBox(text);
+        if (!bbox) return;
         const dx = bbox.x - cx;
         const dy = bbox.y - cy;
         const len = Math.sqrt(dx*dx + dy*dy) || 1;
@@ -66,7 +71,8 @@
         text.setAttribute('x', (nudgedX + bbox.width/2).toFixed(2));
         text.setAttribute('y', (nudgedY + bbox.height/2).toFixed(2));
 
-        const newBox = text.getBBox();
+        const newBox = safeGetBBox(text);
+        if (!newBox) return;
         const padX = 8, padY = 4;
         rect.setAttribute('x', (newBox.x - padX).toFixed(2));
         rect.setAttribute('y', (newBox.y - padY).toFixed(2));
@@ -76,9 +82,6 @@
     });
   }
 
-  // =============================================================================
-  // COGNITIVE IMPAIRMENT OVERLAP FUNCTIONS
-  // =============================================================================
   function boxesOverlap(a, b) {
     return (
       a.x < b.x + b.width &&
@@ -88,19 +91,14 @@
     );
   }
 
-  // Fix two-line population label boxes - DISABLED due to Chromium getBBox() bug in iframes
-  // Rects are pre-rendered with correct dimensions
-  function adjustTwoLinePopLabels() {
-    return; // Disabled - getBBox() returns incorrect values in Chromium iframes
-  }
-
   function avoidCognitiveOverlap() {
     const popLabel = document.querySelector('g.pop-label[data-pop="Cognitive Impairment"]');
     const legend = document.getElementById('legend-moa-bg');
     if (!popLabel || !legend) return;
 
-    const popBox = popLabel.getBBox();
-    const legBox = legend.getBBox();
+    const popBox = safeGetBBox(popLabel);
+    const legBox = safeGetBBox(legend);
+    if (!popBox || !legBox) return;
 
     if (boxesOverlap(popBox, legBox)) {
       const text = popLabel.querySelector('text');
@@ -111,7 +109,8 @@
 
         const rect = popLabel.querySelector('rect.label-bg');
         if (rect) {
-          const nb = text.getBBox();
+          const nb = safeGetBBox(text);
+          if (!nb) return;
           const padX = 8, padY = 4;
           rect.setAttribute('x', (nb.x - padX).toFixed(2));
           rect.setAttribute('y', (nb.y - padY).toFixed(2));
@@ -121,60 +120,6 @@
       }
     }
   }
-  // Fine-tune label background rectangles (boxes are pre-rendered with estimated dimensions)
-  function adjustLabelBackgrounds() {
-    // DISABLED: Boxes are fully pre-rendered with proper dimensions
-    // This function is intentionally disabled to avoid Chromium getBBox() bugs in iframes
-    // If you need fine-tuning, uncomment the code below, but the pre-rendered dimensions
-    // should be accurate enough for production use.
-    return;
-
-    /* OPTIONAL FINE-TUNING (disabled to avoid Chromium bugs):
-    const groups = document.querySelectorAll('g.pop-label, g.phase-label, g.drug');
-    groups.forEach(g => {
-      const rect = g.querySelector('rect.label-bg');
-      const text = g.querySelector('text');
-      if (!rect || !text) return;
-
-      try {
-        const bbox = text.getBBox();
-        const padX = 8;
-        const padY = 4;
-        rect.setAttribute('x', (bbox.x - padX).toFixed(2));
-        rect.setAttribute('y', (bbox.y - padY).toFixed(2));
-        rect.setAttribute('width', (bbox.width + padX * 2).toFixed(2));
-        rect.setAttribute('height', (bbox.height + padY * 2).toFixed(2));
-      } catch (e) {
-        console.warn('getBBox failed for label, keeping pre-rendered dimensions:', e);
-      }
-    });
-    */
-  }
-
-  // Auto-size legend box (kept for fine-tuning, but legends are pre-rendered)
-  function adjustLegendBox() {
-      // Legend boxes are pre-rendered with proper dimensions
-      // This function kept for compatibility but does minimal work
-      const bg = document.getElementById('legend-bg');
-      if (!bg) return;
-
-      // Check if already has proper dimensions
-      const currentWidth = parseFloat(bg.getAttribute('width'));
-      if (currentWidth > 0) return; // Already properly sized, skip adjustment
-  }
-
-  // Auto-size MOA legend box (kept for fine-tuning, but legend is pre-rendered)
-  function adjustLegendBoxMOA() {
-    // MOA legend box is pre-rendered with proper dimensions
-    // This function kept for compatibility but does minimal work
-    const bg = document.getElementById('legend-moa-bg');
-    if (!bg) return;
-
-    // Check if already has proper dimensions
-    const currentWidth = parseFloat(bg.getAttribute('width'));
-    if (currentWidth > 0) return; // Already properly sized, skip adjustment
-  }
-
   // Minimal tooltip-only JS
   function hexToRgb(hex) {
     if (!hex) return null;
@@ -222,12 +167,6 @@
     return luminance >= 185;
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
   function ensureTooltip() {
     let tip = document.getElementById('tooltip');
     if (!tip) {
@@ -238,15 +177,19 @@
     return tip;
   }
 
-  // Shared tooltip positioning logic
-  function computeTooltipPosition(x, y, tipWidth, tipHeight) {
+  // Compute clamped tooltip position: prefer above cursor, fall back to right/left
+  function computeTooltipPosition(tip, x, y) {
+    const tipWidth = tip.offsetWidth;
+    const tipHeight = tip.offsetHeight;
     const margin = 10;
     const cursorOffset = 5;
+
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
     let finalX = x - tipWidth / 2;
     let finalY = y - tipHeight - cursorOffset;
+
     const fitsAbove = finalY >= margin;
 
     if (fitsAbove) {
@@ -256,6 +199,7 @@
         finalX = viewportWidth - tipWidth - margin;
       }
     } else {
+      // Show to the right of cursor (avoid below due to iframe clipping)
       finalX = x + cursorOffset + 15;
       finalY = y - tipHeight / 2;
 
@@ -273,14 +217,13 @@
       }
     }
 
-    return { left: finalX, top: finalY };
+    return { x: finalX, y: finalY };
   }
 
-  function showTooltip(html, x, y, accentColor) {
+  function showTooltip(html, x, y, accentColor, textColor) {
     const tip = ensureTooltip();
-    tip.innerHTML = html;
+    tip.innerHTML = html; // Content is pre-escaped via data attributes
 
-    // Set color properties
     if (accentColor) {
       tip.style.setProperty('--tip-color-rgba', toRgba(accentColor, 0.45));
     } else {
@@ -291,14 +234,14 @@
         ? '#000'
         : 'rgba(255,255,255,0.35)';
     tip.style.setProperty('--tip-divider-color', dividerColor);
+    if (textColor) tip.style.color = textColor;
 
-    // Temporarily show to measure dimensions
     tip.style.visibility = 'hidden';
     tip.style.display = 'flex';
 
-    const pos = computeTooltipPosition(x, y, tip.offsetWidth, tip.offsetHeight);
-    tip.style.left = pos.left + 'px';
-    tip.style.top = pos.top + 'px';
+    const pos = computeTooltipPosition(tip, x, y);
+    tip.style.left = pos.x + 'px';
+    tip.style.top = pos.y + 'px';
     tip.style.visibility = '';
 
     tip.classList.remove('show');
@@ -309,50 +252,37 @@
       });
     });
   }
+
   function hideTooltip() {
     const tip = document.getElementById('tooltip');
     if (!tip) return;
     tip.classList.remove('show');
-    // Clear cached dimensions when hiding tooltip
-    cachedTipDimensions = null;
-  }
-
-  // Tooltip dimension cache to avoid layout thrashing
-  let cachedTipDimensions = null;
-  let rafPending = false;
-  let pendingX = 0;
-  let pendingY = 0;
-
-  // Throttled tooltip position update using requestAnimationFrame
-  function throttledUpdateTooltipPosition(x, y) {
-    pendingX = x;
-    pendingY = y;
-    if (!rafPending) {
-      rafPending = true;
-      requestAnimationFrame(() => {
-        rafPending = false;
-        updateTooltipPosition(pendingX, pendingY);
-      });
-    }
   }
 
   function updateTooltipPosition(x, y) {
     const tip = document.getElementById('tooltip');
     if (!tip) return;
+    const pos = computeTooltipPosition(tip, x, y);
+    tip.style.left = pos.x + 'px';
+    tip.style.top = pos.y + 'px';
+  }
 
-    // Use cached dimensions or read once per tooltip show
-    if (!cachedTipDimensions) {
-      cachedTipDimensions = {
-        width: tip.offsetWidth,
-        height: tip.offsetHeight
-      };
-    }
-
-    const pos = computeTooltipPosition(
-      x, y, cachedTipDimensions.width, cachedTipDimensions.height
-    );
-    tip.style.left = pos.left + 'px';
-    tip.style.top = pos.top + 'px';
+  function readDrugAttributes(node) {
+    return {
+      name:    node.getAttribute('data-drug')    || 'Unknown',
+      phase:   node.getAttribute('data-phase')   || '–',
+      pop:     node.getAttribute('data-pop')     || '–',
+      mech:    node.getAttribute('data-mech')    || '–',
+      gtarget: node.getAttribute('data-gtarget') || '–',
+      gevid:   node.getAttribute('data-ge')      || '–',
+      tname:   node.getAttribute('data-tname')   || '–',
+      regid:   node.getAttribute('data-regid')   || '–',
+      svdpopd: node.getAttribute('data-svdpopd') || '–',
+      ssize:   node.getAttribute('data-ssize')   || '–',
+      estcomp: node.getAttribute('data-estcomp') || '–',
+      pco:     node.getAttribute('data-pco')     || '–',
+      sptype:  node.getAttribute('data-sptype')  || '–',
+    };
   }
 
   function initTooltipHandlers() {
@@ -378,24 +308,11 @@
     const wedges = document.querySelectorAll('.wedge');
     wedges.forEach(w => {
       w.addEventListener('mouseover', (ev) => {
-        const pop = escapeHtml(w.getAttribute('data-pop') || '–');
-        const phase = escapeHtml(w.getAttribute('data-phase') || '–');
+        const pop = w.getAttribute('data-pop') || '–';
+        const phase = w.getAttribute('data-phase') || '–';
 
-        // Read exact wedge fill & opacity from the SVG element
         const fill = w.getAttribute('fill') || '#000';
-        const op = parseFloat(w.getAttribute('fill-opacity') || '1');
-
-        // Use wedge opacity instead of a fixed tooltipOpacity
-        let bg = fill;
-        if (fill.startsWith('#') && (fill.length === 7 || fill.length === 4)) {
-          const hex = fill.length === 7 ? fill.slice(1) : (
-            fill[1] + fill[1] + fill[2] + fill[2] + fill[3] + fill[3]
-          );
-          const r = parseInt(hex.slice(0,2),16);
-          const g = parseInt(hex.slice(2,4),16);
-          const b = parseInt(hex.slice(4,6),16);
-          bg = `rgba(${r},${g},${b},1)`;
-        }
+        const bg = toRgba(fill, 1);
 
         const html = `
   <div style="padding:2px 4px;">
@@ -406,42 +323,21 @@
       <div><strong>Phase:</strong> ${phase}</div>
     </div>
   </div>`;
-        const tip = ensureTooltip();
-        tip.style.color = isLightColor(bg) ? "#000" : "#fff";
-
-        showTooltip(html, ev.clientX, ev.clientY, bg);
+        showTooltip(html, ev.clientX, ev.clientY, bg, isLightColor(bg) ? "#000" : "#fff");
 
       });
       w.addEventListener('mousemove', (ev) => {
-        throttledUpdateTooltipPosition(ev.clientX, ev.clientY);
+        updateTooltipPosition(ev.clientX, ev.clientY);
       });
       w.addEventListener('mouseout', () => {
         hideTooltip();
       });
     });
-    // Extract drug data attributes from a node (shared by click/mouseover)
-    function readDrugAttributes(node) {
-      return {
-        name:    escapeHtml(node.getAttribute('data-drug')    || 'Unknown'),
-        phase:   escapeHtml(node.getAttribute('data-phase')    || '–'),
-        pop:     escapeHtml(node.getAttribute('data-pop')      || '–'),
-        mech:    escapeHtml(node.getAttribute('data-mech')     || '–'),
-        gtarget: escapeHtml(node.getAttribute('data-gtarget')  || '–'),
-        gevid:   escapeHtml(node.getAttribute('data-ge')       || '–'),
-        tname:   escapeHtml(node.getAttribute('data-tname')    || '–'),
-        regid:   escapeHtml(node.getAttribute('data-regid')    || '–'),
-        svdpopd: escapeHtml(node.getAttribute('data-svdpopd')  || '–'),
-        ssize:   escapeHtml(node.getAttribute('data-ssize')    || '–'),
-        estcomp: escapeHtml(node.getAttribute('data-estcomp')  || '–'),
-        pco:     escapeHtml(node.getAttribute('data-pco')      || '–'),
-        sptype:  escapeHtml(node.getAttribute('data-sptype')   || '–')
-      };
-    }
-
     nodes.forEach(node => {
       node.addEventListener('click', (ev) => {
         const d = readDrugAttributes(node);
 
+        // Content is pre-escaped via escapeHtml() in data attributes
         const html = `
           <h2 style="margin-top:0; font-size:16px;">${d.name}</h2>
           <hr>
@@ -460,6 +356,7 @@
 
         const sb = document.getElementById('sidebar');
         const sbc = document.getElementById('sidebar-content');
+        if (!sb || !sbc) return;
         sbc.innerHTML = html;
         sb.classList.add('open');
 
@@ -498,12 +395,10 @@
     </div>
   </div>`;
         const popColor = node.getAttribute('data-pop-color') || '#444444';
-        const tip = ensureTooltip();
-        tip.style.color = isLightColor(popColor) ? "#000" : "#fff";
-        showTooltip(html, ev.clientX, ev.clientY, popColor);
+        showTooltip(html, ev.clientX, ev.clientY, popColor, isLightColor(popColor) ? "#000" : "#fff");
       });
       node.addEventListener('mousemove', (ev) => {
-        throttledUpdateTooltipPosition(ev.clientX, ev.clientY);
+        updateTooltipPosition(ev.clientX, ev.clientY);
       });
       node.addEventListener('mouseout', () => {
         hideTooltip();
@@ -516,14 +411,10 @@
       await waitForFonts();
       await nextFrame();
       adjustMarkerLabelOverlap();
-      adjustLegendBox();
-      adjustLegendBoxMOA();
       avoidCognitiveOverlap();
       await nextFrame();
       setTimeout(() => {
         adjustMarkerLabelOverlap();
-        adjustLegendBox();
-        adjustLegendBoxMOA();
         avoidCognitiveOverlap();
       }, 140);
       initTooltipHandlers();
@@ -538,6 +429,7 @@
   document.addEventListener('keydown', (ev) => {
     if (ev.key === "Escape") {
       const sb = document.getElementById('sidebar');
+      if (!sb) return;
       const figC = document.querySelector('.fig-c');
       sb.classList.remove('open');
       if (figC) {

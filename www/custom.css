@@ -17,6 +17,8 @@
   --svd-bg-hover-accent: rgba(250, 70, 22, 0.1);
   --svd-bg-active-accent: rgba(250, 70, 22, 0.12);
   --svd-bg-row-stripe: rgba(40, 30, 120, 0.03);
+  --svd-bg-sticky-head: #f2f1f8;
+  --svd-bg-sticky-even: #f7f6fc;
   --svd-bg-tooltip-hover: #eeedf5;
   --svd-border-section: #9ca3af;
   --svd-link: #FA4616;
@@ -90,6 +92,7 @@ body {
   background: linear-gradient(160deg, var(--svd-bg-white) 0%, var(--svd-bg-page) 100%) !important;
   min-width: 768px;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 2rem;
   margin: 0;
 }
@@ -116,11 +119,12 @@ html h2 {
   background: var(--svd-bg-card);
   border-radius: var(--svd-radius-lg);
   box-shadow: var(--svd-shadow-lg);
-  overflow: hidden;
+  overflow: clip;
   animation: fadeIn 0.6s ease-out;
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 4rem);
+  min-height: calc(100dvh - 4rem);
   margin-top: 1rem;
 }
 
@@ -357,7 +361,7 @@ html h2 {
 .bslib-sidebar-layout {
   width: 100%;
   border-radius: var(--svd-radius-lg) !important;
-  overflow: hidden;
+  overflow: clip;
   margin-top: 1rem;
   display: flex;
   align-items: stretch;
@@ -370,7 +374,7 @@ html h2 {
   flex-direction: column;
   background: white;
   border-radius: var(--svd-radius-lg) !important;
-  overflow: hidden;
+  overflow: clip;
 }
 
 body .bslib-sidebar-layout .card .control-label,
@@ -813,10 +817,7 @@ table.dataTable {
   min-width: 100%;
   border-radius: var(--svd-radius-md);
   border: 1px solid var(--svd-border);
-  overflow: hidden;
   table-layout: auto;
-  contain: layout paint;
-  isolation: isolate;
 }
 
 table.dataTable thead th {
@@ -1005,7 +1006,7 @@ table.dataTable tbody td:first-child {
 
 table.dataTable thead th:first-child {
   z-index: 3;
-  background: var(--svd-bg-light);
+  background: var(--svd-bg-sticky-head);
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
 }
 
@@ -1015,7 +1016,7 @@ table.dataTable tbody td:first-child {
 }
 
 table.dataTable tbody tr:nth-child(even) td:first-child {
-  background: var(--svd-bg-row-even);
+  background: var(--svd-bg-sticky-even);
 }
 
 table.dataTable tbody tr:hover td:first-child {
@@ -1030,9 +1031,6 @@ table.dataTable tbody tr:hover td:first-child {
   transform: translate3d(0, 0, 0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  contain: paint;
-  will-change: scroll-position;
-  -webkit-overflow-scrolling: touch;
   overflow-x: scroll !important;
   margin-bottom: 0 !important;
   padding-bottom: 10px;
@@ -1090,8 +1088,6 @@ table.dataTable tbody tr:hover td:first-child {
   transform: translate3d(0, 0, 0);
   position: relative;
   z-index: 1;
-  will-change: scroll-position;
-  -webkit-overflow-scrolling: touch;
 }
 
 .top-scrollbar-inner {
@@ -1285,7 +1281,8 @@ table.dataTable tbody tr:hover td:first-child {
 }
 
 .iframe-container {
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   position: relative;
   display: flex;
   justify-content: center;

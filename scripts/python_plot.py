@@ -325,10 +325,8 @@ for pop in populations:
 
     if sin_theta > 0:
         ly = boundary_y - v_offset
-        v_baseline = "middle"
     else:
         ly = boundary_y + v_offset
-        v_baseline = "middle"
 
     base_col = pop_colors.get(pop, "#444")
     text_ly = ly
@@ -375,7 +373,6 @@ for pop in populations:
             "ly": ly,
             "text_ly": text_ly,
             "anchor": anchor,
-            "v_baseline": v_baseline,
             "base_col": base_col,
             "box_x": box_x,
             "box_y": box_y,
@@ -445,21 +442,21 @@ for p in pop_label_render_data:
     if pop == "Cognitive Impairment":
         text_elem = (
             f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
-            f'text-anchor="{p["anchor"]}" dominant-baseline="{p["v_baseline"]}">'
+            f'text-anchor="{p["anchor"]}" dy="0.35em">'
             f'<tspan x="{p["lx"]:.2f}" dy="0">Cognitive</tspan>'
             f'<tspan x="{p["lx"]:.2f}" dy="1.2em">Impairment</tspan></text>'
         )
     elif pop == "Any SVD (including monogenic)":
         text_elem = (
             f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
-            f'text-anchor="middle" dominant-baseline="{p["v_baseline"]}">'
+            f'text-anchor="middle" dy="0.35em">'
             f'<tspan x="{p["lx"]:.2f}" dy="0">Any SVD</tspan>'
             f'<tspan x="{p["lx"]:.2f}" dy="1.2em">(including monogenic)</tspan></text>'
         )
     else:
         text_elem = (
             f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
-            f'text-anchor="{p["anchor"]}" dominant-baseline="{p["v_baseline"]}">{pop}</text>'
+            f'text-anchor="{p["anchor"]}" dy="0.35em">{pop}</text>'
         )
 
     svg_parts.append(
@@ -478,7 +475,7 @@ for ph in phase_label_render_data:
         f'width="{ph["est_width"] + ph["padX"] * 2:.2f}" height="{ph["est_height"] + ph["padY"] * 2:.2f}" rx="6" '
         f'fill="#ffffff" fill-opacity="1" pointer-events="none"/>'
         f'<text x="{ph["lx"]:.2f}" y="{ph["ly"]:.2f}" fill="#000" font-size="16" '
-        f'text-anchor="middle" dominant-baseline="middle">'
+        f'text-anchor="middle" dy="0.35em">'
         f"Phase {ph['phase']}</text>"
         f"</g>"
     )
@@ -628,7 +625,7 @@ for d in drug_render_data:
         f'width="{d["est_width"] + d["padX"] * 2:.2f}" height="{d["est_height"] + d["padY"] * 2:.2f}" rx="6" '
         f'fill="{d["label_bg_color"]}" fill-opacity="1" pointer-events="none"/>'
         f'<text x="{d["lx"]:.2f}" y="{d["ly"]:.2f}" '
-        f'text-anchor="{d["anchor"]}" dominant-baseline="middle">'
+        f'text-anchor="{d["anchor"]}" dy="0.35em">'
         f"{d['drug']}</text>"
         f"</g>"
     )
@@ -722,12 +719,12 @@ svg_parts.append(
     f'<g class="legend-item">'
     f'<rect x="{yes_box_x:.2f}" y="{legend_y + 2}" width="{box_width}" height="20" rx="6" '
     f'fill="#90ee90" fill-opacity="1"/>'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dominant-baseline="middle">Yes</text>'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y + 12}" text-anchor="middle" dy="0.35em">Yes</text>'
     f"</g>"
     f'<g class="legend-item">'
     f'<rect x="{no_box_x:.2f}" y="{legend_y + 30}" width="{box_width}" height="20" rx="6" '
     f'fill="#ffffff" fill-opacity="1"/>'
-    f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dominant-baseline="middle">No</text>'
+    f'<text x="{legend_center_x:.2f}" y="{legend_y + 40}" text-anchor="middle" dy="0.35em">No</text>'
     f"</g>"
     f"</g>"
 )
@@ -752,7 +749,7 @@ for i, mech in enumerate(mechanisms):
             f"</text>"
         )
     else:
-        text_block = f'<text x="{legend_moa_x + 24}" y="{y}" dominant-baseline="middle">{mech}</text>'
+        text_block = f'<text x="{legend_moa_x + 24}" y="{y}" dy="0.35em">{mech}</text>'
 
     svg_parts.append(
         f'<g class="legend-item">'
@@ -859,7 +856,7 @@ html = f"""<!DOCTYPE html>
   }}
   #tooltip {{
     --tip-color-rgba: rgba(255,255,255,0.25);
-    position: fixed;
+    position: absolute;
     padding: 9px 10px;
     border-radius: 20px;
     min-width: 240px;
@@ -964,9 +961,21 @@ js_code = r"""
     return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }
 
+  // Safe getBBox wrapper — returns null on exception or zero-size result
+  function safeGetBBox(el) {
+    let bbox;
+    try { bbox = el.getBBox(); } catch(e) { return null; }
+    if (!bbox || bbox.width === 0) return null;
+    return bbox;
+  }
+
     // Prevent label boxes from overlapping their own drug markers
   function adjustMarkerLabelOverlap() {
     const markers = document.querySelectorAll('g.drug use');
+    const svg = document.querySelector('svg');
+    if (!svg) return;
+    const cx = parseFloat(svg.getAttribute('width')) / 2;
+    const cy = parseFloat(svg.getAttribute('height')) / 2;
     markers.forEach(mk => {
       const g = mk.closest('g.drug');
       const text = g.querySelector('text');
@@ -990,12 +999,8 @@ js_code = r"""
         mkY - mkR < ry + rh;
 
       if (overlap) {
-        // Nudge label outward radially
-        const svg = document.querySelector('svg');
-        const cx = parseFloat(svg.getAttribute('width')) / 2;
-        const cy = parseFloat(svg.getAttribute('height')) / 2;
-
-        const bbox = text.getBBox();
+        const bbox = safeGetBBox(text);
+        if (!bbox) return;
         const dx = bbox.x - cx;
         const dy = bbox.y - cy;
         const len = Math.sqrt(dx*dx + dy*dy) || 1;
@@ -1006,7 +1011,8 @@ js_code = r"""
         text.setAttribute('x', (nudgedX + bbox.width/2).toFixed(2));
         text.setAttribute('y', (nudgedY + bbox.height/2).toFixed(2));
 
-        const newBox = text.getBBox();
+        const newBox = safeGetBBox(text);
+        if (!newBox) return;
         const padX = 8, padY = 4;
         rect.setAttribute('x', (newBox.x - padX).toFixed(2));
         rect.setAttribute('y', (newBox.y - padY).toFixed(2));
@@ -1016,7 +1022,6 @@ js_code = r"""
     });
   }
 
-  // --- Inserted functions for Cognitive Impairment overlap ---
   function boxesOverlap(a, b) {
     return (
       a.x < b.x + b.width &&
@@ -1026,19 +1031,14 @@ js_code = r"""
     );
   }
 
-  // Fix two-line population label boxes - DISABLED due to Chromium getBBox() bug in iframes
-  // Rects are pre-rendered with correct dimensions
-  function adjustTwoLinePopLabels() {
-    return; // Disabled - getBBox() returns incorrect values in Chromium iframes
-  }
-
   function avoidCognitiveOverlap() {
     const popLabel = document.querySelector('g.pop-label[data-pop="Cognitive Impairment"]');
     const legend = document.getElementById('legend-moa-bg');
     if (!popLabel || !legend) return;
 
-    const popBox = popLabel.getBBox();
-    const legBox = legend.getBBox();
+    const popBox = safeGetBBox(popLabel);
+    const legBox = safeGetBBox(legend);
+    if (!popBox || !legBox) return;
 
     if (boxesOverlap(popBox, legBox)) {
       const text = popLabel.querySelector('text');
@@ -1049,7 +1049,8 @@ js_code = r"""
 
         const rect = popLabel.querySelector('rect.label-bg');
         if (rect) {
-          const nb = text.getBBox();
+          const nb = safeGetBBox(text);
+          if (!nb) return;
           const padX = 8, padY = 4;
           rect.setAttribute('x', (nb.x - padX).toFixed(2));
           rect.setAttribute('y', (nb.y - padY).toFixed(2));
@@ -1059,62 +1060,6 @@ js_code = r"""
       }
     }
   }
-  // --- End inserted functions ---
-
-  // Fine-tune label background rectangles (boxes are pre-rendered with estimated dimensions)
-  function adjustLabelBackgrounds() {
-    // DISABLED: Boxes are fully pre-rendered with proper dimensions
-    // This function is intentionally disabled to avoid Chromium getBBox() bugs in iframes
-    // If you need fine-tuning, uncomment the code below, but the pre-rendered dimensions
-    // should be accurate enough for production use.
-    return;
-
-    /* OPTIONAL FINE-TUNING (disabled to avoid Chromium bugs):
-    const groups = document.querySelectorAll('g.pop-label, g.phase-label, g.drug');
-    groups.forEach(g => {
-      const rect = g.querySelector('rect.label-bg');
-      const text = g.querySelector('text');
-      if (!rect || !text) return;
-
-      try {
-        const bbox = text.getBBox();
-        const padX = 8;
-        const padY = 4;
-        rect.setAttribute('x', (bbox.x - padX).toFixed(2));
-        rect.setAttribute('y', (bbox.y - padY).toFixed(2));
-        rect.setAttribute('width', (bbox.width + padX * 2).toFixed(2));
-        rect.setAttribute('height', (bbox.height + padY * 2).toFixed(2));
-      } catch (e) {
-        console.warn('getBBox failed for label, keeping pre-rendered dimensions:', e);
-      }
-    });
-    */
-  }
-
-  // Auto-size legend box (kept for fine-tuning, but legends are pre-rendered)
-  function adjustLegendBox() {
-      // Legend boxes are pre-rendered with proper dimensions
-      // This function kept for compatibility but does minimal work
-      const bg = document.getElementById('legend-bg');
-      if (!bg) return;
-
-      // Check if already has proper dimensions
-      const currentWidth = parseFloat(bg.getAttribute('width'));
-      if (currentWidth > 0) return; // Already properly sized, skip adjustment
-  }
-
-  // Auto-size MOA legend box (kept for fine-tuning, but legend is pre-rendered)
-  function adjustLegendBoxMOA() {
-    // MOA legend box is pre-rendered with proper dimensions
-    // This function kept for compatibility but does minimal work
-    const bg = document.getElementById('legend-moa-bg');
-    if (!bg) return;
-
-    // Check if already has proper dimensions
-    const currentWidth = parseFloat(bg.getAttribute('width'));
-    if (currentWidth > 0) return; // Already properly sized, skip adjustment
-  }
-
   // Minimal tooltip-only JS
   function hexToRgb(hex) {
     if (!hex) return null;
@@ -1172,11 +1117,53 @@ js_code = r"""
     return tip;
   }
 
-  function showTooltip(html, x, y, accentColor) {
-    const tip = ensureTooltip();
-    tip.innerHTML = html;
+  // Compute clamped tooltip position: prefer above cursor, fall back to right/left
+  function computeTooltipPosition(tip, x, y) {
+    const tipWidth = tip.offsetWidth;
+    const tipHeight = tip.offsetHeight;
+    const margin = 10;
+    const cursorOffset = 5;
 
-    // Set color properties
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let finalX = x - tipWidth / 2;
+    let finalY = y - tipHeight - cursorOffset;
+
+    const fitsAbove = finalY >= margin;
+
+    if (fitsAbove) {
+      if (finalX < margin) {
+        finalX = margin;
+      } else if (finalX + tipWidth > viewportWidth - margin) {
+        finalX = viewportWidth - tipWidth - margin;
+      }
+    } else {
+      // Show to the right of cursor (avoid below due to iframe clipping)
+      finalX = x + cursorOffset + 15;
+      finalY = y - tipHeight / 2;
+
+      if (finalY < margin) {
+        finalY = margin;
+      } else if (finalY + tipHeight > viewportHeight - margin) {
+        finalY = viewportHeight - tipHeight - margin;
+      }
+
+      if (finalX + tipWidth > viewportWidth - margin) {
+        finalX = x - tipWidth - cursorOffset - 15;
+        if (finalX < margin) {
+          finalX = margin;
+        }
+      }
+    }
+
+    return { x: finalX, y: finalY };
+  }
+
+  function showTooltip(html, x, y, accentColor, textColor) {
+    const tip = ensureTooltip();
+    tip.innerHTML = html; // Content is pre-escaped via data attributes
+
     if (accentColor) {
       tip.style.setProperty('--tip-color-rgba', toRgba(accentColor, 0.45));
     } else {
@@ -1187,58 +1174,14 @@ js_code = r"""
         ? '#000'
         : 'rgba(255,255,255,0.35)';
     tip.style.setProperty('--tip-divider-color', dividerColor);
+    if (textColor) tip.style.color = textColor;
 
-    // Temporarily show to measure dimensions
     tip.style.visibility = 'hidden';
     tip.style.display = 'flex';
 
-    const tipWidth = tip.offsetWidth;
-    const tipHeight = tip.offsetHeight;
-    const margin = 10; // margin from viewport edges
-    const cursorOffset = 5; // offset from cursor
-
-    // Get viewport dimensions
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Calculate initial position (centered above cursor)
-    let finalX = x - tipWidth / 2;
-    let finalY = y - tipHeight - cursorOffset;
-
-    // Check if tooltip fits above cursor
-    const fitsAbove = finalY >= margin;
-
-    if (fitsAbove) {
-      // Tooltip fits above - adjust horizontal position to stay within viewport
-      if (finalX < margin) {
-        finalX = margin;
-      } else if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = viewportWidth - tipWidth - margin;
-      }
-    } else {
-      // Doesn't fit above - show to the right of cursor (avoid below due to
-      // iframe clipping issues)
-      finalX = x + cursorOffset + 15;
-      finalY = y - tipHeight / 2; // vertically centered on cursor
-
-      // Clamp vertical position
-      if (finalY < margin) {
-        finalY = margin;
-      } else if (finalY + tipHeight > viewportHeight - margin) {
-        finalY = viewportHeight - tipHeight - margin;
-      }
-
-      // If right side doesn't fit, try left side
-      if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = x - tipWidth - cursorOffset - 15;
-        if (finalX < margin) {
-          finalX = margin;
-        }
-      }
-    }
-
-    tip.style.left = finalX + 'px';
-    tip.style.top = finalY + 'px';
+    const pos = computeTooltipPosition(tip, x, y);
+    tip.style.left = pos.x + 'px';
+    tip.style.top = pos.y + 'px';
     tip.style.visibility = '';
 
     tip.classList.remove('show');
@@ -1249,6 +1192,7 @@ js_code = r"""
       });
     });
   }
+
   function hideTooltip() {
     const tip = document.getElementById('tooltip');
     if (!tip) return;
@@ -1258,53 +1202,27 @@ js_code = r"""
   function updateTooltipPosition(x, y) {
     const tip = document.getElementById('tooltip');
     if (!tip) return;
+    const pos = computeTooltipPosition(tip, x, y);
+    tip.style.left = pos.x + 'px';
+    tip.style.top = pos.y + 'px';
+  }
 
-    const tipWidth = tip.offsetWidth;
-    const tipHeight = tip.offsetHeight;
-    const margin = 10;
-    const cursorOffset = 5;
-
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Calculate initial position (centered above cursor)
-    let finalX = x - tipWidth / 2;
-    let finalY = y - tipHeight - cursorOffset;
-
-    // Check if tooltip fits above cursor
-    const fitsAbove = finalY >= margin;
-
-    if (fitsAbove) {
-      // Tooltip fits above - adjust horizontal position to stay within viewport
-      if (finalX < margin) {
-        finalX = margin;
-      } else if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = viewportWidth - tipWidth - margin;
-      }
-    } else {
-      // Doesn't fit above - show to the right of cursor (avoid below due to
-      // iframe clipping issues)
-      finalX = x + cursorOffset + 15;
-      finalY = y - tipHeight / 2; // vertically centered on cursor
-
-      // Clamp vertical position
-      if (finalY < margin) {
-        finalY = margin;
-      } else if (finalY + tipHeight > viewportHeight - margin) {
-        finalY = viewportHeight - tipHeight - margin;
-      }
-
-      // If right side doesn't fit, try left side
-      if (finalX + tipWidth > viewportWidth - margin) {
-        finalX = x - tipWidth - cursorOffset - 15;
-        if (finalX < margin) {
-          finalX = margin;
-        }
-      }
-    }
-
-    tip.style.left = finalX + 'px';
-    tip.style.top = finalY + 'px';
+  function readDrugAttributes(node) {
+    return {
+      name:    node.getAttribute('data-drug')    || 'Unknown',
+      phase:   node.getAttribute('data-phase')   || '–',
+      pop:     node.getAttribute('data-pop')     || '–',
+      mech:    node.getAttribute('data-mech')    || '–',
+      gtarget: node.getAttribute('data-gtarget') || '–',
+      gevid:   node.getAttribute('data-ge')      || '–',
+      tname:   node.getAttribute('data-tname')   || '–',
+      regid:   node.getAttribute('data-regid')   || '–',
+      svdpopd: node.getAttribute('data-svdpopd') || '–',
+      ssize:   node.getAttribute('data-ssize')   || '–',
+      estcomp: node.getAttribute('data-estcomp') || '–',
+      pco:     node.getAttribute('data-pco')     || '–',
+      sptype:  node.getAttribute('data-sptype')  || '–',
+    };
   }
 
   function initTooltipHandlers() {
@@ -1333,21 +1251,8 @@ js_code = r"""
         const pop = w.getAttribute('data-pop') || '–';
         const phase = w.getAttribute('data-phase') || '–';
 
-        // Read exact wedge fill & opacity from the SVG element
         const fill = w.getAttribute('fill') || '#000';
-        const op = parseFloat(w.getAttribute('fill-opacity') || '1');
-
-        // Use wedge opacity instead of a fixed tooltipOpacity
-        let bg = fill;
-        if (fill.startsWith('#') && (fill.length === 7 || fill.length === 4)) {
-          const hex = fill.length === 7 ? fill.slice(1) : (
-            fill[1] + fill[1] + fill[2] + fill[2] + fill[3] + fill[3]
-          );
-          const r = parseInt(hex.slice(0,2),16);
-          const g = parseInt(hex.slice(2,4),16);
-          const b = parseInt(hex.slice(4,6),16);
-          bg = `rgba(${r},${g},${b},1)`;
-        }
+        const bg = toRgba(fill, 1);
 
         const html = `
   <div style="padding:2px 4px;">
@@ -1358,10 +1263,7 @@ js_code = r"""
       <div><strong>Phase:</strong> ${phase}</div>
     </div>
   </div>`;
-        const tip = ensureTooltip();
-        tip.style.color = isLightColor(bg) ? "#000" : "#fff";
-
-        showTooltip(html, ev.clientX, ev.clientY, bg);
+        showTooltip(html, ev.clientX, ev.clientY, bg, isLightColor(bg) ? "#000" : "#fff");
 
       });
       w.addEventListener('mousemove', (ev) => {
@@ -1373,38 +1275,28 @@ js_code = r"""
     });
     nodes.forEach(node => {
       node.addEventListener('click', (ev) => {
-        const name    = node.getAttribute('data-drug')    || 'Unknown';
-        const phase   = node.getAttribute('data-phase')    || '–';
-        const pop     = node.getAttribute('data-pop')      || '–';
-        const mech    = node.getAttribute('data-mech')     || '–';
-        const gtarget = node.getAttribute('data-gtarget')  || '–';
-        const gevid   = node.getAttribute('data-ge')       || '–';
-        const tname   = node.getAttribute('data-tname')    || '–';
-        const regid   = node.getAttribute('data-regid')    || '–';
-        const svdpopd = node.getAttribute('data-svdpopd')  || '–';
-        const ssize   = node.getAttribute('data-ssize')    || '–';
-        const estcomp = node.getAttribute('data-estcomp')  || '–';
-        const pco     = node.getAttribute('data-pco')      || '–';
-        const sptype  = node.getAttribute('data-sptype')   || '–';
+        const d = readDrugAttributes(node);
 
+        // Content is pre-escaped via escapeHtml() in data attributes
         const html = `
-          <h2 style="margin-top:0; font-size:16px;">${name}</h2>
+          <h2 style="margin-top:0; font-size:16px;">${d.name}</h2>
           <hr>
-          <p><strong>Mechanism of Action:</strong> ${mech}</p>
-          <p><strong>Genetic Target:</strong> ${gtarget}</p>
-          <p><strong>Genetic Evidence:</strong> ${gevid}</p>
-          <p><strong>Clinical Trial Name:</strong> ${tname}</p>
-          <p><strong>Registry ID:</strong> ${regid}</p>
-          <p><strong>Clinical Trial Phase:</strong> ${phase}</p>
-          <p><strong>SVD Population Details:</strong> ${svdpopd}</p>
-          <p><strong>Target Sample Size:</strong> ${ssize}</p>
-          <p><strong>Estimated Completion Date:</strong> ${estcomp}</p>
-          <p><strong>Primary Outcome:</strong> ${pco}</p>
-          <p><strong>Sponsor Type:</strong> ${sptype}</p>
+          <p><strong>Mechanism of Action:</strong> ${d.mech}</p>
+          <p><strong>Genetic Target:</strong> ${d.gtarget}</p>
+          <p><strong>Genetic Evidence:</strong> ${d.gevid}</p>
+          <p><strong>Clinical Trial Name:</strong> ${d.tname}</p>
+          <p><strong>Registry ID:</strong> ${d.regid}</p>
+          <p><strong>Clinical Trial Phase:</strong> ${d.phase}</p>
+          <p><strong>SVD Population Details:</strong> ${d.svdpopd}</p>
+          <p><strong>Target Sample Size:</strong> ${d.ssize}</p>
+          <p><strong>Estimated Completion Date:</strong> ${d.estcomp}</p>
+          <p><strong>Primary Outcome:</strong> ${d.pco}</p>
+          <p><strong>Sponsor Type:</strong> ${d.sptype}</p>
         `;
 
         const sb = document.getElementById('sidebar');
         const sbc = document.getElementById('sidebar-content');
+        if (!sb || !sbc) return;
         sbc.innerHTML = html;
         sb.classList.add('open');
 
@@ -1421,43 +1313,29 @@ js_code = r"""
         });
       });
       node.addEventListener('mouseover', (ev) => {
-        const name    = node.getAttribute('data-drug')    || 'Unknown';
-        const phase   = node.getAttribute('data-phase')    || '–';
-        const pop     = node.getAttribute('data-pop')      || '–';
-        const mech    = node.getAttribute('data-mech')     || '–';
-        const gtarget = node.getAttribute('data-gtarget')  || '–';
-        const gevid   = node.getAttribute('data-ge')       || '–';
-        const tname   = node.getAttribute('data-tname')    || '–';
-        const regid   = node.getAttribute('data-regid')    || '–';
-        const svdpopd = node.getAttribute('data-svdpopd')  || '–';
-        const ssize   = node.getAttribute('data-ssize')    || '–';
-        const estcomp = node.getAttribute('data-estcomp')  || '–';
-        const pco     = node.getAttribute('data-pco')      || '–';
-        const sptype  = node.getAttribute('data-sptype')   || '–';
+        const d = readDrugAttributes(node);
 
         const html = `
   <div style="padding:2px 4px;">
     <div style="font-size:14px; font-weight:600; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid var(--tip-divider-color, #ddd);">
-      ${name}
+      ${d.name}
     </div>
     <div style="font-size:12px; line-height:1.6;">
-      <div><strong>Mechanism of Action:</strong> ${mech}</div>
-      <div><strong>Genetic Target:</strong> ${gtarget}</div>
-      <div><strong>Genetic Evidence:</strong> ${gevid}</div>
-      <div><strong>Clinical Trial Name:</strong> ${tname}</div>
-      <div><strong>Registry ID:</strong> ${regid}</div>
-      <div><strong>Clinical Trial Phase:</strong> ${phase}</div>
-      <div><strong>SVD Population Details:</strong> ${svdpopd}</div>
-      <div><strong>Target Sample Size:</strong> ${ssize}</div>
-      <div><strong>Estimated Completion Date:</strong> ${estcomp}</div>
-      <div><strong>Primary Outcome:</strong> ${pco}</div>
-      <div><strong>Sponsor Type:</strong> ${sptype}</div>
+      <div><strong>Mechanism of Action:</strong> ${d.mech}</div>
+      <div><strong>Genetic Target:</strong> ${d.gtarget}</div>
+      <div><strong>Genetic Evidence:</strong> ${d.gevid}</div>
+      <div><strong>Clinical Trial Name:</strong> ${d.tname}</div>
+      <div><strong>Registry ID:</strong> ${d.regid}</div>
+      <div><strong>Clinical Trial Phase:</strong> ${d.phase}</div>
+      <div><strong>SVD Population Details:</strong> ${d.svdpopd}</div>
+      <div><strong>Target Sample Size:</strong> ${d.ssize}</div>
+      <div><strong>Estimated Completion Date:</strong> ${d.estcomp}</div>
+      <div><strong>Primary Outcome:</strong> ${d.pco}</div>
+      <div><strong>Sponsor Type:</strong> ${d.sptype}</div>
     </div>
   </div>`;
         const popColor = node.getAttribute('data-pop-color') || '#444444';
-        const tip = ensureTooltip();
-        tip.style.color = isLightColor(popColor) ? "#000" : "#fff";
-        showTooltip(html, ev.clientX, ev.clientY, popColor);
+        showTooltip(html, ev.clientX, ev.clientY, popColor, isLightColor(popColor) ? "#000" : "#fff");
       });
       node.addEventListener('mousemove', (ev) => {
         updateTooltipPosition(ev.clientX, ev.clientY);
@@ -1472,25 +1350,11 @@ js_code = r"""
     try {
       await waitForFonts();
       await nextFrame();
-      adjustTwoLinePopLabels();
-      adjustLabelBackgrounds();
       adjustMarkerLabelOverlap();
-      adjustLegendBox();
-      adjustLegendBoxMOA();
-      if (typeof adjustDrugLabelCollisions === 'function') {
-        adjustDrugLabelCollisions();
-      }
       avoidCognitiveOverlap();
       await nextFrame();
       setTimeout(() => {
-        adjustTwoLinePopLabels();
-        adjustLabelBackgrounds();
         adjustMarkerLabelOverlap();
-        adjustLegendBox();
-        adjustLegendBoxMOA();
-        if (typeof adjustDrugLabelCollisions === 'function') {
-          adjustDrugLabelCollisions();
-        }
         avoidCognitiveOverlap();
       }, 140);
       initTooltipHandlers();
@@ -1505,6 +1369,7 @@ js_code = r"""
   document.addEventListener('keydown', (ev) => {
     if (ev.key === "Escape") {
       const sb = document.getElementById('sidebar');
+      if (!sb) return;
       const figC = document.querySelector('.fig-c');
       sb.classList.remove('open');
       if (figC) {

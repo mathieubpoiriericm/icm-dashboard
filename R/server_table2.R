@@ -504,14 +504,23 @@ build_table2_datatable <- function(filtered_data2) {
             "function() {
               %s
 
-              // Cache stripe colors at init (runs once, not on every draw)
-              var rows = this.api().rows().nodes();
-              if (rows.length >= 2) {
-                this._stripeColor = $(rows[1]).css('background-color');
-                this._whiteColor = $(rows[0]).css('background-color');
+              // Cache stripe colors at init from rows with different color classes
+              var api = this.api();
+              var rows = api.rows().nodes();
+              var colorCol = api.column(%d).data().toArray();
+              this._whiteColor = '';
+              this._stripeColor = '';
+              for (var ci = 0; ci < rows.length; ci++) {
+                if (colorCol[ci] === 0 && !this._whiteColor) {
+                  this._whiteColor = $(rows[ci]).css('background-color');
+                } else if (colorCol[ci] === 1 && !this._stripeColor) {
+                  this._stripeColor = $(rows[ci]).css('background-color');
+                }
+                if (this._whiteColor && this._stripeColor) break;
               }
             }",
-            DATATABLE_INIT_HEADER_JS
+            DATATABLE_INIT_HEADER_JS,
+            color_class_col_idx
           )),
           drawCallback = DT::JS(sprintf(
             "function(settings) {
@@ -577,6 +586,10 @@ build_table2_datatable <- function(filtered_data2) {
 
                   // Clamp to remaining rows on page (handles groups spanning page boundaries)
                   var span = Math.min(rowspans[c], numRows - i);
+                  if (span === 0 && i === 0) {
+                    // First row on page but continuation of group from previous page
+                    span = 1;
+                  }
                   if (span === 0) {
                     // Hidden cell (merged into previous)
                     cell.css('display', 'none');
