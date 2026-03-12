@@ -710,11 +710,6 @@ body #sample_size_filter_card strong {
   align-self: stretch;
 }
 
-.link-hint {
-  color: var(--svd-link);
-  font-weight: 500;
-}
-
 .tip-link {
   color: var(--svd-accent);
   text-decoration: underline;
@@ -790,6 +785,33 @@ body #sample_size_filter_card strong {
 
 .tippy-box[data-theme~='custom'] .tippy-arrow {
   color: var(--svd-primary) !important;
+}
+
+/* Tooltip link button */
+.tippy-box[data-theme~='custom'] .tooltip-link-btn {
+  display: block;
+  margin-top: 12px;
+  padding: 6px 12px;
+  background: var(--svd-success);
+  color: white !important;
+  text-decoration: none;
+  border-radius: var(--svd-radius-sm);
+  text-align: center;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--svd-transition);
+}
+
+.tippy-box[data-theme~='custom'] .tooltip-link-btn:hover {
+  background: #15803d;
+  color: white !important;
+  text-decoration: none;
+}
+
+.tippy-box[data-theme~='custom'] .tooltip-link-btn:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
 }
 
 /* === DATATABLE COLUMN GROUP BORDERS === */

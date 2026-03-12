@@ -23,6 +23,23 @@ make_sortable_cell <- function(sort_name, ...) {
   )
 }
 
+# Build tooltip link button HTML (single-quoted attributes for use inside
+# double-quoted data-tippy-content)
+#
+# Args:
+#   url: Character. The URL for the button link.
+#   label: Character. The visible button text.
+#
+# Returns:
+#   Character. HTML string for the tooltip button.
+make_tooltip_link_btn <- function(url, label) {
+  sprintf(
+    "<a href='%s' target='_blank' rel='noopener' class='tooltip-link-btn'>%s</a>",
+    htmltools::htmlEscape(url),
+    htmltools::htmlEscape(label)
+  )
+}
+
 # Get full cell type name from abbreviation
 #
 # Maps brain cell type abbreviations to their full names for tooltip display.
@@ -252,6 +269,11 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
 
       pmid_url <- paste0(PUBMED_BASE_URL, pmid, "/")
 
+      modified_tooltip <- paste0(
+        modified_tooltip,
+        make_tooltip_link_btn(pmid_url, "View on PubMed")
+      )
+
       if (authors != "") {
         display_text <- paste0(authors, pub_date)
         display_text <- gsub(
@@ -263,15 +285,11 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
         display_text <- pmid
       }
 
-      as.character(shiny::tags$a(
-        href = pmid_url,
-        target = "_blank",
-        shiny::tags$span(
-          `data-tippy-content` = modified_tooltip,
-          `data-tippy-maxWidth` = "400px",
-          class = tooltip_class,
-          shiny::HTML(display_text)
-        )
+      as.character(shiny::tags$span(
+        `data-tippy-content` = modified_tooltip,
+        `data-tippy-maxWidth` = "400px",
+        class = tooltip_class,
+        shiny::HTML(display_text)
       ))
     },
     character(1L)
@@ -294,28 +312,27 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
 #   Character. HTML string with linked gene symbol and tooltip.
 make_gene_tooltip_html <- function(gene_symbol, gene_info_row, col_names,
                                    tooltip_class) {
-  tooltip_content <- sprintf(
-    paste0(
-      "<strong>%s</strong> %s<br>",
-      "<strong>%s</strong> %s<br>",
-      "<strong>%s</strong> %s"
-    ),
-    htmltools::htmlEscape(col_names[1L]), htmltools::htmlEscape(gene_info_row[2L]),
-    htmltools::htmlEscape(col_names[2L]), htmltools::htmlEscape(gene_info_row[3L]),
-    htmltools::htmlEscape(col_names[3L]), htmltools::htmlEscape(gene_info_row[4L])
-  )
-
   gene_url <- gene_info_row[["URL"]]
 
+  tooltip_content <- paste0(
+    sprintf(
+      paste0(
+        "<strong>%s</strong> %s<br>",
+        "<strong>%s</strong> %s<br>",
+        "<strong>%s</strong> %s"
+      ),
+      htmltools::htmlEscape(col_names[1L]), htmltools::htmlEscape(gene_info_row[2L]),
+      htmltools::htmlEscape(col_names[2L]), htmltools::htmlEscape(gene_info_row[3L]),
+      htmltools::htmlEscape(col_names[3L]), htmltools::htmlEscape(gene_info_row[4L])
+    ),
+    make_tooltip_link_btn(gene_url, "View on NCBI Gene")
+  )
+
   as.character(
-    shiny::tags$a(
-      href = gene_url,
-      target = "_blank",
-      shiny::tags$span(
-        gene_symbol,
-        `data-tippy-content` = tooltip_content,
-        class = tooltip_class
-      )
+    shiny::tags$span(
+      gene_symbol,
+      `data-tippy-content` = tooltip_content,
+      class = tooltip_class
     )
   )
 }
@@ -413,21 +430,20 @@ prepare_table1_display <- function(
       }
 
       if (!is.null(prot_info)) {
-        protein_tooltip_content <- sprintf(
-          "<strong>UniProt Accession Number</strong> %s",
-          htmltools::htmlEscape(prot_info$accession)
+        protein_tooltip_content <- paste0(
+          sprintf(
+            "<strong>UniProt Accession Number</strong> %s",
+            htmltools::htmlEscape(prot_info$accession)
+          ),
+          make_tooltip_link_btn(prot_info$url, "View on UniProt")
         )
 
         make_sortable_cell(
           sort_name,
-          shiny::tags$a(
-            href = prot_info$url,
-            target = "_blank",
-            shiny::tags$span(
-              protein_name,
-              `data-tippy-content` = protein_tooltip_content,
-              class = tooltip_class
-            )
+          shiny::tags$span(
+            protein_name,
+            `data-tippy-content` = protein_tooltip_content,
+            class = tooltip_class
           )
         )
       } else {
@@ -463,28 +479,27 @@ prepare_table1_display <- function(
           info <- omim_lookup$get(single_omim)
 
           if (!is.null(info)) {
-            tooltip_content <- sprintf(
-              paste0(
-                "<strong>Phenotype</strong> %s<br>",
-                "<strong>Inheritance</strong> %s<br>",
-                "<strong>Gene/Locus</strong> %s<br>",
-                "<strong>Gene/Locus OMIM</strong> %s"
+            tooltip_content <- paste0(
+              sprintf(
+                paste0(
+                  "<strong>Phenotype</strong> %s<br>",
+                  "<strong>Inheritance</strong> %s<br>",
+                  "<strong>Gene/Locus</strong> %s<br>",
+                  "<strong>Gene/Locus OMIM</strong> %s"
+                ),
+                htmltools::htmlEscape(info$phenotype),
+                htmltools::htmlEscape(info$inheritance),
+                htmltools::htmlEscape(info$gene_or_locus),
+                htmltools::htmlEscape(info$gene_or_locus_mim_number)
               ),
-              htmltools::htmlEscape(info$phenotype),
-              htmltools::htmlEscape(info$inheritance),
-              htmltools::htmlEscape(info$gene_or_locus),
-              htmltools::htmlEscape(info$gene_or_locus_mim_number)
+              make_tooltip_link_btn(info$omim_link, "View on OMIM")
             )
 
             as.character(
-              shiny::tags$a(
-                href = info$omim_link,
-                target = "_blank",
-                shiny::tags$span(
-                  single_omim,
-                  `data-tippy-content` = tooltip_content,
-                  class = tooltip_class
-                )
+              shiny::tags$span(
+                single_omim,
+                `data-tippy-content` = tooltip_content,
+                class = tooltip_class
               )
             )
           } else {
@@ -658,15 +673,18 @@ prepare_table2_display <- function(
 ) {
   table2_display <- as.data.frame(table2)
 
-  # Helper function to generate registry URL using constants
-  get_registry_url <- function(registry_id) {
+  # Helper to match a registry ID and return its URL + key
+  get_registry_info <- function(registry_id) {
     registry_id <- trimws(registry_id)
     for (pattern in names(REGISTRY_URLS)) {
       if (grepl(paste0("^", pattern), registry_id, ignore.case = TRUE)) {
-        return(paste0(REGISTRY_URLS[[pattern]], registry_id))
+        return(list(
+          url = paste0(REGISTRY_URLS[[pattern]], registry_id),
+          key = pattern
+        ))
       }
     }
-    NA_character_
+    NULL
   }
 
   # Optimized: use mapply instead of purrr::map2_chr
@@ -686,23 +704,25 @@ prepare_table2_display <- function(
         htmltools::htmlEscape(ct_tooltip_info[2L])
       )
 
-      registry_url <- get_registry_url(ct_id)
+      registry_info <- get_registry_info(ct_id)
       ct_id_trimmed <- trimws(ct_id)
 
-      if (!is.na(registry_url)) {
-        link_html <- as.character(shiny::tags$a(
-          href = registry_url,
-          target = "_blank",
-          rel = "noopener",
-          ct_id_trimmed
-        ))
-      } else {
-        link_html <- ct_id_trimmed
+      if (!is.null(registry_info)) {
+        registry_label <- REGISTRY_LABELS[[registry_info$key]]
+        btn_label <- if (!is.null(registry_label)) {
+          paste0("View on ", registry_label)
+        } else {
+          "View Trial"
+        }
+        ct_tooltip_content <- paste0(
+          ct_tooltip_content,
+          make_tooltip_link_btn(registry_info$url, btn_label)
+        )
       }
 
       as.character(
         shiny::tags$span(
-          shiny::HTML(link_html),
+          ct_id_trimmed,
           `data-tippy-content` = ct_tooltip_content,
           `data-tippy-maxWidth` = "400px",
           class = tooltip_class

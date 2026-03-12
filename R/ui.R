@@ -28,8 +28,8 @@ light_theme <- bslib::bs_theme(
   "Hover over them to see additional information."
 )
 .TIP_LINKS <- paste0(
-  "Elements with a <span class=\"link-hint\">blue font</span> ",
-  "are clickable links that open in a new tab."
+  "Click on highlighted elements to see details ",
+  "and access external links via the green button in the tooltip."
 )
 
 # Build UI Function for SVD Dashboard

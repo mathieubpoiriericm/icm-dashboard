@@ -80,6 +80,14 @@ REGISTRY_URLS <- list(
   ACTRN = "https://www.anzctr.org.au/Trial/Registration/TrialReview.aspx?id="
 )
 
+# Registry display names for tooltip buttons
+REGISTRY_LABELS <- list(
+  NCT = "ClinicalTrials.gov",
+  ISRCTN = "ISRCTN",
+  ChiCTR = "ChiCTR",
+  ACTRN = "ANZCTR"
+)
+
 # =============================================================================
 # EXTERNAL URLS
 # =============================================================================
