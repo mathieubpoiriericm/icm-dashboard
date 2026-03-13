@@ -9,14 +9,14 @@
 
 | <center>R Tests</center> | <center>Pipeline Tests</center> |
 |:--|:--|
-| [![R Tests: 119](https://img.shields.io/badge/R_Tests-119_passing-green.svg)](#testing) | [![Pipeline Tests: 422](https://img.shields.io/badge/Pipeline_Tests-422_passing-green.svg)](#testing) |
-| [![filter_utils](https://img.shields.io/badge/filter__utils-37_tests-brightgreen.svg)](#testing) | [![Infrastructure](https://img.shields.io/badge/Infrastructure-111_tests-brightgreen.svg)](#testing) |
-| [![data_prep](https://img.shields.io/badge/data__prep-30_tests-brightgreen.svg)](#testing) | [![External Data](https://img.shields.io/badge/External_Data-102_tests-brightgreen.svg)](#testing) |
-| [![utils](https://img.shields.io/badge/utils-18_tests-brightgreen.svg)](#testing) | [![Data Processing](https://img.shields.io/badge/Data_Processing-72_tests-brightgreen.svg)](#testing) |
-| [![tooltips](https://img.shields.io/badge/tooltips-15_tests-brightgreen.svg)](#testing) | [![LLM Extraction](https://img.shields.io/badge/LLM_Extraction-50_tests-brightgreen.svg)](#testing) |
-| [![Edge Cases](https://img.shields.io/badge/Edge_Cases-14_tests-brightgreen.svg)](#testing) | [![Paper Retrieval](https://img.shields.io/badge/Paper_Retrieval-49_tests-brightgreen.svg)](#testing) |
-| [![shinytest2](https://img.shields.io/badge/shinytest2-5_tests-brightgreen.svg)](#testing) | [![Orchestration](https://img.shields.io/badge/Orchestration-23_tests-brightgreen.svg)](#testing) |
-| | [![Notifications](https://img.shields.io/badge/Notifications-15_tests-brightgreen.svg)](#testing) |
+| [![R Tests: 97](https://img.shields.io/badge/R_Tests-97_passing-green.svg)](#testing) | [![Pipeline Tests: 462](https://img.shields.io/badge/Pipeline_Tests-462_passing-green.svg)](#testing) |
+| [![filter_utils](https://img.shields.io/badge/filter__utils-33_tests-brightgreen.svg)](#testing) | [![Infrastructure](https://img.shields.io/badge/Infrastructure-141_tests-brightgreen.svg)](#testing) |
+| [![data_prep](https://img.shields.io/badge/data__prep-40_tests-brightgreen.svg)](#testing) | [![External Data](https://img.shields.io/badge/External_Data-102_tests-brightgreen.svg)](#testing) |
+| [![tooltips](https://img.shields.io/badge/tooltips-12_tests-brightgreen.svg)](#testing) | [![Data Processing](https://img.shields.io/badge/Data_Processing-93_tests-brightgreen.svg)](#testing) |
+| [![utils](https://img.shields.io/badge/utils-9_tests-brightgreen.svg)](#testing) | [![Paper Retrieval](https://img.shields.io/badge/Paper_Retrieval-51_tests-brightgreen.svg)](#testing) |
+| [![shinytest2](https://img.shields.io/badge/shinytest2-3_tests-brightgreen.svg)](#testing) | [![LLM Extraction](https://img.shields.io/badge/LLM_Extraction-33_tests-brightgreen.svg)](#testing) |
+| | [![Orchestration](https://img.shields.io/badge/Orchestration-25_tests-brightgreen.svg)](#testing) |
+| | [![Notifications](https://img.shields.io/badge/Notifications-17_tests-brightgreen.svg)](#testing) |
 
 An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for Cerebral Small Vessel Disease (SVD), developed by Mathieu B. Poirier at the Paris Brain Institute (ICM).
 
@@ -164,7 +164,10 @@ Interactive Leaflet map displaying global research sites for NCT-registered tria
 
 ```
 rshiny_dashboard/
+├── .env.example                  # Example pipeline environment variables
+├── .Renviron.example             # Example R environment variables
 ├── app.R                         # Main application entry point
+├── CLAUDE.md                     # Claude Code project instructions
 ├── conftest.py                   # Root pytest config (adds project root to sys.path)
 ├── Dockerfile                    # Dashboard Docker build
 ├── Dockerfile.pipeline           # Pipeline Docker build
@@ -207,29 +210,38 @@ rshiny_dashboard/
 │       ├── Chart.yaml            # Chart metadata and dependencies
 │       ├── values.yaml           # Default configuration values
 │       ├── charts/               # Bundled subchart archives
-│       │   ├── kube-prometheus-stack-82.0.0.tgz  # Prometheus monitoring subchart
-│       │   └── victoria-logs-single-0.11.26.tgz  # VictoriaLogs logging subchart
+│       │   ├── kube-prometheus-stack-82.2.1.tgz  # Prometheus monitoring subchart
+│       │   └── victoria-logs-single-0.11.27.tgz  # VictoriaLogs logging subchart
 │       ├── sql/                  # Database init scripts for K8s
 │       │   ├── add_external_data_tables.sql  # Cache table schema
 │       │   └── setup.sql         # Core database schema
 │       └── templates/            # Kubernetes manifest templates
 │           ├── _helpers.tpl      # Helm template helper macros
+│           ├── blackbox-exporter-configmap.yaml    # Blackbox exporter config
+│           ├── blackbox-exporter-deployment.yaml   # Blackbox exporter deployment
+│           ├── blackbox-exporter-service.yaml      # Blackbox exporter service
 │           ├── dashboard-deployment.yaml      # Shiny app deployment
 │           ├── dashboard-service.yaml         # Shiny app service
 │           ├── grafana-external-service.yaml  # Grafana external access
 │           ├── grafana-image-renderer-deployment.yaml  # Grafana renderer pod
 │           ├── grafana-image-renderer-service.yaml     # Grafana renderer service
+│           ├── grafana-victorialogs-datasource.yaml    # VictoriaLogs Grafana datasource
 │           ├── healthchecks-deployment.yaml   # Health check deployment
+│           ├── healthchecks-probe.yaml        # Health check probe
 │           ├── healthchecks-service.yaml      # Health check service
+│           ├── ingress-nginx-metrics-service.yaml     # NGINX metrics service
+│           ├── ingress-nginx-servicemonitor.yaml      # NGINX ServiceMonitor
 │           ├── ingress.yaml                   # Ingress routing rules
 │           ├── network-policies.yaml          # Network access policies
 │           ├── ntfy-deployment.yaml           # Notification server deployment
 │           ├── ntfy-service.yaml              # Notification server service
+│           ├── ntfy-servicemonitor.yaml       # ntfy ServiceMonitor
 │           ├── pdb.yaml                       # Pod disruption budgets
 │           ├── pipeline-cronjob.yaml          # Scheduled pipeline execution
 │           ├── pipeline-rbac.yaml             # Pipeline role-based access
 │           ├── postgresql-initdb-configmap.yaml  # DB init SQL configmap
 │           ├── postgresql-service.yaml        # PostgreSQL service
+│           ├── postgresql-servicemonitor.yaml # PostgreSQL ServiceMonitor
 │           ├── postgresql-statefulset.yaml    # PostgreSQL stateful deployment
 │           ├── qs-data-pvc.yaml               # QS data persistent volume
 │           └── secrets.yaml                   # Kubernetes secrets
@@ -266,13 +278,22 @@ rshiny_dashboard/
 │   │   ├── env.py                # Alembic environment config
 │   │   ├── script.py.mako        # Migration script template
 │   │   └── versions/             # Migration version scripts
-│   │       └── 001_baseline_schema.py  # Initial database schema
+│   │       ├── 001_baseline_schema.py  # Initial database schema
+│   │       └── 002_add_upper_gene_index.py  # Upper gene name index
 │   └── templates/                # Jinja2 notification templates
 │       ├── digest.html.j2        # HTML notification template
 │       └── digest.md.j2          # Markdown notification template
 ├── scripts/
+│   ├── plot_tuning_runs.R        # Tuning experiment visualization
 │   ├── python_plot.py            # Clinical trials visualization generator
-│   └── trigger_update.r          # Regenerate QS files from database
+│   ├── trigger_update.r          # Regenerate QS files from database
+│   ├── validate_pipeline.py      # Pipeline validation script
+│   └── tuning/                   # Threshold calibration experiments
+│       ├── analyze_errors.py     # Error analysis
+│       ├── calibrate_threshold.py  # Threshold calibration
+│       ├── track_run.py          # Experiment run tracking
+│       ├── run_experiment.sh     # Experiment runner (bash)
+│       └── run_experiment.completion.zsh  # Zsh tab-completion
 ├── tests/
 │   ├── test_all.R                # R test suite (testthat + shinytest2)
 │   └── pipeline/                 # Python test suite (pytest)
@@ -307,8 +328,18 @@ rshiny_dashboard/
     ├── css/                      # Vendor CSS
     │   └── tippy.css             # Tooltip styles
     ├── fonts/                    # Local web fonts
-    │   └── Roboto-Regular.ttf    # Roboto font file
+    │   ├── Inter-Regular.ttf     # Inter Regular
+    │   ├── Inter-Regular.woff2   # Inter Regular (WOFF2)
+    │   ├── Inter-Medium.ttf      # Inter Medium
+    │   ├── Inter-Medium.woff2    # Inter Medium (WOFF2)
+    │   ├── Inter-SemiBold.ttf    # Inter SemiBold
+    │   ├── Inter-SemiBold.woff2  # Inter SemiBold (WOFF2)
+    │   ├── Inter-Bold.ttf        # Inter Bold
+    │   ├── Inter-Bold.woff2      # Inter Bold (WOFF2)
+    │   ├── Raleway-Regular.ttf   # Raleway Regular
+    │   └── Raleway-Bold.ttf      # Raleway Bold
     ├── images/                   # Logos and visual assets
+    │   ├── ICM-logo.svg          # ICM logo (SVG)
     │   ├── icm_logo.png          # ICM logo (PNG)
     │   ├── icm_logo.webp         # ICM logo (WebP)
     │   ├── phenogram.png         # Phenogram graphic (PNG)
@@ -464,6 +495,16 @@ rich>=13.0.0
 # PDF extraction
 PyMuPDF>=1.23.0
 
+# Notifications
+apprise>=1.9.7
+blinker>=1.9.0
+tenacity>=9.1.4
+jinja2>=3.1.6
+
+# Analysis & visualization (tuning scripts)
+matplotlib>=3.8.0
+scikit-learn>=1.4.0
+
 # Dev tools — linting & type-checking
 ruff>=0.9.0
 ty>=0.0.1a0
@@ -485,10 +526,10 @@ ty>=0.0.1a0
 3. Initialize the schema:
    ```bash
    # Initialize core schema
-   psql -U csvd_user -d csvd_dashboard -f sql/setup.sql
+   psql -U csvd_user -d csvd_dashboard -f helm/svd-dashboard/sql/setup.sql
 
    # Add external data cache tables
-   psql -U csvd_user -d csvd_dashboard -f sql/add_external_data_tables.sql
+   psql -U csvd_user -d csvd_dashboard -f helm/svd-dashboard/sql/add_external_data_tables.sql
    ```
 
 </details>
@@ -551,8 +592,8 @@ The Helm chart at `helm/svd-dashboard/` deploys the full platform: the Shiny das
 **Build images:**
 
 ```bash
-docker build -t rshiny-dashboard:1.0.0 .
-docker build -f Dockerfile.pipeline -t svd-pipeline:1.0.0 .
+docker build -t rshiny-dashboard:2.0.0 .
+docker build -f Dockerfile.pipeline -t svd-pipeline:2.0.0 .
 ```
 
 **Install:**
@@ -569,16 +610,18 @@ helm install svd helm/svd-dashboard -n svd --create-namespace \
   --set secrets.unpaywallEmail=<EMAIL>
 ```
 
+**Helmfile:** `helmfile.yaml` at the repository root orchestrates the chart for declarative deployment (`helmfile apply`).
+
 **Pipeline automation:** A CronJob runs the ETL pipeline every Monday at 03:00 UTC (`0 3 * * 1`), looking back 7 days and syncing external data. Jobs are killed after 2 hours (`activeDeadlineSeconds: 7200`).
 
-**Ingress hosts (defaults):**
+**Ingress hosts** (override via `-f my-values.yaml`):
 
-| Service | Host |
+| Service | Default Host |
 |---|---|
-| Dashboard | `shiny.local` |
-| ntfy | `ntfy.local` |
-| Healthchecks | `healthchecks.local` |
-| Grafana | `grafana.local` |
+| Dashboard | `csvd-dashboard.matbpoirierk8shomelab.net` |
+| ntfy | `ntfy.matbpoirierk8shomelab.net` |
+| Healthchecks | `healthchecks.matbpoirierk8shomelab.net` |
+| Grafana | `grafana.matbpoirierk8shomelab.net` |
 
 **Key configuration overrides (`values.yaml`):**
 
@@ -589,10 +632,10 @@ helm install svd helm/svd-dashboard -n svd --create-namespace \
 | `pipeline.schedule` | `0 3 * * 1` | CronJob cron expression |
 | `pipeline.daysBack` | `7` | PubMed lookback window (days) |
 | `qsData.storage.accessMode` | `ReadWriteOnce` | Use `ReadWriteMany` for multiple dashboard replicas |
-| `observability.prometheus.enabled` | `true` | Deploy kube-prometheus-stack subchart |
+| `observability.prometheus.enabled` | `false` | Deploy kube-prometheus-stack subchart |
 | `observability.victoriaLogs.enabled` | `true` | Deploy VictoriaLogs subchart |
 | `networkPolicies.enabled` | `false` | Enable NetworkPolicy resources (requires Calico/Cilium) |
-| `ingress.tls.enabled` | `false` | Enable TLS on Ingress |
+| `ingress.tls.enabled` | `true` | Enable TLS on Ingress |
 
 ---
 
@@ -674,6 +717,14 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 
 > **Note:** Geocoded trial location data (`geocoded_trials.qs`) is generated at runtime by the Shiny app's map functionality (`R/fetch_trial_locations.R`), not by `trigger_update.R`.
 
+### Notifications
+
+The pipeline includes an Apprise-based notification system (`pipeline/notifications.py`) that sends run digests after each execution:
+- **Multi-channel delivery**: ntfy push notifications with email backup
+- **Jinja2 templates**: HTML and Markdown digest templates (`pipeline/templates/`)
+- **Retry with backoff**: Tenacity exponential backoff on delivery failures
+- **Dead-man's-switch**: Healthchecks.io integration (`pipeline/healthcheck.py`) pings on success/failure
+
 ### Automated Updates
 
 Pipeline automation is handled by a Kubernetes CronJob that runs weekly. See the [Kubernetes Cluster](#kubernetes-cluster) section for configuration details (schedule, resource limits, Helm values).
@@ -716,7 +767,7 @@ The prompt uses a two-part architecture defined in `pipeline/prompts.py`: a syst
 | Adaptive thinking | `thinking: {"type": "adaptive"}` | [Adaptive thinking](https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking): "reliably drives better performance than extended thinking with a fixed `budget_tokens`"; dynamically allocates reasoning depth per paper |
 | Effort level | `"high"` (default) | Balances reasoning depth with token cost. Only sent to API when overridden (since `"high"` is the API default) |
 | Structured outputs | `output_config` with JSON schema | [Structured outputs](https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs): constrained decoding "guarantees schema-compliant responses" — always valid JSON, type-safe, no retries needed for schema violations. Schema auto-converted from Pydantic via `transform_schema()` |
-| Max output tokens | 32,000 | Accommodates variable adaptive thinking tokens + structured JSON output for papers with many genes |
+| Max output tokens | 64,000 | Accommodates variable adaptive thinking tokens + structured JSON output for papers with many genes |
 | Prompt caching | 1h ephemeral TTL on system blocks | [Prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching): cache reads cost only 10% of base input price. 1h TTL chosen because paper processing intervals may exceed the 5-min default. System blocks cached; per-paper user messages are not |
 
 ### Output Schema
@@ -747,7 +798,7 @@ class ExtractionResult(BaseModel):
 
 LLM output feeds into a 3-stage validation pipeline (`pipeline/validation.py`):
 
-1. **Confidence threshold** — genes below 0.7 (default) are rejected
+1. **Confidence threshold** — genes below 0.65 (default) are rejected
 2. **NCBI Gene lookup** — verifies the symbol exists in the human genome and normalizes to the official HGNC symbol
 3. **GWAS trait check** — warns on unrecognized phenotypes (non-blocking)
 
@@ -772,10 +823,10 @@ All LLM-related environment variables (from `pipeline/config.py`):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PIPELINE_LLM_MODEL` | `claude-opus-4-6` | Model identifier |
-| `PIPELINE_LLM_MAX_TOKENS` | `32000` | Max output tokens |
+| `PIPELINE_LLM_MAX_TOKENS` | `64000` | Max output tokens |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort (`low` / `high` / `max`) |
 | `PIPELINE_MAX_PAPER_TEXT_CHARS` | `100000` | Paper text truncation limit (chars) |
-| `PIPELINE_CONFIDENCE_THRESHOLD` | `0.7` | Minimum confidence to keep a gene |
+| `PIPELINE_CONFIDENCE_THRESHOLD` | `0.65` | Minimum confidence to keep a gene |
 | `PIPELINE_MAX_RETRIES` | `1` | Validation error retry budget |
 | `PIPELINE_MAX_RATE_LIMIT_RETRIES` | `6` | Rate limit (429) retry budget |
 | `PIPELINE_ESTIMATED_TOKENS_PER_CALL` | `40000` | Token estimate for rate limiter (~15K input + thinking + ~4K output) |
@@ -841,7 +892,7 @@ An interactive Leaflet map showing global research sites for NCT-registered clin
 
 ### R Tests
 
-Run the R test suite (119 testthat + shinytest2 tests):
+Run the R test suite (97 testthat + shinytest2 tests):
 
 ```bash
 Rscript -e 'testthat::test_file("tests/test_all.R")'
@@ -849,7 +900,7 @@ Rscript -e 'testthat::test_file("tests/test_all.R")'
 
 ### Python Tests
 
-Run the pipeline test suite (19 pytest files, 422 tests):
+Run the pipeline test suite (21 pytest files, 462 tests):
 
 ```bash
 # Run all pipeline tests
@@ -868,7 +919,7 @@ Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`,
 ### Startup Optimizations
 - **CSS/JS Minification**: Source files are auto-minified at startup (37KB CSS → 12KB)
 - **Disk Cache**: bslib Sass cache with 30-day TTL avoids recompilation
-- **Local Fonts**: Roboto loaded from local files (faster than Google Fonts CDN)
+- **Local Fonts**: Raleway and Inter loaded from local files (faster than Google Fonts CDN)
 - **Optimized Statistics**: Dashboard counts load minimal data, freeing memory immediately
 - **Vectorized Index Building**: GWAS trait and omics type indices built using `data.table::rbindlist()` + `split()` instead of row-by-row `vapply` loops
 
@@ -911,11 +962,11 @@ Detailed documentation is available in the `docs/` directory:
 
 | Document | Description |
 |----------|-------------|
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
-| ![New!](https://img.shields.io/badge/-New!-brightgreen) [Kubernetes Namespaces](docs/kubernetes-namespaces.md) | Namespaces used in the Kubernetes cluster and the pods within each |
+| [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
+| [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
+| [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
+| [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
+| [Kubernetes Namespaces](docs/kubernetes-namespaces.md) | Namespaces used in the Kubernetes cluster and the pods within each |
 
 ---
 
