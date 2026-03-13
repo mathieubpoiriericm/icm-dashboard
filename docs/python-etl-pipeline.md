@@ -19,7 +19,7 @@ Each stage is a distinct Python module. A paper flows through all five stages in
 The pipeline supports four mutually exclusive modes, selected via CLI flags in `pipeline/main.py`:
 
 | Mode | Flag | Database? | Description | Example |
-|------|------|-----------|-------------|---------|
+| ---- | ---- | --------- | ----------- | ------- |
 | **Standard** | *(none)* | Yes | Search PubMed, retrieve, extract, validate, merge into DB | `python pipeline/main.py --days-back 30` |
 | **Local PDF** | `--local-pdfs PATH` | No | Extract from local PDF files, write JSON report only | `python pipeline/main.py --local-pdfs papers/` |
 | **PMID file** | `--pmids FILE` | No | Process specific PMIDs from a text file, write JSON report only | `python pipeline/main.py --pmids pmids.txt` |
@@ -49,7 +49,7 @@ The final query is: `(disease AND genetic) OR (marker AND disease)`.
 
 Attempts to obtain the fullest possible text for each paper through a three-source cascade:
 
-```
+```text
 PMC full text (XML) --> Unpaywall OA PDF --> PubMed abstract (XML)
 ```
 
@@ -60,6 +60,7 @@ PMC full text (XML) --> Unpaywall OA PDF --> PubMed abstract (XML)
 3. **Abstract fallback.** If neither full-text source succeeds, fetches the structured abstract from PubMed via `efetch` XML. Handles both single-section and multi-section (labeled) abstracts.
 
 **PDF text cleaning.** `_extract_clean_pdf_text()` applies layout-aware heuristics:
+
 - Filters header/footer blocks using Y-coordinate margins (top 40pt, bottom 740pt).
 - Truncates at the earliest "back matter" section (References, Bibliography, Methods, Acknowledgements, etc.) found in the latter half of the document, preventing the LLM from hallucinating gene mentions from bibliography entries.
 
@@ -68,16 +69,19 @@ PMC full text (XML) --> Unpaywall OA PDF --> PubMed abstract (XML)
 Sends the retrieved text to the Anthropic Claude API and parses the response into typed `GeneEntry` instances.
 
 **API configuration.**
+
 - Model: `claude-opus-4-6` (configurable via `PIPELINE_LLM_MODEL`)
 - Max output tokens: 32,000
 - Adaptive thinking: `{"type": "adaptive"}` -- the model dynamically allocates reasoning depth per request
 - Structured output: `output_config` with `json_schema` format using `transform_schema(ExtractionResult)` for constrained decoding (guaranteed valid JSON)
 
 **Prompt structure.** `build_extraction_messages()` returns system blocks and user messages designed for prompt caching:
+
 - Two system blocks (system prompt + extraction instructions) with `cache_control: {"type": "ephemeral", "ttl": "1h"}`, so the ~4K-token instruction set is cached across calls within the same hour.
 - User message wraps the paper text in `<document>` tags with the PMID and a short extraction query. Paper text is truncated to `max_paper_text_chars` (default 100,000) and XML-injection-safe escaped.
 
 **Prompt content.** The system prompt establishes the LLM as a cSVD genetics systematic reviewer. The extraction instructions define:
+
 - Inclusion criteria (what constitutes putative causal evidence)
 - An 8-step extraction strategy (stroke-subtype specificity, pathway-only exclusion, monogenic gene filtering, multi-gene loci handling, negative results, MR-exposure distinction, animal model nomenclature mapping)
 - Field guidance for the `GeneEntry` schema
@@ -86,7 +90,7 @@ Sends the retrieved text to the Anthropic Claude API and parses the response int
 **Schema.** `ExtractionResult` wraps a list of `GeneEntry` (Pydantic models):
 
 | Field | Type | Description |
-|-------|------|-------------|
+| ----- | ---- | ----------- |
 | `gene_symbol` | `str` | Official HGNC gene symbol |
 | `protein_name` | `str \| None` | Protein name |
 | `gwas_trait` | `list[str]` | Canonical cSVD trait abbreviations |
@@ -99,6 +103,7 @@ Sends the retrieved text to the Anthropic Claude API and parses the response int
 **Streaming.** The API call uses `client.messages.stream()` (required for adaptive thinking on Opus when requests may exceed 10 minutes). The final message is obtained via `stream.get_final_message()`.
 
 **Retry budgets.** Two independent retry counters:
+
 - **Rate-limit retries** (429 errors): up to `max_rate_limit_retries` (default 6), with exponential backoff capped at 64 seconds, respecting `retry-after` headers. On 429, `rate_limiter.signal_rate_limit()` triggers a global backoff across all concurrent tasks.
 - **Validation retries** (JSONDecodeError / ValidationError / ValueError): up to `max_retries` (default 1). With constrained decoding, JSON parse failures are rare; only Pydantic constraint violations (e.g., confidence out of range) trigger retries.
 
@@ -123,7 +128,7 @@ Three stages, fail-fast on critical errors:
 Runs after all papers in the batch are processed, currently warning-only (does not block the pipeline). Uses Pandera for schema validation plus manual aggregate checks:
 
 | Check | Threshold | Purpose |
-|-------|-----------|---------|
+| ----- | --------- | ------- |
 | Gene duplication across papers | > 3 unique papers per gene | Detects over-extraction |
 | Mean confidence | > 0.95 | Detects poor LLM calibration |
 | Null `protein_name` rate | > 30% | Detects prompt quality degradation |
@@ -135,6 +140,7 @@ Runs after all papers in the batch are processed, currently warning-only (does n
 Merges validated genes into PostgreSQL and records processed PMIDs.
 
 **Insert/update partitioning.** `merge_gene_entries()` fetches all existing gene symbols from the `genes` table, then partitions incoming entries:
+
 - **New genes** (symbol not in database): inserted with all fields.
 - **Existing genes** (symbol already present): updated -- `gwas_trait` and `omics_evidence` are overwritten; `references` is appended (with deduplication check via `LIKE`).
 
@@ -196,6 +202,7 @@ flowchart LR
 ```
 
 The script runs 7 sequential steps:
+
 1. Fetch and clean the genes table via `clean_table1()` (column renaming, list-column parsing, data type normalization).
 2. Fetch and clean the clinical trials table via `clean_table2()`.
 3. Read NCBI gene info for Table 1 genes from the `ncbi_gene_info` cache table.
@@ -213,12 +220,14 @@ The pipeline processes multiple papers concurrently, but must stay within API ra
 **Paper-level concurrency.** An `asyncio.Semaphore` with `max_concurrent_papers` (default 5) bounds how many papers are processed simultaneously. All papers are launched via `asyncio.TaskGroup`, but only N run at a time.
 
 **LLM rate limiter** (`rate_limiter.py`). A token-bucket implementation (`AsyncRateLimiter`) tracking both:
+
 - **RPM** (requests per minute): default 50. Tracks timestamps of recent requests in a deque, pruning entries older than 60 seconds.
 - **TPM** (tokens per minute): default 100,000. Pre-estimates token usage per call (`estimated_tokens_per_call`, default 40,000) and corrects with actual usage after each response.
 
 The `acquire()` method blocks until both RPM and TPM budgets allow a new request. When any call receives a 429, `signal_rate_limit()` sets a global backoff deadline so all concurrent tasks pause (preventing a thundering herd).
 
 **NCBI throttling.** NCBI E-utilities enforce 10 requests/second with an API key (3/second without). The validation module enforces this with:
+
 - A minimum inter-request interval (`_throttle()`: 0.1s with key, 0.34s without)
 - A semaphore (`ncbi_rate_limit`, default 10) bounding concurrent NCBI requests
 - Exponential backoff with `retry-after` header parsing on 429 responses
@@ -246,7 +255,7 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 ### LLM
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `PIPELINE_LLM_MODEL` | `claude-opus-4-6` | Anthropic model ID |
 | `PIPELINE_LLM_MAX_TOKENS` | `32000` | Maximum output tokens per call |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort level (`low`, `high`, `max`) |
@@ -255,7 +264,7 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 ### Retries
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `PIPELINE_MAX_RETRIES` | `1` | Validation retry budget (JSON/Pydantic errors) |
 | `PIPELINE_RETRY_DELAY` | `2.0` | Base delay between validation retries (seconds) |
 | `PIPELINE_MAX_RATE_LIMIT_RETRIES` | `6` | Rate-limit (429) retry budget |
@@ -264,7 +273,7 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 ### Concurrency
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `PIPELINE_MAX_CONCURRENT_PAPERS` | `5` | Max papers processed simultaneously |
 | `PIPELINE_ESTIMATED_TOKENS_PER_CALL` | `40000` | Pre-estimate for TPM tracking |
 | `PIPELINE_RPM_LIMIT` | `50` | LLM requests per minute |
@@ -273,20 +282,20 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 ### Validation
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `PIPELINE_CONFIDENCE_THRESHOLD` | `0.7` | Minimum confidence to pass validation |
 
 ### External APIs
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `PIPELINE_NCBI_RATE_LIMIT` | `10` | Max concurrent NCBI requests |
 | `PIPELINE_UNIPROT_RATE_LIMIT` | `5` | Max concurrent UniProt requests |
 
 ### Database
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `PIPELINE_DB_POOL_MIN` | `2` | Minimum asyncpg pool connections |
 | `PIPELINE_DB_POOL_MAX` | `10` | Maximum asyncpg pool connections |
 | `PIPELINE_DB_COMMAND_TIMEOUT` | `60.0` | SQL command timeout (seconds) |
@@ -294,7 +303,7 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 ### Notifications
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `PIPELINE_NOTIFY_URLS` | *(empty)* | Apprise notification URLs (comma-separated) |
 | `PIPELINE_HEALTHCHECK_URL` | *(empty)* | Healthcheck ping URL (start/success/fail) |
 | `PIPELINE_EVENT_DB_PATH` | `logs/events.db` | SQLite path for event log |
@@ -302,7 +311,7 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 ### Required Environment Variables (not `PIPELINE_` prefixed)
 
 | Variable | Used By | Purpose |
-|----------|---------|---------|
+| -------- | ------- | ------- |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Pipeline + R scripts | PostgreSQL connection |
 | `ANTHROPIC_API_KEY` | Pipeline | Claude API authentication |
 | `NCBI_API_KEY` | Pipeline | NCBI Entrez API (higher rate limits) |

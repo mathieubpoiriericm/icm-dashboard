@@ -21,7 +21,7 @@
 The pipeline ingests **untrusted external content** (academic papers, NCBI/Unpaywall XML responses) and processes it through LLM extraction, XML parsing, and database writes. The primary attack surfaces are:
 
 | Surface | Threat | Risk | Mitigation |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | LLM extraction prompt | Prompt injection via paper text | Medium | 5-layer defense (see below) |
 | NCBI XML responses | XXE / entity expansion | Medium | Hardened `lxml` parser |
 | PDF downloads | Memory exhaustion | Low | 100 MB size cap |
@@ -34,7 +34,7 @@ The pipeline ingests **untrusted external content** (academic papers, NCBI/Unpay
 
 Paper text is injected directly into the LLM extraction prompt. A malicious paper could theoretically attempt to manipulate extraction results. Five independent defense layers mitigate this risk:
 
-```
+```text
 Paper Text
     |
     v
@@ -95,7 +95,7 @@ While `lxml` disables external entities by default, explicit configuration provi
 <summary>Files with hardened XML parsing</summary>
 
 | File | Call Sites |
-|---|---|
+| --- | --- |
 | `pipeline/pdf_retrieval.py` | `fetch_pmc_fulltext()`, `fetch_abstract()` |
 | `pipeline/main.py` | `fetch_paper_metadata()` |
 | `pipeline/pubmed_citations.py` | `_parse_pubmed_xml()` |
@@ -110,7 +110,7 @@ While `lxml` disables external entities by default, explicit configuration provi
 > `.env` contains API keys and database passwords. It **must not** be world-readable.
 
 | Control | Detail |
-|---|---|
+| --- | --- |
 | Storage | `.env` (Python pipeline), `.Renviron` (R scripts) |
 | Version control | Both files are gitignored |
 | File permissions | `.env` requires `chmod 600`, `logs/` requires `chmod 700` |
@@ -147,7 +147,7 @@ if content_length > MAX_PDF_BYTES:
 ### Docker
 
 | Control | Implementation |
-|---|---|
+| --- | --- |
 | Non-root user | `USER shiny` in Dockerfile |
 | Health monitoring | `HEALTHCHECK` with `curl` probe on `:3838` |
 | Minimal packages | `--no-install-recommends` for apt |
@@ -156,7 +156,7 @@ if content_length > MAX_PDF_BYTES:
 ### Kubernetes
 
 | Control | Implementation |
-|---|---|
+| --- | --- |
 | Non-root enforcement | `runAsNonRoot: true` in Pod `securityContext` |
 | Privilege escalation | `allowPrivilegeEscalation: false` |
 | Capabilities | All capabilities dropped (`drop: [ALL]`) |

@@ -7,7 +7,7 @@ Technical reference for the ICM Cerebral SVD Dashboard runtime architecture, fea
 ## Technology Stack
 
 | Component | Technology | Role |
-|-----------|-----------|------|
+| --------- | --------- | ---- |
 | Application framework | R Shiny | Reactive web application |
 | UI framework | bslib (Bootstrap 5) | Theming, layout, light/dark mode |
 | Data manipulation | data.table | Filtering with `get()` for dynamic columns |
@@ -45,7 +45,7 @@ The dashboard has **no database connection at runtime**. All data is read from p
 ### QS Data Files
 
 | File | Contents |
-|------|----------|
+| ---- | -------- |
 | `table1_clean.qs` | Gene table (putative causal genes for SVD) |
 | `table2_clean.qs` | Clinical trials table (drugs, registries, phases) |
 | `gene_info_results_df.qs` | NCBI Gene info for Table 1 genes (ID, protein, aliases) |
@@ -93,7 +93,7 @@ The only true Shiny module (using `NS()`/`moduleServer()`) is `mod_checkbox_filt
 Server logic is split across four files:
 
 | File | Responsibility |
-|------|---------------|
+| ---- | ------------- |
 | `server.R` | Orchestration: theme switching, filter initialization, wiring Table 1/2/map |
 | `server_table1.R` | Gene table filtering, DataTable rendering, filter messages |
 | `server_table2.R` | Clinical trials filtering, sample size histogram, lazy loading |
@@ -102,7 +102,7 @@ Server logic is split across four files:
 ## Tabs
 
 | Tab | Content | Key Details |
-|-----|---------|-------------|
+| --- | ------- | ----------- |
 | About | Summary statistics (value boxes), citation info, contact | Displays live counts of genes, drugs, trials, publications |
 | Genes | Interactive gene table with sidebar filters | Table 1; 3 checkbox filters (MR, GWAS traits, omics); pre-computed tooltips |
 | Phenogram | Embedded interactive phenogram (HTML widget) | Lazy-loaded iframe (`phenogram_template.html`), sandboxed |
@@ -191,9 +191,9 @@ These are intentional optimization decisions. Do not remove or refactor away:
 
 ## Configuration
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PRELOAD_TABLE2` | `TRUE` | Preload Table 2 at startup. Set `FALSE` for memory-constrained environments. |
+| Variable         | Default | Purpose                                                                      |
+| ---------------- | ------- | ---------------------------------------------------------------------------- |
+| `PRELOAD_TABLE2` | `TRUE`  | Preload Table 2 at startup. Set `FALSE` for memory-constrained environments. |
 
 All constants (debounce timings, histogram config, data paths, registry patterns, URLs) are centralized in `R/constants.R`.
 

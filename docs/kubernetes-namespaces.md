@@ -5,7 +5,7 @@ This document describes the namespaces in the SVD Dashboard Kubernetes cluster (
 ## Cluster Overview
 
 | Namespace | Purpose | Pods |
-|-----------|---------|------|
+| --- | --- | --- |
 | `kube-system` | Kubernetes control plane and core services | 10 |
 | `ingress-nginx` | HTTP ingress controller | 1 |
 | `monitoring` | Observability stack (Prometheus, Grafana, VictoriaLogs) | 9 |
@@ -19,7 +19,7 @@ This document describes the namespaces in the SVD Dashboard Kubernetes cluster (
 The control plane and cluster services that make Kubernetes itself work. All managed by Docker Desktop.
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `kube-apiserver-docker-desktop` | API server — all `kubectl` commands go through here |
 | `etcd-docker-desktop` | Key-value store holding all cluster state |
 | `kube-controller-manager-docker-desktop` | Runs controllers (Deployments, ReplicaSets, etc.) |
@@ -35,7 +35,7 @@ The control plane and cluster services that make Kubernetes itself work. All man
 The single entry point for all external HTTP traffic into the cluster.
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `ingress-nginx-controller` | Nginx reverse proxy routing `*.local` hostnames to backend services |
 
 ### Routing Rules
@@ -43,7 +43,7 @@ The single entry point for all external HTTP traffic into the cluster.
 All routing is defined in the `svd-svd-dashboard` Ingress resource in the `svd` namespace:
 
 | Hostname | Backend Service | Namespace | Port |
-|----------|----------------|-----------|------|
+| --- | --- | --- | --- |
 | `shiny.local` | `svd-svd-dashboard-dashboard` | `svd` | 3838 |
 | `grafana.local` | `svd-svd-dashboard-grafana-external` (ExternalName → `prometheus-grafana.monitoring`) | `svd` → `monitoring` | 80 |
 | `ntfy.local` | `svd-svd-dashboard-ntfy` | `svd` | 80 |
@@ -56,7 +56,7 @@ Deployed via the `kube-prometheus-stack` Helm chart (release name: `prometheus`)
 ### Metrics Pipeline
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `prometheus-prometheus-kube-prometheus-prometheus-0` | Prometheus server — scrapes and stores time-series metrics (2 containers: `prometheus` + `config-reloader` sidecar, plus `init-config-reloader` init container) |
 | `prometheus-kube-prometheus-operator` | Manages Prometheus CRDs (`ServiceMonitor`, `PrometheusRule`, `Alertmanager`) |
 | `prometheus-kube-state-metrics` | Exports Kubernetes object metrics (pod status, deployment replicas, etc.) |
@@ -66,14 +66,14 @@ Deployed via the `kube-prometheus-stack` Helm chart (release name: `prometheus`)
 ### Dashboarding
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `prometheus-grafana` | Grafana dashboard server (3 containers: grafana + 2 sidecars for dashboard/datasource provisioning) |
 | `grafana-image-renderer` | Go-based Chromium renderer for Grafana image/PDF export |
 
 ### Log Aggregation
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `victoria-logs-victoria-logs-single-server-0` | VictoriaLogs — log storage backend |
 | `victoria-logs-vector` | Vector log collector — ships container and node logs to VictoriaLogs |
 
@@ -84,21 +84,21 @@ Deployed via the `svd-dashboard` Helm chart (release name: `svd`). Contains the 
 ### Core Application
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `svd-svd-dashboard-dashboard` | The R Shiny dashboard — serves the web UI at `shiny.local`, reads QS data files at runtime. Includes `fix-qs-permissions` init container that fixes PVC ownership before the dashboard starts. |
 | `svd-svd-dashboard-postgresql-0` | PostgreSQL 18 database storing extracted gene data (StatefulSet with persistent storage). Runs 2 containers: `postgresql` + `postgres-exporter` sidecar (Prometheus metrics on port 9187). |
 
 ### Notification Services
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `svd-svd-dashboard-ntfy` | ntfy push notification server — receives pipeline alerts |
 | `svd-svd-dashboard-healthchecks` | Healthchecks cron monitoring — tracks pipeline CronJob execution |
 
 ### Monitoring Support
 
 | Pod | Purpose |
-|-----|---------|
+| --- | --- |
 | `svd-svd-dashboard-blackbox-exporter` | Probes HTTP endpoints (`shiny.local`, `ntfy.local`, `healthchecks.local`) and exposes availability metrics to Prometheus |
 
 ### Pipeline CronJob
@@ -106,7 +106,7 @@ Deployed via the `svd-dashboard` Helm chart (release name: `svd`). Contains the 
 The `svd-svd-dashboard-pipeline` CronJob runs the weekly ETL pipeline that extracts gene data from PubMed, syncs external data, regenerates QS files, and restarts the dashboard.
 
 | Property | Value |
-|----------|-------|
+| --- | --- |
 | **Schedule** | `0 3 * * 1` (every Monday at 3:00 AM) |
 | **ServiceAccount** | `svd-svd-dashboard-pipeline` (Role grants `get`/`patch` on deployments) |
 | **Shared storage** | Mounts the `qs-data` PVC (same volume used by the dashboard) |
@@ -114,7 +114,7 @@ The `svd-svd-dashboard-pipeline` CronJob runs the weekly ETL pipeline that extra
 **Execution sequence** — 3 init containers run sequentially, then the main container:
 
 | Step | Container | Command | Purpose |
-|------|-----------|---------|---------|
+| --- | --- | --- | --- |
 | 1 | `run-pipeline` (init) | `python pipeline/main.py --days-back 7` | Search PubMed for new papers, extract genes via LLM, load into PostgreSQL |
 | 2 | `sync-external` (init) | `python pipeline/main.py --sync-external-data` | Sync NCBI Gene, UniProt, and PubMed citation data |
 | 3 | `generate-qs` (init) | `Rscript scripts/trigger_update.R` | Read from PostgreSQL and regenerate QS data files on the shared PVC |
@@ -129,7 +129,7 @@ The `svd` namespace contains an **ExternalName** service (`svd-svd-dashboard-gra
 Two PDBs ensure availability during voluntary disruptions (node drains, upgrades):
 
 | PDB | Target | Policy |
-|-----|--------|--------|
+| --- | --- | --- |
 | `svd-svd-dashboard-dashboard` | Dashboard Deployment | `minAvailable: 1` |
 | `svd-svd-dashboard-postgresql` | PostgreSQL StatefulSet | `minAvailable: 1` |
 
@@ -206,7 +206,7 @@ flowchart TD
 ```
 
 | Color | Flow Type | Description |
-|-------|-----------|-------------|
+| --- | --- | --- |
 | Blue | Ingress routing | Browser to nginx to backend services |
 | Green | Pipeline & data | CronJob to PostgreSQL to QS files to Shiny |
 | Orange | Monitoring | Grafana queries, Prometheus scrapes, Blackbox probes, log shipping |

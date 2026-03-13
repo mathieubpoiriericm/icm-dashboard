@@ -36,7 +36,7 @@ describes every room, every lock, and every hallway.
 The Helm chart deploys a self-contained research platform with six concerns:
 
 | Concern | What It Does | Kubernetes Resource |
-|---------|-------------|---------------------|
+| --------- | ------------- | --------------------- |
 | **Dashboard** | Interactive R Shiny web app for exploring up-to-date cSVD research data | Deployment |
 | **Database** | PostgreSQL instance that stores extracted gene records | StatefulSet |
 | **Pipeline** | Weekly Python ETL job: PubMed search, LLM extraction, data loading | CronJob |
@@ -90,7 +90,7 @@ from a shelf of pre-built data files (QS files) and never talks to the database 
 **Template**: `templates/dashboard-deployment.yaml`
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Image | `rshiny-dashboard:1.0.0` |
 | Port | 3838 |
 | Runs as user | 997 (non-root) |
@@ -109,20 +109,20 @@ from a shelf of pre-built data files (QS files) and never talks to the database 
 **Environment**:
 
 | Variable | Source | Purpose |
-|----------|--------|---------|
+| ---------- | -------- | --------- |
 | `PRELOAD_TABLE2` | values.yaml | Controls whether Table 2 loads at startup or lazily |
 
 **Volumes**:
 
 | Mount Path | Source | Access |
-|------------|--------|--------|
+| ------------ | -------- | -------- |
 | `/srv/shiny-server/data/qs` | QS Data PVC | Read/Write |
 | `/srv/shiny-server/.Renviron` | `.Renviron` Secret (subPath) | Read-Only |
 
 **Health checks**:
 
 | Probe | Endpoint | Timing |
-|-------|----------|--------|
+| ------- | ---------- | -------- |
 | Startup | `GET /` on port 3838 | 60 attempts, 10s apart (up to 10 min) |
 | Liveness | `GET /` on port 3838 | Every 30s |
 | Readiness | `GET /` on port 3838 | Every 10s |
@@ -137,7 +137,7 @@ generation script reads them out. The dashboard never opens this cabinet directl
 **Template**: `templates/postgresql-statefulset.yaml`
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Image | `postgres:18` |
 | Port | 5432 |
 | Runs as user | 999 (postgres) |
@@ -154,7 +154,7 @@ pod is evicted and rescheduled, it reattaches to the same 10Gi disk.
 from a ConfigMap (`postgresql-initdb-configmap`) into `/docker-entrypoint-initdb.d/`:
 
 | Order | File | Contents |
-|-------|------|----------|
+| ------- | ------ | ---------- |
 | 1 | `01-setup.sql` | Core tables (genes, clinical_trials, pubmed_refs), indices, triggers |
 | 2 | `02-external-tables.sql` | Cache tables (ncbi_gene_info, uniprot_info, pubmed_citations) |
 
@@ -169,7 +169,7 @@ A sidecar container that connects to the local PostgreSQL instance and exposes d
 metrics (connections, queries, replication lag, etc.) for Prometheus scraping.
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Image | `prometheuscommunity/postgres-exporter:v0.16.0` |
 | Port | 9187 (`metrics`) |
 | CPU | 50m request / 200m limit |
@@ -182,7 +182,7 @@ secret (using the `POSTGRES_USER` / `POSTGRES_PASSWORD` keys) and connects to
 **Health checks** (on the `metrics` port):
 
 | Probe | Endpoint | Timing |
-|-------|----------|--------|
+| ------- | ---------- | -------- |
 | Liveness | `GET /` on port 9187 | Every 10s, initial delay 30s |
 | Readiness | `GET /` on port 9187 | Every 5s, initial delay 5s |
 
@@ -192,7 +192,7 @@ secret (using the `POSTGRES_USER` / `POSTGRES_PASSWORD` keys) and connects to
 The service exposes two ports:
 
 | Port Name | Port | Condition |
-|-----------|------|-----------|
+| ----------- | ------ | ----------- |
 | `postgresql` | 5432 | Always |
 | `metrics` | 9187 | When `postgresql.exporter.enabled` is `true` |
 
@@ -206,7 +206,7 @@ in order, and leaves. Each task must finish before the next one starts.
 **Template**: `templates/pipeline-cronjob.yaml`
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Schedule | `0 3 * * 1` (3 AM UTC every Monday) |
 | Concurrency | Forbid (no overlapping runs) |
 | Deadline | 7200s (2 hours max) |
@@ -228,7 +228,7 @@ graph TD
 
 #### Step 1 -- Run Pipeline
 
-```
+```bash
 python pipeline/main.py --days-back 7
 ```
 
@@ -241,7 +241,7 @@ validates against NCBI Gene, and loads results into PostgreSQL.
 
 #### Step 2 -- Sync External Data (conditional)
 
-```
+```bash
 python pipeline/main.py --sync-external-data
 ```
 
@@ -252,7 +252,7 @@ data from NCBI Gene, UniProt, and PubMed and caches it in database tables.
 
 #### Step 3 -- Generate QS Files
 
-```
+```bash
 Rscript scripts/trigger_update.R
 ```
 
@@ -264,7 +264,7 @@ R) on the shared PVC at `/app/data/qs`.
 
 #### Step 4 -- Restart Dashboard
 
-```
+```bash
 kubectl rollout restart deployment/<release>-svd-dashboard-dashboard
 ```
 
@@ -277,7 +277,7 @@ written QS files.
 **RBAC resources** (in `templates/pipeline-rbac.yaml`):
 
 | Resource | Name |
-|----------|------|
+| ---------- | ------ |
 | ServiceAccount | `<release>-svd-dashboard-pipeline` |
 | Role | `<release>-svd-dashboard-pipeline` |
 | RoleBinding | `<release>-svd-dashboard-pipeline` |
@@ -296,7 +296,7 @@ push notification here so you know without checking manually.
 **Condition**: `notifications.ntfy.enabled` (default: `true`)
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Image | `binwiederhier/ntfy:v2.17.0` |
 | Port | 80 |
 | CPU | 50m request / 200m limit |
@@ -306,7 +306,7 @@ push notification here so you know without checking manually.
 **Configuration** (set via environment variables):
 
 | Variable | Value |
-|----------|-------|
+| ---------- | ------- |
 | `NTFY_BASE_URL` | `http(s)://<ingress.hosts.ntfy>` |
 | `NTFY_CACHE_FILE` | `/var/cache/ntfy/cache.db` |
 | `NTFY_AUTH_DEFAULT_ACCESS` | `deny-all` (configurable) |
@@ -317,7 +317,7 @@ push notification here so you know without checking manually.
 **Health checks**:
 
 | Probe | Endpoint | Timing |
-|-------|----------|--------|
+| ------- | ---------- | -------- |
 | Liveness | `GET /v1/health` on port 80 | Every 30s |
 | Readiness | `GET /v1/health` on port 80 | Every 10s |
 
@@ -336,7 +336,7 @@ scheduled.
 **Condition**: `notifications.healthchecks.enabled` (default: `true`)
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Image | `healthchecks/healthchecks:v4.0` |
 | Port | 8000 |
 | CPU | 50m request / 250m limit |
@@ -350,7 +350,7 @@ dedicated PVC.
 **Configuration** (set via environment variables):
 
 | Variable | Value |
-|----------|-------|
+| ---------- | ------- |
 | `ALLOWED_HOSTS` | `*, <ingress.hosts.healthchecks>` |
 | `APPRISE_ENABLED` | `True` |
 | `DB` | `sqlite` |
@@ -364,7 +364,7 @@ dedicated PVC.
 **Health checks**:
 
 | Probe | Endpoint | Timing |
-|-------|----------|--------|
+| ------- | ---------- | -------- |
 | Liveness | `GET /api/v3/status/` on port 8000 | Every 30s |
 | Readiness | `GET /api/v3/status/` on port 8000 | Every 10s |
 
@@ -400,7 +400,7 @@ Deploys VictoriaLogs for log aggregation with Vector as the log collector. Colle
 stdout/stderr from all pods in the namespace.
 
 | Setting | Value |
-|---------|-------|
+| --------- | ------- |
 | Retention | 30 days |
 | Storage | 50Gi PVC |
 
@@ -410,7 +410,7 @@ stdout/stderr from all pods in the namespace.
 **Condition**: deployed when `observability.prometheus.enabled` is `true`
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Image | `grafana/grafana-image-renderer:v5.5.1` |
 | Port | 8081 |
 | Runs as user | 472 |
@@ -442,7 +442,7 @@ The Blackbox Exporter probes endpoints over HTTP and reports whether they are re
 Prometheus executes these checks via `Probe` custom resources.
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Image | `prom/blackbox-exporter:v0.25.0` |
 | Port | 9115 |
 | CPU | 50m request / 100m limit |
@@ -454,7 +454,7 @@ expects a 200 status code, follows redirects, and prefers IPv4.
 **Health checks**:
 
 | Probe | Endpoint | Timing |
-|-------|----------|--------|
+| ------- | ---------- | -------- |
 | Liveness | `GET /health` on port 9115 | Every 30s |
 | Readiness | `GET /health` on port 9115 | Every 10s |
 
@@ -463,7 +463,7 @@ expects a 200 status code, follows redirects, and prefers IPv4.
 Three ServiceMonitor custom resources tell Prometheus what to scrape:
 
 | ServiceMonitor | Target Port | Path | Interval | Condition |
-|----------------|-------------|------|----------|-----------|
+| ---------------- | ------------- | ------ | ---------- | ----------- |
 | PostgreSQL exporter | `metrics` (9187) | `/metrics` | 30s | `postgresql.exporter.enabled` |
 | ntfy | `http` (80) | `/metrics` | 30s | `notifications.ntfy.metrics.enabled` |
 | Ingress-Nginx | `metrics` (10254) | `/metrics` | 30s | `monitoring.ingressNginx.enabled` |
@@ -479,7 +479,7 @@ namespace) to scrape the controller's built-in metrics endpoint.
 A Prometheus Operator `Probe` resource that defines blackbox HTTP checks:
 
 | Target | Module |
-|--------|--------|
+| -------- | -------- |
 | `http://<release>-healthchecks:8000/api/v3/status/` | `http_2xx` |
 | `http://<release>-dashboard:3838/` | `http_2xx` |
 
@@ -529,7 +529,7 @@ Key points:
 The chart provisions five persistent volumes. All use `ReadWriteOnce` by default.
 
 | PVC | Size | Owner | Purpose |
-|-----|------|-------|---------|
+| ----- | ------ | ------- | --------- |
 | `<release>-qs-data` | 1Gi | Pipeline (write), Dashboard (read) | Serialized QS data files |
 | `<release>-postgresql-data-0` | 10Gi | PostgreSQL | Database files |
 | `<release>-ntfy-cache` | 1Gi | ntfy | Message cache |
@@ -550,7 +550,7 @@ run multiple dashboard replicas across nodes, change `qsData.storage.accessMode`
 Every component gets a ClusterIP Service for in-cluster communication:
 
 | Service | Port | Type | Notes |
-|---------|------|------|-------|
+| --------- | ------ | ------ | ------- |
 | Dashboard | 3838 | ClusterIP | Standard |
 | PostgreSQL | 5432 | ClusterIP (headless) | `clusterIP: None` for StatefulSet |
 | ntfy | 80 | ClusterIP | Conditional |
@@ -567,7 +567,7 @@ The Ingress resource maps external hostnames to internal services. It requires a
 nginx-ingress-controller already running in the cluster.
 
 | Hostname (default) | Backend Service | Port |
-|---------------------|----------------|------|
+| --------------------- | ---------------- | ------ |
 | `shiny.local` | Dashboard | 3838 |
 | `grafana.local` | Grafana | 80 |
 | `ntfy.local` | ntfy | 80 |
@@ -589,7 +589,7 @@ When enabled (requires a CNI that supports NetworkPolicy, such as Calico or Cili
 policies restrict pod-to-pod traffic:
 
 | Target | Allowed Sources | Port |
-|--------|----------------|------|
+| -------- | ---------------- | ------ |
 | PostgreSQL | Pipeline pods | 5432 |
 | PostgreSQL | Prometheus pods from `monitoring` namespace (when exporter enabled) | 9187 |
 | Dashboard | Ingress controller namespace | 3838 |
@@ -610,7 +610,7 @@ NCBI, Anthropic API calls).
 Most workloads run as non-root users with privilege escalation disabled:
 
 | Component | UID | GID | Capabilities |
-|-----------|-----|-----|-------------|
+| ----------- | ----- | ----- | ------------- |
 | Dashboard | 997 | 997 | Drop ALL |
 | PostgreSQL | 999 | 999 | Drop ALL |
 | Grafana Image Renderer | 472 | -- | Drop ALL |
@@ -624,7 +624,7 @@ on the QS data volume. This is a common Kubernetes pattern for shared PVCs where
 Secrets are split by concern so that each component only sees the credentials it needs:
 
 | Secret | Contents | Mounted By |
-|--------|----------|------------|
+| -------- | ---------- | ------------ |
 | `db-credentials` | `DB_*` vars (host, port, name, user, password) + `POSTGRES_*` variants (for the PostgreSQL container itself) | PostgreSQL, Pipeline, Dashboard |
 | `pipeline-secrets` | `ANTHROPIC_API_KEY`, `NCBI_API_KEY`, `ENTREZ_EMAIL`, `UNPAYWALL_EMAIL`, `PIPELINE_NOTIFY_URLS`, `PIPELINE_HEALTHCHECK_URL` | Pipeline only |
 | `.Renviron` | DB credentials + NCBI vars (R env file format) | Dashboard only |
@@ -649,7 +649,7 @@ default ServiceAccount.
 Two PDBs ensure availability during voluntary disruptions (node drains, cluster upgrades):
 
 | Component | Policy |
-|-----------|--------|
+| ----------- | -------- |
 | Dashboard | `minAvailable: 1` |
 | PostgreSQL | `minAvailable: 1` |
 
@@ -742,7 +742,7 @@ kube-prometheus-stack subchart instead, flip both values.
 ### Resource Tuning
 
 | Component | Default CPU (req/lim) | Default Memory (req/lim) |
-|-----------|----------------------|-------------------------|
+| ----------- | ---------------------- | ------------------------- |
 | Dashboard | 1000m / 4000m | 2Gi / 4Gi |
 | PostgreSQL | 100m / 500m | 256Mi / 512Mi |
 | Pipeline | 200m / 1000m | 512Mi / 2Gi |
@@ -771,7 +771,7 @@ qsData:
 Components can be toggled on or off without removing template files:
 
 | Flag | Default | What It Controls |
-|------|---------|-----------------|
+| ------ | --------- | ----------------- |
 | `notifications.ntfy.enabled` | `true` | ntfy Deployment, Service, PVC, Ingress rule, NetworkPolicy |
 | `notifications.ntfy.metrics.enabled` | `true` | ntfy ServiceMonitor + `NTFY_ENABLE_METRICS` env var |
 | `notifications.healthchecks.enabled` | `true` | Healthchecks Deployment, Service, PVC, Secret, Ingress rule, NetworkPolicy |
@@ -792,7 +792,7 @@ Components can be toggled on or off without removing template files:
 ## Glossary
 
 | Term | Meaning |
-|------|---------|
+| ------ | --------- |
 | **Blackbox Exporter** | A Prometheus exporter that probes endpoints over HTTP, HTTPS, DNS, TCP, ICMP and reports whether they are reachable. Used here to monitor dashboard and Healthchecks uptime. |
 | **ClusterIP** | The default Service type. Gives a pod an internal IP address reachable only from inside the cluster -- like an office extension number that does not work from outside the building. |
 | **CNI** | Container Network Interface. The plugin that handles networking between pods. Some CNIs (Calico, Cilium) support NetworkPolicy; simpler ones (Flannel) do not. |
