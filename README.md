@@ -8,7 +8,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-purple.svg)](https://www.postgresql.org/)
 
 | <center>R Tests</center> | <center>Pipeline Tests</center> |
-|:--|:--|
+| :-- | :-- |
 | [![R Tests: 97](https://img.shields.io/badge/R_Tests-97_passing-green.svg)](#testing) | [![Pipeline Tests: 462](https://img.shields.io/badge/Pipeline_Tests-462_passing-green.svg)](#testing) |
 | [![filter_utils](https://img.shields.io/badge/filter__utils-33_tests-brightgreen.svg)](#testing) | [![Infrastructure](https://img.shields.io/badge/Infrastructure-141_tests-brightgreen.svg)](#testing) |
 | [![data_prep](https://img.shields.io/badge/data__prep-40_tests-brightgreen.svg)](#testing) | [![External Data](https://img.shields.io/badge/External_Data-102_tests-brightgreen.svg)](#testing) |
@@ -51,6 +51,7 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 ## Overview
 
 This dashboard provides up-to-date and standardized information on:
+
 - Putative cerebral SVD causal genes
 - Drugs tested in planned or ongoing cerebral SVD clinical trials
 
@@ -89,7 +90,7 @@ This dashboard provides up-to-date and standardized information on:
 </p>
 
 | Layer | Technology |
-|-------|-----------|
+| ------- | ----------- |
 | Dashboard Framework | [R 4.5+](https://www.r-project.org/), [Shiny](https://github.com/rstudio/shiny), [bslib](https://github.com/rstudio/bslib) (Bootstrap 5 with dark mode) |
 | Frontend UI | [DT](https://github.com/rstudio/DT) (DataTables), [shinyWidgets](https://github.com/dreamRs/shinyWidgets), [Tippy.js](https://github.com/atomiks/tippyjs), [Popper.js](https://github.com/floating-ui/floating-ui) |
 | Mapping | [Leaflet](https://github.com/rstudio/leaflet), [tidygeocoder](https://github.com/jessecambon/tidygeocoder) (OpenStreetMap Nominatim) |
@@ -110,27 +111,34 @@ This dashboard provides up-to-date and standardized information on:
 ## Features
 
 ### Dark Mode
+
 Toggle between light and dark themes using the built-in switch in the navbar. The dashboard features:
+
 - Real-time theme switching powered by bslib's `input_dark_mode()`
 - Glassmorphism effects in dark mode for a modern aesthetic
 - Light theme: Clean white background with #2d287a primary accent
 - Dark theme: #121212 background optimized for low-light viewing
 
 ### Gene Table
+
 Browse putative causal genes with filters for:
+
 - Mendelian Randomization status
 - GWAS traits (SVS, BG-PVS, WMH, HIP-PVS, PSMD, extreme-cSVD, Lacunes, Stroke,
   NODDI, FA, MD, Lacunar Stroke, Small Vessel Stroke)
 - Evidence from other omics studies (EWAS, TWAS, PWAS, Proteomics, MENTR)
 
 Includes linked data from:
+
 - NCBI Gene (with gene ID, protein, and aliases)
 - UniProt (with accession numbers)
 - OMIM (with phenotype, inheritance, gene/locus)
 - PubMed references (with publication details)
 
 ### Clinical Trials Table
+
 Explore drugs in clinical trials with filters for:
+
 - Genetic evidence
 - Trial registry (ClinicalTrials.gov, ISRCTN, ANZCTR, ChiCTR)
 - Clinical trial phase (I, II, III)
@@ -139,13 +147,17 @@ Explore drugs in clinical trials with filters for:
 - Sponsor type (Academic, Industry)
 
 ### Phenogram
+
 Interactive chromosome ideogram visualization of GWAS phenotypes.
 
 ### Clinical Trials Visualization
+
 Interactive SVG sunburst visualization of SVD drugs tested in clinical trials.
 
 ### Clinical Trials Map
+
 Interactive Leaflet map displaying global research sites for NCT-registered trials:
+
 - Fetches trial locations from ClinicalTrials.gov API v2
 - Geocodes locations using OpenStreetMap Nominatim (via tidygeocoder)
 - Marker clustering for improved performance at low zoom levels
@@ -162,7 +174,7 @@ Interactive Leaflet map displaying global research sites for NCT-registered tria
 <details>
 <summary><strong>Click to expand project structure</strong></summary>
 
-```
+```text
 rshiny_dashboard/
 ├── .env.example                  # Example pipeline environment variables
 ├── .Renviron.example             # Example R environment variables
@@ -379,10 +391,12 @@ The dashboard will open in your browser at `http://127.0.0.1:3838`.
 ### Prerequisites
 
 **For running the Shiny app only:**
+
 - R 4.5+
 - The `maRco` helper package
 
 **For running the data pipeline:**
+
 - Python 3.14+
 - PostgreSQL 18+
 
@@ -519,11 +533,14 @@ ty>=0.0.1a0
 
 1. Install PostgreSQL 18
 2. Create a database and user:
+
    ```sql
    CREATE USER csvd_user WITH PASSWORD 'your_password';
    CREATE DATABASE csvd_dashboard OWNER csvd_user;
    ```
+
 3. Initialize the schema:
+
    ```bash
    # Initialize core schema
    psql -U csvd_user -d csvd_dashboard -f helm/svd-dashboard/sql/setup.sql
@@ -542,7 +559,7 @@ ty>=0.0.1a0
 <summary><strong>Click to expand environment variables table</strong></summary>
 
 | Variable | Description | Required For |
-|----------|-------------|--------------|
+| ---------- | ------------- | -------------- |
 | `DB_HOST` | PostgreSQL host | Pipeline / live data |
 | `DB_PORT` | PostgreSQL port (default: 5432) | Pipeline / live data |
 | `DB_NAME` | Database name | Pipeline / live data |
@@ -617,7 +634,7 @@ helm install svd helm/svd-dashboard -n svd --create-namespace \
 **Ingress hosts** (override via `-f my-values.yaml`):
 
 | Service | Default Host |
-|---|---|
+| --- | --- |
 | Dashboard | `csvd-dashboard.matbpoirierk8shomelab.net` |
 | ntfy | `ntfy.matbpoirierk8shomelab.net` |
 | Healthchecks | `healthchecks.matbpoirierk8shomelab.net` |
@@ -626,7 +643,7 @@ helm install svd helm/svd-dashboard -n svd --create-namespace \
 **Key configuration overrides (`values.yaml`):**
 
 | Parameter | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `dashboard.replicas` | `1` | Dashboard pod replicas |
 | `dashboard.preloadTable2` | `TRUE` | Preload Table 2 at startup |
 | `pipeline.schedule` | `0 3 * * 1` | CronJob cron expression |
@@ -672,7 +689,7 @@ flowchart LR
 
 ### Running the Pipeline
 
-**Stage 1: Python ETL**
+#### Stage 1: Python ETL
 
 ```bash
 # Standard run (search last 7 days, extract genes)
@@ -686,7 +703,7 @@ python pipeline/main.py --days-back 30
 ```
 
 | Argument | Default | Description |
-|----------|---------|-------------|
+| ---------- | --------- | ------------- |
 | `--days-back` | 7 | Number of days to look back for new papers (1-3650) |
 | `--dry-run` | - | Run pipeline without writing to database |
 | `--test-mode` | - | Skip LLM extraction (test search/retrieval only) |
@@ -697,7 +714,7 @@ python pipeline/main.py --days-back 30
 
 > **Tab-completion**: `eval "$(python pipeline/main.py --complete bash)"` (also supports `zsh` and `fish`)
 
-**Stage 2: R Transformation**
+#### Stage 2: R Transformation
 
 ```bash
 Rscript scripts/trigger_update.R
@@ -706,7 +723,7 @@ Rscript scripts/trigger_update.R
 Reads from PostgreSQL and generates QS files for the Shiny app:
 
 | QS File | Source | Description |
-|---------|--------|-------------|
+| --------- | -------- | ------------- |
 | `table1_clean.qs` | `genes` table | Cleaned gene data for Table 1 |
 | `table2_clean.qs` | `clinical_trials` table | Cleaned clinical trials for Table 2 |
 | `gene_info_results_df.qs` | `ncbi_gene_info` cache | NCBI Gene info for Table 1 |
@@ -720,6 +737,7 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 ### Notifications
 
 The pipeline includes an Apprise-based notification system (`pipeline/notifications.py`) that sends run digests after each execution:
+
 - **Multi-channel delivery**: ntfy push notifications with email backup
 - **Jinja2 templates**: HTML and Markdown digest templates (`pipeline/templates/`)
 - **Retry with backoff**: Tenacity exponential backoff on delivery failures
@@ -746,7 +764,7 @@ The prompt uses a two-part architecture defined in `pipeline/prompts.py`: a syst
 **Extraction instructions** (`EXTRACTION_INSTRUCTIONS`) — An XML-tagged structure with these components:
 
 | Component | Purpose | Documentation Rationale |
-|-----------|---------|------------------------|
+| ----------- | --------- | ------------------------ |
 | `<task>` | Clear task definition | [Be clear and direct](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct): provide explicit, unambiguous instructions |
 | `<inclusion_criteria>` | Enumerates evidence types (GWAS, MR, colocalization, etc.) and canonical cSVD phenotype abbreviations (WMH, SVS, BG-PVS, etc.) | Reduces ambiguity by defining the exact vocabulary the model should use |
 | `<extraction_strategy>` | "Identify passages first, then extract" grounding pattern | [Long context tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/long-context-tips): "Ground responses in quotes... ask Claude to quote relevant parts first before carrying out its task." Prevents hallucination on 50K-char papers |
@@ -761,7 +779,7 @@ The prompt uses a two-part architecture defined in `pipeline/prompts.py`: a syst
 ### API Configuration
 
 | Decision | Configuration | Rationale |
-|----------|--------------|-----------|
+| ---------- | -------------- | ----------- |
 | Model | `claude-opus-4-6` | Most capable model for complex multi-evidence gene extraction requiring domain expertise |
 | Streaming | `client.messages.stream()` | Required for adaptive thinking requests that may exceed 10 minutes; raw `AsyncAnthropic` used instead of Instructor because Instructor doesn't support streaming |
 | Adaptive thinking | `thinking: {"type": "adaptive"}` | [Adaptive thinking](https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking): "reliably drives better performance than extended thinking with a fixed `budget_tokens`"; dynamically allocates reasoning depth per paper |
@@ -807,7 +825,7 @@ LLM output feeds into a 3-stage validation pipeline (`pipeline/validation.py`):
 **Pricing (USD)** (from `pipeline/report.py`):
 
 | Model | Input (per 1M tokens) | Output (per 1M tokens) |
-|-------|----------------------|------------------------|
+| ----- | --------------------- | ---------------------- |
 | Claude Opus 4.6 | $5.00 | $25.00 |
 
 **Prompt caching multipliers**: cache writes at 2x base input price ($10.00/MTok), cache reads at 0.1x ($0.50/MTok). After the first paper, subsequent papers in the same 1-hour window benefit from cached system blocks.
@@ -821,7 +839,7 @@ LLM output feeds into a 3-stage validation pipeline (`pipeline/validation.py`):
 All LLM-related environment variables (from `pipeline/config.py`):
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| ---------- | --------- | ------------- |
 | `PIPELINE_LLM_MODEL` | `claude-opus-4-6` | Model identifier |
 | `PIPELINE_LLM_MAX_TOKENS` | `64000` | Max output tokens |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort (`low` / `high` / `max`) |
@@ -882,7 +900,7 @@ An interactive Leaflet map showing global research sites for NCT-registered clin
 ### Source files
 
 | File | Role |
-|------|------|
+| ------ | ------ |
 | `R/fetch_trial_locations.R` | API fetching, geocoding, caching |
 | `R/server_map.R` | Leaflet rendering, popups, clustering |
 
@@ -917,6 +935,7 @@ Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`,
 ## Performance Features
 
 ### Startup Optimizations
+
 - **CSS/JS Minification**: Source files are auto-minified at startup (37KB CSS → 12KB)
 - **Disk Cache**: bslib Sass cache with 30-day TTL avoids recompilation
 - **Local Fonts**: Raleway and Inter loaded from local files (faster than Google Fonts CDN)
@@ -924,6 +943,7 @@ Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`,
 - **Vectorized Index Building**: GWAS trait and omics type indices built using `data.table::rbindlist()` + `split()` instead of row-by-row `vapply` loops
 
 ### Runtime Optimizations
+
 - **Fast Serialization**: QS format for data files (3-5x faster than RDS)
 - **Fast Indexing**: fastmap for O(1) row lookups in filter operations
 - **O(1) OMIM Lookups**: `omim_lookup` fastmap for constant-time OMIM data retrieval
@@ -935,16 +955,19 @@ Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`,
 - **API Rate Limiting**: UniProt API requests throttled with 100ms delay to avoid rate limiting (configurable via `delay` parameter)
 
 ### Caching Strategies
+
 - **In-Memory Caching**: memoise with 50MB cache for tooltips and computed values
 - **Reactive Caching**: bindCache() prevents unnecessary recalculations
 - **Preloaded Data**: Clinical trials table preloaded at startup for instant tab switching
 - **Cached Plots**: Sample size histogram uses `renderCachedPlot()` with `sizeGrowthRatio()` for size-responsive caching
 
 ### UI Responsiveness
+
 - **Debounced Inputs**: Slider inputs (500ms) and checkbox filters (150ms) debounced
 - **Lazy-Loaded Iframes**: Phenogram and clinical trials visualizations use browser-native `loading="lazy"` attribute
 
 ### Clinical Trials Map Optimizations
+
 - **Lazy Loading**: Map data fetched only when Clinical Trials Map tab is first accessed
 - **Parallel API Requests**: Uses future/future.apply for concurrent ClinicalTrials.gov API calls
 - **Rate Limiting**: Configurable delay between API request batches (100ms default) to avoid rate limiting
@@ -961,7 +984,7 @@ Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`,
 Detailed documentation is available in the `docs/` directory:
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
 | [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
 | [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
@@ -990,6 +1013,7 @@ Contributions are welcome! Here's how you can help:
 ### Reporting Issues
 
 Found a bug or have a suggestion? Please [open an issue](https://github.com/mathieubpoiriericm/icm-dashboard/issues) with:
+
 - A clear description of the problem or enhancement
 - Steps to reproduce (for bugs)
 - Expected vs actual behavior
@@ -1004,7 +1028,7 @@ MIT License - see [LICENSE](https://opensource.org/licenses/MIT)
 
 ## Contact
 
-**Maintenance**: mathieu.poirier@icm-institute.org
+**Maintenance**: <mathieu.poirier@icm-institute.org>
 
 ---
 

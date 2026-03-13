@@ -1,0 +1,18 @@
+config:
+  # Line length - disabled for README with long URLs, badge lines, and tables
+  MD013: false
+  # Duplicate headings - allow when at different nesting levels
+  # (e.g., "### Clinical Trials Map" under Features vs "## Clinical Trials Map")
+  MD024:
+    siblings_only: true
+  # Inline HTML - allow standard GitHub README elements
+  MD033:
+    allowed_elements:
+      - "a"
+      - "br"
+      - "center"
+      - "details"
+      - "img"
+      - "p"
+      - "strong"
+      - "summary"
