@@ -1258,7 +1258,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "pg_stat_database_blks_hit{datname=\"svd_dashboard\"} / (pg_stat_database_blks_hit{datname=\"svd_dashboard\"} + pg_stat_database_blks_read{datname=\"svd_dashboard\"})",
+          "expr": "sum(pg_stat_database_blks_hit{datname=\"svd_dashboard\"}) / (sum(pg_stat_database_blks_hit{datname=\"svd_dashboard\"}) + sum(pg_stat_database_blks_read{datname=\"svd_dashboard\"}))",
           "legendFormat": "Cache Hit Ratio",
           "refId": "A"
         }
@@ -1466,7 +1466,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "pg_database_size_bytes{datname=\"svd_dashboard\"}",
+          "expr": "max(pg_database_size_bytes{datname=\"svd_dashboard\"})",
           "legendFormat": "Database Size",
           "refId": "A"
         }
@@ -1561,7 +1561,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(pg_stat_database_xact_commit_total{datname=\"svd_dashboard\"}[5m])",
+          "expr": "sum(rate(pg_stat_database_xact_commit_total{datname=\"svd_dashboard\"}[5m]))",
           "legendFormat": "Commits/s",
           "refId": "A"
         },
@@ -1570,7 +1570,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(pg_stat_database_xact_rollback_total{datname=\"svd_dashboard\"}[5m])",
+          "expr": "sum(rate(pg_stat_database_xact_rollback_total{datname=\"svd_dashboard\"}[5m]))",
           "legendFormat": "Rollbacks/s",
           "refId": "B"
         }
@@ -1665,7 +1665,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "pg_stat_user_tables_n_dead_tup{datname=\"svd_dashboard\"}",
+          "expr": "sum by (relname) (pg_stat_user_tables_n_dead_tup{datname=\"svd_dashboard\"})",
           "legendFormat": "{{relname}}",
           "refId": "A"
         }
@@ -1760,7 +1760,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "pg_locks_count{datname=\"svd_dashboard\"}",
+          "expr": "sum by (mode) (pg_locks_count{datname=\"svd_dashboard\"})",
           "legendFormat": "{{mode}}",
           "refId": "A"
         }
