@@ -81,6 +81,7 @@ ALLOWED_TABLES: Final[frozenset[str]] = frozenset(
     {
         "genes",
         "pubmed_refs",
+        "pipeline_runs",
         "ncbi_gene_info",
         "uniprot_info",
         "pubmed_citations",
@@ -264,6 +265,15 @@ class PipelineConfig:
             "PIPELINE_EVENT_DB_PATH", str(PROJECT_ROOT / "logs" / "events.db")
         )
     )
+
+    # --- Progress reporting ---
+    progress_file: str = field(
+        default_factory=lambda: _env_str(
+            "PIPELINE_PROGRESS_FILE",
+            str(PROJECT_ROOT / "data" / "pipeline_progress.json"),
+        )
+    )
+
     notify_max_retries: int = field(
         default_factory=lambda: _env_int("PIPELINE_NOTIFY_MAX_RETRIES", 3)
     )

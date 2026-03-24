@@ -182,6 +182,14 @@ tip_row_ui <- function(..., centered = FALSE) {
   )
 }
 
+pipeline_metric_ui <- function(value, label) {
+  shiny::div(
+    class = "pipeline-metric",
+    shiny::div(class = "pipeline-metric-value", value),
+    shiny::div(class = "pipeline-metric-label", label)
+  )
+}
+
 # Create Info Card Row for About Tab
 #
 # Creates a consistent labeled card pattern used in the About tab.

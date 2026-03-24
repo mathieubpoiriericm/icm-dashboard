@@ -33,6 +33,139 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     setup_python_plot_handler(input, session)
 
     # =========================================================================
+    # PIPELINE PROGRESS TRACKER
+    # =========================================================================
+    pipeline_progress_data <- shiny::reactiveFileReader(
+      intervalMillis = PIPELINE_PROGRESS_POLL_MS,
+      session = session,
+      filePath = PIPELINE_PROGRESS_FILE,
+      readFunc = function(path) {
+        tryCatch(
+          jsonlite::fromJSON(path, simplifyVector = TRUE),
+          error = function(e) NULL
+        )
+      }
+    )
+
+    output$pipeline_progress <- shiny::renderUI({
+      progress <- pipeline_progress_data()
+
+      stage_ids <- names(PIPELINE_STAGES)
+      n_stages <- length(PIPELINE_STAGES)
+
+      status <- if (!is.null(progress)) progress$status else "inactive"
+      current_idx <- if (!is.null(progress)) {
+        match(progress$stage, stage_ids, nomatch = 0L)
+      } else {
+        0L
+      }
+
+      if (identical(status, "inactive")) {
+        header_icon <- shiny::icon("clock", class = "me-2")
+        header_text <- "No Pipeline Run Recorded"
+        header_class <- "pipeline-progress-title"
+        detail <- shiny::div(
+          class = "pipeline-progress-detail",
+          "The pipeline has not been run yet"
+        )
+      } else if (identical(status, "running")) {
+        header_icon <- shiny::tags$span(class = "pipeline-spinner")
+        header_text <- "Pipeline Running"
+        header_class <- "pipeline-progress-title"
+        detail <- shiny::div(
+          class = "pipeline-progress-detail",
+          sprintf("Stage %s of %s", progress$stage_number, progress$total_stages)
+        )
+      } else if (identical(status, "completed")) {
+        header_icon <- shiny::icon("check-circle", class = "me-2")
+        header_text <- "Pipeline Completed Successfully"
+        header_class <- "pipeline-progress-title pipeline-progress-success"
+        detail <- if (!is.null(progress$updated_at)) {
+          shiny::div(
+            class = "pipeline-progress-detail",
+            format(
+              as.POSIXct(
+                sub("\\+00:00$", "", progress$updated_at),
+                format = "%Y-%m-%dT%H:%M:%S",
+                tz = "UTC"
+              ),
+              "%B %d, %Y at %H:%M UTC"
+            )
+          )
+        }
+      } else if (identical(status, "error")) {
+        header_icon <- shiny::icon("exclamation-triangle", class = "me-2")
+        header_text <- "Pipeline Failed"
+        header_class <- "pipeline-progress-title pipeline-progress-danger"
+        detail <- if (!is.null(progress$error_message)) {
+          shiny::div(
+            class = "pipeline-progress-error-msg",
+            shiny::tags$code(substr(progress$error_message, 1L, 200L))
+          )
+        }
+      } else {
+        # Defensive fallback for unexpected status values
+        header_icon <- shiny::icon("clock", class = "me-2")
+        header_text <- "No Pipeline Run Recorded"
+        header_class <- "pipeline-progress-title"
+        detail <- NULL
+        status <- "inactive"
+      }
+
+      steps <- lapply(seq_len(n_stages), function(i) {
+        step_state <- switch(status,
+          inactive  = "inactive",
+          completed = "completed",
+          running = ,
+          error = {
+            if (i < current_idx) "completed"
+            else if (i == current_idx) {
+              if (identical(status, "error")) "error" else "active"
+            }
+            else "inactive"
+          }
+        )
+
+        step_icon <- if (identical(step_state, "completed")) {
+          shiny::icon("check", class = "pipeline-step-check")
+        } else {
+          shiny::span(class = "pipeline-step-number", i)
+        }
+
+        shiny::div(
+          class = paste("pipeline-step", paste0("pipeline-step-", step_state)),
+          shiny::div(class = "pipeline-step-circle", step_icon),
+          shiny::div(class = "pipeline-step-label", PIPELINE_STAGES[[i]])
+        )
+      })
+
+      card_class <- switch(status,
+        inactive  = "pipeline-progress-inactive",
+        completed = "pipeline-progress-completed",
+        error     = "pipeline-progress-error",
+        ""
+      )
+
+      shiny::div(
+        class = "text-center",
+        bslib::card(
+          class = paste("pipeline-progress-card d-inline-block", card_class),
+          fill = FALSE,
+          bslib::card_body(
+            class = "py-3 px-4",
+            shiny::div(class = header_class, header_icon, header_text),
+            shiny::div(
+              class = "pipeline-stepper",
+              style = paste0("--n-steps: ", n_stages),
+              steps
+            ),
+            detail
+          )
+        )
+      )
+    })
+
+    # =========================================================================
     # TABLE 2 DATA (PRELOADED OR LAZY LOADED)
     # =========================================================================
     # Optimization: When preloaded, use direct reference instead of copying
@@ -263,5 +396,6 @@ configure_output_options <- function(output) {
   shiny::outputOptions(output, "secondTable", suspendWhenHidden = TRUE)
   shiny::outputOptions(output, "trials_map", suspendWhenHidden = FALSE)
   shiny::outputOptions(output, "map_stats", suspendWhenHidden = TRUE)
+  shiny::outputOptions(output, "pipeline_progress", suspendWhenHidden = TRUE)
 }
 # nolint end: object_usage_linter.

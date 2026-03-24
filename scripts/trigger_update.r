@@ -40,7 +40,7 @@ if (!dir.exists("data/txt")) {
 # =============================================================================
 # STEP 1: Clean and save Table 1 (genes) from database
 # =============================================================================
-message("\n[1/7] Fetching and cleaning Table 1 (genes) from database...")
+message("\n[1/8] Fetching and cleaning Table 1 (genes) from database...")
 table1_clean <- clean_table1()
 qs::qsave(table1_clean, "data/qs/table1_clean.qs")
 message("Saved: data/qs/table1_clean.qs")
@@ -55,7 +55,7 @@ message(sprintf(
 # =============================================================================
 # STEP 2: Clean and save Table 2 (clinical trials) from database
 # =============================================================================
-message("\n[2/7] Fetching and cleaning Table 2 (clinical trials)...")
+message("\n[2/8] Fetching and cleaning Table 2 (clinical trials)...")
 table2_clean <- clean_table2()
 qs::qsave(table2_clean, "data/qs/table2_clean.qs")
 message("Saved: data/qs/table2_clean.qs")
@@ -63,7 +63,7 @@ message("Saved: data/qs/table2_clean.qs")
 # =============================================================================
 # STEP 3: Read NCBI gene info for Table 1 genes from database cache
 # =============================================================================
-message("\n[3/7] Reading NCBI gene info for Table 1 genes from database...")
+message("\n[3/8] Reading NCBI gene info for Table 1 genes from database...")
 gene_info_results_df <- read_ncbi_gene_info_from_db(gene_symbols_table1)
 qs::qsave(gene_info_results_df, "data/qs/gene_info_results_df.qs")
 message(sprintf(
@@ -74,7 +74,7 @@ message(sprintf(
 # =============================================================================
 # STEP 4: Read NCBI gene info for Table 2 genes from database cache
 # =============================================================================
-message("\n[4/7] Reading NCBI gene info for Table 2 genes from database...")
+message("\n[4/8] Reading NCBI gene info for Table 2 genes from database...")
 gene_info_table2 <- read_table2_ncbi_info_db()
 qs::qsave(gene_info_table2, "data/qs/gene_info_table2.qs")
 message(sprintf(
@@ -85,7 +85,7 @@ message(sprintf(
 # =============================================================================
 # STEP 5: Read UniProt protein info from database cache
 # =============================================================================
-message("\n[5/7] Reading UniProt protein info from database...")
+message("\n[5/8] Reading UniProt protein info from database...")
 prot_info_clean <- read_uniprot_data_from_db(gene_symbols_table1)
 qs::qsave(prot_info_clean, "data/qs/prot_info_clean.qs")
 message(sprintf(
@@ -96,7 +96,7 @@ message(sprintf(
 # =============================================================================
 # STEP 6: Read PubMed references from database cache
 # =============================================================================
-message("\n[6/7] Reading PubMed references from database...")
+message("\n[6/8] Reading PubMed references from database...")
 
 # Extract unique PMIDs from table1 References column
 # Helper function to extract PMIDs from text
@@ -130,7 +130,7 @@ if (length(pmids) > 0) {
 # =============================================================================
 # STEP 7: Extract and save GWAS trait names mapping
 # =============================================================================
-message("\n[7/7] Extracting GWAS trait names...")
+message("\n[7/8] Extracting GWAS trait names...")
 # Extract unique GWAS traits from table1
 all_gwas_traits <- unique(unlist(table1_clean$`GWAS Trait`))
 all_gwas_traits <- all_gwas_traits[
@@ -151,6 +151,41 @@ message(sprintf(
 ))
 
 # =============================================================================
+# STEP 8: Read latest pipeline run status from database
+# =============================================================================
+message("\n[8/8] Reading latest pipeline run status from database...")
+pipeline_status <- tryCatch(
+  with_db_connection(function(conn) {
+    result <- DBI::dbGetQuery(
+      conn,
+      "SELECT run_timestamp, papers_processed, fulltext_retrieved,
+              genes_extracted, genes_validated, run_mode
+       FROM pipeline_runs
+       ORDER BY run_timestamp DESC
+       LIMIT 1"
+    )
+    if (nrow(result) == 0L) {
+      message("No pipeline runs found in database")
+      return(NULL)
+    }
+    result
+  }),
+  error = function(e) {
+    message(sprintf("Could not read pipeline_runs: %s", e$message))
+    NULL
+  }
+)
+qs::qsave(pipeline_status, "data/qs/pipeline_status.qs")
+if (!is.null(pipeline_status)) {
+  message(sprintf(
+    "Saved: data/qs/pipeline_status.qs (last run: %s)",
+    pipeline_status$run_timestamp
+  ))
+} else {
+  message("Saved: data/qs/pipeline_status.qs (no pipeline runs yet)")
+}
+
+# =============================================================================
 # SUMMARY
 # =============================================================================
 message("\n========================================")
@@ -164,5 +199,6 @@ message("  - data/qs/gene_info_table2.qs")
 message("  - data/qs/prot_info_clean.qs")
 message("  - data/qs/refs.qs")
 message("  - data/qs/gwas_trait_names.qs")
+message("  - data/qs/pipeline_status.qs")
 message("\nNote: External data (NCBI, UniProt, PubMed) is read from DB cache.")
 message("Run 'python pipeline/main.py --sync-external-data' to refresh cache.")

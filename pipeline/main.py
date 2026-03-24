@@ -84,11 +84,12 @@ if __name__ == "__main__":
 # --- End fast path ---
 
 import asyncio  # noqa: E402
+import json  # noqa: E402
 import logging  # noqa: E402
 import time  # noqa: E402
 import traceback  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
-from datetime import datetime  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 from typing import Any, Final, TypedDict  # noqa: E402
 
 import httpx  # noqa: E402
@@ -116,6 +117,7 @@ from pipeline.data_merger import merge_gene_entries  # noqa: E402
 from pipeline.database import (  # noqa: E402
     Database,
     get_existing_pmids,
+    record_pipeline_run,
     record_processed_pmids_batch,
     reset_sequence,
 )
@@ -175,6 +177,56 @@ logging.getLogger().handlers[1].setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 )
 logger = logging.getLogger(__name__)
+
+
+# -------------------------------------------------------------------------
+# PIPELINE PROGRESS REPORTING
+# -------------------------------------------------------------------------
+_STAGES: Final[tuple[tuple[str, str], ...]] = (
+    ("searching_pubmed", "Searching PubMed"),
+    ("filtering_pmids", "Filtering already-processed papers"),
+    ("processing_papers", "Processing papers"),
+    ("batch_validation", "Running batch quality checks"),
+    ("merging_database", "Merging validated data into database"),
+    ("finalizing", "Recording results and finalizing"),
+)
+_TOTAL_STAGES: Final[int] = len(_STAGES)
+
+
+def _write_progress(
+    config: PipelineConfig,
+    *,
+    status: str,
+    stage: str,
+    stage_label: str,
+    stage_number: int,
+    started_at: str | None = None,
+    error_message: str | None = None,
+    run_mode: str = "standard",
+) -> None:
+    """Write pipeline progress to JSON for dashboard consumption.
+
+    Uses atomic write (tmp + rename) so readers never see partial data.
+    Logs but does not raise on write failures to avoid disrupting the pipeline.
+    """
+    progress_path = Path(config.progress_file)
+    tmp_path = progress_path.with_suffix(".tmp")
+    data = {
+        "status": status,
+        "stage": stage,
+        "stage_label": stage_label,
+        "stage_number": stage_number,
+        "total_stages": _TOTAL_STAGES,
+        "started_at": started_at,
+        "updated_at": datetime.now(tz=UTC).isoformat(),
+        "error_message": error_message,
+        "run_mode": run_mode,
+    }
+    try:
+        tmp_path.write_text(json.dumps(data) + "\n")
+        os.replace(str(tmp_path), str(progress_path))
+    except OSError:
+        logger.debug("Failed to write progress file %s", progress_path, exc_info=True)
 
 
 # --- Type definitions ---
@@ -329,6 +381,24 @@ def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
     finally:
         event_log.close()
     ping_success(config.healthcheck_url)
+
+
+async def _finalize_run(
+    metrics: PipelineMetrics,
+    run_data: dict[str, Any],
+    config: PipelineConfig,
+    run_mode: str,
+) -> None:
+    """Record run stats to database and send notifications."""
+    await record_pipeline_run(
+        run_timestamp=run_data["timestamp"],
+        papers_processed=metrics.papers_processed,
+        fulltext_retrieved=metrics.fulltext_retrieved,
+        genes_extracted=metrics.genes_extracted,
+        genes_validated=metrics.genes_validated,
+        run_mode=run_mode,
+    )
+    _record_and_notify(config, run_data)
 
 
 async def process_paper(
@@ -530,8 +600,23 @@ async def run_pipeline(
         f"RPM={config.rpm_limit}, TPM={config.tpm_limit}"
     )
 
+    progress_started_at = datetime.now(tz=UTC).isoformat()
+    stage_idx = 0
+    Path(config.progress_file).parent.mkdir(parents=True, exist_ok=True)
+
+    def _report_stage(idx: int) -> None:
+        nonlocal stage_idx
+        stage_idx = idx
+        sid, slabel = _STAGES[idx]
+        _write_progress(
+            config, status="running", stage=sid,
+            stage_label=slabel, stage_number=idx + 1,
+            started_at=progress_started_at,
+        )
+
     try:
         # Step 1: Search PubMed for recent papers
+        _report_stage(0)
         logger.info("Step 1: Searching PubMed for recent SVD genetic papers...")
         all_pmids = await search_recent_papers(days_back)
         logger.info(f"  Found {len(all_pmids)} papers matching SVD genetic criteria")
@@ -541,6 +626,7 @@ async def run_pipeline(
             return metrics
 
         # Step 2: Filter out already-processed papers
+        _report_stage(1)
         logger.info("Step 2: Filtering already-processed papers...")
         if dry_run or test_mode:
             existing_pmids: set[str] = set()
@@ -577,6 +663,7 @@ async def run_pipeline(
             return metrics
 
         # Step 3: Process papers concurrently
+        _report_stage(2)
         logger.info("Step 3: Processing papers concurrently...")
         results = await process_papers_concurrently(
             new_pmids, metrics, config=config, rate_limiter=rate_limiter
@@ -594,6 +681,7 @@ async def run_pipeline(
         logger.info(f"  Validated: {metrics.genes_validated} genes")
 
         # Step 3.5: Batch validation (warning-only quality checks)
+        _report_stage(3)
         batch_warnings: list[str] = []
         if all_genes:
             batch_warnings = batch_validate(all_genes)
@@ -602,6 +690,12 @@ async def run_pipeline(
 
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
+            _write_progress(
+                config, status="completed", stage=_STAGES[stage_idx][0],
+                stage_label="Pipeline completed (dry run)",
+                stage_number=stage_idx + 1,
+                started_at=progress_started_at,
+            )
 
             total_duration = time.monotonic() - pipeline_start_time
             run_data = build_run_data(
@@ -626,6 +720,7 @@ async def run_pipeline(
             return metrics
 
         # Step 4: Merge into database
+        _report_stage(4)
         logger.info("Step 4: Merging validated data into database...")
 
         # Reset sequences to avoid primary key conflicts
@@ -648,6 +743,9 @@ async def run_pipeline(
         recorded = await record_processed_pmids_batch(pmid_records)
         logger.info(f"  Recorded {recorded} processed PMIDs")
 
+        # Finalize
+        _report_stage(5)
+
         # Comprehensive report + rich summary
         total_duration = time.monotonic() - pipeline_start_time
         run_data = build_run_data(
@@ -667,11 +765,25 @@ async def run_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        _record_and_notify(config, run_data)
+        await _finalize_run(metrics, run_data, config, "standard")
+
+        _write_progress(
+            config, status="completed", stage=_STAGES[-1][0],
+            stage_label="Pipeline completed successfully",
+            stage_number=_TOTAL_STAGES, started_at=progress_started_at,
+        )
 
         return metrics
 
     except Exception:
+        sid, slabel = _STAGES[stage_idx]
+        _write_progress(
+            config, status="error", stage=sid,
+            stage_label=f"Failed at: {slabel}",
+            stage_number=stage_idx + 1,
+            started_at=progress_started_at,
+            error_message=traceback.format_exc()[:500],
+        )
         ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
 
@@ -851,7 +963,7 @@ async def run_local_pdf_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        _record_and_notify(config, run_data)
+        await _finalize_run(metrics, run_data, config, "local_pdf")
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())
@@ -1042,7 +1154,7 @@ async def run_pmid_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        _record_and_notify(config, run_data)
+        await _finalize_run(metrics, run_data, config, "pmid_list")
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())

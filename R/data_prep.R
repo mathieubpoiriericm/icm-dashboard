@@ -521,6 +521,12 @@ load_and_prepare_data <- function() {
 
   message("Table 1 data preparation complete.")
 
+  # Load pipeline status (optional — NULL if no pipeline runs yet)
+  pipeline_status <- tryCatch(
+    qs::qread("data/qs/pipeline_status.qs", nthreads = .N_THREADS),
+    error = function(e) NULL
+  )
+
   list(
     table1 = table1,
     gene_info_results_df = gene_info_results_df,
@@ -533,7 +539,8 @@ load_and_prepare_data <- function() {
     gwas_trait_rows = gwas_trait_rows,
     omics_type_rows = omics_type_rows,
     omim_lookup = omim_lookup,
-    refs = refs
+    refs = refs,
+    pipeline_status = pipeline_status
   )
 }
 

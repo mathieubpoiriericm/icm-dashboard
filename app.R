@@ -332,7 +332,8 @@ ui <- build_ui(
   n_genes = n_genes,
   n_drugs = n_drugs,
   n_trials = n_trials,
-  n_pubs = n_publications
+  n_pubs = n_publications,
+  pipeline_status = app_data$pipeline_status
 )
 server <- build_server(app_data, table1_display, preloaded_table2)
 

@@ -112,6 +112,23 @@ DATA_PATHS <- list(
 )
 
 # =============================================================================
+# PIPELINE PROGRESS FILE
+# =============================================================================
+# Path to pipeline progress JSON (written by Python pipeline, read by Shiny)
+PIPELINE_PROGRESS_FILE <- "data/pipeline_progress.json"
+# Polling interval for pipeline progress (milliseconds)
+PIPELINE_PROGRESS_POLL_MS <- 5000L
+# Pipeline stage labels (must match _STAGES in pipeline/main.py)
+PIPELINE_STAGES <- c(
+  searching_pubmed      = "Searching PubMed",
+  filtering_pmids       = "Filtering Papers",
+  processing_papers     = "Processing Papers",
+  batch_validation      = "Quality Checks",
+  merging_database      = "Merging to Database",
+  finalizing            = "Finalizing"
+)
+
+# =============================================================================
 # BRAND COLORS (ICM Visual Identity)
 # =============================================================================
 # ICM navy — primary brand color (maps to CSS --svd-primary)

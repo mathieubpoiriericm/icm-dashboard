@@ -45,7 +45,12 @@ light_theme <- bslib::bs_theme(
 #
 # Returns:
 #   A Shiny UI object.
-build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
+build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
+                     pipeline_status = NULL) {
+  run_ts <- if (!is.null(pipeline_status)) {
+    as.POSIXct(pipeline_status$run_timestamp, tz = "UTC")
+  }
+
   bslib::page_navbar(
     id = "tabs",
     # SVG logo (vector, no fallback needed)
@@ -178,9 +183,54 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L) {
               "Up-to-date as of:",
               shiny::span(
                 class = "date-badge",
-                format(Sys.Date(), "%B %d, %Y")
+                if (!is.null(run_ts)) {
+                  format(run_ts, "%B %d, %Y")
+                } else {
+                  format(Sys.Date(), "%B %d, %Y")
+                }
               ),
             ),
+            if (!is.null(pipeline_status)) {
+              shiny::div(
+                class = "text-center",
+                bslib::card(
+                  class = "pipeline-status-card d-inline-block",
+                  fill = FALSE,
+                  bslib::card_body(
+                    class = "py-3 px-4",
+                    shiny::div(
+                      class = "pipeline-status-title",
+                      shiny::icon("robot", class = "me-2"),
+                      "Last Pipeline Run"
+                    ),
+                    shiny::div(
+                      class = "pipeline-status-timestamp",
+                      format(run_ts, "%B %d, %Y at %H:%M UTC")
+                    ),
+                    shiny::div(
+                      class = "pipeline-status-metrics",
+                      pipeline_metric_ui(
+                        pipeline_status$papers_processed,
+                        "Papers Processed"
+                      ),
+                      pipeline_metric_ui(
+                        pipeline_status$fulltext_retrieved,
+                        "Full-Text Retrieved"
+                      ),
+                      pipeline_metric_ui(
+                        pipeline_status$genes_extracted,
+                        "Genes Extracted"
+                      ),
+                      pipeline_metric_ui(
+                        pipeline_status$genes_validated,
+                        "Genes Validated"
+                      )
+                    )
+                  )
+                )
+              )
+            },
+            shiny::uiOutput("pipeline_progress"),
             shiny::tags$hr(class = "section-divider"),
             bslib::layout_columns(
               col_widths = c(2, 1, 5, 2, 2),

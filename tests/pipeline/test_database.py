@@ -11,6 +11,7 @@ from pipeline.database import (
     Database,
     DatabaseConfigError,
     merge_genes_transactional,
+    record_pipeline_run,
     record_processed_pmids_batch,
     reset_sequence,
 )
@@ -63,6 +64,39 @@ class TestEmptyInputShortCircuits:
     async def test_record_empty_pmids(self):
         count = await record_processed_pmids_batch([])
         assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# Pipeline run recording
+# ---------------------------------------------------------------------------
+
+
+class TestRecordPipelineRun:
+    async def test_inserts_and_returns_id(self, mocker):
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=42)
+
+        mocker.patch.object(
+            Database,
+            "connection",
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(return_value=False),
+            ),
+        )
+
+        row_id = await record_pipeline_run(
+            run_timestamp="2026-03-24T10:00:00+00:00",
+            papers_processed=5,
+            fulltext_retrieved=3,
+            genes_extracted=12,
+            genes_validated=10,
+            run_mode="standard",
+        )
+        assert row_id == 42
+        mock_conn.fetchval.assert_awaited_once()
+        sql = mock_conn.fetchval.call_args[0][0]
+        assert "pipeline_runs" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +174,9 @@ class TestAllowedLists:
 
     def test_pubmed_refs_allowed(self):
         assert "pubmed_refs" in ALLOWED_TABLES
+
+    def test_pipeline_runs_allowed(self):
+        assert "pipeline_runs" in ALLOWED_TABLES
 
     def test_id_column_allowed(self):
         assert "id" in ALLOWED_COLUMNS

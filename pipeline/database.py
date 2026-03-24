@@ -296,6 +296,52 @@ async def record_processed_pmids_batch(
 
 
 # =============================================================================
+# Pipeline Run Tracking
+# =============================================================================
+
+
+async def record_pipeline_run(
+    run_timestamp: str,
+    papers_processed: int,
+    fulltext_retrieved: int,
+    genes_extracted: int,
+    genes_validated: int,
+    run_mode: str = "standard",
+) -> int:
+    """Record a pipeline run's summary statistics.
+
+    Args:
+        run_timestamp: ISO-format timestamp of the run.
+        papers_processed: Number of papers successfully processed.
+        fulltext_retrieved: Number of papers with full text.
+        genes_extracted: Total genes extracted by LLM.
+        genes_validated: Genes passing validation.
+        run_mode: One of 'standard', 'local_pdf', or 'pmid_list'.
+
+    Returns:
+        The id of the inserted row.
+    """
+    async with Database.connection() as conn:
+        row_id: int = await conn.fetchval(
+            """
+            INSERT INTO pipeline_runs (
+                run_timestamp, papers_processed, fulltext_retrieved,
+                genes_extracted, genes_validated, run_mode
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+            """,
+            run_timestamp,
+            papers_processed,
+            fulltext_retrieved,
+            genes_extracted,
+            genes_validated,
+            run_mode,
+        )
+    logger.info("Recorded pipeline run id=%d (mode=%s)", row_id, run_mode)
+    return row_id
+
+
+# =============================================================================
 # NCBI Gene Info Cache Operations
 # =============================================================================
 
