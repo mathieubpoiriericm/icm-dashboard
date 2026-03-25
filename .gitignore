@@ -13,7 +13,7 @@ __pycache__
 .venv
 .vscode
 data/
-docs/other/
+docs/other
 logs
 .env
 .Renviron
@@ -21,6 +21,6 @@ CLAUDE.md
 docs/superpowers
 rshiny_dashboard.code-workspace
 secrets-values.yaml
-tauri-app/
+tauri-app
 www/*min.css
 www/*min.js
