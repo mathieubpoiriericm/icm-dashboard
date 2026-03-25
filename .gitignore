@@ -21,5 +21,6 @@ CLAUDE.md
 docs/superpowers
 rshiny_dashboard.code-workspace
 secrets-values.yaml
+tauri-app/
 www/*min.css
 www/*min.js
