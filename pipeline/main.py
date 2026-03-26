@@ -109,6 +109,17 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 import os  # noqa: E402
 
+# macOS Python framework builds may lack a default CA bundle at the compiled-in
+# OpenSSL path.  When SSL_CERT_FILE is not already set, point it at the certifi
+# bundle so that urllib/httpx/etc. can verify TLS certificates out of the box.
+if not os.environ.get("SSL_CERT_FILE"):
+    try:
+        import certifi  # noqa: E402
+
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+    except ImportError:
+        pass
+
 from pipeline.batch_validation import batch_validate  # noqa: E402
 from pipeline.config import (  # noqa: E402
     NCBI_EFETCH_URL,
