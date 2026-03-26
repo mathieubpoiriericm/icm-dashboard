@@ -76,11 +76,14 @@ def _build_parser() -> argparse.ArgumentParser:
 # argcomplete.autocomplete() calls sys.exit() during completion,
 # so heavy imports below never load. This keeps <TAB> instant.
 if __name__ == "__main__":
-    import argcomplete
+    try:
+        import argcomplete
 
-    _parser = _build_parser()
-    argcomplete.autocomplete(_parser)
-    del _parser
+        _parser = _build_parser()
+        argcomplete.autocomplete(_parser)
+        del _parser
+    except ImportError:
+        pass
 # --- End fast path ---
 
 import asyncio  # noqa: E402
