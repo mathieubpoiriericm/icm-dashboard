@@ -271,9 +271,9 @@ class PipelineConfig:
     progress_file: str = field(
         default_factory=lambda: _env_str(
             "PIPELINE_PROGRESS_FILE",
-            str(PROJECT_ROOT / "data" / "pipeline_progress.json"),
+            str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json"),
         )
-        or str(PROJECT_ROOT / "data" / "pipeline_progress.json"),
+        or str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json"),
     )
 
     notify_max_retries: int = field(

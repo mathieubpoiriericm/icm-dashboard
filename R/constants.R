@@ -115,7 +115,7 @@ DATA_PATHS <- list(
 # PIPELINE PROGRESS FILE
 # =============================================================================
 # Path to pipeline progress JSON (written by Python pipeline, read by Shiny)
-PIPELINE_PROGRESS_FILE <- "data/pipeline_progress.json"
+PIPELINE_PROGRESS_FILE <- "logs/json/pipeline_progress.json"
 # Polling interval for pipeline progress (milliseconds)
 PIPELINE_PROGRESS_POLL_MS <- 5000L
 # Pipeline stage labels (must match _STAGES in pipeline/main.py)

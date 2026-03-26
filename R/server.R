@@ -118,11 +118,13 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
           completed = "completed",
           running = ,
           error = {
-            if (i < current_idx) "completed"
-            else if (i == current_idx) {
+            if (i < current_idx) {
+              "completed"
+            } else if (i == current_idx) {
               if (identical(status, "error")) "error" else "active"
+            } else {
+              "inactive"
             }
-            else "inactive"
           }
         )
 
