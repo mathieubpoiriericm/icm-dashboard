@@ -977,7 +977,7 @@ async def run_local_pdf_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        await _finalize_run(metrics, run_data, config, "local_pdf")
+        _record_and_notify(config, run_data)
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())
@@ -1168,7 +1168,7 @@ async def run_pmid_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        await _finalize_run(metrics, run_data, config, "pmid_list")
+        _record_and_notify(config, run_data)
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())
