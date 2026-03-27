@@ -137,15 +137,31 @@ def validate_pmid(pmid: str) -> str:
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 
+# Models that support adaptive thinking (type: "adaptive").
+# All other models require manual thinking (type: "enabled" + budget_tokens).
+ADAPTIVE_THINKING_MODELS: Final[frozenset[str]] = frozenset(
+    {"claude-opus-4-6", "claude-sonnet-4-6"}
+)
+
+# Effort parameter support currently coincides with adaptive thinking.
+# Split into a separate frozenset if a future model breaks this invariant.
+EFFORT_CAPABLE_MODELS: Final[frozenset[str]] = ADAPTIVE_THINKING_MODELS
+
+# Tokens reserved for JSON response text when using manual thinking;
+# the remainder of llm_max_tokens is available to the thinking block.
+THINKING_OUTPUT_RESERVE: Final[int] = 8_000
+
+# Maximum output tokens per model — from Anthropic API docs.
+MODEL_MAX_OUTPUT_TOKENS: Final[dict[str, int]] = {
+    "claude-opus-4-6": 128_000,
+    "claude-sonnet-4-6": 64_000,
+    "claude-haiku-4-5-20251001": 64_000,
+}
+
 # Pricing per 1M tokens (input, output) — update when models change.
 MODEL_PRICING: Final[dict[str, tuple[float, float]]] = {
     "claude-opus-4-6": (5.0, 25.0),
     "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-opus-4-5-20251101": (5.0, 25.0),
-    "claude-opus-4-1-20250805": (15.0, 75.0),
-    "claude-opus-4-20250514": (15.0, 75.0),
-    "claude-sonnet-4-5-20250929": (3.0, 15.0),
-    "claude-sonnet-4-20250514": (3.0, 15.0),
     "claude-haiku-4-5-20251001": (1.0, 5.0),
 }
 
@@ -162,10 +178,11 @@ class PipelineConfig:
     llm_model: str = field(
         default_factory=lambda: _env_str("PIPELINE_LLM_MODEL", "claude-opus-4-6")
     )
+    # 0 = auto-resolve to model's maximum (see __post_init__).
     llm_max_tokens: int = field(
-        default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 64000)
+        default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 0)
     )
-    # Effort level for adaptive thinking: "high" (default), "low", or "max".
+    # Effort level: "high" (default), "low", "medium", or "max" (Opus 4.6 only).
     # Higher effort = deeper reasoning but more output tokens.
     llm_effort: str = field(
         default_factory=lambda: _env_str("PIPELINE_LLM_EFFORT", "high")
@@ -303,6 +320,12 @@ class PipelineConfig:
     email_admin: str = field(
         default_factory=lambda: _env_str("PIPELINE_EMAIL_ADMIN", "")
     )
+
+    def __post_init__(self) -> None:
+        if self.llm_max_tokens == 0:
+            self.llm_max_tokens = MODEL_MAX_OUTPUT_TOKENS.get(
+                self.llm_model, 64_000
+            )
 
     @property
     def model_version(self) -> str:

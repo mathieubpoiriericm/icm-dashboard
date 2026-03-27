@@ -5,6 +5,7 @@ from __future__ import annotations
 from pipeline.config import (
     ALLOWED_COLUMNS,
     ALLOWED_TABLES,
+    MODEL_MAX_OUTPUT_TOKENS,
     PROJECT_ROOT,
     VALID_GWAS_TRAITS,
     PipelineConfig,
@@ -18,9 +19,9 @@ class TestPipelineConfigDefaults:
         cfg = PipelineConfig()
         assert cfg.llm_model == "claude-opus-4-6"
 
-    def test_default_max_tokens(self):
+    def test_default_max_tokens_matches_model(self):
         cfg = PipelineConfig()
-        assert cfg.llm_max_tokens == 64_000
+        assert cfg.llm_max_tokens == MODEL_MAX_OUTPUT_TOKENS[cfg.llm_model]
 
     def test_default_effort(self):
         cfg = PipelineConfig()
@@ -65,9 +66,9 @@ class TestPipelineConfigEnvOverrides:
     """Verify env-var overrides via monkeypatch."""
 
     def test_override_llm_model(self, monkeypatch):
-        monkeypatch.setenv("PIPELINE_LLM_MODEL", "claude-sonnet-4-5-20250929")
+        monkeypatch.setenv("PIPELINE_LLM_MODEL", "claude-sonnet-4-6")
         cfg = PipelineConfig()
-        assert cfg.llm_model == "claude-sonnet-4-5-20250929"
+        assert cfg.llm_model == "claude-sonnet-4-6"
 
     def test_override_max_tokens(self, monkeypatch):
         monkeypatch.setenv("PIPELINE_LLM_MAX_TOKENS", "16000")

@@ -32,7 +32,7 @@ class TestEstimateCost:
         assert cost == pytest.approx(7.5)
 
     def test_sonnet_pricing(self):
-        cost = _estimate_cost("claude-sonnet-4-5-20250929", 1_000_000, 100_000)
+        cost = _estimate_cost("claude-sonnet-4-6", 1_000_000, 100_000)
         # $3/M input + $15/M output -> 3 + 1.5 = 4.5
         assert cost == pytest.approx(4.5)
 

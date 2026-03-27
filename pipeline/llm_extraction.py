@@ -3,13 +3,13 @@
 Extracts genes with putative causal links to cSVD from research papers
 using the Anthropic Claude API, with structured output validation.
 
-Uses the streaming API (required for adaptive thinking on Opus 4.6 when
-requests may exceed 10 minutes) with structured outputs (constrained
-decoding) for guaranteed valid JSON — replacing the previous manual JSON
-schema prompting approach.
+Uses the streaming API with structured outputs (constrained decoding)
+for guaranteed valid JSON. Adaptive thinking for Opus 4.6 / Sonnet 4.6;
+manual thinking (budget_tokens) for older models.
 
 Features:
-- Streaming API for long-running adaptive thinking requests
+- Streaming API for long-running thinking requests
+- Adaptive or manual thinking based on model capability
 - Structured outputs via output_config for guaranteed valid JSON
 - Prompt caching (system + static instructions cached across calls)
 - Token-bucket rate limiting (proactive, not reactive)
@@ -30,7 +30,12 @@ import httpx
 from anthropic import transform_schema
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from pipeline.config import PipelineConfig
+from pipeline.config import (
+    ADAPTIVE_THINKING_MODELS,
+    EFFORT_CAPABLE_MODELS,
+    THINKING_OUTPUT_RESERVE,
+    PipelineConfig,
+)
 from pipeline.prompts import build_extraction_messages
 from pipeline.quality_metrics import TokenUsage, accumulate_usage
 from pipeline.rate_limiter import AsyncRateLimiter
@@ -172,6 +177,33 @@ async def extract_from_paper(
         prompt_version=config.prompt_version,
     )
 
+    # Build stream kwargs once — all inputs are constant across retries.
+    if config.llm_model in ADAPTIVE_THINKING_MODELS:
+        thinking_config: dict[str, Any] = {"type": "adaptive"}
+    else:
+        budget = max(
+            config.llm_max_tokens - THINKING_OUTPUT_RESERVE,
+            config.llm_max_tokens // 2,
+        )
+        thinking_config = {"type": "enabled", "budget_tokens": budget}
+
+    # "high" is the API default — only transmit when overridden.
+    output_config = dict(_OUTPUT_CONFIG)
+    if (
+        config.llm_model in EFFORT_CAPABLE_MODELS
+        and config.llm_effort != "high"
+    ):
+        output_config["effort"] = config.llm_effort
+
+    stream_kwargs: dict[str, Any] = {
+        "model": config.llm_model,
+        "max_tokens": config.llm_max_tokens,
+        "system": system_blocks,
+        "messages": messages,
+        "thinking": thinking_config,
+        "output_config": output_config,
+    }
+
     rate_limit_retries = 0
     validation_retries = 0
     connection_retries = 0
@@ -184,22 +216,6 @@ async def extract_from_paper(
                 request_id = await rate_limiter.acquire(
                     estimated_tokens=config.estimated_tokens_per_call
                 )
-
-            # Build streaming kwargs — adaptive thinking dynamically
-            # allocates reasoning depth per request.
-            output_config = dict(_OUTPUT_CONFIG)
-            if config.llm_effort != "high":
-                # "high" is the API default — only send when overridden
-                output_config["effort"] = config.llm_effort
-
-            stream_kwargs: dict[str, Any] = {
-                "model": config.llm_model,
-                "max_tokens": config.llm_max_tokens,
-                "system": system_blocks,
-                "messages": messages,
-                "thinking": {"type": "adaptive"},
-                "output_config": output_config,
-            }
 
             stream_start = time.monotonic()
             async with client.messages.stream(**stream_kwargs) as stream:
