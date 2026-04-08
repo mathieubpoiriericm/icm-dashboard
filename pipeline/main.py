@@ -631,6 +631,7 @@ async def run_pipeline(
     try:
         # Step 1: Search PubMed for recent papers
         _report_stage(0)
+        print("##STAGE:search##", flush=True)
         logger.info("Step 1: Searching PubMed for recent SVD genetic papers...")
         all_pmids = await search_recent_papers(days_back)
         logger.info(f"  Found {len(all_pmids)} papers matching SVD genetic criteria")
@@ -641,6 +642,7 @@ async def run_pipeline(
 
         # Step 2: Filter out already-processed papers
         _report_stage(1)
+        print("##STAGE:retrieve##", flush=True)
         logger.info("Step 2: Filtering already-processed papers...")
         if dry_run or test_mode:
             existing_pmids: set[str] = set()
@@ -678,6 +680,7 @@ async def run_pipeline(
 
         # Step 3: Process papers concurrently
         _report_stage(2)
+        print("##STAGE:extract##", flush=True)
         logger.info("Step 3: Processing papers concurrently...")
         results = await process_papers_concurrently(
             new_pmids, metrics, config=config, rate_limiter=rate_limiter
@@ -696,6 +699,7 @@ async def run_pipeline(
 
         # Step 3.5: Batch validation (warning-only quality checks)
         _report_stage(3)
+        print("##STAGE:validate##", flush=True)
         batch_warnings: list[str] = []
         if all_genes:
             batch_warnings = batch_validate(all_genes)
@@ -735,6 +739,7 @@ async def run_pipeline(
 
         # Step 4: Merge into database
         _report_stage(4)
+        print("##STAGE:merge##", flush=True)
         logger.info("Step 4: Merging validated data into database...")
 
         # Reset sequences to avoid primary key conflicts
@@ -759,6 +764,7 @@ async def run_pipeline(
 
         # Finalize
         _report_stage(5)
+        print("##STAGE:sync##", flush=True)
 
         # Comprehensive report + rich summary
         total_duration = time.monotonic() - pipeline_start_time
