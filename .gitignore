@@ -14,7 +14,6 @@ __pycache__
 .vscode
 data/
 docs/other
-docs/pubmed-search-reference.tex
 logs
 .env
 .Renviron
