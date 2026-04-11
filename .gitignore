@@ -21,6 +21,11 @@ CLAUDE.md
 docs/superpowers
 rshiny_dashboard.code-workspace
 secrets-values.yaml
-tauri-app
 www/*min.css
 www/*min.js
+
+# Tauri standalone app for pipeline testing
+tauri-app
+
+# Python app for pipeline testing
+pipeline_app
