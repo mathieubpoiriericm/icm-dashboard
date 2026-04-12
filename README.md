@@ -18,7 +18,7 @@
 | | [![Orchestration](https://img.shields.io/badge/Orchestration-25_tests-brightgreen.svg)](#testing) |
 | | [![Notifications](https://img.shields.io/badge/Notifications-17_tests-brightgreen.svg)](#testing) |
 
-An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for Cerebral Small Vessel Disease (SVD), developed by Mathieu B. Poirier at the Paris Brain Institute (ICM).
+An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for cerebral small vessel disease (cSVD), developed at the Paris Brain Institute (ICM).
 
 ---
 
