@@ -18,7 +18,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.isort]
 known-first-party = ["pipeline"]
 
-[tool.pytest.ini_options]
+[tool.pytest]
 testpaths = ["tests/pipeline", "tests/pipeline_app"]
 pythonpath = ["."]
 asyncio_mode = "auto"
