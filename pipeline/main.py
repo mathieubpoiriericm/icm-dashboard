@@ -916,9 +916,22 @@ async def run_local_pdf_pipeline(
                     # Validation
                     validation_start = time.monotonic()
                     if skip_validation:
-                        validated_genes = genes
+                        # Still apply confidence threshold (cheap, local check)
+                        validated_genes = []
                         rejected_genes: list[RejectedGene] = []
-                        metrics.genes_validated += len(genes)
+                        for gene in genes:
+                            if gene.confidence < config.confidence_threshold:
+                                rejected_genes.append(RejectedGene(
+                                    gene=gene,
+                                    reasons=[
+                                        f"Low confidence: {gene.confidence:.2f}"
+                                        f" < {config.confidence_threshold}"
+                                    ],
+                                ))
+                                metrics.genes_rejected += 1
+                            else:
+                                validated_genes.append(gene)
+                                metrics.genes_validated += 1
                     else:
                         validated_genes, rejected_genes = await _validate_genes(
                             genes, metrics, config
@@ -1106,9 +1119,22 @@ async def run_pmid_pipeline(
                     # Validation
                     validation_start = time.monotonic()
                     if skip_validation:
-                        validated_genes = genes
+                        # Still apply confidence threshold (cheap, local check)
+                        validated_genes = []
                         rejected_genes: list[RejectedGene] = []
-                        metrics.genes_validated += len(genes)
+                        for gene in genes:
+                            if gene.confidence < config.confidence_threshold:
+                                rejected_genes.append(RejectedGene(
+                                    gene=gene,
+                                    reasons=[
+                                        f"Low confidence: {gene.confidence:.2f}"
+                                        f" < {config.confidence_threshold}"
+                                    ],
+                                ))
+                                metrics.genes_rejected += 1
+                            else:
+                                validated_genes.append(gene)
+                                metrics.genes_validated += 1
                     else:
                         validated_genes, rejected_genes = await _validate_genes(
                             genes, metrics, config
