@@ -34,6 +34,9 @@ RUN curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubec
     && install kubectl /usr/local/bin/ \
     && rm kubectl kubectl.sha256
 
+# Create directories needed at runtime and set ownership to match
+# K8s securityContext (runAsUser: 65534 / nobody)
+RUN mkdir -p /app/logs/log && chown -R 65534:65534 /app/logs
+
 # Run as non-root user
-RUN useradd -r -s /usr/sbin/nologin pipeline
-USER pipeline
+USER 65534
