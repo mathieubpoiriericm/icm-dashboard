@@ -27,7 +27,7 @@ from pipeline.report import (
 
 class TestEstimateCost:
     def test_opus_pricing(self):
-        cost = _estimate_cost("claude-opus-4-6", 1_000_000, 100_000)
+        cost = _estimate_cost("claude-opus-4-7", 1_000_000, 100_000)
         # $5/M input + $25/M output -> 5 + 2.5 = 7.5
         assert cost == pytest.approx(7.5)
 
@@ -40,11 +40,11 @@ class TestEstimateCost:
         assert _estimate_cost("unknown-model", 1000, 500) is None
 
     def test_zero_tokens(self):
-        cost = _estimate_cost("claude-opus-4-6", 0, 0)
+        cost = _estimate_cost("claude-opus-4-7", 0, 0)
         assert cost == 0.0
 
     def test_small_cost(self):
-        cost = _estimate_cost("claude-opus-4-6", 1000, 500)
+        cost = _estimate_cost("claude-opus-4-7", 1000, 500)
         assert cost is not None
         assert cost > 0
         assert cost < 0.1
@@ -228,7 +228,7 @@ class TestPrintRichSummary:
     def test_smoke_with_data(self):
         data = {
             "pipeline_config": {
-                "model": "claude-opus-4-6",
+                "model": "claude-opus-4-7",
                 "dry_run": False,
                 "days_back": 7,
             },
@@ -459,7 +459,7 @@ class TestRejectedGeneSerialization:
 class TestPrintRichSummaryWithRejected:
     def test_smoke_with_rejected_genes(self):
         data = {
-            "pipeline_config": {"model": "claude-opus-4-6", "dry_run": False},
+            "pipeline_config": {"model": "claude-opus-4-7", "dry_run": False},
             "search": {},
             "papers": {},
             "genes": {

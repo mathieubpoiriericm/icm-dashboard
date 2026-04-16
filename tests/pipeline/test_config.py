@@ -17,7 +17,7 @@ class TestPipelineConfigDefaults:
 
     def test_default_model(self):
         cfg = PipelineConfig()
-        assert cfg.llm_model == "claude-opus-4-6"
+        assert cfg.llm_model == "claude-opus-4-7"
 
     def test_default_max_tokens_matches_model(self):
         cfg = PipelineConfig()

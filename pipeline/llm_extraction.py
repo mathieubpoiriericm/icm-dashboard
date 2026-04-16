@@ -4,8 +4,9 @@ Extracts genes with putative causal links to cSVD from research papers
 using the Anthropic Claude API, with structured output validation.
 
 Uses the streaming API with structured outputs (constrained decoding)
-for guaranteed valid JSON. Adaptive thinking for Opus 4.6 / Sonnet 4.6;
-manual thinking (budget_tokens) for older models.
+for guaranteed valid JSON. Adaptive thinking for models in
+ADAPTIVE_THINKING_MODELS; manual thinking (budget_tokens) for older
+models.
 
 Features:
 - Streaming API for long-running thinking requests
@@ -145,9 +146,9 @@ async def extract_from_paper(
 ) -> tuple[list[GeneEntry], TokenUsage]:
     """Extract genes using Claude API with streaming and Pydantic validation.
 
-    Uses the Anthropic streaming API (required for adaptive thinking on
-    Opus 4.6 when requests may exceed 10 minutes) with JSON schema
-    prompting and Pydantic validation.
+    Uses the Anthropic streaming API (required for adaptive thinking
+    when requests may exceed 10 minutes) with JSON schema prompting
+    and Pydantic validation.
 
     Args:
         text: Full text content of the paper.
@@ -179,7 +180,13 @@ async def extract_from_paper(
 
     # Build stream kwargs once — all inputs are constant across retries.
     if config.llm_model in ADAPTIVE_THINKING_MODELS:
-        thinking_config: dict[str, Any] = {"type": "adaptive"}
+        # "summarized" keeps thinking blocks populated for the char-ratio
+        # estimator below — otherwise models that default to "omitted"
+        # return empty thinking text and the split collapses to all-text.
+        thinking_config: dict[str, Any] = {
+            "type": "adaptive",
+            "display": "summarized",
+        }
     else:
         budget = max(
             config.llm_max_tokens - THINKING_OUTPUT_RESERVE,

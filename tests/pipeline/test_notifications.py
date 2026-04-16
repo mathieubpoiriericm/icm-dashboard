@@ -26,7 +26,7 @@ def _make_run_data(
 ):
     """Return a minimal PipelineRunData dict."""
     cfg = {
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-4-7",
         "effort": "high",
     }
     if mode is not None:

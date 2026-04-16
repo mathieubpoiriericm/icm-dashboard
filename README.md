@@ -97,7 +97,7 @@ This dashboard provides up-to-date and standardized information on:
 | Visualization | Custom SVG ([python_plot.py](scripts/python_plot.py)), [Leaflet](https://github.com/rstudio/leaflet) marker clusters |
 | Data Processing (R) | [data.table](https://github.com/Rdatatable/data.table), [fastmap](https://github.com/r-lib/fastmap), [memoise](https://github.com/r-lib/memoise), [cachem](https://github.com/r-lib/cachem), [qs](https://github.com/qsbase/qs) |
 | Data Processing (Python) | [pandas](https://github.com/pandas-dev/pandas), [Pydantic v2](https://github.com/pydantic/pydantic), [Pandera](https://github.com/unionai-oss/pandera) |
-| LLM Extraction | [Anthropic Claude Opus 4.6](https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-6) (streaming with adaptive thinking) |
+| LLM Extraction | [Anthropic Claude Opus 4.7](https://platform.claude.com/docs/en/about-claude/models/migration-guide) (streaming with adaptive thinking) |
 | ETL Pipeline | [Python 3.14+](https://www.python.org/), [httpx](https://github.com/encode/httpx), [Biopython](https://github.com/biopython/biopython), [lxml](https://github.com/lxml/lxml), [PyMuPDF](https://github.com/pymupdf/PyMuPDF), [Rich](https://github.com/Textualize/rich) |
 | Bioinformatics (R) | [biomaRt](https://bioconductor.org/packages/biomaRt/), [UniprotR](https://github.com/Proteomicslab57357/UniprotR), [rentrez](https://github.com/ropensci/rentrez), [RefManageR](https://github.com/ropensci/RefManageR) |
 | Database | [PostgreSQL 18+](https://www.postgresql.org/), [asyncpg](https://github.com/MagicStack/asyncpg), [RPostgres](https://github.com/r-dbi/RPostgres), [Alembic](https://github.com/sqlalchemy/alembic) |
@@ -777,7 +777,7 @@ The prompt uses a two-part architecture defined in `pipeline/prompts.py`: a syst
 
 | Decision | Configuration | Rationale |
 | ---------- | -------------- | ----------- |
-| Model | `claude-opus-4-6` | Most capable model for complex multi-evidence gene extraction requiring domain expertise |
+| Model | `claude-opus-4-7` | Most capable model for complex multi-evidence gene extraction requiring domain expertise |
 | Streaming | `client.messages.stream()` | Required for adaptive thinking requests that may exceed 10 minutes; raw `AsyncAnthropic` used instead of Instructor because Instructor doesn't support streaming |
 | Adaptive thinking | `thinking: {"type": "adaptive"}` | [Adaptive thinking](https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking): "reliably drives better performance than extended thinking with a fixed `budget_tokens`"; dynamically allocates reasoning depth per paper |
 | Effort level | `"high"` (default) | Balances reasoning depth with token cost. Only sent to API when overridden (since `"high"` is the API default) |
@@ -823,7 +823,7 @@ LLM output feeds into a 3-stage validation pipeline (`pipeline/validation.py`):
 
 | Model | Input (per 1M tokens) | Output (per 1M tokens) |
 | ----- | --------------------- | ---------------------- |
-| Claude Opus 4.6 | $5.00 | $25.00 |
+| Claude Opus 4.7 | $5.00 | $25.00 |
 
 **Prompt caching multipliers**: cache writes at 2x base input price ($10.00/MTok), cache reads at 0.1x ($0.50/MTok). After the first paper, subsequent papers in the same 1-hour window benefit from cached system blocks.
 
@@ -837,7 +837,7 @@ All LLM-related environment variables (from `pipeline/config.py`):
 
 | Variable | Default | Description |
 | ---------- | --------- | ------------- |
-| `PIPELINE_LLM_MODEL` | `claude-opus-4-6` | Model identifier |
+| `PIPELINE_LLM_MODEL` | `claude-opus-4-7` | Model identifier |
 | `PIPELINE_LLM_MAX_TOKENS` | `64000` | Max output tokens |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort (`low` / `high` / `max`) |
 | `PIPELINE_MAX_PAPER_TEXT_CHARS` | `100000` | Paper text truncation limit (chars) |

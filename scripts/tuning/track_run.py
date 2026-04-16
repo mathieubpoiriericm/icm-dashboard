@@ -76,7 +76,7 @@ _MODEL_VERSION_RE = re.compile(r"claude-(?:opus|sonnet|haiku)-(\d+)-(\d+)")
 
 
 def _extract_model_version(model: str) -> str:
-    """Extract short version from model name (e.g. 'claude-opus-4-6' -> '4.6')."""
+    """Extract short version from model name (e.g. 'claude-opus-4-7' -> '4.7')."""
     m = _MODEL_VERSION_RE.search(model)
     return f"{m.group(1)}.{m.group(2)}" if m else "unknown"
 

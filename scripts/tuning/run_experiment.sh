@@ -30,7 +30,7 @@
 #   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"                    # low effort
 #   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var"                 # 3 repeats
 #   ./scripts/tuning/run_experiment.sh 0.7 "v2" data/test_data/pdf/36180795.pdf
-#   PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh     # use Opus
+#   PIPELINE_LLM_MODEL=claude-opus-4-7 ./scripts/tuning/run_experiment.sh     # use Opus
 
 set -euo pipefail
 
@@ -75,7 +75,7 @@ Examples:
   ./scripts/tuning/run_experiment.sh --fast 0.70 "quick"                    # low effort
   ./scripts/tuning/run_experiment.sh --repeats 3 0.70 "var"                 # 3 repeats
   ./scripts/tuning/run_experiment.sh 0.7 "v2" data/test_data/pdf/36180795.pdf
-  PIPELINE_LLM_MODEL=claude-opus-4-6 ./scripts/tuning/run_experiment.sh     # use Opus
+  PIPELINE_LLM_MODEL=claude-opus-4-7 ./scripts/tuning/run_experiment.sh     # use Opus
 EOF
       exit 0
       ;;

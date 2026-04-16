@@ -140,7 +140,7 @@ PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 # Models that support adaptive thinking (type: "adaptive").
 # All other models require manual thinking (type: "enabled" + budget_tokens).
 ADAPTIVE_THINKING_MODELS: Final[frozenset[str]] = frozenset(
-    {"claude-opus-4-6", "claude-sonnet-4-6"}
+    {"claude-opus-4-7", "claude-sonnet-4-6"}
 )
 
 # Effort parameter support currently coincides with adaptive thinking.
@@ -153,14 +153,14 @@ THINKING_OUTPUT_RESERVE: Final[int] = 8_000
 
 # Maximum output tokens per model — from Anthropic API docs.
 MODEL_MAX_OUTPUT_TOKENS: Final[dict[str, int]] = {
-    "claude-opus-4-6": 128_000,
+    "claude-opus-4-7": 128_000,
     "claude-sonnet-4-6": 64_000,
     "claude-haiku-4-5-20251001": 64_000,
 }
 
 # Pricing per 1M tokens (input, output) — update when models change.
 MODEL_PRICING: Final[dict[str, tuple[float, float]]] = {
-    "claude-opus-4-6": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-haiku-4-5-20251001": (1.0, 5.0),
 }
@@ -176,14 +176,14 @@ class PipelineConfig:
 
     # --- LLM settings ---
     llm_model: str = field(
-        default_factory=lambda: _env_str("PIPELINE_LLM_MODEL", "claude-opus-4-6")
+        default_factory=lambda: _env_str("PIPELINE_LLM_MODEL", "claude-opus-4-7")
     )
     # 0 = auto-resolve to model's maximum (see __post_init__).
     llm_max_tokens: int = field(
         default_factory=lambda: _env_int("PIPELINE_LLM_MAX_TOKENS", 0)
     )
-    # Effort level: "high" (default), "low", "medium", or "max" (Opus 4.6 only).
-    # Higher effort = deeper reasoning but more output tokens.
+    # Effort level: "high" (default), "low", "medium", "xhigh", or "max".
+    # "xhigh" and "max" are Opus-tier only.
     llm_effort: str = field(
         default_factory=lambda: _env_str("PIPELINE_LLM_EFFORT", "high")
     )
@@ -224,8 +224,9 @@ class PipelineConfig:
     )
 
     # Estimated total tokens per LLM call (for rate limiter TPM tracking).
-    # With Opus 4.6 adaptive thinking at high effort:
-    # ~15K input + variable thinking + ~4K output.
+    # Rough pre-call budget (~15K input + variable thinking + ~4K text);
+    # the rate limiter self-corrects via record_actual_usage() after
+    # each call.
     estimated_tokens_per_call: int = field(
         default_factory=lambda: _env_int("PIPELINE_ESTIMATED_TOKENS_PER_CALL", 40_000)
     )
@@ -308,7 +309,7 @@ class PipelineConfig:
 
     @property
     def model_version(self) -> str:
-        """Extract short version from llm_model (e.g. 'claude-opus-4-6' -> '4.6')."""
+        """Extract short version from llm_model (e.g. 'claude-opus-4-7' -> '4.7')."""
         m = re.search(r"claude-(?:opus|sonnet|haiku)-(\d+)-(\d+)", self.llm_model)
         return f"{m.group(1)}.{m.group(2)}" if m else "unknown"
 

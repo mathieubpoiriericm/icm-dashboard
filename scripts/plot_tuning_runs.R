@@ -29,7 +29,7 @@ runs <- runs |>
   mutate(
     run_label = paste0("Run ", run_id),
     run_short = as.character(run_id),
-    # Extract model family from full model name (e.g. "claude-opus-4-6" -> "Opus")
+    # Extract model family from full model name (e.g. "claude-opus-4-7" -> "Opus")
     model_family = dplyr::case_when(
       grepl("opus", llm_model, ignore.case = TRUE)   ~ "Opus",
       grepl("sonnet", llm_model, ignore.case = TRUE)  ~ "Sonnet",

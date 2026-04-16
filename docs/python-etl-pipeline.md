@@ -70,7 +70,7 @@ Sends the retrieved text to the Anthropic Claude API and parses the response int
 
 **API configuration.**
 
-- Model: `claude-opus-4-6` (configurable via `PIPELINE_LLM_MODEL`)
+- Model: `claude-opus-4-7` (configurable via `PIPELINE_LLM_MODEL`)
 - Max output tokens: 32,000
 - Adaptive thinking: `{"type": "adaptive"}` -- the model dynamically allocates reasoning depth per request
 - Structured output: `output_config` with `json_schema` format using `transform_schema(ExtractionResult)` for constrained decoding (guaranteed valid JSON)
@@ -256,7 +256,7 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `PIPELINE_LLM_MODEL` | `claude-opus-4-6` | Anthropic model ID |
+| `PIPELINE_LLM_MODEL` | `claude-opus-4-7` | Anthropic model ID |
 | `PIPELINE_LLM_MAX_TOKENS` | `32000` | Maximum output tokens per call |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort level (`low`, `high`, `max`) |
 | `PIPELINE_MAX_PAPER_TEXT_CHARS` | `100000` | Max chars of paper text sent to the LLM |
