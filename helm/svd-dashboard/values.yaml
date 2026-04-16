@@ -151,7 +151,7 @@ monitoring:
 # victoria-logs deployed separately (e.g. in a 'monitoring' namespace).
 observability:
   prometheus:
-    enabled: false
+    enabled: true
   victoriaLogs:
     enabled: true
     datasource:
@@ -167,7 +167,7 @@ observability:
   # create an ExternalName service and ingress rule for Grafana.
   grafana:
     external:
-      enabled: true
+      enabled: false
       namespace: monitoring
       serviceName: prometheus-grafana
       port: 80
