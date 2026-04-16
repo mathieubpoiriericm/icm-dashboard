@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from pipeline.data_merger import (
-    _build_gene_data,
+    _build_combined_gene_data,
     dedupe_list,
     ensure_list,
     format_omics,
     merge_gene_entries,
 )
+
+
+def _build_gene_data(entry):
+    """Test helper: build DB row for a single entry."""
+    return _build_combined_gene_data([entry])
 
 # ---------------------------------------------------------------------------
 # ensure_list
@@ -180,10 +185,25 @@ class TestMergeGeneEntries:
         assert result["updated"] == 1
 
     async def test_deduplicates_within_batch(self, make_gene_entry, mocker):
-        """Two entries with same gene symbol should not both be inserted."""
+        """Entries with same gene symbol are merged into a single DB row.
+
+        This prevents data loss that would otherwise occur if the two entries
+        raced as INSERT then UPDATE, where the UPDATE would overwrite the
+        first entry's gwas_trait/omics with the second's values.
+        """
         entries = [
-            make_gene_entry(gene_symbol="NOTCH3", pmid="111"),
-            make_gene_entry(gene_symbol="NOTCH3", pmid="222"),
+            make_gene_entry(
+                gene_symbol="NOTCH3",
+                pmid="111",
+                gwas_trait=["WMH"],
+                omics_evidence=["TWAS"],
+            ),
+            make_gene_entry(
+                gene_symbol="NOTCH3",
+                pmid="222",
+                gwas_trait=["SVS"],
+                omics_evidence=["PWAS"],
+            ),
         ]
         mocker.patch(
             "pipeline.data_merger.get_existing_genes",
@@ -191,12 +211,21 @@ class TestMergeGeneEntries:
         )
         mock_merge = mocker.patch(
             "pipeline.data_merger.merge_genes_transactional",
-            return_value=(1, 1),
+            return_value=(1, 0),
         )
         await merge_gene_entries(entries)
-        # First NOTCH3 -> insert, second -> update (because first adds to set)
+        # Both NOTCH3 entries collapse into a single insert row whose fields
+        # are the union of the per-entry values.
         call_args = mock_merge.call_args
         to_insert = call_args[0][0]
         to_update = call_args[0][1]
         assert len(to_insert) == 1
-        assert len(to_update) == 1
+        assert len(to_update) == 0
+        merged = to_insert[0]
+        assert merged["gene"] == "NOTCH3"
+        assert "WMH" in merged["gwas_trait"]
+        assert "SVS" in merged["gwas_trait"]
+        assert "TWAS*" in merged["evidence_from_other_omics_studies"]
+        assert "PWAS*" in merged["evidence_from_other_omics_studies"]
+        assert "111" in merged["references"]
+        assert "222" in merged["references"]

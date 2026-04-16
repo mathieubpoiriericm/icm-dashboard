@@ -58,8 +58,12 @@ class TestExtractPmidsFromText:
     def test_ignores_6_digit(self):
         assert extract_pmids_from_text("123456") == []
 
-    def test_ignores_9_digit(self):
-        assert extract_pmids_from_text("123456789") == []
+    def test_accepts_9_digit(self):
+        # 9-digit PMIDs are valid (config.PMID_PATTERN allows 1-9 digits)
+        assert extract_pmids_from_text("123456789") == ["123456789"]
+
+    def test_ignores_10_digit(self):
+        assert extract_pmids_from_text("1234567890") == []
 
 
 # ---------------------------------------------------------------------------

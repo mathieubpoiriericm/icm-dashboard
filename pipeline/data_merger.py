@@ -78,28 +78,40 @@ def format_omics(evidence: Sequence[str]) -> str:
     return ";".join(f"{e}*" for e in evidence) + ";" if evidence else ""
 
 
-def _build_gene_data(entry: GeneEntry) -> dict[str, Any]:
-    """Transform pipeline entry to database schema format.
+def _build_combined_gene_data(entries: Sequence[GeneEntry]) -> dict[str, Any]:
+    """Combine one or more entries for the same gene into a single DB row.
 
-    Args:
-        entry: Gene entry from LLM extraction/validation.
-
-    Returns:
-        Dictionary matching database schema.
+    When a batch contains multiple entries for the same gene (e.g. mentions
+    in several papers), the per-field values are merged/deduped rather than
+    overwriting one another.
     """
+    first = entries[0]
+    all_gwas: list[str] = []
+    all_omics: list[str] = []
+    all_pmids: list[str] = []
+    protein_name: str | None = None
+    has_mr = False
+    for entry in entries:
+        all_gwas.extend(entry.gwas_trait)
+        all_omics.extend(entry.omics_evidence)
+        if entry.pmid:
+            all_pmids.append(entry.pmid)
+        if protein_name is None and entry.protein_name:
+            protein_name = entry.protein_name
+        if entry.mendelian_randomization:
+            has_mr = True
+
     return {
-        "protein": entry.protein_name or entry.gene_symbol,
-        "gene": entry.gene_symbol,
+        "protein": protein_name or first.gene_symbol,
+        "gene": first.gene_symbol,
         "chromosomal_location": "",
-        "gwas_trait": ", ".join(dedupe_list(ensure_list(entry.gwas_trait))),
-        "mendelian_randomization": "Y" if entry.mendelian_randomization else "",
-        "evidence_from_other_omics_studies": format_omics(
-            dedupe_list(ensure_list(entry.omics_evidence))
-        ),
+        "gwas_trait": ", ".join(dedupe_list(all_gwas)),
+        "mendelian_randomization": "Y" if has_mr else "",
+        "evidence_from_other_omics_studies": format_omics(dedupe_list(all_omics)),
         "link_to_monogenetic_disease": "",
         "brain_cell_types": "",
         "affected_pathway": "",
-        "references": entry.pmid,
+        "references": "; ".join(dedupe_list(all_pmids)),
     }
 
 
@@ -123,21 +135,23 @@ async def merge_gene_entries(new_entries: Sequence[GeneEntry]) -> MergeResult:
 
     existing_genes = await get_existing_genes()
 
-    # Partition entries into inserts vs updates
+    # Collapse per-gene duplicates in the batch before splitting into
+    # insert/update — otherwise the UPDATE would overwrite gwas_trait /
+    # omics / protein from the first occurrence.
+    grouped: dict[str, list[GeneEntry]] = {}
+    for entry in new_entries:
+        grouped.setdefault(entry.gene_symbol.upper(), []).append(entry)
+
     to_insert: list[dict[str, Any]] = []
     to_update: list[dict[str, Any]] = []
 
-    for entry in new_entries:
-        gene = entry.gene_symbol.upper()
-        gene_data = _build_gene_data(entry)
-
-        if gene in existing_genes:
+    for gene_upper, entries_for_gene in grouped.items():
+        gene_data = _build_combined_gene_data(entries_for_gene)
+        if gene_upper in existing_genes:
             to_update.append(gene_data)
         else:
             to_insert.append(gene_data)
-            existing_genes.add(gene)  # Prevent duplicates within batch
 
-    # Execute in a single transaction (atomic insert + update)
     inserted, updated = await merge_genes_transactional(to_insert, to_update)
 
     logger.info(f"Merged genes: {inserted} inserted, {updated} updated")

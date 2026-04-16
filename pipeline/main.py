@@ -441,18 +441,17 @@ async def process_paper(
     # Retrieve full text or abstract
     text_result = await get_fulltext(pmid, doi)
 
+    text = text_result.get("text")
+    if not text:
+        logger.warning(f"  No text available for PMID {pmid}, skipping")
+        return {"genes": [], "rejected_genes": [], "fulltext": False, "source": "none"}
+
     if text_result["fulltext"]:
         metrics.fulltext_retrieved += 1
         logger.info(f"  Retrieved full text from {text_result['source']}")
     else:
         metrics.abstract_only += 1
         logger.info("  Using abstract only")
-
-    # Skip if no text available
-    text = text_result.get("text")
-    if not text:
-        logger.warning(f"  No text available for PMID {pmid}, skipping")
-        return {"genes": [], "rejected_genes": [], "fulltext": False, "source": "none"}
 
     # Extract structured data using LLM (returns typed GeneEntry instances)
     genes, token_usage = await extract_from_paper(

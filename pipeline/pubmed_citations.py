@@ -11,7 +11,7 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 # NCBI_EFETCH_URL imported from pipeline.config
+# 7-digit floor avoids catching year-like tokens; 9 is the current PMID upper bound.
+_PMID_EXTRACT_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b(\d{7,9})\b")
 
 
 @dataclass(slots=True)
@@ -356,9 +358,8 @@ def extract_pmids_from_text(text: str) -> list[str]:
     if not text:
         return []
 
-    # Find all 7-8 digit numbers (typical PMID format)
-    pmids = re.findall(r"\b(\d{7,8})\b", text)
-    return list(dict.fromkeys(pmids))  # Preserve order, remove duplicates
+    pmids = _PMID_EXTRACT_PATTERN.findall(text)
+    return list(dict.fromkeys(pmids))
 
 
 # ---------------------------------------------------------------------------
