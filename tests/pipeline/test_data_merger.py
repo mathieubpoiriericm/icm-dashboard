@@ -5,7 +5,6 @@ from __future__ import annotations
 from pipeline.data_merger import (
     _build_combined_gene_data,
     dedupe_list,
-    ensure_list,
     format_omics,
     merge_gene_entries,
 )
@@ -14,33 +13,6 @@ from pipeline.data_merger import (
 def _build_gene_data(entry):
     """Test helper: build DB row for a single entry."""
     return _build_combined_gene_data([entry])
-
-# ---------------------------------------------------------------------------
-# ensure_list
-# ---------------------------------------------------------------------------
-
-
-class TestEnsureList:
-    def test_none_returns_empty(self):
-        assert ensure_list(None) == []
-
-    def test_string_returns_singleton(self):
-        assert ensure_list("WMH") == ["WMH"]
-
-    def test_list_passthrough(self):
-        assert ensure_list(["WMH", "SVS"]) == ["WMH", "SVS"]
-
-    def test_empty_list(self):
-        assert ensure_list([]) == []
-
-    def test_int_wrapped(self):
-        assert ensure_list(42) == [42]
-
-    def test_bool_wrapped(self):
-        assert ensure_list(True) == [True]
-
-    def test_empty_string(self):
-        assert ensure_list("") == [""]
 
 
 # ---------------------------------------------------------------------------

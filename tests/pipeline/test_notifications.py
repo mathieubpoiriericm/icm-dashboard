@@ -7,7 +7,6 @@ from pipeline.config import PipelineConfig
 from pipeline.notifications import (
     _build_template_context,
     _format_duration,
-    _render_html,
     _render_markdown,
     send_pipeline_notification,
 )
@@ -137,57 +136,6 @@ def test_send_notification_failure_graceful(mock_apprise_cls, caplog):
 # ---------------------------------------------------------------------------
 # Tests: template rendering
 # ---------------------------------------------------------------------------
-
-
-def test_render_html_standard():
-    """HTML rendering includes key sections for standard mode."""
-    run_data = _make_run_data(database={"inserted": 3, "updated": 1})
-    html = _render_html(run_data)
-    assert "Run Overview" in html
-    assert "Search Results" in html
-    assert "Papers" in html
-    assert "Genes" in html
-    assert "Database" in html
-    assert "Inserted" in html
-
-
-def test_render_html_local_pdf_excludes_search():
-    """Local PDF mode excludes Search and Database sections."""
-    html = _render_html(_make_run_data(mode="local_pdf"))
-    assert "Local PDF" in html
-    assert "Search Results" not in html
-    assert "Database" not in html
-
-
-def test_render_html_dryrun_excludes_database():
-    """Dry run mode excludes Database section."""
-    html = _render_html(_make_run_data(dry_run=True))
-    assert "Dry Run" in html
-    assert ">Database<" not in html
-
-
-def test_render_html_batch_warnings():
-    """Batch warnings appear in the HTML body."""
-    html = _render_html(_make_run_data(batch_warnings=["High gene duplication"]))
-    assert "High gene duplication" in html
-
-
-def test_render_html_missing_fulltext():
-    """Missing fulltext papers appear in the HTML body."""
-    papers = [
-        {
-            "pmid": "123",
-            "fulltext": False,
-            "source": "none",
-            "error": "No text",
-            "gene_count": 0,
-            "genes": [],
-            "processing_time": 1.0,
-        },
-    ]
-    html = _render_html(_make_run_data(papers_detail=papers))
-    assert "Missing Full-Text" in html
-    assert "123" in html
 
 
 def test_render_markdown_standard():

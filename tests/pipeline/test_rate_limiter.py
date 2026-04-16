@@ -82,7 +82,7 @@ class TestRecordActualUsage:
         """With request IDs, the correct entry is always updated."""
         rl = AsyncRateLimiter(rpm=10, tpm=100_000)
         id1 = await rl.acquire(estimated_tokens=5000)
-        id2 = await rl.acquire(estimated_tokens=5000)
+        await rl.acquire(estimated_tokens=5000)
         assert rl._token_total == 10_000
 
         # Correct the FIRST request, not the most recent

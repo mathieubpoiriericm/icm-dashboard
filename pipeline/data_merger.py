@@ -24,26 +24,6 @@ class MergeResult(TypedDict):
     updated: int
 
 
-def ensure_list[T](value: T | list[T] | None) -> list[Any]:
-    """Ensure value is a list (handles LLM returning string instead of list).
-
-    Args:
-        value: A single value, list of values, or None.
-
-    Returns:
-        List containing the value(s), or empty list if None.
-    """
-    match value:
-        case None:
-            return []
-        case str() as s:
-            return [s]
-        case list() as lst:
-            return lst
-        case _:
-            return [value]
-
-
 def dedupe_list[T](items: Sequence[T]) -> list[T]:
     """Remove duplicates from sequence while preserving order.
 

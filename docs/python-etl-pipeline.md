@@ -266,7 +266,6 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `PIPELINE_MAX_RETRIES` | `1` | Validation retry budget (JSON/Pydantic errors) |
-| `PIPELINE_RETRY_DELAY` | `2.0` | Base delay between validation retries (seconds) |
 | `PIPELINE_MAX_RATE_LIMIT_RETRIES` | `6` | Rate-limit (429) retry budget |
 | `PIPELINE_RATE_LIMIT_RETRY_DELAY` | `1.0` | Base delay for rate-limit backoff (seconds) |
 

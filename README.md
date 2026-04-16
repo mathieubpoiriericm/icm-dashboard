@@ -283,7 +283,6 @@ rshiny_dashboard/
 │   ├── quality_metrics.py        # Pipeline statistics tracking
 │   ├── rate_limiter.py           # Token-bucket rate limiter (RPM/TPM)
 │   ├── report.py                 # JSON/Rich CLI report generation
-│   ├── signals.py                # Unix signal handling
 │   ├── uniprot_fetch.py          # UniProt data fetching
 │   ├── validation.py             # NCBI gene verification & confidence filtering
 │   ├── alembic/                  # Database migrations (Alembic)
@@ -293,7 +292,6 @@ rshiny_dashboard/
 │   │       ├── 001_baseline_schema.py  # Initial database schema
 │   │       └── 002_add_upper_gene_index.py  # Upper gene name index
 │   └── templates/                # Jinja2 notification templates
-│       ├── digest.html.j2        # HTML notification template
 │       └── digest.md.j2          # Markdown notification template
 ├── scripts/
 │   ├── plot_tuning_runs.R        # Tuning experiment visualization
@@ -511,7 +509,6 @@ PyMuPDF>=1.23.0
 
 # Notifications
 apprise>=1.9.7
-blinker>=1.9.0
 tenacity>=9.1.4
 jinja2>=3.1.6
 

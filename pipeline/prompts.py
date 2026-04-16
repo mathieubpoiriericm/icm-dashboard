@@ -13,8 +13,6 @@ from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION: Final[str] = "v5"
-
 # ---------------------------------------------------------------------------
 # V1 prompts (original baseline)
 # ---------------------------------------------------------------------------

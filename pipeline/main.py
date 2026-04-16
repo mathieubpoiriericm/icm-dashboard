@@ -86,76 +86,76 @@ if __name__ == "__main__":
         pass
 # --- End fast path ---
 
-import asyncio  # noqa: E402
-import json  # noqa: E402
-import logging  # noqa: E402
-import time  # noqa: E402
-import traceback  # noqa: E402
-from dataclasses import dataclass, field  # noqa: E402
-from datetime import UTC, datetime  # noqa: E402
-from typing import Any, Final, TypedDict  # noqa: E402
+import asyncio
+import json
+import logging
+import time
+import traceback
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Final, TypedDict
 
-import httpx  # noqa: E402
-from lxml import etree  # type: ignore[import-untyped]  # noqa: E402
+import httpx
+from lxml import etree  # type: ignore[import-untyped]
 
 # Add project root to path for imports when running as script
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Load environment variables from .env file
-from dotenv import load_dotenv  # noqa: E402
+from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-import os  # noqa: E402
+import os
 
 # macOS Python framework builds may lack a default CA bundle at the compiled-in
 # OpenSSL path.  When SSL_CERT_FILE is not already set, point it at the certifi
 # bundle so that urllib/httpx/etc. can verify TLS certificates out of the box.
 if not os.environ.get("SSL_CERT_FILE"):
     try:
-        import certifi  # noqa: E402
+        import certifi
 
         os.environ["SSL_CERT_FILE"] = certifi.where()
     except ImportError:
         pass
 
-from pipeline.batch_validation import batch_validate  # noqa: E402
-from pipeline.config import (  # noqa: E402
+from pipeline.batch_validation import batch_validate
+from pipeline.config import (
     NCBI_EFETCH_URL,
     SAFE_XML_PARSER,
     PipelineConfig,
     validate_pmid,
 )
-from pipeline.data_merger import merge_gene_entries  # noqa: E402
-from pipeline.database import (  # noqa: E402
+from pipeline.data_merger import merge_gene_entries
+from pipeline.database import (
     Database,
     get_existing_pmids,
     record_pipeline_run,
     record_processed_pmids_batch,
     reset_sequence,
 )
-from pipeline.event_log import EventLog  # noqa: E402
-from pipeline.healthcheck import ping_failure, ping_start, ping_success  # noqa: E402
-from pipeline.llm_extraction import GeneEntry, extract_from_paper  # noqa: E402
-from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state  # noqa: E402
-from pipeline.notifications import send_pipeline_notification  # noqa: E402
-from pipeline.pdf_retrieval import (  # noqa: E402
+from pipeline.event_log import EventLog
+from pipeline.healthcheck import ping_failure, ping_start, ping_success
+from pipeline.llm_extraction import GeneEntry, extract_from_paper
+from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state
+from pipeline.notifications import send_pipeline_notification
+from pipeline.pdf_retrieval import (
     close_http_client,
     get_fulltext,
     parse_local_pdf,
 )
-from pipeline.pubmed_search import filter_new_pmids, search_recent_papers  # noqa: E402
-from pipeline.quality_metrics import PipelineMetrics, TokenUsage  # noqa: E402
-from pipeline.rate_limiter import AsyncRateLimiter  # noqa: E402
-from pipeline.report import (  # noqa: E402
+from pipeline.pubmed_search import filter_new_pmids, search_recent_papers
+from pipeline.quality_metrics import PipelineMetrics, TokenUsage
+from pipeline.rate_limiter import AsyncRateLimiter
+from pipeline.report import (
     build_local_pdf_run_data,
     build_pmid_run_data,
     build_run_data,
     print_rich_summary,
     write_comprehensive_report,
 )
-from pipeline.validation import (  # noqa: E402
+from pipeline.validation import (
     clear_gene_cache,
     close_validation_client,
     init_validation_state,
@@ -171,7 +171,7 @@ LOG_LOG_DIR = LOG_DIR / "log"
 LOG_LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%Hh%Mm%Ss')}.log"
 
-from rich.logging import RichHandler  # noqa: E402
+from rich.logging import RichHandler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -718,7 +718,6 @@ async def run_pipeline(
             run_data = build_run_data(
                 metrics,
                 results,
-                all_genes,
                 None,
                 batch_warnings,
                 config,
@@ -770,7 +769,6 @@ async def run_pipeline(
         run_data = build_run_data(
             metrics,
             results,
-            all_genes,
             gene_result,
             batch_warnings,
             config,
@@ -870,7 +868,7 @@ async def run_local_pdf_pipeline(
         semaphore = asyncio.Semaphore(config.max_concurrent_papers)
         progress = {"current": 0, "total": len(pdf_files)}
 
-        async def _process_pdf(idx: int, pdf_path: Path) -> PaperResult:
+        async def _process_pdf(pdf_path: Path) -> PaperResult:
             file_id = pdf_path.stem
             async with semaphore:
                 progress["current"] += 1
@@ -961,10 +959,7 @@ async def run_local_pdf_pipeline(
                     )
 
         async with asyncio.TaskGroup() as tg:
-            tasks = [
-                tg.create_task(_process_pdf(idx, pdf_path))
-                for idx, pdf_path in enumerate(pdf_files, 1)
-            ]
+            tasks = [tg.create_task(_process_pdf(pdf_path)) for pdf_path in pdf_files]
 
         results = [task.result() for task in tasks]
 
@@ -984,7 +979,6 @@ async def run_local_pdf_pipeline(
         run_data = build_local_pdf_run_data(
             metrics,
             results,
-            all_genes,
             batch_warnings,
             config,
             pdf_dir,
@@ -1188,7 +1182,6 @@ async def run_pmid_pipeline(
         run_data = build_pmid_run_data(
             metrics,
             results,
-            all_genes,
             batch_warnings,
             config,
             pmid_file,

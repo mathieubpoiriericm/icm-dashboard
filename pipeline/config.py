@@ -201,9 +201,6 @@ class PipelineConfig:
     max_retries: int = field(
         default_factory=lambda: _env_int("PIPELINE_MAX_RETRIES", 1)
     )
-    retry_delay: float = field(
-        default_factory=lambda: _env_float("PIPELINE_RETRY_DELAY", 2.0)
-    )
 
     # --- Rate-limit retry settings (429 errors) ---
     max_rate_limit_retries: int = field(
@@ -301,24 +298,6 @@ class PipelineConfig:
     )
     notify_retry_max_wait: float = field(
         default_factory=lambda: _env_float("PIPELINE_NOTIFY_RETRY_MAX_WAIT", 30.0)
-    )
-
-    # --- Legacy email fields (deprecated — use PIPELINE_NOTIFY_URLS instead) ---
-    email_host: str = field(default_factory=lambda: _env_str("PIPELINE_EMAIL_HOST", ""))
-    email_port: int = field(
-        default_factory=lambda: _env_int("PIPELINE_EMAIL_PORT", 587)
-    )
-    email_user: str = field(default_factory=lambda: _env_str("PIPELINE_EMAIL_USER", ""))
-    email_password: str = field(
-        default_factory=lambda: _env_str("PIPELINE_EMAIL_PASSWORD", "")
-    )
-    email_from: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_EMAIL_FROM", "noreply@svd-dashboard.org"
-        )
-    )
-    email_admin: str = field(
-        default_factory=lambda: _env_str("PIPELINE_EMAIL_ADMIN", "")
     )
 
     def __post_init__(self) -> None:

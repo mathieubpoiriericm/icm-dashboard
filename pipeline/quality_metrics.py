@@ -1,15 +1,12 @@
 """Pipeline quality metrics and token usage tracking.
 
 Provides lightweight, memory-efficient dataclasses for accumulating
-metrics during pipeline execution, plus a structured JSON report builder.
+metrics during pipeline execution.
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -105,69 +102,3 @@ class PipelineMetrics:
             return 0.0
         return self.fulltext_retrieved / total
 
-    @property
-    def total_genes_processed(self) -> int:
-        """Total genes that went through validation (validated + rejected)."""
-        return self.genes_validated + self.genes_rejected
-
-    def summary(self) -> str:
-        """Return formatted summary string for logging."""
-        lines = [
-            "Pipeline Metrics:",
-            f"  Papers: {self.papers_processed} processed "
-            f"({self.fulltext_retrieved} fulltext, {self.abstract_only} abstract-only)",
-            f"  Fulltext rate: {self.fulltext_rate:.1%}",
-            f"  Genes: {self.genes_extracted} extracted -> "
-            f"{self.genes_validated} validated, {self.genes_rejected} rejected",
-            f"  Gene acceptance rate: {self.gene_acceptance_rate:.1%}",
-        ]
-
-        tu = self.token_usage
-        if tu.total_tokens > 0:
-            lines.append(
-                f"  Tokens: {tu.input_tokens:,} input + {tu.output_tokens:,} output "
-                f"= {tu.total_tokens:,} total"
-            )
-            if tu.thinking_tokens > 0:
-                lines.append(
-                    f"  Output breakdown: ~{tu.thinking_tokens:,} thinking "
-                    f"+ ~{tu.text_output_tokens:,} text"
-                )
-            if tu.cache_read_input_tokens > 0 or tu.cache_creation_input_tokens > 0:
-                lines.append(
-                    f"  Cache: {tu.cache_read_input_tokens:,} read, "
-                    f"{tu.cache_creation_input_tokens:,} created "
-                    f"(hit rate: {tu.cache_hit_rate:.1%})"
-                )
-
-        return "\n".join(lines)
-
-    def build_report(self) -> dict[str, Any]:
-        """Build a structured report dict suitable for JSON serialisation."""
-        return {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "papers": {
-                "processed": self.papers_processed,
-                "fulltext_retrieved": self.fulltext_retrieved,
-                "abstract_only": self.abstract_only,
-                "fulltext_rate": round(self.fulltext_rate, 4),
-            },
-            "genes": {
-                "extracted": self.genes_extracted,
-                "validated": self.genes_validated,
-                "rejected": self.genes_rejected,
-                "acceptance_rate": round(self.gene_acceptance_rate, 4),
-            },
-            "token_usage": asdict(self.token_usage),
-        }
-
-    def write_json_report(self, log_dir: Path) -> Path:
-        """Write the structured report as JSON to *log_dir*.
-
-        Returns the path to the written file.
-        """
-        log_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
-        path = log_dir / f"pipeline_report_{stamp}.json"
-        path.write_text(json.dumps(self.build_report(), indent=2) + "\n")
-        return path

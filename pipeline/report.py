@@ -20,7 +20,6 @@ from rich.text import Text
 
 from pipeline.config import MODEL_PRICING, PipelineConfig
 from pipeline.data_merger import MergeResult
-from pipeline.llm_extraction import GeneEntry
 from pipeline.quality_metrics import PipelineMetrics
 
 logger = logging.getLogger(__name__)
@@ -195,7 +194,6 @@ def _build_common_run_data(
 def build_run_data(
     metrics: PipelineMetrics,
     results: list[Any],
-    all_genes: list[GeneEntry],
     gene_result: MergeResult | None,
     batch_warnings: list[str],
     config: PipelineConfig,
@@ -267,7 +265,6 @@ def _build_offline_run_data(
 def build_local_pdf_run_data(
     metrics: PipelineMetrics,
     results: list[Any],
-    all_genes: list[GeneEntry],
     batch_warnings: list[str],
     config: PipelineConfig,
     pdf_dir: Path,
@@ -285,7 +282,6 @@ def build_local_pdf_run_data(
 def build_pmid_run_data(
     metrics: PipelineMetrics,
     results: list[Any],
-    all_genes: list[GeneEntry],
     batch_warnings: list[str],
     config: PipelineConfig,
     pmid_file: Path,

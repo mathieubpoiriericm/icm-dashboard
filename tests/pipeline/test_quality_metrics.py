@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from pipeline.quality_metrics import (
     PipelineMetrics,
     TokenUsage,
@@ -147,53 +145,6 @@ class TestPipelineMetrics:
     def test_fulltext_rate_calculated(self, populated_metrics):
         # 7/10 = 0.7
         assert populated_metrics.fulltext_rate == pytest.approx(0.7)
-
-    def test_total_genes_processed(self, populated_metrics):
-        assert populated_metrics.total_genes_processed == 25  # 20 + 5
-
-    def test_summary_contains_key_info(self, populated_metrics):
-        s = populated_metrics.summary()
-        assert "Pipeline Metrics:" in s
-        assert "10 processed" in s
-        assert "25 extracted" in s
-        assert "20 validated" in s
-
-    def test_summary_includes_tokens(self, populated_metrics):
-        s = populated_metrics.summary()
-        assert "50,000 input" in s
-        assert "10,000 output" in s
-
-    def test_summary_includes_cache(self, populated_metrics):
-        s = populated_metrics.summary()
-        assert "Cache:" in s
-        assert "15,000 read" in s
-
-    def test_build_report_structure(self, populated_metrics):
-        report = populated_metrics.build_report()
-        assert "timestamp" in report
-        assert "papers" in report
-        assert "genes" in report
-        assert "token_usage" in report
-        assert report["papers"]["processed"] == 10
-        assert report["genes"]["validated"] == 20
-
-    def test_build_report_json_serializable(self, populated_metrics):
-        report = populated_metrics.build_report()
-        serialized = json.dumps(report)
-        assert isinstance(serialized, str)
-
-    def test_write_json_report(self, populated_metrics, tmp_path):
-        path = populated_metrics.write_json_report(tmp_path)
-        assert path.exists()
-        assert path.suffix == ".json"
-        data = json.loads(path.read_text())
-        assert data["papers"]["processed"] == 10
-
-    def test_write_json_report_creates_dir(self, populated_metrics, tmp_path):
-        log_dir = tmp_path / "nested" / "logs"
-        path = populated_metrics.write_json_report(log_dir)
-        assert path.exists()
-        assert log_dir.is_dir()
 
 
 import pytest  # noqa: E402

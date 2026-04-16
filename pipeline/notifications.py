@@ -1,8 +1,7 @@
 """Pipeline notification dispatch via Apprise.
 
-Replaces the legacy smtplib/email.mime layer with Apprise for
-multi-channel delivery (ntfy push + Gmail SMTP backup) and Jinja2
-for template rendering.
+Sends pipeline run digests via Apprise (multi-channel) using a
+Jinja2-rendered Markdown body.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import apprise
 import jinja2
+from apprise import NotifyFormat, NotifyType
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 _jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
-    autoescape=jinja2.select_autoescape(["html"]),
+    autoescape=False,
     trim_blocks=True,
     lstrip_blocks=True,
 )
@@ -57,39 +57,38 @@ def _format_duration(seconds: float) -> str:
     return f"{minutes}m {secs}s"
 
 
+_MODE_LABELS: dict[str | None, str] = {
+    "local_pdf": "Local PDF",
+    "pmid_list": "PMID List",
+    None: "Standard",
+}
+
+
+def _mode_label(cfg: dict[str, Any]) -> str:
+    """Human-readable label for a pipeline run mode."""
+    label = _MODE_LABELS.get(cfg.get("mode"), "Standard")
+    if cfg.get("dry_run"):
+        label += " (Dry Run)"
+    return label
+
+
 def _build_template_context(run_data: PipelineRunData) -> dict[str, Any]:
     """Extract template variables from PipelineRunData."""
     cfg = run_data.get("pipeline_config", {})
-    mode = cfg.get("mode")
-    is_standard = mode is None
-    is_dry_run = cfg.get("dry_run", False)
-
-    # Mode label
-    if mode == "local_pdf":
-        mode_label = "Local PDF"
-    elif mode == "pmid_list":
-        mode_label = "PMID List"
-    else:
-        mode_label = "Standard"
-    if is_dry_run:
-        mode_label += " (Dry Run)"
+    is_standard = cfg.get("mode") is None
+    mode_label = _mode_label(cfg)
 
     # Database visibility
     show_database = (
-        is_standard and not is_dry_run and run_data.get("database") is not None
+        is_standard
+        and not cfg.get("dry_run", False)
+        and run_data.get("database") is not None
     )
 
     # Cost string
     tu = run_data.get("token_usage", {})
     cost = tu.get("estimated_cost_usd")
     cost_str = f"${cost:.2f}" if cost is not None else "N/A"
-
-    # Missing fulltext papers
-    papers_detail = run_data.get("papers_detail", [])
-    missing = sorted(
-        [p for p in papers_detail if not p.get("fulltext")],
-        key=lambda x: x["pmid"],
-    )
 
     return {
         "mode_label": mode_label,
@@ -109,15 +108,7 @@ def _build_template_context(run_data: PipelineRunData) -> dict[str, Any]:
         "show_database": show_database,
         "database": run_data.get("database") or {},
         "batch_warnings": run_data.get("batch_validation_warnings", []),
-        "missing_fulltext": missing,
     }
-
-
-def _render_html(run_data: PipelineRunData) -> str:
-    """Render the HTML email body from run data."""
-    ctx = _build_template_context(run_data)
-    template = _jinja_env.get_template("digest.html.j2")
-    return template.render(ctx)
 
 
 def _render_markdown(run_data: PipelineRunData) -> str:
@@ -146,13 +137,12 @@ def _make_send_notification(config: PipelineConfig):
     def _send(
         title: str,
         body_text: str,
-        body_html: str,
-        notify_type: apprise.NotifyType = apprise.NotifyType.INFO,
+        notify_type: NotifyType = NotifyType.INFO,
     ) -> bool | None:
         return ap.notify(
             title=title,
             body=body_text,
-            body_format=apprise.NotifyFormat.MARKDOWN,
+            body_format=NotifyFormat.MARKDOWN,
             notify_type=notify_type,
         )
 
@@ -182,17 +172,7 @@ def send_pipeline_notification(
         )
         return
 
-    cfg = run_data.get("pipeline_config", {})
-    mode = cfg.get("mode")
-    if mode == "local_pdf":
-        mode_label = "Local PDF"
-    elif mode == "pmid_list":
-        mode_label = "PMID List"
-    else:
-        mode_label = "Standard"
-    if cfg.get("dry_run"):
-        mode_label += " (Dry Run)"
-
+    mode_label = _mode_label(run_data.get("pipeline_config", {}))
     date_str = datetime.now().strftime("%Y-%m-%d")
     title = f"[SVD Pipeline] Run Summary \u2014 {mode_label} ({date_str})"
 
@@ -200,11 +180,7 @@ def send_pipeline_notification(
 
     try:
         sender = _make_send_notification(config)
-        sender(title=title, body_text=body_md, body_html="")
+        sender(title=title, body_text=body_md)
         logger.info("Pipeline notification sent successfully")
     except Exception as exc:
         logger.error(f"Failed to send pipeline notification: {exc}")
-
-
-# Backwards-compatible alias
-send_pipeline_summary_email = send_pipeline_notification

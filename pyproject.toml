@@ -14,6 +14,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 "scripts/python_plot.py" = ["E501", "SIM108"]
 # LLM prompt strings — line wrapping breaks readability
 "pipeline/prompts.py" = ["E501"]
+# Fast-path for shell tab-completion requires heavy imports to load lazily
+# after argparse parsing, so module-level imports appear mid-file by design.
+"pipeline/main.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pipeline"]

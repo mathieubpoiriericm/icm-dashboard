@@ -35,10 +35,6 @@ class TestPipelineConfigDefaults:
         cfg = PipelineConfig()
         assert cfg.max_retries == 1
 
-    def test_default_retry_delay(self):
-        cfg = PipelineConfig()
-        assert cfg.retry_delay == 2.0
-
     def test_default_confidence_threshold(self):
         cfg = PipelineConfig()
         assert cfg.confidence_threshold == 0.65

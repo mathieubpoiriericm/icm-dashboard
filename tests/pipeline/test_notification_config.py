@@ -33,17 +33,3 @@ def test_notification_config_overrides(monkeypatch):
     assert cfg.notify_max_retries == 5
     assert cfg.notify_retry_min_wait == 2.0
     assert cfg.notify_retry_max_wait == 60.0
-
-
-def test_legacy_email_config_still_works(monkeypatch):
-    """Legacy email_* fields still exist for backwards compatibility."""
-    monkeypatch.delenv("PIPELINE_EMAIL_HOST", raising=False)
-    monkeypatch.delenv("PIPELINE_EMAIL_PORT", raising=False)
-    monkeypatch.delenv("PIPELINE_EMAIL_FROM", raising=False)
-    monkeypatch.delenv("PIPELINE_EMAIL_ADMIN", raising=False)
-
-    cfg = PipelineConfig()
-    assert cfg.email_host == ""
-    assert cfg.email_port == 587
-    assert cfg.email_from == "noreply@svd-dashboard.org"
-    assert cfg.email_admin == ""
