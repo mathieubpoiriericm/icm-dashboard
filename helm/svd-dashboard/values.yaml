@@ -122,7 +122,7 @@ monitoring:
   serviceMonitor:
     enabled: true
     labels:
-      release: prometheus
+      release: svd
     interval: 30s
   ingressNginx:
     enabled: true
@@ -209,6 +209,12 @@ secrets:
 kube-prometheus-stack:
   grafana:
     enabled: true
+    plugins:
+      - victoriametrics-logs-datasource
+    env:
+      GF_SERVER_ROOT_URL: https://grafana.matbpoirierk8shomelab.net/
+      GF_RENDERING_SERVER_URL: http://svd-svd-dashboard-grafana-image-renderer.svd.svc.cluster.local:8081/render
+      GF_RENDERING_CALLBACK_URL: http://svd-grafana.svd.svc.cluster.local:80/
   prometheusOperator:
     namespaces:
       releaseNamespace: true

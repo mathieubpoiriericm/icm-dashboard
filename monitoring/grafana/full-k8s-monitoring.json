@@ -3150,7 +3150,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(node_network_receive_bytes_total{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", device=~\"enp2s0\"}[$__rate_interval]) * 8",
+          "expr": "rate(node_network_receive_bytes_total{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", device=~\"ens18\"}[$__rate_interval]) * 8",
           "intervalFactor": 1,
           "legendFormat": "Rx: {{device}}",
           "refId": "A"
@@ -3160,7 +3160,7 @@
             "type": "prometheus",
             "uid": "$datasource"
           },
-          "expr": "rate(node_network_transmit_bytes_total{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", device=~\"enp2s0\"}[$__rate_interval]) * 8",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"node-exporter\", instance=\"$instance\", cluster=\"$cluster\", device=~\"ens18\"}[$__rate_interval]) * 8",
           "intervalFactor": 1,
           "legendFormat": "Tx: {{device}}",
           "refId": "B"
