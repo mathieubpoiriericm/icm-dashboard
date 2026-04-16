@@ -182,6 +182,9 @@ ingress:
     ntfy: ntfy.matbpoirierk8shomelab.net
     healthchecks: healthchecks.matbpoirierk8shomelab.net
     grafana: grafana.matbpoirierk8shomelab.net
+    prometheus: prometheus.matbpoirierk8shomelab.net
+    alertmanager: alertmanager.matbpoirierk8shomelab.net
+    victoriaLogs: victoria-logs.matbpoirierk8shomelab.net
   tls:
     enabled: true
     # Secret containing TLS certificate (create manually or via cert-manager)

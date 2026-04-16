@@ -24,6 +24,13 @@ spec:
         {{- if or .Values.observability.prometheus.enabled .Values.observability.grafana.external.enabled }}
         - {{ .Values.ingress.hosts.grafana }}
         {{- end }}
+        {{- if .Values.observability.prometheus.enabled }}
+        - {{ .Values.ingress.hosts.prometheus }}
+        - {{ .Values.ingress.hosts.alertmanager }}
+        {{- end }}
+        {{- if .Values.observability.victoriaLogs.enabled }}
+        - {{ .Values.ingress.hosts.victoriaLogs }}
+        {{- end }}
       {{- if .Values.ingress.tls.secretName }}
       secretName: {{ .Values.ingress.tls.secretName }}
       {{- end }}
@@ -85,5 +92,39 @@ spec:
                 name: {{ include "svd-dashboard.fullname" . }}-grafana-external
                 port:
                   number: {{ .Values.observability.grafana.external.port }}
+    {{- end }}
+    {{- if .Values.observability.prometheus.enabled }}
+    - host: {{ .Values.ingress.hosts.prometheus }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-kube-prometheus-stack-prometheus
+                port:
+                  number: 9090
+    - host: {{ .Values.ingress.hosts.alertmanager }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-kube-prometheus-stack-alertmanager
+                port:
+                  number: 9093
+    {{- end }}
+    {{- if .Values.observability.victoriaLogs.enabled }}
+    - host: {{ .Values.ingress.hosts.victoriaLogs }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-victoria-logs-single-server
+                port:
+                  number: 9428
     {{- end }}
 {{- end }}
