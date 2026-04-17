@@ -58,7 +58,22 @@ DATATABLE_SERVER_SIDE <- FALSE
 # This eliminates the delay when first accessing Clinical Trials tabs
 # Can be disabled via environment variable for memory-constrained environments:
 #   PRELOAD_TABLE2=FALSE docker run ...
-PRELOAD_TABLE2 <- as.logical(Sys.getenv("PRELOAD_TABLE2", unset = "TRUE"))
+# Accepts common truthy/falsy values (case-insensitive): true/false, yes/no,
+# 1/0, t/f. Unrecognized values default to TRUE with a warning — `as.logical()`
+# alone returns NA for "0"/"1"/"yes", which would crash `if (PRELOAD_TABLE2)`.
+PRELOAD_TABLE2 <- local({
+  raw <- tolower(trimws(Sys.getenv("PRELOAD_TABLE2", unset = "TRUE")))
+  if (raw %in% c("true", "t", "yes", "y", "1")) {
+    TRUE
+  } else if (raw %in% c("false", "f", "no", "n", "0")) {
+    FALSE
+  } else {
+    warning(sprintf(
+      "Unrecognized PRELOAD_TABLE2 value %s; defaulting to TRUE", dQuote(raw)
+    ))
+    TRUE
+  }
+})
 
 # =============================================================================
 # CACHE CONFIGURATION

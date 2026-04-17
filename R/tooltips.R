@@ -375,22 +375,29 @@ prepare_table1_display <- function(
 ) {
   table1_display <- as.data.frame(table1)
 
+  # Fail fast if schema drifts — tooltips depend on Gene/Protein by name
+  stopifnot(
+    "table1 must contain a 'Gene' column" = "Gene" %in% names(table1_display),
+    "table1 must contain a 'Protein' column" =
+      "Protein" %in% names(table1_display)
+  )
+
   # Extract original list columns before they're transformed to HTML
-  gene_names_orig <- table1_display[[1L]]
+  gene_names_orig <- table1_display[["Gene"]]
   gwas_orig <- table1_display[["GWAS Trait"]]
   omics_orig <- table1_display[["Evidence From Other Omics Studies"]]
 
   # Vectorized gene symbol tooltip
   # Store original gene names for sorting before HTML transformation
-  original_gene_names <- table1_display[[1L]]
+  original_gene_names <- table1_display[["Gene"]]
 
   # Pre-extract column names for sprintf (avoid repeated lookup)
   # Skip column 1 (Name) since it's redundant with the gene symbol being hovered
   gene_col_names <- names(gene_info_results_df)[2L:4L]
 
-  table1_display[[1L]] <- purrr::pmap_chr(
+  table1_display[["Gene"]] <- purrr::pmap_chr(
     list(
-      table1_display[[1L]],
+      table1_display[["Gene"]],
       seq_len(nrow(table1_display)),
       original_gene_names
     ),
@@ -408,11 +415,11 @@ prepare_table1_display <- function(
 
   # Vectorized protein tooltip (using fastmap for O(1) lookups)
   # Store original protein names for sorting before HTML transformation
-  original_protein_names <- table1_display[[2L]]
+  original_protein_names <- table1_display[["Protein"]]
 
-  table1_display[[2L]] <- purrr::pmap_chr(
+  table1_display[["Protein"]] <- purrr::pmap_chr(
     list(
-      table1_display[[2L]],
+      table1_display[["Protein"]],
       gene_names_orig,
       original_protein_names
     ),

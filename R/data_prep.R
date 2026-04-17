@@ -646,8 +646,10 @@ load_table2_data <- function() {
   # Extract gene symbols from gene_info_table2 (stored in "Name" column)
   gene_symbols_table2 <- gene_info_table2$Name
 
-  # Pre-compute sample sizes for histogram (avoids re-computing on each draw)
+  # Drop NAs so hist() doesn't warn on every render — trials with no
+  # Target Sample Size are excluded from the histogram entirely.
   sample_sizes <- table2$sample_size_numeric
+  sample_sizes <- sample_sizes[!is.na(sample_sizes)]
 
   # Pre-compute digest hash for histogram caching
   # (avoids recomputing digest on each render)

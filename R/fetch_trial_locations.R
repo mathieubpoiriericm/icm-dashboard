@@ -573,12 +573,8 @@ jitter_duplicate_coordinates <- function(map_data, radius = 0.003) {
     return(map_data)
   }
 
-
-  # Seed for deterministic jitter across sessions
-  set.seed(42L)
-  on.exit(set.seed(NULL), add = TRUE)
-
-  # Process each duplicate location
+  # Process each duplicate location. Offsets use deterministic sin/cos —
+  # no RNG involved, so no seed management needed.
   for (key in duplicate_keys) {
     indices <- which(coord_key == key)
     n <- length(indices)
@@ -623,8 +619,13 @@ prepare_map_data <- function(locations_df, table2) {
     return(empty_df)
   }
 
-  # Filter out rows with missing coordinates
-  has_coords <- !is.na(locations_df$lat) & !is.na(locations_df$lon)
+  # Filter out rows with missing or out-of-range coordinates. Leaflet
+  # silently misrenders values outside the valid geographic range, so reject
+  # them here.
+  has_coords <- !is.na(locations_df$lat) &
+    !is.na(locations_df$lon) &
+    locations_df$lat >= -90 & locations_df$lat <= 90 &
+    locations_df$lon >= -180 & locations_df$lon <= 180
   map_data <- locations_df[has_coords, ]
 
   if (nrow(map_data) == 0L) {

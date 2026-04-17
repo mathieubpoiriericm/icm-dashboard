@@ -163,11 +163,17 @@ build_map_stats <- function(map_data_reactive) {
   shiny::renderUI({
     map_data <- map_data_reactive()
 
-    # Show loading state when map data is not yet available
-    if (is.null(map_data) || nrow(map_data) == 0L) {
+    if (is.null(map_data)) {
       return(shiny::div(
         class = "map-stats",
         "Loading trial location data..."
+      ))
+    }
+
+    if (nrow(map_data) == 0L) {
+      return(shiny::div(
+        class = "map-stats",
+        "No trial locations available to display."
       ))
     }
 
