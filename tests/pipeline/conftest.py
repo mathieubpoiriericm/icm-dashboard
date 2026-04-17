@@ -13,7 +13,6 @@ if _project_root not in sys.path:
 import asyncio  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
 from typing import Any  # noqa: E402
-from unittest.mock import AsyncMock  # noqa: E402
 
 import pytest  # noqa: E402
 
@@ -101,17 +100,6 @@ def strict_config():
         confidence_threshold=0.9,
         max_retries=1,
         max_rate_limit_retries=1,
-    )
-
-
-@pytest.fixture
-def fast_config():
-    """Config with low limits for fast testing."""
-    return PipelineConfig(
-        max_concurrent_papers=2,
-        rpm_limit=5,
-        tpm_limit=10_000,
-        estimated_tokens_per_call=1000,
     )
 
 
@@ -213,22 +201,6 @@ def mock_anthropic_response():
             ),
             content=content,
         )
-
-    return _make
-
-
-@pytest.fixture
-def mock_stream_context(mock_anthropic_response):
-    """Factory for mock streaming context manager."""
-
-    def _make(response: MockAnthropicResponse | None = None):
-        if response is None:
-            response = mock_anthropic_response()
-        stream = AsyncMock()
-        stream.__aenter__.return_value = stream
-        stream.__aexit__.return_value = None
-        stream.get_final_message = AsyncMock(return_value=response)
-        return stream
 
     return _make
 

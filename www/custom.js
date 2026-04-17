@@ -124,18 +124,6 @@ $(document).on('shown.bs.tab', function(e) {
   }
 });
 
-// Python plot handling
-Shiny.addCustomMessageHandler('rerunPythonPlotSizing', function(msg) {
-  var iframe = document.querySelector('iframe[src="python_plot.html"]');
-  if (!iframe || !iframe.contentWindow) return;
-
-  var win = iframe.contentWindow;
-  if (typeof win.adjustLabelBackgrounds === 'function') win.adjustLabelBackgrounds();
-  if (typeof win.adjustLegendBox === 'function') win.adjustLegendBox();
-  if (typeof win.adjustLegendBoxMOA === 'function') win.adjustLegendBoxMOA();
-  if (typeof win.avoidCognitiveOverlap === 'function') win.avoidCognitiveOverlap();
-});
-
 // =============================================================================
 // UNIFIED DATATABLE EVENT HANDLERS
 // =============================================================================

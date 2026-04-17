@@ -3,15 +3,6 @@
 # nolint start: object_name_linter.
 
 # =============================================================================
-# DATA COLUMN INDICES
-# =============================================================================
-# Table 2 column positions (used in data_prep.R)
-# Column index for Trial Name in table2
-TABLE2_TRIAL_NAME_COL <- 5L
-# Column index for Primary Outcome in table2
-TABLE2_PRIMARY_OUTCOME_COL <- 12L
-
-# =============================================================================
 # SAMPLE SIZE FILTER BOUNDS
 # =============================================================================
 # These values represent the min/max target sample sizes in clinical trials

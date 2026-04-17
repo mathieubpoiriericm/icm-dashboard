@@ -28,11 +28,6 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     omics_type_rows <- app_data$omics_type_rows
 
     # =========================================================================
-    # PYTHON PLOT HANDLER
-    # =========================================================================
-    setup_python_plot_handler(input, session)
-
-    # =========================================================================
     # PIPELINE PROGRESS TRACKER
     # =========================================================================
     pipeline_progress_data <- shiny::reactiveFileReader(
@@ -278,29 +273,6 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     # =========================================================================
     configure_output_options(output)
   }
-}
-
-# Setup Python Plot Handler
-#
-# Configures the observer for resizing the Python visualization when
-# the Clinical Trials Visualization tab is accessed.
-#
-# Args:
-#   input: Shiny input object.
-#   session: Shiny session object.
-#
-# Returns:
-#   NULL (side effects only).
-setup_python_plot_handler <- function(input, session) {
-  shiny::observeEvent(
-    input$tabs,
-    {
-      if (identical(input$tabs, "Clinical Trials Visualization")) {
-        session$sendCustomMessage("rerunPythonPlotSizing", list())
-      }
-    },
-    ignoreNULL = FALSE
-  )
 }
 
 # Create Table 2 Reactive Values
