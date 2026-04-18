@@ -194,15 +194,27 @@ def build_env_vars(
     """Build the subprocess environment variables dict."""
     env = _base_env()
 
-    env["ANTHROPIC_API_KEY"] = secrets.anthropic_api_key
-    env["DB_HOST"] = secrets.db_host
-    env["DB_PORT"] = secrets.db_port
-    env["DB_NAME"] = secrets.db_name
-    env["DB_USER"] = secrets.db_user
-    env["DB_PASSWORD"] = secrets.db_password
-    env["NCBI_API_KEY"] = secrets.ncbi_api_key
-    env["ENTREZ_EMAIL"] = secrets.entrez_email
-    env["UNPAYWALL_EMAIL"] = secrets.unpaywall_email
+    # Skip empty-string secrets so the pipeline's os.environ.get()
+    # fallbacks (and library-level "missing env var" errors) behave
+    # normally instead of seeing "".
+    if secrets.anthropic_api_key:
+        env["ANTHROPIC_API_KEY"] = secrets.anthropic_api_key
+    if secrets.db_host:
+        env["DB_HOST"] = secrets.db_host
+    if secrets.db_port:
+        env["DB_PORT"] = secrets.db_port
+    if secrets.db_name:
+        env["DB_NAME"] = secrets.db_name
+    if secrets.db_user:
+        env["DB_USER"] = secrets.db_user
+    if secrets.db_password:
+        env["DB_PASSWORD"] = secrets.db_password
+    if secrets.ncbi_api_key:
+        env["NCBI_API_KEY"] = secrets.ncbi_api_key
+    if secrets.entrez_email:
+        env["ENTREZ_EMAIL"] = secrets.entrez_email
+    if secrets.unpaywall_email:
+        env["UNPAYWALL_EMAIL"] = secrets.unpaywall_email
 
     env["PIPELINE_LLM_MODEL"] = config.llm_model
     env["PIPELINE_LLM_EFFORT"] = config.llm_effort
@@ -689,6 +701,9 @@ class TuningRunner:
         self.stage_statuses = {s: "pending" for s in TUNING_STAGES}
         self.current_repeat = 0
         self.total_repeats = 0
+        # Clear any stale skip request so it can't leak into the first
+        # inter-stage wait of the next experiment.
+        self._skip_next = False
 
     def _emit_stdout(self, line: str) -> None:
         if len(self.log_lines) < MAX_LOG_LINES:

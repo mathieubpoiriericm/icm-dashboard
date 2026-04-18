@@ -178,10 +178,7 @@ def create_configure_run_page(
                 local_pdfs_fields.set_visibility(mode == "local_pdfs")
                 pmid_list_fields.set_visibility(mode == "pmid_list")
 
-            run_mode_select.on(
-                "update:model-value",
-                lambda _: _update_run_mode_fields(),
-            )
+            run_mode_select.on_value_change(lambda _: _update_run_mode_fields())
             _update_run_mode_fields()
 
             ui.separator().classes("nav-separator")

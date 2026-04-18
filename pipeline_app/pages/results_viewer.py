@@ -79,7 +79,9 @@ def _flatten_papers(
             entry.setdefault("pmid", pmid)
             genes.append(entry)
         for rg in p.get("rejected_genes", []):
-            gene = dict(rg.get("gene", {}))
+            # `or {}` covers both "gene" missing AND explicit null; plain
+            # dict.get default only fires on missing.
+            gene = dict(rg.get("gene") or {})
             gene.setdefault("pmid", pmid)
             reasons = rg.get("reasons", [])
             if isinstance(reasons, list):
