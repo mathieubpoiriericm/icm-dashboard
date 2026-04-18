@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pipeline.cache_utils import SyncResult as CTGSyncResult
 from pipeline.external_data_sync import (
     ExternalDataSyncResult,
     get_all_pmids,
@@ -35,9 +34,6 @@ class TestExternalDataSyncResult:
         assert r.pubmed_fetched == 0
         assert r.pubmed_cached == 0
         assert r.pubmed_failed == 0
-        assert r.ctg_fetched == 0
-        assert r.ctg_cached == 0
-        assert r.ctg_failed == 0
         assert r.errors == []
 
     def test_summary_format(self):
@@ -51,15 +47,14 @@ class TestExternalDataSyncResult:
             pubmed_fetched=20,
             pubmed_cached=50,
             pubmed_failed=0,
-            ctg_fetched=12,
-            ctg_cached=15,
-            ctg_failed=0,
         )
         s = r.summary()
         assert "NCBI: 5 fetched" in s
         assert "UniProt: 3 fetched" in s
         assert "PubMed: 20 fetched" in s
-        assert "ClinicalTrials.gov: 12 fetched" in s
+        # Clinical trials sync lives in its own pipeline now; the external
+        # data sync summary must not reference it.
+        assert "ClinicalTrials" not in s
 
 
 # ---------------------------------------------------------------------------
@@ -196,23 +191,12 @@ class TestGetAllPmids:
 def _mock_cleanup(mocker):
     """Mock all close/clear cleanup calls used in the finally block."""
     _mod = "pipeline.external_data_sync"
-    mocker.patch(f"{_mod}.close_ctg_client", new_callable=AsyncMock)
     mocker.patch(f"{_mod}.close_ncbi_client", new_callable=AsyncMock)
     mocker.patch(f"{_mod}.close_uniprot_client", new_callable=AsyncMock)
     mocker.patch(f"{_mod}.close_pubmed_client", new_callable=AsyncMock)
     mocker.patch(f"{_mod}.clear_ncbi_cache")
     mocker.patch(f"{_mod}.clear_uniprot_cache")
     mocker.patch(f"{_mod}.clear_pubmed_cache")
-
-
-def _mock_ctg_sync(mocker, *, fetched: int = 0, cached: int = 0, failed: int = 0):
-    """Mock the CTG sync call to a configurable result."""
-    return mocker.patch(
-        "pipeline.external_data_sync.sync_clinical_trials",
-        return_value=CTGSyncResult(
-            fetched=fetched, cached=cached, failed=failed, errors=[]
-        ),
-    )
 
 
 class TestSyncAllExternalData:
@@ -241,7 +225,6 @@ class TestSyncAllExternalData:
             "pipeline.external_data_sync.sync_pubmed_citations",
             return_value=PubMedSyncResult(fetched=1, cached=0, failed=0, errors=[]),
         )
-        _mock_ctg_sync(mocker)
         _mock_cleanup(mocker)
 
         result = await sync_all_external_data()
@@ -270,7 +253,6 @@ class TestSyncAllExternalData:
             "pipeline.external_data_sync.sync_uniprot_info",
             return_value=UniProtSyncResult(fetched=0, cached=0, failed=0, errors=[]),
         )
-        _mock_ctg_sync(mocker)
         _mock_cleanup(mocker)
 
         await sync_all_external_data()
@@ -302,12 +284,24 @@ class TestSyncAllExternalData:
         mock_pubmed = mocker.patch(
             "pipeline.external_data_sync.sync_pubmed_citations",
         )
-        _mock_ctg_sync(mocker)
         _mock_cleanup(mocker)
 
         result = await sync_all_external_data()
         mock_pubmed.assert_not_called()
         assert result.pubmed_fetched == 0
+
+    async def test_does_not_call_clinical_trials_sync(self):
+        """sync_all_external_data must not pull in the CT pipeline.
+
+        Clinical trial discovery is its own top-level pipeline
+        (``run_clinical_trials_pipeline``); importing or calling
+        ``sync_clinical_trials`` from this orchestrator would re-couple
+        them.
+        """
+        import pipeline.external_data_sync as mod
+
+        assert not hasattr(mod, "sync_clinical_trials")
+        assert not hasattr(mod, "close_ctg_client")
 
     async def test_errors_limited_with_truncation_message(self, mocker):
         mocker.patch(
@@ -335,7 +329,6 @@ class TestSyncAllExternalData:
             "pipeline.external_data_sync.sync_uniprot_info",
             return_value=UniProtSyncResult(fetched=0, cached=0, failed=0, errors=[]),
         )
-        _mock_ctg_sync(mocker)
         _mock_cleanup(mocker)
 
         result = await sync_all_external_data()
@@ -348,12 +341,7 @@ class TestSyncAllExternalData:
             "pipeline.external_data_sync.get_table1_gene_symbols",
             side_effect=RuntimeError("boom"),
         )
-        _mock_ctg_sync(mocker)
         _mod = "pipeline.external_data_sync"
-        mock_close_ctg = mocker.patch(
-            f"{_mod}.close_ctg_client",
-            new_callable=AsyncMock,
-        )
         mock_close_ncbi = mocker.patch(
             f"{_mod}.close_ncbi_client",
             new_callable=AsyncMock,
@@ -373,7 +361,6 @@ class TestSyncAllExternalData:
         with pytest.raises(RuntimeError, match="boom"):
             await sync_all_external_data()
 
-        mock_close_ctg.assert_called_once()
         mock_close_ncbi.assert_called_once()
         mock_close_uniprot.assert_called_once()
         mock_close_pubmed.assert_called_once()

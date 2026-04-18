@@ -3,16 +3,21 @@
 """
 Main entry point for the SVD Dashboard data pipeline.
 
-This script orchestrates:
-1. PubMed search for new SVD-related genetic papers
-2. Full-text/abstract retrieval
-3. LLM-based gene data extraction using Claude
-4. Validation against external databases
-5. Batch quality checks (Pandera)
-6. Merging validated data into PostgreSQL
+Runs one or more of three independently-selectable pipelines:
+
+- PubMed gene extraction (``--pubmed``, also the default when no flag is set)
+- ClinicalTrials.gov fetch (``--clinical-trials``)
+- External metadata enrichment: NCBI Gene, UniProt, PubMed citations
+  (``--sync-external-data``)
+
+Flags can be combined; selected pipelines run in sequence with a single
+healthcheck ping and notification per invocation.
 
 Usage:
     python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
+    python pipeline/main.py --clinical-trials
+    python pipeline/main.py --pubmed --clinical-trials
+    python pipeline/main.py --sync-external-data
     python pipeline/main.py --local-pdfs PATH [--skip-validation]
     python pipeline/main.py --pmids FILE [--skip-validation]
 """
@@ -47,9 +52,26 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--pubmed",
+        action="store_true",
+        help=(
+            "Explicitly run the PubMed gene extraction pipeline."
+            " Also runs by default when no pipeline selector flag is given."
+        ),
+    )
+    parser.add_argument(
+        "--clinical-trials",
+        action="store_true",
+        help="Run the ClinicalTrials.gov discovery pipeline.",
+    )
+    parser.add_argument(
         "--sync-external-data",
         action="store_true",
-        help="Sync external data (NCBI, UniProt, PubMed) for all genes in database",
+        help=(
+            "Sync external metadata (NCBI Gene, UniProt, PubMed citations)"
+            " for all genes in the database. Clinical trial discovery is"
+            " a separate pipeline (use --clinical-trials)."
+        ),
     )
     parser.add_argument(
         "--local-pdfs",
@@ -121,6 +143,7 @@ if not os.environ.get("SSL_CERT_FILE"):
         pass
 
 from pipeline.batch_validation import batch_validate
+from pipeline.clinical_trials_fetch import close_ctg_client, sync_clinical_trials
 from pipeline.config import (
     NCBI_EFETCH_URL,
     SAFE_XML_PARSER,
@@ -149,6 +172,7 @@ from pipeline.pubmed_search import filter_new_pmids, search_recent_papers
 from pipeline.quality_metrics import PipelineMetrics, TokenUsage
 from pipeline.rate_limiter import AsyncRateLimiter
 from pipeline.report import (
+    PipelineRunData,
     build_local_pdf_run_data,
     build_pmid_run_data,
     build_run_data,
@@ -381,10 +405,13 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
 
 
 def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
-    """Record pipeline run to event log and send notification.
+    """Record pipeline run to event log and send a notification.
+
+    Healthcheck pings are handled separately by the caller so they don't
+    double-fire (success + failure) across multi-pipeline invocations.
 
     Args:
-        config: Pipeline configuration with event_db_path and healthcheck_url.
+        config: Pipeline configuration with event_db_path.
         run_data: Pipeline run data dict for logging and notification.
     """
     event_log = EventLog(config.event_db_path)
@@ -394,16 +421,19 @@ def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
         event_log.mark_notified([event_id])
     finally:
         event_log.close()
-    ping_success(config.healthcheck_url)
 
 
 async def _finalize_run(
     metrics: PipelineMetrics,
-    run_data: dict[str, Any],
-    config: PipelineConfig,
+    run_data: PipelineRunData,
     run_mode: str,
 ) -> None:
-    """Record run stats to database and send notifications."""
+    """Record run stats to database.
+
+    Notification and healthcheck pings are handled separately by the
+    caller (see ``main()``) so they can be coalesced across multiple
+    pipelines in one invocation.
+    """
     await record_pipeline_run(
         run_timestamp=run_data["timestamp"],
         papers_processed=metrics.papers_processed,
@@ -412,7 +442,6 @@ async def _finalize_run(
         genes_validated=metrics.genes_validated,
         run_mode=run_mode,
     )
-    _record_and_notify(config, run_data)
 
 
 async def process_paper(
@@ -566,17 +595,25 @@ async def run_pipeline(
     dry_run: bool = False,
     test_mode: bool = False,
     config: PipelineConfig | None = None,
-) -> PipelineMetrics:
-    """Run the complete data pipeline.
+    manage_lifecycle: bool = True,
+) -> tuple[PipelineMetrics, PipelineRunData | None]:
+    """Run the PubMed gene extraction pipeline.
 
     Args:
         days_back: Number of days to look back (1-3650).
         dry_run: If True, skip database writes.
         test_mode: If True, skip LLM extraction.
         config: Pipeline configuration (uses defaults if None).
+        manage_lifecycle: When True (default, for direct callers and tests),
+            this function handles its own healthcheck pings and notification.
+            When False (set by the ``main()`` dispatcher for combined runs),
+            pings and notifications are skipped so the dispatcher can coalesce
+            them across pipelines.
 
     Returns:
-        PipelineMetrics with run statistics.
+        A tuple of (PipelineMetrics, run_data). ``run_data`` is ``None`` on
+        early exits where no pipeline summary is built (no papers found, all
+        PMIDs already processed, test-mode preview).
 
     Raises:
         ValueError: If days_back is out of valid range.
@@ -604,7 +641,8 @@ async def run_pipeline(
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
     pipeline_start_time = time.monotonic()
-    ping_start(config.healthcheck_url)
+    if manage_lifecycle:
+        ping_start(config.healthcheck_url)
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
     logger.info(
@@ -637,7 +675,7 @@ async def run_pipeline(
 
         if not all_pmids:
             logger.info("No new papers found. Pipeline complete.")
-            return metrics
+            return metrics, None
 
         # Step 2: Filter out already-processed papers
         _report_stage(1)
@@ -659,7 +697,7 @@ async def run_pipeline(
 
         if not new_pmids:
             logger.info("All papers already processed. Pipeline complete.")
-            return metrics
+            return metrics, None
 
         # Test mode: skip LLM extraction and database merge
         if test_mode:
@@ -675,7 +713,7 @@ async def run_pipeline(
                     f"{len(new_pmids) - config.test_mode_preview_count}"
                     f" more"
                 )
-            return metrics
+            return metrics, None
 
         # Step 3: Process papers concurrently
         _report_stage(2)
@@ -731,9 +769,11 @@ async def run_pipeline(
             logger.info(f"JSON report written to: {report_path}")
             print_rich_summary(run_data)
 
-            _record_and_notify(config, run_data)
+            if manage_lifecycle:
+                _record_and_notify(config, run_data)
+                ping_success(config.healthcheck_url)
 
-            return metrics
+            return metrics, run_data
 
         # Step 4: Merge into database
         _report_stage(4)
@@ -782,7 +822,10 @@ async def run_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        await _finalize_run(metrics, run_data, config, "standard")
+        await _finalize_run(metrics, run_data, "standard")
+        if manage_lifecycle:
+            _record_and_notify(config, run_data)
+            ping_success(config.healthcheck_url)
 
         _write_progress(
             config, status="completed", stage=_STAGES[-1][0],
@@ -790,7 +833,7 @@ async def run_pipeline(
             stage_number=_TOTAL_STAGES, started_at=progress_started_at,
         )
 
-        return metrics
+        return metrics, run_data
 
     except Exception:
         sid, slabel = _STAGES[stage_idx]
@@ -801,15 +844,20 @@ async def run_pipeline(
             started_at=progress_started_at,
             error_message=traceback.format_exc()[:500],
         )
-        ping_failure(config.healthcheck_url, traceback.format_exc())
+        if manage_lifecycle:
+            ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
 
     finally:
-        # Cleanup all shared resources
+        # Cleanup shared resources used only by this pipeline. The DB pool
+        # is kept open for subsequent pipelines when the dispatcher is
+        # managing the lifecycle — it closes the pool itself after all
+        # selected pipelines have run.
         await _close_metadata_client()
         await close_http_client()
         await close_validation_client()
-        await Database.close()
+        if manage_lifecycle:
+            await Database.close()
         clear_gene_cache()
 
 
@@ -990,6 +1038,7 @@ async def run_local_pdf_pipeline(
         print_rich_summary(run_data)
 
         _record_and_notify(config, run_data)
+        ping_success(config.healthcheck_url)
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())
@@ -1193,6 +1242,7 @@ async def run_pmid_pipeline(
         print_rich_summary(run_data)
 
         _record_and_notify(config, run_data)
+        ping_success(config.healthcheck_url)
 
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())
@@ -1208,14 +1258,29 @@ async def run_pmid_pipeline(
 
 async def run_external_data_sync(
     config: PipelineConfig | None = None,
-) -> None:
-    """Sync all external data sources for dashboard refresh."""
+    manage_lifecycle: bool = True,
+) -> dict[str, Any]:
+    """Sync NCBI Gene / UniProt / PubMed-citation metadata for all genes.
+
+    Clinical trial discovery is a separate pipeline; this function reads
+    whatever rows the most recent CT sync wrote to the ``clinical_trials``
+    table to build its Table 2 gene list.
+
+    Args:
+        config: Pipeline configuration (uses defaults if None).
+        manage_lifecycle: When True, handle healthcheck pings internally.
+            Set to False by the dispatcher when coalescing multiple pipelines.
+
+    Returns:
+        Per-pipeline summary dict suitable for combined notification rendering.
+    """
     from pipeline.external_data_sync import sync_all_external_data
 
     if config is None:
         config = PipelineConfig()
 
-    ping_start(config.healthcheck_url)
+    if manage_lifecycle:
+        ping_start(config.healthcheck_url)
     logger.info("Starting external data sync...")
     try:
         result = await sync_all_external_data(config=config)
@@ -1223,12 +1288,229 @@ async def run_external_data_sync(
         logger.info("External Data Sync Summary:")
         logger.info(result.summary())
         logger.info(LOG_SEPARATOR)
+        if manage_lifecycle:
+            ping_success(config.healthcheck_url)
+        return {
+            "name": "external_sync",
+            "status": "failed" if result.errors else "ok",
+            "metrics": {
+                "ncbi_fetched": result.ncbi_fetched,
+                "ncbi_cached": result.ncbi_cached,
+                "ncbi_failed": result.ncbi_failed,
+                "uniprot_fetched": result.uniprot_fetched,
+                "uniprot_cached": result.uniprot_cached,
+                "uniprot_failed": result.uniprot_failed,
+                "pubmed_fetched": result.pubmed_fetched,
+                "pubmed_cached": result.pubmed_cached,
+                "pubmed_failed": result.pubmed_failed,
+            },
+            "errors": result.errors,
+        }
+    except Exception:
+        if manage_lifecycle:
+            ping_failure(config.healthcheck_url, traceback.format_exc())
+        raise
+    finally:
+        if manage_lifecycle:
+            await Database.close()
+
+
+async def run_clinical_trials_pipeline(
+    config: PipelineConfig | None = None,
+    manage_lifecycle: bool = True,
+) -> dict[str, Any]:
+    """Run the ClinicalTrials.gov discovery pipeline.
+
+    Fetches cSVD-relevant drug trials from the ClinicalTrials.gov v2 API
+    and upserts them into the ``clinical_trials`` table. Curator-owned
+    columns are preserved; only API-sourced columns are written.
+
+    When ``config.ct_enabled`` is False, the pipeline is a no-op and the
+    summary reports ``status="skipped"``.
+
+    Args:
+        config: Pipeline configuration (uses defaults if None).
+        manage_lifecycle: When True, handle healthcheck pings internally.
+            Set to False by the dispatcher when coalescing multiple pipelines.
+
+    Returns:
+        Per-pipeline summary dict suitable for combined notification rendering.
+    """
+    if config is None:
+        config = PipelineConfig()
+
+    if manage_lifecycle:
+        ping_start(config.healthcheck_url)
+
+    if not config.ct_enabled:
+        logger.warning("ClinicalTrials.gov sync disabled (ct_enabled=False); skipping")
+        if manage_lifecycle:
+            ping_success(config.healthcheck_url)
+        return {
+            "name": "clinical_trials",
+            "status": "skipped",
+            "metrics": {"fetched": 0, "cached": 0, "failed": 0},
+            "errors": [],
+        }
+
+    Database.set_config(config)
+    logger.info("Starting ClinicalTrials.gov pipeline...")
+
+    try:
+        ctg_result = await sync_clinical_trials(config)
+        logger.info(LOG_SEPARATOR)
+        logger.info(
+            f"ClinicalTrials.gov: {ctg_result.fetched} fetched, "
+            f"{ctg_result.cached} upserted, "
+            f"{ctg_result.failed} failed"
+        )
+        logger.info(LOG_SEPARATOR)
+        if manage_lifecycle:
+            ping_success(config.healthcheck_url)
+        return {
+            "name": "clinical_trials",
+            "status": "failed" if ctg_result.errors else "ok",
+            "metrics": {
+                "fetched": ctg_result.fetched,
+                "cached": ctg_result.cached,
+                "failed": ctg_result.failed,
+            },
+            "errors": ctg_result.errors,
+        }
+    except Exception:
+        if manage_lifecycle:
+            ping_failure(config.healthcheck_url, traceback.format_exc())
+        raise
+    finally:
+        await close_ctg_client()
+        if manage_lifecycle:
+            await Database.close()
+
+
+async def _run_selected_pipelines(
+    args: argparse.Namespace,
+    config: PipelineConfig,
+) -> int:
+    """Run the online pipelines selected on the command line, in sequence.
+
+    Owns the single healthcheck ping and the single combined notification
+    for the invocation. Continues on per-pipeline failure so that one
+    pipeline's error doesn't silently skip the others.
+
+    Returns the process exit code (0 on full success, 1 if any pipeline failed).
+    """
+    ping_start(config.healthcheck_url)
+
+    summaries: list[dict[str, Any]] = []
+    pubmed_run_data: PipelineRunData | None = None
+    invocation_failed = False
+    failure_trace: str | None = None
+
+    try:
+        if args.pubmed:
+            try:
+                metrics, pubmed_run_data = await run_pipeline(
+                    days_back=args.days_back,
+                    dry_run=args.dry_run,
+                    test_mode=args.test_mode,
+                    config=config,
+                    manage_lifecycle=False,
+                )
+                summaries.append({
+                    "name": "pubmed",
+                    "status": "ok",
+                    "metrics": {
+                        "papers_processed": metrics.papers_processed,
+                        "fulltext_retrieved": metrics.fulltext_retrieved,
+                        "genes_extracted": metrics.genes_extracted,
+                        "genes_validated": metrics.genes_validated,
+                        "genes_rejected": metrics.genes_rejected,
+                    },
+                    "errors": [],
+                })
+            except Exception as e:
+                logger.exception("PubMed pipeline failed")
+                invocation_failed = True
+                failure_trace = traceback.format_exc()
+                summaries.append({
+                    "name": "pubmed",
+                    "status": "failed",
+                    "metrics": {},
+                    "errors": [str(e)],
+                })
+
+        if args.clinical_trials:
+            try:
+                summaries.append(
+                    await run_clinical_trials_pipeline(
+                        config=config, manage_lifecycle=False
+                    )
+                )
+                if summaries[-1]["status"] == "failed":
+                    invocation_failed = True
+            except Exception as e:
+                logger.exception("Clinical trials pipeline failed")
+                invocation_failed = True
+                failure_trace = traceback.format_exc()
+                summaries.append({
+                    "name": "clinical_trials",
+                    "status": "failed",
+                    "metrics": {},
+                    "errors": [str(e)],
+                })
+
+        if args.sync_external_data:
+            try:
+                summaries.append(
+                    await run_external_data_sync(
+                        config=config, manage_lifecycle=False
+                    )
+                )
+                if summaries[-1]["status"] == "failed":
+                    invocation_failed = True
+            except Exception as e:
+                logger.exception("External data sync failed")
+                invocation_failed = True
+                failure_trace = traceback.format_exc()
+                summaries.append({
+                    "name": "external_sync",
+                    "status": "failed",
+                    "metrics": {},
+                    "errors": [str(e)],
+                })
+
+        # Single combined notification. For pure-PubMed runs we prefer the
+        # rich PubMed-shaped run_data (template already handles it); for
+        # everything else we emit the multi-pipeline shape.
+        if len(summaries) == 1 and summaries[0]["name"] == "pubmed" and pubmed_run_data:
+            _record_and_notify(config, pubmed_run_data)
+        elif summaries:
+            combined: dict[str, Any] = {
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+                "pipelines": summaries,
+                "pipeline_config": {
+                    "mode": "combined",
+                    "model": config.llm_model,
+                    "effort": config.llm_effort,
+                },
+            }
+            if pubmed_run_data is not None:
+                combined["pubmed_run_data"] = pubmed_run_data
+            _record_and_notify(config, combined)
+
+        if invocation_failed:
+            ping_failure(config.healthcheck_url, failure_trace or "pipeline failed")
+            return 1
+
         ping_success(config.healthcheck_url)
+
     except Exception:
         ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
     finally:
         await Database.close()
+
+    return 0
 
 
 def main() -> None:
@@ -1236,27 +1518,42 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    # Mutual exclusivity checks
-    if args.local_pdfs:
-        if args.sync_external_data:
-            parser.error("--local-pdfs cannot be combined with --sync-external-data")
-        if args.test_mode:
-            parser.error("--local-pdfs cannot be combined with --test-mode")
-        if args.days_back != 7:
-            parser.error("--local-pdfs cannot be combined with --days-back")
-        if args.pmids:
-            parser.error("--local-pdfs cannot be combined with --pmids")
+    offline_modes = [args.local_pdfs, args.pmids]
+    online_modes = [args.pubmed, args.clinical_trials, args.sync_external_data]
 
-    if args.pmids:
-        if args.sync_external_data:
-            parser.error("--pmids cannot be combined with --sync-external-data")
-        if args.test_mode:
-            parser.error("--pmids cannot be combined with --test-mode")
-        if args.days_back != 7:
-            parser.error("--pmids cannot be combined with --days-back")
+    # Offline modes are mutually exclusive with each other and with online
+    # modes. Validate up front.
+    if sum(1 for m in offline_modes if m) > 1:
+        parser.error("--local-pdfs and --pmids cannot be combined")
+    offline_selected = any(offline_modes)
+    online_selected = any(online_modes)
+    if offline_selected and online_selected:
+        parser.error(
+            "--local-pdfs / --pmids cannot be combined with --pubmed,"
+            " --clinical-trials, or --sync-external-data"
+        )
 
-    if args.skip_validation and not (args.local_pdfs or args.pmids):
+    if args.skip_validation and not offline_selected:
         parser.error("--skip-validation requires --local-pdfs or --pmids")
+
+    # PubMed-scoped flags are harmless for offline modes (they share the
+    # --days-back / --test-mode argparse slots) but must not be combined
+    # with CT-only or sync-only runs.
+    pubmed_only_flags_set = args.test_mode or args.dry_run or args.days_back != 7
+    if (
+        pubmed_only_flags_set
+        and online_selected
+        and not args.pubmed
+    ):
+        logger.warning(
+            "--days-back / --dry-run / --test-mode are PubMed-only;"
+            " ignoring because --pubmed was not selected"
+        )
+
+    # Default: if no selection flag was given, run the PubMed pipeline
+    # (preserves the original no-flag behavior).
+    if not offline_selected and not online_selected:
+        args.pubmed = True
 
     config = PipelineConfig()
 
@@ -1277,17 +1574,10 @@ def main() -> None:
                     config=config,
                 )
             )
-        elif args.sync_external_data:
-            asyncio.run(run_external_data_sync(config=config))
         else:
-            asyncio.run(
-                run_pipeline(
-                    days_back=args.days_back,
-                    dry_run=args.dry_run,
-                    test_mode=args.test_mode,
-                    config=config,
-                )
-            )
+            exit_code = asyncio.run(_run_selected_pipelines(args, config))
+            if exit_code != 0:
+                sys.exit(exit_code)
     except (ValueError, FileNotFoundError) as e:
         logger.error(f"Invalid argument: {e}")
         sys.exit(1)

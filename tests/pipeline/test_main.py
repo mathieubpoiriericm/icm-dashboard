@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from unittest.mock import AsyncMock
 
 import httpx
@@ -10,6 +11,8 @@ import pytest
 from pipeline.config import PipelineConfig, validate_pmid
 from pipeline.main import (
     PaperResult,
+    _build_parser,
+    _run_selected_pipelines,
     _validate_genes,
     fetch_paper_metadata,
     run_pipeline,
@@ -237,7 +240,7 @@ class TestRunPipeline:
         mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
         mocker.patch("pipeline.main.clear_gene_cache")
 
-        metrics = await run_pipeline(days_back=7)
+        metrics, _ = await run_pipeline(days_back=7)
         assert metrics.papers_processed == 0
 
     async def test_all_papers_already_processed(self, mocker):
@@ -256,7 +259,7 @@ class TestRunPipeline:
         mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
         mocker.patch("pipeline.main.clear_gene_cache")
 
-        metrics = await run_pipeline(days_back=7)
+        metrics, _ = await run_pipeline(days_back=7)
         assert metrics.papers_processed == 0
 
     async def test_test_mode_skips_extraction(self, mocker):
@@ -298,6 +301,158 @@ class TestRunPipeline:
         mocker.patch("pipeline.main.clear_gene_cache")
 
         # test_mode to avoid LLM calls
-        metrics = await run_pipeline(days_back=7, test_mode=True)
+        metrics, _ = await run_pipeline(days_back=7, test_mode=True)
         # Should proceed with all PMIDs (treating existing as empty)
         assert metrics.papers_processed == 0  # test mode doesn't process
+
+
+# ---------------------------------------------------------------------------
+# CLI parser — new pipeline selector flags
+# ---------------------------------------------------------------------------
+
+
+class TestCliParser:
+    def test_pubmed_flag(self):
+        args = _build_parser().parse_args(["--pubmed"])
+        assert args.pubmed is True
+        assert args.clinical_trials is False
+        assert args.sync_external_data is False
+
+    def test_clinical_trials_flag(self):
+        args = _build_parser().parse_args(["--clinical-trials"])
+        assert args.clinical_trials is True
+        assert args.pubmed is False
+        assert args.sync_external_data is False
+
+    def test_combine_pubmed_and_clinical_trials(self):
+        args = _build_parser().parse_args(["--pubmed", "--clinical-trials"])
+        assert args.pubmed is True
+        assert args.clinical_trials is True
+
+    def test_combine_all_three_online_flags(self):
+        args = _build_parser().parse_args(
+            ["--pubmed", "--clinical-trials", "--sync-external-data"]
+        )
+        assert args.pubmed is True
+        assert args.clinical_trials is True
+        assert args.sync_external_data is True
+
+    def test_no_flags_defaults_false(self):
+        args = _build_parser().parse_args([])
+        # All selector flags default False at the parser level;
+        # main() promotes --pubmed when nothing else is selected.
+        assert args.pubmed is False
+        assert args.clinical_trials is False
+        assert args.sync_external_data is False
+
+
+# ---------------------------------------------------------------------------
+# _run_selected_pipelines — multi-pipeline dispatcher
+# ---------------------------------------------------------------------------
+
+
+def _make_dispatcher_args(**overrides):
+    defaults = {
+        "pubmed": False,
+        "clinical_trials": False,
+        "sync_external_data": False,
+        "days_back": 7,
+        "dry_run": False,
+        "test_mode": False,
+    }
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+class TestRunSelectedPipelines:
+    async def test_pubmed_only_calls_run_pipeline(self, mocker):
+        mock_run = mocker.patch("pipeline.main.run_pipeline", new_callable=AsyncMock)
+        mock_run.return_value = (PipelineMetrics(), {"pipeline_config": {"mode": None}})
+        mocker.patch("pipeline.main.ping_start")
+        mocker.patch("pipeline.main.ping_success")
+        mocker.patch("pipeline.main.ping_failure")
+        mocker.patch("pipeline.main._record_and_notify")
+        mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
+
+        args = _make_dispatcher_args(pubmed=True)
+        exit_code = await _run_selected_pipelines(args, PipelineConfig())
+
+        assert exit_code == 0
+        mock_run.assert_awaited_once()
+        # Dispatcher must tell run_pipeline to skip its own lifecycle.
+        assert mock_run.await_args.kwargs["manage_lifecycle"] is False
+
+    async def test_clinical_trials_only(self, mocker):
+        mock_ct = mocker.patch(
+            "pipeline.main.run_clinical_trials_pipeline", new_callable=AsyncMock
+        )
+        mock_ct.return_value = {
+            "name": "clinical_trials",
+            "status": "ok",
+            "metrics": {"fetched": 1, "cached": 1, "failed": 0},
+            "errors": [],
+        }
+        mock_run = mocker.patch("pipeline.main.run_pipeline", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.ping_start")
+        mocker.patch("pipeline.main.ping_success")
+        mocker.patch("pipeline.main.ping_failure")
+        mocker.patch("pipeline.main._record_and_notify")
+        mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
+
+        args = _make_dispatcher_args(clinical_trials=True)
+        exit_code = await _run_selected_pipelines(args, PipelineConfig())
+
+        assert exit_code == 0
+        mock_ct.assert_awaited_once()
+        mock_run.assert_not_awaited()
+
+    async def test_pubmed_and_clinical_trials_run_sequentially(self, mocker):
+        mock_run = mocker.patch("pipeline.main.run_pipeline", new_callable=AsyncMock)
+        mock_run.return_value = (PipelineMetrics(), None)
+        mock_ct = mocker.patch(
+            "pipeline.main.run_clinical_trials_pipeline", new_callable=AsyncMock
+        )
+        mock_ct.return_value = {
+            "name": "clinical_trials",
+            "status": "ok",
+            "metrics": {},
+            "errors": [],
+        }
+        mocker.patch("pipeline.main.ping_start")
+        mocker.patch("pipeline.main.ping_success")
+        mocker.patch("pipeline.main.ping_failure")
+        mocker.patch("pipeline.main._record_and_notify")
+        mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
+
+        args = _make_dispatcher_args(pubmed=True, clinical_trials=True)
+        exit_code = await _run_selected_pipelines(args, PipelineConfig())
+
+        assert exit_code == 0
+        mock_run.assert_awaited_once()
+        mock_ct.assert_awaited_once()
+
+    async def test_pubmed_failure_still_runs_clinical_trials(self, mocker):
+        """Continue-on-error: one pipeline's failure doesn't skip the next."""
+        mock_run = mocker.patch("pipeline.main.run_pipeline", new_callable=AsyncMock)
+        mock_run.side_effect = RuntimeError("pubmed exploded")
+        mock_ct = mocker.patch(
+            "pipeline.main.run_clinical_trials_pipeline", new_callable=AsyncMock
+        )
+        mock_ct.return_value = {
+            "name": "clinical_trials",
+            "status": "ok",
+            "metrics": {},
+            "errors": [],
+        }
+        mocker.patch("pipeline.main.ping_start")
+        mocker.patch("pipeline.main.ping_success")
+        mock_fail = mocker.patch("pipeline.main.ping_failure")
+        mocker.patch("pipeline.main._record_and_notify")
+        mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
+
+        args = _make_dispatcher_args(pubmed=True, clinical_trials=True)
+        exit_code = await _run_selected_pipelines(args, PipelineConfig())
+
+        assert exit_code == 1  # failure reported
+        mock_ct.assert_awaited_once()  # still ran CT after PubMed failed
+        mock_fail.assert_called_once()

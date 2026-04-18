@@ -60,6 +60,7 @@ def _format_duration(seconds: float) -> str:
 _MODE_LABELS: dict[str | None, str] = {
     "local_pdf": "Local PDF",
     "pmid_list": "PMID List",
+    "combined": "Combined",
     None: "Standard",
 }
 
@@ -77,6 +78,12 @@ def _build_template_context(run_data: PipelineRunData) -> dict[str, Any]:
     cfg = run_data.get("pipeline_config", {})
     is_standard = cfg.get("mode") is None
     mode_label = _mode_label(cfg)
+
+    # Combined / multi-pipeline invocations carry a ``pipelines`` list.
+    # Cost / papers / genes aren't always applicable in that shape, so we
+    # fall back to zeros and only show sections the template is guarded
+    # against.
+    pipelines = run_data.get("pipelines") or []
 
     # Database visibility
     show_database = (
@@ -108,6 +115,7 @@ def _build_template_context(run_data: PipelineRunData) -> dict[str, Any]:
         "show_database": show_database,
         "database": run_data.get("database") or {},
         "batch_warnings": run_data.get("batch_validation_warnings", []),
+        "pipelines": pipelines,
     }
 
 
