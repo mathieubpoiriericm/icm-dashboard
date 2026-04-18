@@ -9,7 +9,7 @@ Technical reference for the ICM Cerebral SVD Dashboard runtime architecture, fea
 | Component | Technology | Role |
 | --------- | --------- | ---- |
 | Application framework | R Shiny | Reactive web application |
-| UI framework | bslib (Bootstrap 5) | Theming, layout, light/dark mode |
+| UI framework | bslib (Bootstrap 5) | Theming, layout, navbar page structure |
 | Data manipulation | data.table | Filtering with `get()` for dynamic columns |
 | Fast lookups | fastmap | O(1) index maps for multi-value filters |
 | Serialization | qs | 3-5x faster than RDS for data loading |
@@ -17,7 +17,7 @@ Technical reference for the ICM Cerebral SVD Dashboard runtime architecture, fea
 | Mapping | Leaflet | Interactive clinical trials map |
 | Tooltips | Tippy.js (bundled) | Rich HTML tooltips on table cells |
 | Timeline plot | Python (Plotly SVG) | Clinical trials timeline visualization |
-| Font | Roboto (local TTF) | Consistent typography without CDN |
+| Font | Raleway (local TTF, Regular + Bold) | Consistent typography without CDN |
 
 ## Runtime Data Flow
 
@@ -54,6 +54,7 @@ The dashboard has **no database connection at runtime**. All data is read from p
 | `refs.qs` | PubMed publication references for tooltips |
 | `gwas_trait_names.qs` | GWAS trait abbreviation-to-full-name mapping |
 | `geocoded_trials.qs` | Geocoded trial site locations for the map |
+| `pipeline_status.qs` | Optional pipeline run metadata (timestamp, counts) shown on About tab |
 
 Additionally, `data/csv/omim_info.csv` provides OMIM disease annotations.
 
@@ -62,7 +63,7 @@ Additionally, `data/csv/omim_info.csv` provides OMIM disease annotations.
 The startup sequence in `app.R` proceeds as follows:
 
 1. Load 21 required R packages with error handling (fails fast on missing packages)
-2. Load local Roboto font from `www/fonts/Roboto-Regular.ttf` via sysfonts/showtext
+2. Load local Raleway font (Regular + Bold) from `www/fonts/` via sysfonts/showtext
 3. Configure bslib Sass disk cache (`.bslib-cache/`, 30-day TTL, 50 MB max)
 4. Auto-minify CSS and JS source files to `.min.*` variants
 5. Source all R files in strict dependency order (see below)
@@ -152,10 +153,11 @@ Filter message rendering and filtered data reactives use `bindCache()`.
 
 ### Theming
 
-- bslib Bootstrap 5 with `light_theme` / `dark_theme` definitions in `ui.R`
-- Light/dark mode toggle via `bslib::input_dark_mode()`
-- Light: primary `#2d287a`, secondary `#667eea`, bg `#ffffff`
-- Dark: primary `#6366f1`, secondary `#818cf8`, bg `#121212`, glassmorphism gradient in CSS (`linear-gradient(135deg, #0f0c29, #302b63, #24243e)`)
+- Single bslib Bootstrap 5 theme (`light_theme`) defined in `R/ui.R` -- no dark mode toggle
+- Brand colors from `R/constants.R`: primary `#281E78` (ICM navy), secondary/accent `#FA4616` (ICM orange), danger `#DC3545`
+- Additional theme colors: bg `#ffffff`, fg `#2D2926`, success `#16a34a`
+- Translucent navbar (`rgba(255, 255, 255, 0.65)`) for a subtle layered look
+- Raleway base + heading font with system fallbacks
 
 ### CSS and JavaScript
 
@@ -173,7 +175,7 @@ Filter message rendering and filtered data reactives use `bindCache()`.
 
 ### Fonts
 
-Local Roboto font loaded from `www/fonts/Roboto-Regular.ttf` via sysfonts. No external CDN dependency.
+Local Raleway font (Regular + Bold) loaded from `www/fonts/` via sysfonts. No external CDN dependency.
 
 ## Performance Patterns
 
@@ -201,7 +203,7 @@ Docker runs the dashboard only (no Python pipeline or database). It requires pre
 
 ## Testing
 
-Tests live in `tests/test_all.R` (~120 testthat + shinytest2 tests). Coverage includes utility functions, filter logic, tooltip generation, data preparation, and the checkbox filter module.
+Tests live in `tests/test_all.R` (97 testthat + shinytest2 tests). Coverage includes utility functions, filter logic, tooltip generation, data preparation, and the checkbox filter module.
 
 ```bash
 Rscript -e 'testthat::test_file("tests/test_all.R")'

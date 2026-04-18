@@ -1,4 +1,4 @@
-FROM rocker/shiny:4.5.2
+FROM rocker/shiny:4.5.3
 
 RUN apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=2 update \
   && apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=2 \

@@ -9,14 +9,14 @@
 
 | <center>R Tests</center> | <center>Pipeline Tests</center> |
 | :-- | :-- |
-| [![R Tests: 97](https://img.shields.io/badge/R_Tests-97_passing-green.svg)](#testing) | [![Pipeline Tests: 462](https://img.shields.io/badge/Pipeline_Tests-462_passing-green.svg)](#testing) |
-| [![filter_utils](https://img.shields.io/badge/filter__utils-33_tests-brightgreen.svg)](#testing) | [![Infrastructure](https://img.shields.io/badge/Infrastructure-141_tests-brightgreen.svg)](#testing) |
-| [![data_prep](https://img.shields.io/badge/data__prep-40_tests-brightgreen.svg)](#testing) | [![External Data](https://img.shields.io/badge/External_Data-102_tests-brightgreen.svg)](#testing) |
-| [![tooltips](https://img.shields.io/badge/tooltips-12_tests-brightgreen.svg)](#testing) | [![Data Processing](https://img.shields.io/badge/Data_Processing-93_tests-brightgreen.svg)](#testing) |
-| [![utils](https://img.shields.io/badge/utils-9_tests-brightgreen.svg)](#testing) | [![Paper Retrieval](https://img.shields.io/badge/Paper_Retrieval-51_tests-brightgreen.svg)](#testing) |
-| [![shinytest2](https://img.shields.io/badge/shinytest2-3_tests-brightgreen.svg)](#testing) | [![LLM Extraction](https://img.shields.io/badge/LLM_Extraction-33_tests-brightgreen.svg)](#testing) |
+| [![R Tests: 97](https://img.shields.io/badge/R_Tests-97_passing-green.svg)](#testing) | [![Pipeline Tests: 443](https://img.shields.io/badge/Pipeline_Tests-443_passing-green.svg)](#testing) |
+| [![filter_utils](https://img.shields.io/badge/filter__utils-42_tests-brightgreen.svg)](#testing) | [![Infrastructure](https://img.shields.io/badge/Infrastructure-126_tests-brightgreen.svg)](#testing) |
+| [![data_prep](https://img.shields.io/badge/data__prep-20_tests-brightgreen.svg)](#testing) | [![External Data](https://img.shields.io/badge/External_Data-103_tests-brightgreen.svg)](#testing) |
+| [![tooltips](https://img.shields.io/badge/tooltips-18_tests-brightgreen.svg)](#testing) | [![Data Processing](https://img.shields.io/badge/Data_Processing-94_tests-brightgreen.svg)](#testing) |
+| [![utils](https://img.shields.io/badge/utils-12_tests-brightgreen.svg)](#testing) | [![Paper Retrieval](https://img.shields.io/badge/Paper_Retrieval-51_tests-brightgreen.svg)](#testing) |
+| [![shinytest2](https://img.shields.io/badge/shinytest2-5_tests-brightgreen.svg)](#testing) | [![LLM Extraction](https://img.shields.io/badge/LLM_Extraction-33_tests-brightgreen.svg)](#testing) |
 | | [![Orchestration](https://img.shields.io/badge/Orchestration-25_tests-brightgreen.svg)](#testing) |
-| | [![Notifications](https://img.shields.io/badge/Notifications-17_tests-brightgreen.svg)](#testing) |
+| | [![Notifications](https://img.shields.io/badge/Notifications-11_tests-brightgreen.svg)](#testing) |
 
 An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for cerebral small vessel disease (cSVD), developed at the Paris Brain Institute (ICM).
 
@@ -91,7 +91,7 @@ This dashboard provides up-to-date and standardized information on:
 
 | Layer | Technology |
 | ------- | ----------- |
-| Dashboard Framework | [R 4.5+](https://www.r-project.org/), [Shiny](https://github.com/rstudio/shiny), [bslib](https://github.com/rstudio/bslib) (Bootstrap 5 with dark mode) |
+| Dashboard Framework | [R 4.5+](https://www.r-project.org/), [Shiny](https://github.com/rstudio/shiny), [bslib](https://github.com/rstudio/bslib) (Bootstrap 5) |
 | Frontend UI | [DT](https://github.com/rstudio/DT) (DataTables), [shinyWidgets](https://github.com/dreamRs/shinyWidgets), [Tippy.js](https://github.com/atomiks/tippyjs), [Popper.js](https://github.com/floating-ui/floating-ui) |
 | Mapping | [Leaflet](https://github.com/rstudio/leaflet), [tidygeocoder](https://github.com/jessecambon/tidygeocoder) (OpenStreetMap Nominatim) |
 | Visualization | Custom SVG ([python_plot.py](scripts/python_plot.py)), [Leaflet](https://github.com/rstudio/leaflet) marker clusters |
@@ -110,22 +110,16 @@ This dashboard provides up-to-date and standardized information on:
 
 ## Features
 
-### Dark Mode
-
-Toggle between light and dark themes using the built-in switch in the navbar. The dashboard features:
-
-- Real-time theme switching powered by bslib's `input_dark_mode()`
-- Glassmorphism effects in dark mode for a modern aesthetic
-- Light theme: Clean white background with #2d287a primary accent
-- Dark theme: #121212 background optimized for low-light viewing
-
 ### Gene Table
 
 Browse putative causal genes with filters for:
 
 - Mendelian Randomization status
-- GWAS traits (SVS, BG-PVS, WMH, HIP-PVS, PSMD, extreme-cSVD, Lacunes, Stroke,
-  NODDI, FA, MD, Lacunar Stroke, Small Vessel Stroke)
+- GWAS traits — the 23 canonical cSVD phenotypes defined in
+  `pipeline/config.py:VALID_GWAS_TRAITS`: WMH, DWMH, PVWMH, SVS, BG-PVS,
+  WM-PVS, HIP-PVS, PSMD, MD, extreme-cSVD, FA, lacunes, stroke,
+  cerebral-microbleeds, ICH-lobar, ICH-non-lobar, DTI-ALPS, ICVF, ISOVF, OD,
+  WMH-cortical-atrophy, WM-BAG, retinal-vessels
 - Evidence from other omics studies (EWAS, TWAS, PWAS, Proteomics, MENTR)
 
 Includes linked data from:
@@ -179,7 +173,6 @@ rshiny_dashboard/
 ├── .env.example                  # Example pipeline environment variables
 ├── .Renviron.example             # Example R environment variables
 ├── app.R                         # Main application entry point
-├── CLAUDE.md                     # Claude Code project instructions
 ├── conftest.py                   # Root pytest config (adds project root to sys.path)
 ├── Dockerfile                    # Dashboard Docker build
 ├── Dockerfile.pipeline           # Pipeline Docker build
@@ -215,6 +208,7 @@ rshiny_dashboard/
 │   ├── dashboard-overview.md     # Dashboard architecture reference
 │   ├── python-etl-pipeline.md    # ETL pipeline documentation
 │   ├── kubernetes-cluster-overview.md  # Kubernetes deployment guide
+│   ├── kubernetes-namespaces.md  # Kubernetes namespace guide
 │   └── pipeline-security.md      # Security audit and threat model
 ├── helm/                         # Helm charts for Kubernetes deployment
 │   └── svd-dashboard/            # Main Helm chart
@@ -265,6 +259,7 @@ rshiny_dashboard/
 │   ├── __init__.py               # Package marker
 │   ├── alembic.ini               # Alembic migration config
 │   ├── batch_validation.py       # Pandera batch quality checks
+│   ├── cache_utils.py            # LRU cache eviction utilities
 │   ├── config.py                 # Centralized configuration with env overrides
 │   ├── data_merger.py            # Data transformation & database loading
 │   ├── database.py               # Async PostgreSQL operations
@@ -290,7 +285,8 @@ rshiny_dashboard/
 │   │   ├── script.py.mako        # Migration script template
 │   │   └── versions/             # Migration version scripts
 │   │       ├── 001_baseline_schema.py  # Initial database schema
-│   │       └── 002_add_upper_gene_index.py  # Upper gene name index
+│   │       ├── 002_add_upper_gene_index.py  # Upper gene name index
+│   │       └── 003_add_pipeline_runs_table.py  # Pipeline runs audit table
 │   └── templates/                # Jinja2 notification templates
 │       └── digest.md.j2          # Markdown notification template
 ├── scripts/
@@ -782,7 +778,7 @@ The prompt uses a two-part architecture defined in `pipeline/prompts.py`: a syst
 | Adaptive thinking | `thinking: {"type": "adaptive"}` | [Adaptive thinking](https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking): "reliably drives better performance than extended thinking with a fixed `budget_tokens`"; dynamically allocates reasoning depth per paper |
 | Effort level | `"high"` (default) | Balances reasoning depth with token cost. Only sent to API when overridden (since `"high"` is the API default) |
 | Structured outputs | `output_config` with JSON schema | [Structured outputs](https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs): constrained decoding "guarantees schema-compliant responses" — always valid JSON, type-safe, no retries needed for schema violations. Schema auto-converted from Pydantic via `transform_schema()` |
-| Max output tokens | 64,000 | Accommodates variable adaptive thinking tokens + structured JSON output for papers with many genes |
+| Max output tokens | 128,000 (Opus 4.7) | Accommodates variable adaptive thinking tokens + structured JSON output for papers with many genes. Per-model max defined in `MODEL_MAX_OUTPUT_TOKENS` (`pipeline/config.py`): Opus 4.7 = 128K, Sonnet 4.6 / Haiku 4.5 = 64K |
 | Prompt caching | 1h ephemeral TTL on system blocks | [Prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching): cache reads cost only 10% of base input price. 1h TTL chosen because paper processing intervals may exceed the 5-min default. System blocks cached; per-paper user messages are not |
 
 ### Output Schema
@@ -838,7 +834,7 @@ All LLM-related environment variables (from `pipeline/config.py`):
 | Variable | Default | Description |
 | ---------- | --------- | ------------- |
 | `PIPELINE_LLM_MODEL` | `claude-opus-4-7` | Model identifier |
-| `PIPELINE_LLM_MAX_TOKENS` | `64000` | Max output tokens |
+| `PIPELINE_LLM_MAX_TOKENS` | `0` (auto-resolves to model max) | Max output tokens; `0` resolves via `MODEL_MAX_OUTPUT_TOKENS` in `__post_init__` (128K for Opus 4.7) |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort (`low` / `high` / `max`) |
 | `PIPELINE_MAX_PAPER_TEXT_CHARS` | `100000` | Paper text truncation limit (chars) |
 | `PIPELINE_CONFIDENCE_THRESHOLD` | `0.65` | Minimum confidence to keep a gene |
@@ -915,7 +911,7 @@ Rscript -e 'testthat::test_file("tests/test_all.R")'
 
 ### Python Tests
 
-Run the pipeline test suite (21 pytest files, 462 tests):
+Run the pipeline test suite (21 pytest files, 443 tests):
 
 ```bash
 # Run all pipeline tests
@@ -982,11 +978,11 @@ Detailed documentation is available in the `docs/` directory:
 
 | Document | Description |
 | ---------- | ------------- |
-| [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
-| [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
-| [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
-| [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
-| [Kubernetes Namespaces](docs/kubernetes-namespaces.md) | Namespaces used in the Kubernetes cluster and the pods within each |
+| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
+| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
+| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
+| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
+| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Kubernetes Namespaces](docs/kubernetes-namespaces.md) | Namespaces used in the Kubernetes cluster and the pods within each |
 
 ---
 

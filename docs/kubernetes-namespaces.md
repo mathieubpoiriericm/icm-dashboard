@@ -1,212 +1,229 @@
 # Kubernetes Namespace Architecture
 
-This document describes the namespaces in the SVD Dashboard Kubernetes cluster (Docker Desktop) and the pods within each.
+This document describes the namespaces on the SVD Dashboard k3s homelab cluster (`k3s-host`) and the pods that run in each. It is a live-cluster reference — regenerate it against `kubectl get pods -A` and the Helm chart in `helm/svd-dashboard/` whenever the deployment topology changes.
 
 ## Cluster Overview
 
 | Namespace | Purpose | Pods |
 | --- | --- | --- |
-| `kube-system` | Kubernetes control plane and core services | 10 |
-| `ingress-nginx` | HTTP ingress controller | 1 |
-| `monitoring` | Observability stack (Prometheus, Grafana, VictoriaLogs) | 9 |
-| `svd` | Application stack (Shiny dashboard, PostgreSQL, notifications) | 5 pods + 1 CronJob |
+| `kube-system` | k3s control-plane helpers (kubelet extras; the apiserver/controller/scheduler/etcd/kube-proxy all run as a single systemd binary on the host, not as pods) | 4 |
+| `ingress-nginx` | HTTP/HTTPS ingress controller | 1 |
+| `svd` | Umbrella chart: Shiny dashboard, PostgreSQL, notifications, **plus** the `kube-prometheus-stack` and `victoria-logs-single` subcharts | 13 pods + 1 weekly CronJob |
+| `monitoring` | Leftover namespace from an earlier two-release layout; currently **empty** | 0 |
 | `default` | Unused (Kubernetes default) | 0 |
 | `kube-node-lease` | Node heartbeat leases | 0 |
 | `kube-public` | Unused (Kubernetes default) | 0 |
 
-## `kube-system` — Kubernetes Core Infrastructure
+## `kube-system` — k3s Core Infrastructure
 
-The control plane and cluster services that make Kubernetes itself work. All managed by Docker Desktop.
+k3s bundles the control plane (`kube-apiserver`, `kube-controller-manager`, `kube-scheduler`, `etcd`/sqlite, `kube-proxy`) into a single systemd-managed binary on the host, so those components do **not** appear as pods. Only the following cluster-support workloads run as pods:
 
 | Pod | Purpose |
 | --- | --- |
-| `kube-apiserver-docker-desktop` | API server — all `kubectl` commands go through here |
-| `etcd-docker-desktop` | Key-value store holding all cluster state |
-| `kube-controller-manager-docker-desktop` | Runs controllers (Deployments, ReplicaSets, etc.) |
-| `kube-scheduler-docker-desktop` | Assigns pods to nodes |
-| `kube-proxy` | Network rules for Service routing |
-| `coredns` (x2) | Cluster DNS — resolves service names (e.g. `prometheus-grafana.monitoring.svc.cluster.local`) |
-| `storage-provisioner` | Docker Desktop's local PersistentVolume provisioner |
+| `coredns` | Cluster DNS — resolves service names (e.g. `svd-svd-dashboard-postgresql.svd.svc.cluster.local`) |
+| `local-path-provisioner` | Rancher local-path CSI — k3s's default dynamic PersistentVolume provisioner (backs every PVC in the cluster) |
 | `metrics-server` | Kubernetes Metrics Server — enables `kubectl top` and HPA autoscaling |
-| `vpnkit-controller` | Docker Desktop networking bridge between macOS and the Linux VM |
+| `svclb-ingress-nginx-controller` | k3s `klipper-lb` service load balancer — gives the `ingress-nginx-controller` Service a reachable LoadBalancer IP on the host network (runs as a DaemonSet; one pod per node) |
 
 ## `ingress-nginx` — Ingress Controller
 
-The single entry point for all external HTTP traffic into the cluster.
+Single entry point for all external HTTPS traffic into the cluster.
 
 | Pod | Purpose |
 | --- | --- |
-| `ingress-nginx-controller` | Nginx reverse proxy routing `*.local` hostnames to backend services |
+| `ingress-nginx-controller` | Nginx reverse proxy routing `*.matbpoirierk8shomelab.net` hostnames to backend services |
 
-### Routing Rules
+### Routing rules
 
-All routing is defined in the `svd-svd-dashboard` Ingress resource in the `svd` namespace:
+All routing is defined in the `svd-svd-dashboard` Ingress resource in the `svd` namespace (`helm/svd-dashboard/templates/ingress.yaml`). TLS is terminated using the `cloudflare-origin-tls` Secret; every host is HTTPS-only.
 
-| Hostname | Backend Service | Namespace | Port |
-| --- | --- | --- | --- |
-| `shiny.local` | `svd-svd-dashboard-dashboard` | `svd` | 3838 |
-| `grafana.local` | `svd-svd-dashboard-grafana-external` (ExternalName → `prometheus-grafana.monitoring`) | `svd` → `monitoring` | 80 |
-| `ntfy.local` | `svd-svd-dashboard-ntfy` | `svd` | 80 |
-| `healthchecks.local` | `svd-svd-dashboard-healthchecks` | `svd` | 8000 |
+| Hostname | Backend Service (namespace `svd`) | Port |
+| --- | --- | --- |
+| `csvd-dashboard.matbpoirierk8shomelab.net` | `svd-svd-dashboard-dashboard` | 3838 |
+| `ntfy.matbpoirierk8shomelab.net` | `svd-svd-dashboard-ntfy` | 80 |
+| `healthchecks.matbpoirierk8shomelab.net` | `svd-svd-dashboard-healthchecks` | 8000 |
+| `grafana.matbpoirierk8shomelab.net` | `svd-grafana` | 80 |
+| `prometheus.matbpoirierk8shomelab.net` | `svd-kube-prometheus-stack-prometheus` | 9090 |
+| `alertmanager.matbpoirierk8shomelab.net` | `svd-kube-prometheus-stack-alertmanager` | 9093 |
+| `victoria-logs.matbpoirierk8shomelab.net` | `svd-victoria-logs-single-server` | 9428 |
 
-## `monitoring` — Observability Stack
+The `svd-dashboard` chart also creates one cross-namespace resource in `ingress-nginx` itself — a headless `svd-svd-dashboard-ingress-nginx-metrics` Service plus a matching `ServiceMonitor` (see `helm/svd-dashboard/templates/ingress-nginx-metrics-service.yaml` and `ingress-nginx-servicemonitor.yaml`). Together they let Prometheus scrape the controller's `/metrics` endpoint (port 10254).
 
-Deployed via the `kube-prometheus-stack` Helm chart (release name: `prometheus`) and a separate `victoria-logs-single` Helm chart. Provides centralized metrics collection, alerting, dashboarding, and log aggregation.
+## `monitoring` — Leftover (empty)
 
-### Metrics Pipeline
+This namespace exists from an older deployment layout in which `kube-prometheus-stack` ran here as its own release and was bridged into `svd` through an `ExternalName` Service. It is currently **empty** — every observability component now runs inside `svd` via the umbrella chart's subchart dependencies.
 
-| Pod | Purpose |
-| --- | --- |
-| `prometheus-prometheus-kube-prometheus-prometheus-0` | Prometheus server — scrapes and stores time-series metrics (2 containers: `prometheus` + `config-reloader` sidecar, plus `init-config-reloader` init container) |
-| `prometheus-kube-prometheus-operator` | Manages Prometheus CRDs (`ServiceMonitor`, `PrometheusRule`, `Alertmanager`) |
-| `prometheus-kube-state-metrics` | Exports Kubernetes object metrics (pod status, deployment replicas, etc.) |
-| `prometheus-prometheus-node-exporter` | Exports host OS metrics (CPU, memory, disk, network) |
-| `alertmanager-prometheus-kube-prometheus-alertmanager-0` | Routes and manages alerts from Prometheus (2 containers: `alertmanager` + `config-reloader` sidecar, plus `init-config-reloader` init container) |
+It can be safely deleted (`kubectl delete ns monitoring`) or kept as a sentinel so that the optional external-Grafana mode (`observability.prometheus.enabled=false` plus `observability.grafana.external.enabled=true`) still has a target namespace available without another `kubectl create ns`.
 
-### Dashboarding
+## `svd` — Application + Observability Stack
 
-| Pod | Purpose |
-| --- | --- |
-| `prometheus-grafana` | Grafana dashboard server (3 containers: grafana + 2 sidecars for dashboard/datasource provisioning) |
-| `grafana-image-renderer` | Go-based Chromium renderer for Grafana image/PDF export |
+Deployed via the `svd-dashboard` umbrella Helm chart (release name `svd`, fullname prefix `svd-svd-dashboard`). The chart bundles application pods alongside two subcharts — `kube-prometheus-stack` and `victoria-logs-single` — so every workload in the stack lives in this single namespace.
 
-### Log Aggregation
+### Core application
 
 | Pod | Purpose |
 | --- | --- |
-| `victoria-logs-victoria-logs-single-server-0` | VictoriaLogs — log storage backend |
-| `victoria-logs-vector` | Vector log collector — ships container and node logs to VictoriaLogs |
+| `svd-svd-dashboard-dashboard` | R Shiny dashboard — serves the web UI at `csvd-dashboard.matbpoirierk8shomelab.net`, reads QS data files at runtime. Uses a `fix-qs-permissions` init container (busybox `chown`) so the non-root Shiny user (uid 997) can write to the shared QS PVC. |
+| `svd-svd-dashboard-postgresql-0` | PostgreSQL 18 (StatefulSet). Two containers: `postgresql` plus a `postgres-exporter` sidecar that exposes Prometheus metrics on port 9187. |
 
-## `svd` — Application Stack
-
-Deployed via the `svd-dashboard` Helm chart (release name: `svd`). Contains the R Shiny dashboard and all supporting services.
-
-### Core Application
+### Notifications
 
 | Pod | Purpose |
 | --- | --- |
-| `svd-svd-dashboard-dashboard` | The R Shiny dashboard — serves the web UI at `shiny.local`, reads QS data files at runtime. Includes `fix-qs-permissions` init container that fixes PVC ownership before the dashboard starts. |
-| `svd-svd-dashboard-postgresql-0` | PostgreSQL 18 database storing extracted gene data (StatefulSet with persistent storage). Runs 2 containers: `postgresql` + `postgres-exporter` sidecar (Prometheus metrics on port 9187). |
+| `svd-svd-dashboard-ntfy` | ntfy push-notification server — receives pipeline alerts and forwards them upstream to ntfy.sh |
+| `svd-svd-dashboard-healthchecks` | Healthchecks cron monitoring — tracks the pipeline CronJob's dead-man's-switch heartbeat |
 
-### Notification Services
-
-| Pod | Purpose |
-| --- | --- |
-| `svd-svd-dashboard-ntfy` | ntfy push notification server — receives pipeline alerts |
-| `svd-svd-dashboard-healthchecks` | Healthchecks cron monitoring — tracks pipeline CronJob execution |
-
-### Monitoring Support
+### Chart-owned monitoring support
 
 | Pod | Purpose |
 | --- | --- |
-| `svd-svd-dashboard-blackbox-exporter` | Probes HTTP endpoints (`shiny.local`, `ntfy.local`, `healthchecks.local`) and exposes availability metrics to Prometheus |
+| `svd-svd-dashboard-blackbox-exporter` | Probes HTTP endpoints (dashboard + healthchecks services) via the `svd-svd-dashboard-healthchecks-http` Probe CRD and exposes availability metrics to Prometheus |
+| `svd-svd-dashboard-grafana-image-renderer` | Grafana-compatible Chromium renderer for PNG/PDF dashboard exports (port 8081); used by the `GF_RENDERING_SERVER_URL` in the Grafana subchart |
+
+### Observability subchart — `kube-prometheus-stack`
+
+Enabled by `observability.prometheus.enabled=true` (`helm/svd-dashboard/values.yaml:153-154`).
+
+| Pod | Purpose |
+| --- | --- |
+| `prometheus-svd-kube-prometheus-stack-prometheus-0` | Prometheus server — scrapes and stores time-series metrics (containers: `prometheus` + `config-reloader` sidecar; plus `init-config-reloader` init container) |
+| `alertmanager-svd-kube-prometheus-stack-alertmanager-0` | Alertmanager — routes and deduplicates alerts from Prometheus (containers: `alertmanager` + `config-reloader` sidecar; plus `init-config-reloader` init container) |
+| `svd-kube-prometheus-stack-operator` | Prometheus Operator — reconciles `ServiceMonitor`, `PrometheusRule`, `Alertmanager`, `Probe`, and `Prometheus` CRDs |
+| `svd-kube-state-metrics` | Exports Kubernetes object metrics (pod status, deployment replicas, etc.) |
+| `svd-prometheus-node-exporter` | Host-OS metrics exporter (CPU, memory, disk, network). Runs as a DaemonSet — one pod per node. |
+| `svd-grafana` | Grafana dashboard server. Three containers: `grafana` plus two provisioning sidecars (dashboards + datasources). Pre-loads the VictoriaLogs datasource via the `svd-svd-dashboard-vlogs-datasource` ConfigMap. |
+
+The Prometheus CRD selectors in `values.yaml` are scoped to `kubernetes.io/metadata.name: svd`, so only `ServiceMonitor`/`PodMonitor`/`Probe`/`PrometheusRule` resources in the `svd` namespace are picked up.
+
+### Observability subchart — `victoria-logs-single`
+
+Enabled by `observability.victoriaLogs.enabled=true` (`helm/svd-dashboard/values.yaml:155-159`).
+
+| Pod | Purpose |
+| --- | --- |
+| `svd-victoria-logs-single-server-0` | VictoriaLogs — log-storage backend (retention 30 days, 10 Gi PVC) |
+| `svd-vector` | Vector log collector — ships container and node logs to VictoriaLogs. Runs as a DaemonSet — one pod per node. |
 
 ### Pipeline CronJob
 
-The `svd-svd-dashboard-pipeline` CronJob runs the weekly ETL pipeline that extracts gene data from PubMed, syncs external data, regenerates QS files, and restarts the dashboard.
+The `svd-svd-dashboard-pipeline` CronJob runs the weekly ETL pipeline: extracts gene data from PubMed, syncs external data, regenerates QS files, and restarts the dashboard.
 
 | Property | Value |
 | --- | --- |
-| **Schedule** | `0 3 * * 1` (every Monday at 3:00 AM) |
-| **ServiceAccount** | `svd-svd-dashboard-pipeline` (Role grants `get`/`patch` on deployments) |
-| **Shared storage** | Mounts the `qs-data` PVC (same volume used by the dashboard) |
+| **Schedule** | `0 3 * * 1` (every Monday at 03:00 cluster-local time) |
+| **ServiceAccount** | `svd-svd-dashboard-pipeline` (Role grants `get` / `patch` on Deployments) |
+| **Active deadline** | `7200` seconds (2 h wall-clock maximum before the job is killed) |
+| **Shared storage** | Mounts the `svd-svd-dashboard-qs-data` PVC (same volume as the dashboard) |
+| **Concurrency** | `Forbid` (one run at a time) |
 
-**Execution sequence** — 3 init containers run sequentially, then the main container:
+**Execution sequence** — three init containers run sequentially, then the main container:
 
 | Step | Container | Command | Purpose |
 | --- | --- | --- | --- |
 | 1 | `run-pipeline` (init) | `python pipeline/main.py --days-back 7` | Search PubMed for new papers, extract genes via LLM, load into PostgreSQL |
-| 2 | `sync-external` (init) | `python pipeline/main.py --sync-external-data` | Sync NCBI Gene, UniProt, and PubMed citation data |
-| 3 | `generate-qs` (init) | `Rscript scripts/trigger_update.R` | Read from PostgreSQL and regenerate QS data files on the shared PVC |
-| 4 | `restart-dashboard` (main) | `kubectl rollout restart deployment/svd-svd-dashboard-dashboard` | Rolling restart of the Shiny dashboard to pick up new QS files |
+| 2 | `sync-external` (init) | `python pipeline/main.py --sync-external-data` | Sync NCBI Gene, UniProt, and PubMed citation data. Gated on `pipeline.syncExternalData` (default `true` in `values.yaml`). |
+| 3 | `generate-qs` (init) | `Rscript scripts/trigger_update.R` | Read PostgreSQL tables and regenerate QS data files on the shared PVC |
+| 4 | `restart-dashboard` (main) | `kubectl rollout restart deployment/svd-svd-dashboard-dashboard` | Rolling restart of the Shiny dashboard to pick up the new QS files |
 
-### Cross-Namespace Services
+### Cross-namespace resources created by the `svd` chart
 
-The `svd` namespace contains an **ExternalName** service (`svd-svd-dashboard-grafana-external`) that aliases `prometheus-grafana.monitoring.svc.cluster.local`. This allows the `grafana.local` ingress rule to route traffic to the Grafana pod in the `monitoring` namespace without duplicating the Grafana deployment.
+Even though every workload lives in `svd`, two templates intentionally place resources elsewhere:
+
+1. **`ingress-nginx-metrics` Service + ServiceMonitor** — written into the `ingress-nginx` namespace so Prometheus can scrape the controller's metrics port (see `helm/svd-dashboard/templates/ingress-nginx-{metrics-service,servicemonitor}.yaml`).
+2. **Optional `svd-svd-dashboard-grafana-external` ExternalName Service** — only rendered when `observability.prometheus.enabled=false` **and** `observability.grafana.external.enabled=true`. In that mode it aliases `{serviceName}.{namespace}.svc.cluster.local` (default `prometheus-grafana.monitoring`) so the `grafana.matbpoirierk8shomelab.net` ingress can still resolve. **Disabled in the current deployment** — see `helm/svd-dashboard/templates/grafana-external-service.yaml`.
 
 ### PodDisruptionBudgets
 
-Two PDBs ensure availability during voluntary disruptions (node drains, upgrades):
+Two PDBs (`helm/svd-dashboard/templates/pdb.yaml`) protect availability during voluntary disruptions (node drains, upgrades):
 
 | PDB | Target | Policy |
 | --- | --- | --- |
 | `svd-svd-dashboard-dashboard` | Dashboard Deployment | `minAvailable: 1` |
 | `svd-svd-dashboard-postgresql` | PostgreSQL StatefulSet | `minAvailable: 1` |
 
-## Data Flow Between Namespaces
+## Data Flow
 
 ```mermaid
 flowchart TD
-    Browser["Browser (*.local)"]
+    Browser["Browser\n(*.matbpoirierk8shomelab.net)"]
 
-    Browser -->|"Host header routing"| Ingress
-
-    subgraph ingress-nginx
+    subgraph ingress_nginx[ingress-nginx namespace]
         Ingress["ingress-nginx-controller"]
     end
 
-    Ingress -->|"shiny.local"| Shiny
-    Ingress -->|"grafana.local (via ExternalName)"| Grafana
-    Ingress -->|"ntfy.local"| Ntfy
-    Ingress -->|"healthchecks.local"| Healthchecks
+    Browser -->|"HTTPS via cloudflare-origin-tls"| Ingress
 
-    subgraph svd namespace
-        Shiny["Shiny App"]
-        QS["QS Files (PVC)"]
-        PG["PostgreSQL"]
-        Ntfy["ntfy"]
-        Healthchecks["Healthchecks"]
-        Blackbox["Blackbox Exporter"]
-        Pipeline["Pipeline CronJob\n(weekly Mon 3 AM)"]
+    subgraph svd_ns[svd namespace]
+        subgraph app[Application]
+            Shiny["Shiny Dashboard"]
+            QS["QS Files\n(shared PVC)"]
+            PG["PostgreSQL\n(+ postgres-exporter sidecar)"]
+            Ntfy["ntfy"]
+            Healthchecks["Healthchecks"]
+            Pipeline["Pipeline CronJob\n(weekly Mon 03:00)"]
+        end
 
-        Shiny -->|"reads QS files"| QS
-        Pipeline -->|"1. extract genes"| PG
-        Pipeline -->|"2. sync external data"| PG
-        Pipeline -->|"3. generate QS"| QS
-        Pipeline -->|"4. rollout restart"| Shiny
-        Pipeline -->|"alerts"| Ntfy
-        Pipeline -->|"heartbeat"| Healthchecks
+        subgraph obs[Observability]
+            Prometheus["Prometheus"]
+            Alertmanager["Alertmanager"]
+            Operator["Prometheus Operator"]
+            KSM["kube-state-metrics"]
+            NodeExp["node-exporter\n(DaemonSet)"]
+            Grafana["Grafana"]
+            Renderer["Grafana Image Renderer"]
+            Blackbox["Blackbox Exporter"]
+            VictoriaLogs["VictoriaLogs"]
+            Vector["Vector\n(DaemonSet)"]
+        end
     end
 
-    subgraph monitoring namespace
-        Grafana["Grafana"]
-        Renderer["Image Renderer"]
-        Prometheus["Prometheus"]
-        VictoriaLogs["VictoriaLogs"]
-        Vector["Vector"]
+    Ingress -->|"csvd-dashboard.*"| Shiny
+    Ingress -->|"ntfy.*"| Ntfy
+    Ingress -->|"healthchecks.*"| Healthchecks
+    Ingress -->|"grafana.*"| Grafana
+    Ingress -->|"prometheus.*"| Prometheus
+    Ingress -->|"alertmanager.*"| Alertmanager
+    Ingress -->|"victoria-logs.*"| VictoriaLogs
 
-        Grafana -->|"queries metrics"| Prometheus
-        Grafana -->|"queries logs"| VictoriaLogs
-        Grafana -->|"render requests"| Renderer
-        Vector -->|"ships logs"| VictoriaLogs
-    end
+    Shiny -->|"reads"| QS
+    Pipeline -->|"1. extract genes"| PG
+    Pipeline -->|"2. sync external data"| PG
+    Pipeline -->|"3. generate QS"| QS
+    Pipeline -->|"4. rollout restart"| Shiny
+    Pipeline -->|"alerts"| Ntfy
+    Pipeline -->|"heartbeat"| Healthchecks
 
-    Prometheus -->|"scrapes metrics"| Ingress
-    Prometheus -->|"scrapes metrics"| Blackbox
-    Prometheus -->|"scrapes metrics"| PG
-    Prometheus -->|"scrapes metrics"| Ntfy
-    Blackbox -->|"probes endpoints"| Shiny
-    Blackbox -->|"probes endpoints"| Healthchecks
+    Operator -->|"manages CRDs"| Prometheus
+    Operator -->|"manages CRDs"| Alertmanager
+    Prometheus -->|"fires alerts"| Alertmanager
+    Grafana -->|"queries metrics"| Prometheus
+    Grafana -->|"queries logs"| VictoriaLogs
+    Grafana -->|"render requests"| Renderer
 
-    %% Node colors by namespace
+    Prometheus -->|"scrapes"| PG
+    Prometheus -->|"scrapes"| Ntfy
+    Prometheus -->|"scrapes"| KSM
+    Prometheus -->|"scrapes"| NodeExp
+    Prometheus -->|"scrapes"| Blackbox
+    Prometheus -->|"scrapes (cross-ns)"| Ingress
+    Blackbox -->|"probes"| Shiny
+    Blackbox -->|"probes"| Healthchecks
+    Vector -->|"ships logs"| VictoriaLogs
+
     classDef ingress fill:#4a90d9,stroke:#3a7bc8,color:#fff
-    classDef svdNode fill:#50b878,stroke:#40a868,color:#fff
-    classDef monNode fill:#e8913a,stroke:#d8812a,color:#fff
+    classDef appNode fill:#50b878,stroke:#40a868,color:#fff
+    classDef obsNode fill:#e8913a,stroke:#d8812a,color:#fff
     classDef external fill:#888,stroke:#777,color:#fff
 
     class Browser external
     class Ingress ingress
-    class Shiny,QS,PG,Ntfy,Healthchecks,Blackbox,Pipeline svdNode
-    class Grafana,Renderer,Prometheus,VictoriaLogs,Vector monNode
-
-    %% Edge colors by flow type
-    linkStyle 0,1,2,3,4 stroke:#4a90d9,stroke-width:2px
-    linkStyle 5,6,7,8,9,10,11 stroke:#50b878,stroke-width:2px
-    linkStyle 12,13,14,15,16,17,18,19,20,21 stroke:#e8913a,stroke-width:2px
+    class Shiny,QS,PG,Ntfy,Healthchecks,Pipeline appNode
+    class Prometheus,Alertmanager,Operator,KSM,NodeExp,Grafana,Renderer,Blackbox,VictoriaLogs,Vector obsNode
 ```
 
-| Color | Flow Type | Description |
-| --- | --- | --- |
-| Blue | Ingress routing | Browser to nginx to backend services |
-| Green | Pipeline & data | CronJob to PostgreSQL to QS files to Shiny |
-| Orange | Monitoring | Grafana queries, Prometheus scrapes, Blackbox probes, log shipping |
+| Color | Role |
+| --- | --- |
+| Blue | `ingress-nginx-controller` — TLS termination and host-based routing |
+| Green | Application workloads — Shiny, PostgreSQL, ntfy, Healthchecks, Pipeline CronJob, shared QS PVC |
+| Orange | Observability — Prometheus stack, VictoriaLogs + Vector, Grafana + Image Renderer, Blackbox Exporter |
+| Grey | External (browser) |
