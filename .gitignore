@@ -26,6 +26,3 @@ www/*min.js
 
 # Tauri standalone app for pipeline testing
 tauri-app
-
-# Python app for pipeline testing
-pipeline_app
