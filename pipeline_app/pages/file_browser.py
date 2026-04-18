@@ -25,7 +25,7 @@ def _is_within(path: Path, anchor: Path) -> bool:
     """
     try:
         path.resolve().relative_to(anchor)
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return False
     return True
 

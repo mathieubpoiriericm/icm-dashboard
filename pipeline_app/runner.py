@@ -363,7 +363,7 @@ def _signal_process_group(
     if hasattr(os, "killpg"):
         try:
             pgid = os.getpgid(proc.pid)
-        except ProcessLookupError, PermissionError:
+        except (ProcessLookupError, PermissionError):
             pgid = -1
         if pgid == proc.pid:
             with contextlib.suppress(ProcessLookupError, PermissionError):

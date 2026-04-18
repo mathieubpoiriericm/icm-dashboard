@@ -199,7 +199,7 @@ def _filter_dataclass_fields(data: dict[str, Any], cls: type) -> dict[str, Any]:
                 else:
                     try:
                         v = expected_type(v)
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         logger.warning(
                             "Field %s.%s=%r dropped (could not coerce to %s)",
                             cls.__name__,
@@ -310,7 +310,7 @@ def load_presets() -> list[Preset]:
     for p in data:
         try:
             presets.append(Preset(**p))
-        except TypeError, KeyError:
+        except (TypeError, KeyError):
             logger.warning("Skipping malformed preset entry: %s", p)
     return presets
 
