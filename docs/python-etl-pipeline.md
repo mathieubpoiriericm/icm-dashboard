@@ -178,13 +178,34 @@ Merges validated genes into PostgreSQL and records processed PMIDs.
 
 The `--sync-external-data` mode (`external_data_sync.py`) populates cache tables consumed by the R transformation step. It runs independently of the main extraction pipeline and is wrapped in an `asyncio.timeout(3600)` — a 1-hour hard cap.
 
-1. Collects distinct gene symbols from `genes` (Table 1) and `clinical_trials` (Table 2). Table 2's `genetic_target` column is split on `,`, `;`, and `/` to unpack multi-gene entries.
-2. Extracts all PMIDs from the `genes.references` column via `extract_pmids_from_text()` (a 7–9 digit regex to avoid year-like tokens).
-3. **NCBI Gene info** (`ncbi_gene_fetch.py`): fetches description, aliases, and NCBI UID. Upserts into `ncbi_gene_info`.
-4. **UniProt info** (`uniprot_fetch.py`): fetches protein name, GO annotations (biological process, molecular function, cellular component), and UniProt URL. Upserts into `uniprot_info`. Only Table 1 genes are synced to UniProt — Table 2 (clinical trials) does not display protein-level data.
-5. **PubMed citations** (`pubmed_citations.py`): fetches formatted bibliographic data (authors, title, journal, date, DOI). Upserts into `pubmed_citations`.
+1. **ClinicalTrials.gov sync** (`clinical_trials_fetch.py`): searches CTG v2 for cSVD-relevant NCT trials using a curated condition list, maps each DRUG-type intervention to a flat record, and upserts into `clinical_trials`. Runs first so newly discovered trials flow into the gene-symbol collection below. Gated on `PIPELINE_CT_ENABLED` (default on). See the **ClinicalTrials.gov Sync** subsection below.
+2. Collects distinct gene symbols from `genes` (Table 1) and `clinical_trials` (Table 2). Table 2's `genetic_target` column is split on `,`, `;`, and `/` to unpack multi-gene entries.
+3. Extracts all PMIDs from the `genes.references` column via `extract_pmids_from_text()` (a 7–9 digit regex to avoid year-like tokens).
+4. **NCBI Gene info** (`ncbi_gene_fetch.py`): fetches description, aliases, and NCBI UID. Upserts into `ncbi_gene_info`.
+5. **UniProt info** (`uniprot_fetch.py`): fetches protein name, GO annotations (biological process, molecular function, cellular component), and UniProt URL. Upserts into `uniprot_info`. Only Table 1 genes are synced to UniProt — Table 2 (clinical trials) does not display protein-level data.
+6. **PubMed citations** (`pubmed_citations.py`): fetches formatted bibliographic data (authors, title, journal, date, DOI). Upserts into `pubmed_citations`.
 
 Per-source errors are truncated to `_MAX_ERRORS_PER_SOURCE=10` before being attached to the combined `ExternalDataSyncResult` so the report doesn't balloon on widespread outages. Each external API module maintains its own in-memory LRU (same `evict_lru()` helper used by `validation.py`) and HTTP client, cleaned up in the `finally` block regardless of success.
+
+### ClinicalTrials.gov Sync
+
+`clinical_trials_fetch.py` discovers new cSVD drug trials on ClinicalTrials.gov v2 (`https://clinicaltrials.gov/api/v2/studies`) and refreshes existing NCT rows in the `clinical_trials` table. One row is emitted per DRUG-type intervention (non-drug interventions such as BEHAVIORAL/DEVICE are skipped); the `UNIQUE(registry_id, drug)` constraint handles dedup.
+
+**Curator-field invariant.** The upsert is written so that curator-owned columns — `mechanism_of_action`, `genetic_target`, `genetic_evidence`, `svd_population`, `svd_population_details` — are omitted from both the INSERT column list and the `ON CONFLICT DO UPDATE SET` clause. On INSERT they default to NULL; on CONFLICT they are never touched. Refresh runs are therefore safe to re-run repeatedly without clobbering curator edits.
+
+**Scope.** Only NCT registries are covered; ISRCTN / ACTRN / ChiCTR trials remain hand-curated via `data/csv/table2.csv` and are ignored by this sync. Trial `status` and facility locations are still fetched at dashboard render time by `R/fetch_trial_locations.R` — they are not persisted.
+
+**Search terms.** The default cSVD-relevant condition list is defined as `DEFAULT_CT_SEARCH_TERMS` in `config.py`. Override via the comma-separated env var `PIPELINE_CT_SEARCH_TERMS`.
+
+**Tunables** (all `PIPELINE_CT_*` env vars):
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `PIPELINE_CT_ENABLED` | `true` | Gate the CTG sync (`true`/`false`) |
+| `PIPELINE_CT_SEARCH_TERMS` | `DEFAULT_CT_SEARCH_TERMS` | Comma-separated condition terms |
+| `PIPELINE_CT_PAGE_SIZE` | `100` | CTG `pageSize` parameter |
+| `PIPELINE_CT_MAX_CONCURRENCY` | `5` | Semaphore size for concurrent requests |
+| `PIPELINE_CT_MAX_RETRIES` | `3` | Retries on 429 / 5xx / timeout per page |
 
 ## Observability & Operations
 

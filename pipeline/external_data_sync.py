@@ -11,6 +11,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from pipeline.clinical_trials_fetch import close_ctg_client, sync_clinical_trials
+from pipeline.config import PipelineConfig
 from pipeline.database import Database
 from pipeline.ncbi_gene_fetch import (
     clear_ncbi_cache,
@@ -45,6 +47,9 @@ class ExternalDataSyncResult:
     pubmed_fetched: int = 0
     pubmed_cached: int = 0
     pubmed_failed: int = 0
+    ctg_fetched: int = 0
+    ctg_cached: int = 0
+    ctg_failed: int = 0
     errors: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -58,7 +63,10 @@ class ExternalDataSyncResult:
             f"{self.uniprot_failed} failed\n"
             f"PubMed: {self.pubmed_fetched} fetched, "
             f"{self.pubmed_cached} cached, "
-            f"{self.pubmed_failed} failed"
+            f"{self.pubmed_failed} failed\n"
+            f"ClinicalTrials.gov: {self.ctg_fetched} fetched, "
+            f"{self.ctg_cached} cached, "
+            f"{self.ctg_failed} failed"
         )
 
 
@@ -118,9 +126,7 @@ async def get_all_pmids() -> list[str]:
 _MAX_ERRORS_PER_SOURCE: int = 10
 
 
-def _append_errors_truncated(
-    target: list[str], source: list[str], label: str
-) -> None:
+def _append_errors_truncated(target: list[str], source: list[str], label: str) -> None:
     """Append errors from source to target, truncating with a message."""
     if len(source) <= _MAX_ERRORS_PER_SOURCE:
         target.extend(source)
@@ -130,24 +136,43 @@ def _append_errors_truncated(
         target.append(f"... and {suppressed} more {label} errors suppressed")
 
 
-async def sync_all_external_data() -> ExternalDataSyncResult:
+async def sync_all_external_data(
+    config: PipelineConfig | None = None,
+) -> ExternalDataSyncResult:
     """Sync all external data sources for dashboard refresh.
 
     This function:
-    1. Gets all gene symbols from genes and clinical_trials tables
-    2. Extracts PMIDs from genes.references column
-    3. Syncs NCBI gene info for all genes
-    4. Syncs UniProt info for Table 1 genes
-    5. Syncs PubMed citations for all PMIDs
+    1. Discovers + refreshes cSVD clinical trials from ClinicalTrials.gov
+       (gated on ``config.ct_enabled``)
+    2. Collects gene symbols from genes and clinical_trials tables
+       (after CTG sync so newly-discovered trials flow into the gene list)
+    3. Extracts PMIDs from genes.references column
+    4. Syncs NCBI gene info for all genes
+    5. Syncs UniProt info for Table 1 genes
+    6. Syncs PubMed citations for all PMIDs
 
     Returns:
         ExternalDataSyncResult with sync statistics.
     """
+    cfg = config or PipelineConfig()
     result = ExternalDataSyncResult()
 
     try:
         async with asyncio.timeout(3600):
-            # Step 1: Get gene symbols and PMIDs concurrently
+            # Step 1: Sync ClinicalTrials.gov (discover + refresh)
+            if cfg.ct_enabled:
+                logger.info("Syncing ClinicalTrials.gov...")
+                ctg_result = await sync_clinical_trials(cfg)
+                result.ctg_fetched = ctg_result.fetched
+                result.ctg_cached = ctg_result.cached
+                result.ctg_failed = ctg_result.failed
+                _append_errors_truncated(
+                    result.errors, ctg_result.errors, "ClinicalTrials.gov"
+                )
+            else:
+                logger.info("ClinicalTrials.gov sync disabled (ct_enabled=False)")
+
+            # Step 2: Get gene symbols and PMIDs concurrently
             logger.info("Collecting gene symbols and PMIDs from database...")
             table1_genes, table2_genes, pmids = await asyncio.gather(
                 get_table1_gene_symbols(),
@@ -184,9 +209,7 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
                 result.pubmed_fetched = pubmed_result.fetched
                 result.pubmed_cached = pubmed_result.cached
                 result.pubmed_failed = pubmed_result.failed
-                _append_errors_truncated(
-                    result.errors, pubmed_result.errors, "PubMed"
-                )
+                _append_errors_truncated(result.errors, pubmed_result.errors, "PubMed")
             else:
                 logger.info("No PMIDs to sync")
 
@@ -202,6 +225,7 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
 
     finally:
         # Cleanup all HTTP clients and caches
+        await close_ctg_client()
         await close_ncbi_client()
         await close_uniprot_client()
         await close_pubmed_client()

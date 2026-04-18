@@ -1218,7 +1218,7 @@ async def run_external_data_sync(
     ping_start(config.healthcheck_url)
     logger.info("Starting external data sync...")
     try:
-        result = await sync_all_external_data()
+        result = await sync_all_external_data(config=config)
         logger.info(LOG_SEPARATOR)
         logger.info("External Data Sync Summary:")
         logger.info(result.summary())

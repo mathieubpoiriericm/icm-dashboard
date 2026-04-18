@@ -47,6 +47,30 @@ def _env_str(name: str, default: str) -> str:
     return os.getenv(name, default)
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """Read a boolean from an environment variable, falling back to *default*.
+
+    Truthy values (case-insensitive): "1", "true", "yes", "on".
+    Anything else is falsy.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Read a comma-separated list from an environment variable.
+
+    Empty entries are dropped; surrounding whitespace is stripped. Returns
+    *default* if the variable is unset.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
 # Valid GWAS traits from cSVD literature (immutable reference data)
 VALID_GWAS_TRAITS: Final[frozenset[str]] = frozenset(
     {
@@ -106,6 +130,21 @@ NCBI_EFETCH_URL: Final[str] = (
 # to prevent XXE attacks when parsing untrusted XML from NCBI APIs.
 SAFE_XML_PARSER: Final[etree.XMLParser] = etree.XMLParser(
     resolve_entities=False, no_network=True
+)
+
+# Default ClinicalTrials.gov condition/keyword terms for cSVD relevance.
+# Override via PIPELINE_CT_SEARCH_TERMS (comma-separated).
+DEFAULT_CT_SEARCH_TERMS: Final[tuple[str, ...]] = (
+    "cerebral small vessel disease",
+    "lacunar stroke",
+    "lacunar infarction",
+    "CADASIL",
+    "CARASIL",
+    "cerebral microbleeds",
+    "white matter hyperintensities",
+    "vascular cognitive impairment",
+    "vascular dementia",
+    "cerebral amyloid angiopathy",
 )
 
 
@@ -250,6 +289,25 @@ class PipelineConfig:
         default_factory=lambda: _env_int("PIPELINE_UNIPROT_RATE_LIMIT", 5)
     )
 
+    # --- ClinicalTrials.gov sync ---
+    ct_enabled: bool = field(
+        default_factory=lambda: _env_bool("PIPELINE_CT_ENABLED", True)
+    )
+    ct_search_terms: tuple[str, ...] = field(
+        default_factory=lambda: _env_list(
+            "PIPELINE_CT_SEARCH_TERMS", DEFAULT_CT_SEARCH_TERMS
+        )
+    )
+    ct_page_size: int = field(
+        default_factory=lambda: _env_int("PIPELINE_CT_PAGE_SIZE", 100)
+    )
+    ct_max_concurrency: int = field(
+        default_factory=lambda: _env_int("PIPELINE_CT_MAX_CONCURRENCY", 5)
+    )
+    ct_max_retries: int = field(
+        default_factory=lambda: _env_int("PIPELINE_CT_MAX_RETRIES", 3)
+    )
+
     # --- Database ---
     db_pool_min_size: int = field(
         default_factory=lambda: _env_int("PIPELINE_DB_POOL_MIN", 2)
@@ -276,19 +334,21 @@ class PipelineConfig:
         default_factory=lambda: _env_str("PIPELINE_HEALTHCHECK_URL", "")
     )
     event_db_path: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_EVENT_DB_PATH", str(PROJECT_ROOT / "logs" / "events.db")
-        )
-        or str(PROJECT_ROOT / "logs" / "events.db"),
+        default_factory=lambda: (
+            _env_str("PIPELINE_EVENT_DB_PATH", str(PROJECT_ROOT / "logs" / "events.db"))
+            or str(PROJECT_ROOT / "logs" / "events.db")
+        ),
     )
 
     # --- Progress reporting ---
     progress_file: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_PROGRESS_FILE",
-            str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json"),
-        )
-        or str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json"),
+        default_factory=lambda: (
+            _env_str(
+                "PIPELINE_PROGRESS_FILE",
+                str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json"),
+            )
+            or str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json")
+        ),
     )
 
     notify_max_retries: int = field(
@@ -303,9 +363,7 @@ class PipelineConfig:
 
     def __post_init__(self) -> None:
         if self.llm_max_tokens == 0:
-            self.llm_max_tokens = MODEL_MAX_OUTPUT_TOKENS.get(
-                self.llm_model, 64_000
-            )
+            self.llm_max_tokens = MODEL_MAX_OUTPUT_TOKENS.get(self.llm_model, 64_000)
 
     @property
     def model_version(self) -> str:

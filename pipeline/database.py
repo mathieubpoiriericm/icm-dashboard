@@ -569,3 +569,62 @@ async def upsert_pubmed_citations_batch(citations: list[Any]) -> int:
             ],
         )
     return len(citations)
+
+
+# =============================================================================
+# Clinical Trials Operations (ClinicalTrials.gov sync)
+# =============================================================================
+
+
+async def upsert_clinical_trials_batch(trials: list[Any]) -> int:
+    """Batch upsert clinical trial rows from ClinicalTrials.gov.
+
+    Curator-owned columns (``mechanism_of_action``, ``genetic_target``,
+    ``genetic_evidence``, ``svd_population``, ``svd_population_details``)
+    are deliberately omitted from the INSERT column list and the ON CONFLICT
+    update set. On INSERT they default to NULL; on CONFLICT they remain
+    whatever the curator set them to. This preserves curator edits across
+    pipeline runs.
+
+    Args:
+        trials: List of ClinicalTrialRecord objects (from
+            ``pipeline.clinical_trials_fetch``).
+
+    Returns:
+        Number of trial rows submitted for upsert.
+    """
+    if not trials:
+        return 0
+
+    async with Database.connection() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO clinical_trials (
+                drug, trial_name, registry_id, clinical_trial_phase,
+                target_sample_size, estimated_completion_date,
+                primary_outcome, sponsor_type
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (registry_id, drug) DO UPDATE SET
+                trial_name = EXCLUDED.trial_name,
+                clinical_trial_phase = EXCLUDED.clinical_trial_phase,
+                target_sample_size = EXCLUDED.target_sample_size,
+                estimated_completion_date = EXCLUDED.estimated_completion_date,
+                primary_outcome = EXCLUDED.primary_outcome,
+                sponsor_type = EXCLUDED.sponsor_type,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            [
+                (
+                    t.drug,
+                    t.trial_name,
+                    t.registry_id,
+                    t.clinical_trial_phase,
+                    t.target_sample_size,
+                    t.estimated_completion_date,
+                    t.primary_outcome,
+                    t.sponsor_type,
+                )
+                for t in trials
+            ],
+        )
+    return len(trials)

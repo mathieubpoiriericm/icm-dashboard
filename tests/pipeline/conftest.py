@@ -324,6 +324,16 @@ def _reset_pubmed_citations_client():
     pc._cache_lock = None
 
 
+@pytest.fixture(autouse=True)
+def _reset_clinical_trials_client():
+    """Clear the shared clinical_trials_fetch HTTP client after each test."""
+    yield
+    import pipeline.clinical_trials_fetch as ctg
+
+    ctg._client_manager.reset()
+    ctg._ctg_semaphore = None
+
+
 @pytest.fixture
 def event_loop():
     """Provide a fresh event loop for each test."""
