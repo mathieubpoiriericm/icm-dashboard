@@ -84,15 +84,25 @@ def init_ctg_fetch_state(config: PipelineConfig | None = None) -> None:
     Must be called once from inside the running event loop. Idempotent.
     """
     global _ctg_semaphore
-    if _ctg_semaphore is None:
-        _ctg_semaphore = asyncio.Semaphore(_resolve_concurrency(config))
+    if _ctg_semaphore is not None:
+        return
+    # asyncio.Semaphore silently ties itself to whatever loop happens to be
+    # current, so mis-use (sync context) only surfaces much later as
+    # "attached to a different loop" errors. Fail fast instead.
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError as e:
+        raise RuntimeError(
+            "init_ctg_fetch_state() must be called from inside a running event loop"
+        ) from e
+    _ctg_semaphore = asyncio.Semaphore(_resolve_concurrency(config))
 
 
-def _get_ctg_semaphore(config: PipelineConfig | None = None) -> asyncio.Semaphore:
+def _get_ctg_semaphore() -> asyncio.Semaphore:
     """Get or lazily create the CTG concurrency semaphore."""
-    global _ctg_semaphore
     if _ctg_semaphore is None:
-        _ctg_semaphore = asyncio.Semaphore(_resolve_concurrency(config))
+        init_ctg_fetch_state()
+    assert _ctg_semaphore is not None
     return _ctg_semaphore
 
 
@@ -153,15 +163,14 @@ def _drug_interventions(study: dict[str, Any]) -> list[str]:
             continue
         itype = item.get("type")
         name = item.get("name")
-        if (
-            isinstance(itype, str)
-            and itype.upper() in DRUG_INTERVENTION_TYPES
-            and isinstance(name, str)
-            and name.strip()
-            and name not in seen
-        ):
-            drugs.append(name.strip())
-            seen.add(name)
+        if not isinstance(itype, str) or itype.upper() not in DRUG_INTERVENTION_TYPES:
+            continue
+        if not isinstance(name, str):
+            continue
+        stripped = name.strip()
+        if stripped and stripped not in seen:
+            drugs.append(stripped)
+            seen.add(stripped)
     return drugs
 
 
@@ -288,7 +297,9 @@ async def _search_condition_term(
 ) -> list[dict[str, Any]]:
     """Paginated search for a single condition term.
 
-    Returns the concatenated list of study dicts across all pages.
+    Returns the concatenated list of study dicts across all pages. If a page
+    fails after all retries, earlier pages' studies are preserved — only the
+    failed page (and any beyond it) are lost.
     """
     collected: list[dict[str, Any]] = []
     page_token: str | None = None
@@ -301,7 +312,14 @@ async def _search_condition_term(
         if page_token:
             params["pageToken"] = page_token
 
-        body = await _fetch_page_with_retry(params, max_retries)
+        try:
+            body = await _fetch_page_with_retry(params, max_retries)
+        except Exception as e:
+            logger.warning(
+                f"CTG term {term!r} pagination aborted after "
+                f"{len(collected)} studies: {e}"
+            )
+            break
 
         studies = body.get("studies")
         if isinstance(studies, list):
@@ -320,29 +338,42 @@ async def fetch_csvd_studies(
     search_terms: tuple[str, ...] | list[str],
     page_size: int,
     max_retries: int,
-) -> list[dict[str, Any]]:
-    """Search CTG across all cSVD-relevant terms and deduplicate by NCT ID."""
-    if not search_terms:
-        return []
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Search CTG across all cSVD-relevant terms and deduplicate by NCT ID.
 
-    async with asyncio.TaskGroup() as tg:
-        tasks = [
-            tg.create_task(_search_condition_term(term, page_size, max_retries))
+    Returns (studies, errors). A failure in one term does not abort the rest;
+    failed terms appear in the errors list while successful terms contribute
+    their studies.
+    """
+    if not search_terms:
+        return [], []
+
+    results = await asyncio.gather(
+        *(
+            _search_condition_term(term, page_size, max_retries)
             for term in search_terms
-        ]
+        ),
+        return_exceptions=True,
+    )
 
     deduped: dict[str, dict[str, Any]] = {}
-    for task in tasks:
-        for study in task.result():
+    term_errors: list[str] = []
+    for term, result in zip(search_terms, results, strict=True):
+        if isinstance(result, BaseException):
+            logger.warning(f"CTG term {term!r} failed: {result}")
+            term_errors.append(f"CTG term {term!r}: {result}")
+            continue
+        for study in result:
             nct = _get_path(study, "protocolSection", "identificationModule", "nctId")
             if isinstance(nct, str) and nct and nct not in deduped:
                 deduped[nct] = study
 
     logger.info(
         f"CTG: {len(deduped)} unique cSVD-relevant studies "
-        f"across {len(search_terms)} search terms"
+        f"across {len(search_terms)} search terms "
+        f"({len(term_errors)} term failures)"
     )
-    return list(deduped.values())
+    return list(deduped.values()), term_errors
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +399,7 @@ async def sync_clinical_trials(config: PipelineConfig) -> SyncResult:
 
     errors: list[str] = []
     try:
-        studies = await fetch_csvd_studies(
+        studies, term_errors = await fetch_csvd_studies(
             search_terms=config.ct_search_terms,
             page_size=config.ct_page_size,
             max_retries=config.ct_max_retries,
@@ -377,10 +408,17 @@ async def sync_clinical_trials(config: PipelineConfig) -> SyncResult:
         logger.exception("CTG fetch failed")
         return SyncResult(fetched=0, cached=0, failed=0, errors=[f"CTG fetch: {e}"])
 
+    errors.extend(term_errors)
+
     records: list[ClinicalTrialRecord] = []
+    studies_without_nct = 0
     studies_without_drug = 0
     for study in studies:
         try:
+            nct = _get_path(study, "protocolSection", "identificationModule", "nctId")
+            if not isinstance(nct, str) or not nct:
+                studies_without_nct += 1
+                continue
             mapped = _map_study_to_records(study)
             if not mapped:
                 studies_without_drug += 1
@@ -389,6 +427,8 @@ async def sync_clinical_trials(config: PipelineConfig) -> SyncResult:
             nct = _get_path(study, "protocolSection", "identificationModule", "nctId")
             errors.append(f"CTG map {nct or '?'}: {e}")
 
+    if studies_without_nct:
+        logger.debug(f"CTG: {studies_without_nct} studies dropped (missing NCT ID)")
     if studies_without_drug:
         logger.info(
             f"CTG: {studies_without_drug}/{len(studies)} studies had "

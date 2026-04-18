@@ -79,10 +79,19 @@ async def get_table1_gene_symbols() -> list[str]:
         return [row["gene"] for row in rows]
 
 
+_GENE_SKIP_TOKENS: frozenset[str] = frozenset(
+    {"", "NA", "N/A", "NONE", "NULL", "-", "--", "UNKNOWN"}
+)
+# HGNC-style: leading letter, alphanumerics + hyphens, up to 30 chars.
+_GENE_SHAPE = re.compile(r"^[A-Za-z][A-Za-z0-9\-]{0,29}$")
+
+
 async def get_table2_gene_symbols() -> list[str]:
     """Get unique gene symbols from the clinical_trials table (Table 2).
 
-    The genetic_target column may contain comma-separated gene lists.
+    The genetic_target column may contain comma/semicolon/slash-separated
+    gene lists. Tokens that don't look like gene symbols are skipped to
+    avoid polluting downstream NCBI lookups.
     """
     async with Database.connection() as conn:
         rows = await conn.fetch(
@@ -91,17 +100,19 @@ async def get_table2_gene_symbols() -> list[str]:
             "WHERE genetic_target IS NOT NULL"
         )
 
-    # Extract individual genes from comma-separated lists
     all_genes: set[str] = set()
     for row in rows:
         target = row["genetic_target"]
-        if target:
-            # Split by comma, semicolon, or slash
-            genes = re.split(r"[,;/]", target)
-            for gene in genes:
-                gene = gene.strip()
-                if gene and gene.upper() != "NA" and gene != "-":
-                    all_genes.add(gene)
+        if not target:
+            continue
+        for raw in re.split(r"[,;/]", target):
+            gene = raw.strip()
+            if gene.upper() in _GENE_SKIP_TOKENS:
+                continue
+            if _GENE_SHAPE.fullmatch(gene):
+                all_genes.add(gene)
+            else:
+                logger.debug(f"Skipping non-gene-shaped token: {gene!r}")
 
     return sorted(all_genes)
 

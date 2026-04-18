@@ -109,6 +109,7 @@ ALLOWED_TABLES: Final[frozenset[str]] = frozenset(
         "ncbi_gene_info",
         "uniprot_info",
         "pubmed_citations",
+        "clinical_trials",
     }
 )
 ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
@@ -364,6 +365,20 @@ class PipelineConfig:
     def __post_init__(self) -> None:
         if self.llm_max_tokens == 0:
             self.llm_max_tokens = MODEL_MAX_OUTPUT_TOKENS.get(self.llm_model, 64_000)
+
+        # Fail fast on CT misconfiguration — Semaphore(0) would hang every
+        # fetch until the outer 1-hour timeout, and negative values crash
+        # deep inside an async call with no config context.
+        if self.ct_max_concurrency < 1:
+            raise ValueError(
+                f"ct_max_concurrency must be >= 1, got {self.ct_max_concurrency}"
+            )
+        if self.ct_page_size < 1 or self.ct_page_size > 1000:
+            raise ValueError(
+                f"ct_page_size must be in [1, 1000], got {self.ct_page_size}"
+            )
+        if self.ct_max_retries < 0:
+            raise ValueError(f"ct_max_retries must be >= 0, got {self.ct_max_retries}")
 
     @property
     def model_version(self) -> str:

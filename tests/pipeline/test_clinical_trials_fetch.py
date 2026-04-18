@@ -129,6 +129,19 @@ class TestDrugInterventions:
         study = _make_study(interventions=[{"type": "drug", "name": "aspirin"}])
         assert _drug_interventions(study) == ["aspirin"]
 
+    def test_deduplicates_whitespace_variants(self):
+        # Whitespace-padded duplicates used to bypass the dedup check and
+        # produce two records that violated the UNIQUE(registry_id, drug)
+        # constraint on upsert.
+        study = _make_study(
+            interventions=[
+                {"type": "DRUG", "name": "aspirin"},
+                {"type": "DRUG", "name": " aspirin "},
+                {"type": "DRUG", "name": "aspirin\t"},
+            ]
+        )
+        assert _drug_interventions(study) == ["aspirin"]
+
 
 class TestFirstPhase:
     def test_returns_first_phase(self):
@@ -291,12 +304,13 @@ class TestFetchCSVDStudies:
             return_value=mock_client,
         )
 
-        studies = await fetch_csvd_studies(
+        studies, errors = await fetch_csvd_studies(
             search_terms=("lacunar stroke",),
             page_size=100,
             max_retries=0,
         )
         assert len(studies) == 1
+        assert errors == []
         # One HTTP GET per term when there's no pagination
         assert mock_client.get.call_count == 1
 
@@ -321,7 +335,7 @@ class TestFetchCSVDStudies:
             return_value=mock_client,
         )
 
-        studies = await fetch_csvd_studies(
+        studies, errors = await fetch_csvd_studies(
             search_terms=("lacunar stroke",),
             page_size=100,
             max_retries=0,
@@ -331,6 +345,7 @@ class TestFetchCSVDStudies:
             for s in studies
         )
         assert nct_ids == ["NCT1", "NCT2"]
+        assert errors == []
 
     async def test_dedup_across_terms(self, mocker):
         # Term1 returns NCT1 + NCT2; Term2 returns NCT2 + NCT3.
@@ -353,7 +368,7 @@ class TestFetchCSVDStudies:
             return_value=mock_client,
         )
 
-        studies = await fetch_csvd_studies(
+        studies, errors = await fetch_csvd_studies(
             search_terms=("term1", "term2"),
             page_size=100,
             max_retries=0,
@@ -363,16 +378,16 @@ class TestFetchCSVDStudies:
             for s in studies
         )
         assert nct_ids == ["NCT1", "NCT2", "NCT3"]
+        assert errors == []
 
     async def test_empty_terms_returns_empty(self):
-        assert (
-            await fetch_csvd_studies(
-                search_terms=(),
-                page_size=100,
-                max_retries=0,
-            )
-            == []
+        studies, errors = await fetch_csvd_studies(
+            search_terms=(),
+            page_size=100,
+            max_retries=0,
         )
+        assert studies == []
+        assert errors == []
 
     async def test_retry_on_5xx(self, mocker):
         good = {"studies": [_make_study(nct_id="NCT1")]}
@@ -389,12 +404,79 @@ class TestFetchCSVDStudies:
         )
         mocker.patch("pipeline.clinical_trials_fetch.asyncio.sleep", new=AsyncMock())
 
-        studies = await fetch_csvd_studies(
+        studies, errors = await fetch_csvd_studies(
             search_terms=("term",),
             page_size=100,
             max_retries=2,
         )
         assert len(studies) == 1
+        assert errors == []
+
+    async def test_partial_term_failure_preserves_others(self, mocker):
+        # One term returns studies, the other raises after retry exhaustion;
+        # with gather, the successful term's results must survive.
+        from pipeline import clinical_trials_fetch as ctg
+
+        good = [_make_study(nct_id="NCT_GOOD")]
+
+        async def fake_search(term, page_size, max_retries):
+            if term == "bad":
+                raise RuntimeError("term bad blew up")
+            return good
+
+        mocker.patch.object(ctg, "_search_condition_term", side_effect=fake_search)
+
+        studies, errors = await fetch_csvd_studies(
+            search_terms=("good", "bad"),
+            page_size=100,
+            max_retries=0,
+        )
+        assert len(studies) == 1
+        assert (
+            _get_path(studies[0], "protocolSection", "identificationModule", "nctId")
+            == "NCT_GOOD"
+        )
+        assert len(errors) == 1
+        assert "bad" in errors[0]
+
+    async def test_page_level_failure_preserves_earlier_pages(self, mocker):
+        # Page 1 succeeds and has a nextPageToken; page 2 fails all retries.
+        # Expect page 1's studies preserved rather than discarded.
+        page1 = {
+            "studies": [_make_study(nct_id="NCT_P1")],
+            "nextPageToken": "tok-2",
+        }
+
+        call_count = {"n": 0}
+
+        def get_side_effect(*_args, **_kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return _mock_http_response(page1)
+            fail = AsyncMock()
+            fail.status_code = 503
+            fail.request = httpx.Request("GET", "https://x/y")
+            fail.json = lambda: {}
+            fail.raise_for_status = AsyncMock()
+            return fail
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=get_side_effect)
+        mocker.patch(
+            "pipeline.clinical_trials_fetch._client_manager.get",
+            return_value=mock_client,
+        )
+        mocker.patch("pipeline.clinical_trials_fetch.asyncio.sleep", new=AsyncMock())
+
+        studies, errors = await fetch_csvd_studies(
+            search_terms=("term",),
+            page_size=100,
+            max_retries=1,
+        )
+        assert len(studies) == 1
+        # Term itself is "successful" (returns partial results), so no term-level
+        # error — the page-level warning is logged but not surfaced.
+        assert errors == []
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +501,7 @@ class TestSyncClinicalTrials:
         ]
         mocker.patch(
             "pipeline.clinical_trials_fetch.fetch_csvd_studies",
-            return_value=studies,
+            return_value=(studies, []),
         )
         mock_upsert = mocker.patch(
             "pipeline.database.upsert_clinical_trials_batch",
@@ -463,7 +545,7 @@ class TestSyncClinicalTrials:
         ]
         mocker.patch(
             "pipeline.clinical_trials_fetch.fetch_csvd_studies",
-            return_value=studies,
+            return_value=(studies, []),
         )
         mocker.patch(
             "pipeline.database.upsert_clinical_trials_batch",
@@ -489,7 +571,7 @@ class TestSyncClinicalTrials:
         ]
         mocker.patch(
             "pipeline.clinical_trials_fetch.fetch_csvd_studies",
-            return_value=studies,
+            return_value=(studies, []),
         )
         mock_upsert = mocker.patch(
             "pipeline.database.upsert_clinical_trials_batch",
@@ -504,6 +586,60 @@ class TestSyncClinicalTrials:
         args, _ = mock_upsert.call_args
         assert len(args[0]) == 1
         assert args[0][0].registry_id == "NCT1"
+
+    async def test_term_failures_surfaced_in_errors(self, mocker):
+        # fetch_csvd_studies returns (studies, term_errors); the term errors
+        # must propagate into SyncResult.errors.
+        studies = [
+            _make_study(
+                nct_id="NCT_OK",
+                interventions=[{"type": "DRUG", "name": "drug"}],
+            )
+        ]
+        term_errors = ["CTG term 'bad': boom"]
+        mocker.patch(
+            "pipeline.clinical_trials_fetch.fetch_csvd_studies",
+            return_value=(studies, term_errors),
+        )
+        mocker.patch(
+            "pipeline.database.upsert_clinical_trials_batch",
+            new_callable=AsyncMock,
+            return_value=1,
+        )
+        config = PipelineConfig()
+        result = await sync_clinical_trials(config)
+
+        assert "CTG term 'bad'" in "\n".join(result.errors)
+        assert result.cached == 1
+
+    async def test_separates_no_nct_from_no_drug_counters(self, mocker, caplog):
+        # One study missing NCT, one study missing drug — each should hit its
+        # own counter and emit its own log line.
+        studies = [
+            {"protocolSection": {"identificationModule": {}}},  # no NCT
+            _make_study(
+                nct_id="NCT_NO_DRUG",
+                interventions=[{"type": "BEHAVIORAL", "name": "edu"}],
+            ),
+        ]
+        mocker.patch(
+            "pipeline.clinical_trials_fetch.fetch_csvd_studies",
+            return_value=(studies, []),
+        )
+        mocker.patch(
+            "pipeline.database.upsert_clinical_trials_batch",
+            new_callable=AsyncMock,
+            return_value=0,
+        )
+        import logging
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.clinical_trials_fetch")
+        config = PipelineConfig()
+        await sync_clinical_trials(config)
+
+        messages = [rec.message for rec in caplog.records]
+        assert any("missing NCT ID" in m for m in messages)
+        assert any("no DRUG-type intervention" in m for m in messages)
 
 
 # ---------------------------------------------------------------------------
@@ -594,3 +730,60 @@ class TestUpsertClinicalTrialsBatchSQL:
 
         n = await upsert_clinical_trials_batch([sample_record, sample_record])
         assert n == 2
+
+
+# ---------------------------------------------------------------------------
+# Config validation
+# ---------------------------------------------------------------------------
+
+
+class TestConfigValidation:
+    """PipelineConfig must reject CT misconfig that would hang or crash later."""
+
+    def test_defaults_accepted(self):
+        PipelineConfig()  # no raise
+
+    def test_ct_max_concurrency_zero_rejected(self):
+        with pytest.raises(ValueError, match="ct_max_concurrency"):
+            PipelineConfig(ct_max_concurrency=0)
+
+    def test_ct_max_concurrency_negative_rejected(self):
+        with pytest.raises(ValueError, match="ct_max_concurrency"):
+            PipelineConfig(ct_max_concurrency=-1)
+
+    def test_ct_page_size_zero_rejected(self):
+        with pytest.raises(ValueError, match="ct_page_size"):
+            PipelineConfig(ct_page_size=0)
+
+    def test_ct_page_size_too_large_rejected(self):
+        with pytest.raises(ValueError, match="ct_page_size"):
+            PipelineConfig(ct_page_size=1001)
+
+    def test_ct_max_retries_negative_rejected(self):
+        with pytest.raises(ValueError, match="ct_max_retries"):
+            PipelineConfig(ct_max_retries=-1)
+
+    def test_ct_max_retries_zero_accepted(self):
+        PipelineConfig(ct_max_retries=0)  # no raise — 0 means "try once, no retry"
+
+
+# ---------------------------------------------------------------------------
+# init_ctg_fetch_state event-loop requirement
+# ---------------------------------------------------------------------------
+
+
+class TestInitState:
+    def test_raises_outside_event_loop(self):
+        # Called from a sync function with no running loop — must fail fast
+        # with a clear message rather than creating an orphan Semaphore that
+        # misbehaves at first use.
+        from pipeline.clinical_trials_fetch import init_ctg_fetch_state
+
+        with pytest.raises(RuntimeError, match="event loop"):
+            init_ctg_fetch_state()
+
+    async def test_idempotent_inside_loop(self):
+        from pipeline.clinical_trials_fetch import init_ctg_fetch_state
+
+        init_ctg_fetch_state()
+        init_ctg_fetch_state()  # second call is a no-op, not an error
