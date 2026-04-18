@@ -93,16 +93,6 @@ def config():
     return PipelineConfig()
 
 
-@pytest.fixture
-def strict_config():
-    """Config with strict thresholds for testing edge cases."""
-    return PipelineConfig(
-        confidence_threshold=0.9,
-        max_retries=1,
-        max_rate_limit_retries=1,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Metrics fixtures
 # ---------------------------------------------------------------------------

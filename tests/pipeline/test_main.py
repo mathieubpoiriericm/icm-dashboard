@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from pipeline.config import PipelineConfig, validate_pmid
+from pipeline.config import PipelineConfig
 from pipeline.main import (
     PaperResult,
     _build_parser,
@@ -57,41 +57,6 @@ class TestValidateGenesNoneGuard:
         validated, rejected = await _validate_genes([gene], metrics, config)
         assert len(validated) == 1
         assert metrics.genes_validated == 1
-
-
-# ---------------------------------------------------------------------------
-# validate_pmid
-# ---------------------------------------------------------------------------
-
-
-class TestValidatePmid:
-    def test_valid_pmid(self):
-        assert validate_pmid("12345678") == "12345678"
-
-    def test_valid_short_pmid(self):
-        assert validate_pmid("1") == "1"
-
-    def test_strips_whitespace(self):
-        assert validate_pmid("  12345678  ") == "12345678"
-
-    def test_invalid_format_letters(self):
-        with pytest.raises(ValueError, match="Invalid PMID"):
-            validate_pmid("abc123")
-
-    def test_invalid_format_empty(self):
-        with pytest.raises(ValueError, match="Invalid PMID"):
-            validate_pmid("")
-
-    def test_invalid_format_too_long(self):
-        with pytest.raises(ValueError, match="Invalid PMID"):
-            validate_pmid("1234567890")  # 10 digits
-
-    def test_invalid_format_special_chars(self):
-        with pytest.raises(ValueError, match="Invalid PMID"):
-            validate_pmid("1234-5678")
-
-    def test_max_length_pmid(self):
-        assert validate_pmid("123456789") == "123456789"  # 9 digits
 
 
 # ---------------------------------------------------------------------------

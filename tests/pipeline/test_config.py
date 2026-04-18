@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pipeline.config import (
     ALLOWED_COLUMNS,
     ALLOWED_TABLES,
@@ -9,6 +11,7 @@ from pipeline.config import (
     PROJECT_ROOT,
     VALID_GWAS_TRAITS,
     PipelineConfig,
+    validate_pmid,
 )
 
 
@@ -107,3 +110,25 @@ class TestConstants:
     def test_project_root_exists(self):
         assert PROJECT_ROOT.exists()
         assert (PROJECT_ROOT / "pipeline").is_dir()
+
+
+class TestValidatePmid:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("12345678", "12345678"),
+            ("1", "1"),
+            ("  12345678  ", "12345678"),
+            ("123456789", "123456789"),
+        ],
+    )
+    def test_accepts_valid(self, raw, expected):
+        assert validate_pmid(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        ["abc123", "", "1234567890", "1234-5678"],
+    )
+    def test_rejects_invalid(self, raw):
+        with pytest.raises(ValueError, match="Invalid PMID"):
+            validate_pmid(raw)

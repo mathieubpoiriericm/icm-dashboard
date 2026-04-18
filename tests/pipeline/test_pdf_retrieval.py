@@ -7,41 +7,13 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from pipeline.config import PMID_PATTERN, validate_pmid
+from pipeline.config import PMID_PATTERN
 from pipeline.pdf_retrieval import (
     DOI_PATTERN,
     _validate_doi,
     check_unpaywall,
     get_fulltext,
 )
-
-# ---------------------------------------------------------------------------
-# validate_pmid
-# ---------------------------------------------------------------------------
-
-
-class TestValidatePmid:
-    def test_valid_pmid(self):
-        assert validate_pmid("12345678") == "12345678"
-
-    def test_valid_short(self):
-        assert validate_pmid("1") == "1"
-
-    def test_strips_whitespace(self):
-        assert validate_pmid("  123  ") == "123"
-
-    def test_invalid_letters(self):
-        with pytest.raises(ValueError, match="Invalid PMID"):
-            validate_pmid("abc")
-
-    def test_invalid_empty(self):
-        with pytest.raises(ValueError, match="Invalid PMID"):
-            validate_pmid("")
-
-    def test_invalid_too_long(self):
-        with pytest.raises(ValueError, match="Invalid PMID"):
-            validate_pmid("1234567890")  # 10 digits
-
 
 # ---------------------------------------------------------------------------
 # _validate_doi

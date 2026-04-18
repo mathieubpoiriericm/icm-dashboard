@@ -751,7 +751,7 @@ test_that("apply_range_filter handles NA values in numeric column", {
   result <- apply_range_filter(dt_with_na, "sample_size", c(50, 200))
   # Should filter out NA and include rows in range
 
-  expect_true(nrow(result) >= 0)
+  expect_equal(nrow(result), 3L)
   expect_true(all(!is.na(result$sample_size)))
 })
 
@@ -765,7 +765,7 @@ test_that("apply_index_filter handles empty fastmap index", {
     row_id_column = "original_row_num"
   )
   # Should return empty result when trait not found
-  expect_true(nrow(result) >= 0)
+  expect_equal(nrow(result), 0L)
 })
 
 test_that("apply_index_filter handles NULL values in mget result", {
@@ -784,8 +784,8 @@ test_that("apply_index_filter handles NULL values in mget result", {
 # add_cell_type_tooltip edge cases
 test_that("add_cell_type_tooltip handles whitespace-only input", {
   result <- add_cell_type_tooltip("   ", tooltip_class)
-  # Whitespace is trimmed, leaving empty parts, should still process
-  expect_true(is.character(result))
+  # vapply carries input names onto the output; compare values only
+  expect_equal(unname(result), "")
 })
 
 test_that("add_cell_type_tooltip handles mixed separators", {
