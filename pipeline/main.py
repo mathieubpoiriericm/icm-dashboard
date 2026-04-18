@@ -160,8 +160,13 @@ from pipeline.database import (
     reset_sequence,
 )
 from pipeline.event_log import EventLog
-from pipeline.healthcheck import ping_failure, ping_start, ping_success
-from pipeline.llm_extraction import GeneEntry, extract_from_paper
+from pipeline.healthcheck import (
+    close_healthcheck_client,
+    ping_failure,
+    ping_start,
+    ping_success,
+)
+from pipeline.llm_extraction import GeneEntry, close_async_client, extract_from_paper
 from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state
 from pipeline.notifications import send_pipeline_notification
 from pipeline.pdf_retrieval import (
@@ -326,7 +331,10 @@ async def _validate_genes(
     results = await asyncio.gather(*validation_tasks, return_exceptions=True)
 
     for gene, result in zip(genes, results, strict=True):
-        if isinstance(result, Exception):
+        # gather(return_exceptions=True) can yield BaseException (e.g. CancelledError),
+        # not just Exception — narrow on the wider type so downstream attribute
+        # access on the ValidationResult branch is type-safe.
+        if isinstance(result, BaseException):
             logger.error(f"  Validation error for {gene.gene_symbol}: {result}")
             metrics.genes_rejected += 1
             rejected_genes.append(RejectedGene(gene=gene, reasons=[str(result)]))
@@ -643,7 +651,7 @@ async def run_pipeline(
 
     pipeline_start_time = time.monotonic()
     if manage_lifecycle:
-        ping_start(config.healthcheck_url)
+        await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
     logger.info(
@@ -772,7 +780,7 @@ async def run_pipeline(
 
             if manage_lifecycle:
                 _record_and_notify(config, run_data)
-                ping_success(config.healthcheck_url)
+                await ping_success(config.healthcheck_url)
 
             return metrics, run_data
 
@@ -826,7 +834,7 @@ async def run_pipeline(
         await _finalize_run(metrics, run_data, "standard")
         if manage_lifecycle:
             _record_and_notify(config, run_data)
-            ping_success(config.healthcheck_url)
+            await ping_success(config.healthcheck_url)
 
         _write_progress(
             config, status="completed", stage=_STAGES[-1][0],
@@ -846,7 +854,7 @@ async def run_pipeline(
             error_message=traceback.format_exc()[:500],
         )
         if manage_lifecycle:
-            ping_failure(config.healthcheck_url, traceback.format_exc())
+            await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
 
     finally:
@@ -857,7 +865,9 @@ async def run_pipeline(
         await _close_metadata_client()
         await close_http_client()
         await close_validation_client()
+        await close_async_client()
         if manage_lifecycle:
+            await close_healthcheck_client()
             await Database.close()
         clear_gene_cache()
 
@@ -902,7 +912,7 @@ async def run_local_pdf_pipeline(
     init_ncbi_fetch_state(config)
 
     pipeline_start_time = time.monotonic()
-    ping_start(config.healthcheck_url)
+    await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
     logger.info(
@@ -1039,14 +1049,16 @@ async def run_local_pdf_pipeline(
         print_rich_summary(run_data)
 
         _record_and_notify(config, run_data)
-        ping_success(config.healthcheck_url)
+        await ping_success(config.healthcheck_url)
 
     except Exception:
-        ping_failure(config.healthcheck_url, traceback.format_exc())
+        await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
 
     finally:
         await close_validation_client()
+        await close_async_client()
+        await close_healthcheck_client()
         await Database.close()
         clear_gene_cache()
 
@@ -1105,7 +1117,7 @@ async def run_pmid_pipeline(
     init_ncbi_fetch_state(config)
 
     pipeline_start_time = time.monotonic()
-    ping_start(config.healthcheck_url)
+    await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")
     logger.info(
@@ -1243,16 +1255,18 @@ async def run_pmid_pipeline(
         print_rich_summary(run_data)
 
         _record_and_notify(config, run_data)
-        ping_success(config.healthcheck_url)
+        await ping_success(config.healthcheck_url)
 
     except Exception:
-        ping_failure(config.healthcheck_url, traceback.format_exc())
+        await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
 
     finally:
         await _close_metadata_client()
         await close_http_client()
         await close_validation_client()
+        await close_async_client()
+        await close_healthcheck_client()
         await Database.close()
         clear_gene_cache()
 
@@ -1281,7 +1295,7 @@ async def run_external_data_sync(
         config = PipelineConfig()
 
     if manage_lifecycle:
-        ping_start(config.healthcheck_url)
+        await ping_start(config.healthcheck_url)
     logger.info("Starting external data sync...")
     try:
         result = await sync_all_external_data()
@@ -1290,7 +1304,7 @@ async def run_external_data_sync(
         logger.info(result.summary())
         logger.info(LOG_SEPARATOR)
         if manage_lifecycle:
-            ping_success(config.healthcheck_url)
+            await ping_success(config.healthcheck_url)
         return {
             "name": "external_sync",
             "status": "failed" if result.errors else "ok",
@@ -1309,10 +1323,11 @@ async def run_external_data_sync(
         }
     except Exception:
         if manage_lifecycle:
-            ping_failure(config.healthcheck_url, traceback.format_exc())
+            await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
     finally:
         if manage_lifecycle:
+            await close_healthcheck_client()
             await Database.close()
 
 
@@ -1341,12 +1356,13 @@ async def run_clinical_trials_pipeline(
         config = PipelineConfig()
 
     if manage_lifecycle:
-        ping_start(config.healthcheck_url)
+        await ping_start(config.healthcheck_url)
 
     if not config.ct_enabled:
         logger.warning("ClinicalTrials.gov sync disabled (ct_enabled=False); skipping")
         if manage_lifecycle:
-            ping_success(config.healthcheck_url)
+            await ping_success(config.healthcheck_url)
+            await close_healthcheck_client()
         return {
             "name": "clinical_trials",
             "status": "skipped",
@@ -1367,7 +1383,7 @@ async def run_clinical_trials_pipeline(
         )
         logger.info(LOG_SEPARATOR)
         if manage_lifecycle:
-            ping_success(config.healthcheck_url)
+            await ping_success(config.healthcheck_url)
         return {
             "name": "clinical_trials",
             "status": "failed" if ctg_result.errors else "ok",
@@ -1380,11 +1396,12 @@ async def run_clinical_trials_pipeline(
         }
     except Exception:
         if manage_lifecycle:
-            ping_failure(config.healthcheck_url, traceback.format_exc())
+            await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
     finally:
         await close_ctg_client()
         if manage_lifecycle:
+            await close_healthcheck_client()
             await Database.close()
 
 
@@ -1427,7 +1444,7 @@ async def _run_selected_pipelines(
 
     Returns the process exit code (0 on full success, 1 if any pipeline failed).
     """
-    ping_start(config.healthcheck_url)
+    await ping_start(config.healthcheck_url)
 
     summaries: list[dict[str, Any]] = []
     pubmed_run_data: PipelineRunData | None = None
@@ -1506,18 +1523,20 @@ async def _run_selected_pipelines(
             _record_and_notify(config, combined)
 
         if any_failed:
-            ping_failure(
+            await ping_failure(
                 config.healthcheck_url,
                 first_failure_trace or "pipeline failed",
             )
             return 1
 
-        ping_success(config.healthcheck_url)
+        await ping_success(config.healthcheck_url)
 
     except Exception:
-        ping_failure(config.healthcheck_url, traceback.format_exc())
+        await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
     finally:
+        await close_async_client()
+        await close_healthcheck_client()
         await Database.close()
 
     return 0

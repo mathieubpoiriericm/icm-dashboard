@@ -10,12 +10,19 @@ import logging
 
 import httpx
 
+from pipeline.http_client import AsyncHttpClientManager
+
 logger = logging.getLogger(__name__)
 
-_TIMEOUT = httpx.Timeout(10.0)
+_client_manager = AsyncHttpClientManager(timeout=httpx.Timeout(10.0))
 
 
-def ping_start(url: str) -> None:
+async def close_healthcheck_client() -> None:
+    """Close the shared healthcheck HTTP client (call at shutdown)."""
+    await _client_manager.close()
+
+
+async def ping_start(url: str) -> None:
     """Signal that the pipeline run has started.
 
     Args:
@@ -24,13 +31,14 @@ def ping_start(url: str) -> None:
     if not url:
         return
     try:
-        httpx.get(f"{url}/start", timeout=_TIMEOUT)
+        client = await _client_manager.get()
+        await client.get(f"{url}/start")
         logger.debug("Healthcheck start ping sent")
     except Exception as exc:
         logger.warning(f"Healthcheck start ping failed: {exc}")
 
 
-def ping_success(url: str) -> None:
+async def ping_success(url: str) -> None:
     """Signal that the pipeline run completed successfully.
 
     Args:
@@ -39,13 +47,14 @@ def ping_success(url: str) -> None:
     if not url:
         return
     try:
-        httpx.get(url, timeout=_TIMEOUT)
+        client = await _client_manager.get()
+        await client.get(url)
         logger.debug("Healthcheck success ping sent")
     except Exception as exc:
         logger.warning(f"Healthcheck success ping failed: {exc}")
 
 
-def ping_failure(url: str, message: str) -> None:
+async def ping_failure(url: str, message: str) -> None:
     """Signal that the pipeline run failed.
 
     Args:
@@ -55,7 +64,8 @@ def ping_failure(url: str, message: str) -> None:
     if not url:
         return
     try:
-        httpx.post(f"{url}/fail", content=message, timeout=_TIMEOUT)
+        client = await _client_manager.get()
+        await client.post(f"{url}/fail", content=message)
         logger.debug("Healthcheck failure ping sent")
     except Exception as exc:
         logger.warning(f"Healthcheck failure ping failed: {exc}")

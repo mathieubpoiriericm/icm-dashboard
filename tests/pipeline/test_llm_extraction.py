@@ -361,7 +361,7 @@ class TestExtractFromPaper:
     async def test_validation_retry_on_bad_confidence(
         self, mocker, mock_anthropic_response
     ):
-        """First response has out-of-range confidence, second is valid — should retry."""
+        """Out-of-range confidence in first response triggers retry; 2nd passes."""
         bad_response = mock_anthropic_response(
             text='{"genes": [{"gene_symbol": "X", "confidence": 1.5}]}'
         )

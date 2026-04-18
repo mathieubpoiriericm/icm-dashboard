@@ -227,7 +227,8 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
 
         text_parts = []
         for p in paragraphs:
-            text = "".join(p.itertext())
+            # lxml's itertext() is typed as yielding str | None; filter to str.
+            text = "".join(t for t in p.itertext() if isinstance(t, str))
             if text.strip():
                 text_parts.append(text.strip())
 
@@ -469,14 +470,17 @@ async def fetch_abstract(pmid: str) -> str | None:
                 sections = []
                 for part in abstract_parts:
                     label = part.get("Label", "")
-                    text = "".join(part.itertext())
+                    # itertext() is typed as str | None; filter to str.
+                    text = "".join(t for t in part.itertext() if isinstance(t, str))
                     if label:
                         sections.append(f"{label}: {text}")
                     else:
                         sections.append(text)
                 return "\n\n".join(sections)
             else:
-                return "".join(abstract_elem.itertext())
+                return "".join(
+                    t for t in abstract_elem.itertext() if isinstance(t, str)
+                )
 
         return None
 

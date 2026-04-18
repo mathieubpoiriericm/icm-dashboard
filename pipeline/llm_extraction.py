@@ -105,6 +105,17 @@ def _get_async_client() -> anthropic.AsyncAnthropic:
     return _async_client
 
 
+async def close_async_client() -> None:
+    """Close the shared Anthropic client (call at shutdown).
+
+    Idempotent: safe to call when no client has been created.
+    """
+    global _async_client
+    if _async_client is not None:
+        await _async_client.close()
+        _async_client = None
+
+
 def _parse_retry_after_delay(
     e: anthropic.RateLimitError, backoff_delay: float
 ) -> tuple[float, str]:

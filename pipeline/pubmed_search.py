@@ -41,8 +41,9 @@ def _configure_entrez() -> None:
             stacklevel=3,
         )
 
-    Entrez.email = email  # type: ignore[assignment]
-    Entrez.api_key = api_key  # type: ignore[assignment]
+    # Bio.Entrez stubs type email/api_key as None; assigning strings is correct.
+    Entrez.email = email  # ty: ignore[invalid-assignment]
+    Entrez.api_key = api_key  # ty: ignore[invalid-assignment]
     _entrez_configured = True
 
 
@@ -138,6 +139,7 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
                 Entrez.esearch,
                 db="pubmed",
                 term=SVD_QUERY,
+                datetype="pdat",
                 mindate=mindate,
                 maxdate="3000",
                 retmax=DEFAULT_RETMAX,

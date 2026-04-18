@@ -100,5 +100,12 @@ class EventLog:
         return rows
 
     def close(self) -> None:
-        """Close the underlying SQLite connection."""
-        self._conn.close()
+        """Close the underlying SQLite connection.
+
+        Errors during close are logged, not raised — so calling this from a
+        finally block cannot mask the original exception being unwound.
+        """
+        try:
+            self._conn.close()
+        except Exception as exc:
+            logger.warning(f"Error closing event log: {exc}")
