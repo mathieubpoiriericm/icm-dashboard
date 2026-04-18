@@ -151,10 +151,7 @@ def build_cli_args(config: PipelineAppConfig) -> list[str]:
     if config.run_mode == "standard":
         if int(config.days_back) < 1:
             raise ValueError(f"days_back must be >= 1, got {config.days_back}")
-        # Explicit --pubmed so sync_external_data is additive (PubMed + sync)
-        # rather than a replacement. Without it, the decoupled dispatcher in
-        # pipeline/main.py treats --sync-external-data alone as sync-only and
-        # logs a PubMed-flags-ignored warning.
+        # Explicit --pubmed so sync_external_data is additive, not a replacement.
         args.append("--pubmed")
         args.extend(["--days-back", _int_str(config.days_back)])
         if config.dry_run:
