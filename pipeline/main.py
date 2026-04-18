@@ -113,6 +113,7 @@ import json
 import logging
 import time
 import traceback
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final, TypedDict
@@ -1283,7 +1284,7 @@ async def run_external_data_sync(
         ping_start(config.healthcheck_url)
     logger.info("Starting external data sync...")
     try:
-        result = await sync_all_external_data(config=config)
+        result = await sync_all_external_data()
         logger.info(LOG_SEPARATOR)
         logger.info("External Data Sync Summary:")
         logger.info(result.summary())
@@ -1387,6 +1388,33 @@ async def run_clinical_trials_pipeline(
             await Database.close()
 
 
+def _failure_summary(name: str, error: BaseException) -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": "failed",
+        "metrics": {},
+        "errors": [str(error)],
+    }
+
+
+async def _run_summary_pipeline(
+    coro: Awaitable[dict[str, Any]],
+    pipeline_name: str,
+    display_label: str,
+) -> tuple[dict[str, Any], str | None]:
+    """Run a pipeline coroutine that returns a summary dict, catching errors.
+
+    Returns ``(summary, traceback_str)`` where ``traceback_str`` is non-None
+    iff the coroutine raised — the caller uses it to surface the first
+    failure's trace in the healthcheck ping.
+    """
+    try:
+        return await coro, None
+    except Exception as e:
+        logger.exception(f"{display_label} failed")
+        return _failure_summary(pipeline_name, e), traceback.format_exc()
+
+
 async def _run_selected_pipelines(
     args: argparse.Namespace,
     config: PipelineConfig,
@@ -1403,8 +1431,12 @@ async def _run_selected_pipelines(
 
     summaries: list[dict[str, Any]] = []
     pubmed_run_data: PipelineRunData | None = None
-    invocation_failed = False
-    failure_trace: str | None = None
+    first_failure_trace: str | None = None
+
+    def record_failure(trace: str) -> None:
+        nonlocal first_failure_trace
+        if first_failure_trace is None:
+            first_failure_trace = trace
 
     try:
         if args.pubmed:
@@ -1430,61 +1462,38 @@ async def _run_selected_pipelines(
                 })
             except Exception as e:
                 logger.exception("PubMed pipeline failed")
-                invocation_failed = True
-                failure_trace = traceback.format_exc()
-                summaries.append({
-                    "name": "pubmed",
-                    "status": "failed",
-                    "metrics": {},
-                    "errors": [str(e)],
-                })
+                record_failure(traceback.format_exc())
+                summaries.append(_failure_summary("pubmed", e))
 
         if args.clinical_trials:
-            try:
-                summaries.append(
-                    await run_clinical_trials_pipeline(
-                        config=config, manage_lifecycle=False
-                    )
-                )
-                if summaries[-1]["status"] == "failed":
-                    invocation_failed = True
-            except Exception as e:
-                logger.exception("Clinical trials pipeline failed")
-                invocation_failed = True
-                failure_trace = traceback.format_exc()
-                summaries.append({
-                    "name": "clinical_trials",
-                    "status": "failed",
-                    "metrics": {},
-                    "errors": [str(e)],
-                })
+            summary, trace = await _run_summary_pipeline(
+                run_clinical_trials_pipeline(config=config, manage_lifecycle=False),
+                "clinical_trials",
+                "Clinical trials pipeline",
+            )
+            summaries.append(summary)
+            if trace is not None:
+                record_failure(trace)
 
         if args.sync_external_data:
-            try:
-                summaries.append(
-                    await run_external_data_sync(
-                        config=config, manage_lifecycle=False
-                    )
-                )
-                if summaries[-1]["status"] == "failed":
-                    invocation_failed = True
-            except Exception as e:
-                logger.exception("External data sync failed")
-                invocation_failed = True
-                failure_trace = traceback.format_exc()
-                summaries.append({
-                    "name": "external_sync",
-                    "status": "failed",
-                    "metrics": {},
-                    "errors": [str(e)],
-                })
+            summary, trace = await _run_summary_pipeline(
+                run_external_data_sync(config=config, manage_lifecycle=False),
+                "external_sync",
+                "External data sync",
+            )
+            summaries.append(summary)
+            if trace is not None:
+                record_failure(trace)
 
-        # Single combined notification. For pure-PubMed runs we prefer the
-        # rich PubMed-shaped run_data (template already handles it); for
-        # everything else we emit the multi-pipeline shape.
-        if len(summaries) == 1 and summaries[0]["name"] == "pubmed" and pubmed_run_data:
+        any_failed = any(s["status"] == "failed" for s in summaries)
+        pubmed_only = len(summaries) == 1 and summaries[0]["name"] == "pubmed"
+
+        # PubMed early-exits (no new papers, all already processed, test-mode
+        # preview) leave pubmed_run_data=None. Preserve the pre-split behavior
+        # of emitting no notification in that specific case.
+        if pubmed_only and pubmed_run_data is not None:
             _record_and_notify(config, pubmed_run_data)
-        elif summaries:
+        elif summaries and not (pubmed_only and pubmed_run_data is None):
             combined: dict[str, Any] = {
                 "timestamp": datetime.now(tz=UTC).isoformat(),
                 "pipelines": summaries,
@@ -1494,12 +1503,13 @@ async def _run_selected_pipelines(
                     "effort": config.llm_effort,
                 },
             }
-            if pubmed_run_data is not None:
-                combined["pubmed_run_data"] = pubmed_run_data
             _record_and_notify(config, combined)
 
-        if invocation_failed:
-            ping_failure(config.healthcheck_url, failure_trace or "pipeline failed")
+        if any_failed:
+            ping_failure(
+                config.healthcheck_url,
+                first_failure_trace or "pipeline failed",
+            )
             return 1
 
         ping_success(config.healthcheck_url)

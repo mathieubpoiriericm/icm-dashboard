@@ -11,7 +11,6 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from pipeline.config import PipelineConfig
 from pipeline.database import Database
 from pipeline.ncbi_gene_fetch import (
     clear_ncbi_cache,
@@ -140,9 +139,7 @@ def _append_errors_truncated(target: list[str], source: list[str], label: str) -
         target.append(f"... and {suppressed} more {label} errors suppressed")
 
 
-async def sync_all_external_data(
-    config: PipelineConfig | None = None,  # noqa: ARG001 (kept for API stability)
-) -> ExternalDataSyncResult:
+async def sync_all_external_data() -> ExternalDataSyncResult:
     """Sync external metadata sources for dashboard refresh.
 
     This function:
