@@ -88,7 +88,7 @@ def _diff_value(v1: str, v2: str, col: str) -> str:
         diff = float(v2) - float(v1)
         sign = "+" if diff > 0 else ""
         return f"{sign}{diff:.4f}"
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return ""
 
 
@@ -198,16 +198,12 @@ def create_tuning_history_page(project_root: str) -> None:
                 """,
             )
 
-    table = (
-        ui.table(
-            columns=columns,
-            rows=rows,
-            row_key="_row_id",
-            selection="multiple",
-        )
-        .classes("w-full")
-        .props("filter")
-    )
+    table = ui.table(
+        columns=columns,
+        rows=rows,
+        row_key="_row_id",
+        selection="multiple",
+    ).classes("w-full")
     table.on_select(_on_selection)
 
     with ui.row().classes("q-mt-sm items-center gap-sm"):

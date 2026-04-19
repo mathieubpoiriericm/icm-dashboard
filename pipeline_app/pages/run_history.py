@@ -91,15 +91,11 @@ def create_run_history_page() -> None:
                 on_action=lambda: ui.navigate.to("/"),
             )
             return
-        with (
-            ui.table(
-                columns=columns,
-                rows=rows,
-                row_key="row_id",
-            )
-            .classes("w-full")
-            .props("filter") as table
-        ):
+        with ui.table(
+            columns=columns,
+            rows=rows,
+            row_key="row_id",
+        ).classes("w-full") as table:
             table.add_slot(
                 "body-cell-status",
                 # fmt: off

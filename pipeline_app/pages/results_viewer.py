@@ -344,7 +344,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                     columns=columns,
                     rows=rows,
                     row_key="row_id",
-                ).classes("w-full").props("filter")
+                ).classes("w-full")
 
         # ---- Genes ----
         with ui.tab_panel(genes_tab):
@@ -426,7 +426,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                     columns=columns,
                     rows=rows,
                     row_key="row_id",
-                ).classes("w-full").props("filter")
+                ).classes("w-full")
 
         # ---- Rejected Genes ----
         with ui.tab_panel(rejected_tab):
@@ -473,7 +473,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                     columns=columns,
                     rows=rows,
                     row_key="row_id",
-                ).classes("w-full").props("filter")
+                ).classes("w-full")
 
         # ---- Tokens ----
         with ui.tab_panel(tokens_tab):
