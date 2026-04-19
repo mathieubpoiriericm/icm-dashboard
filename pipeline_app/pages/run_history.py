@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from nicegui import ui
+from nicegui import run, ui
 
+from pipeline_app.components.button_loading import button_loading
 from pipeline_app.components.confirm_dialog import confirm
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.config import clear_history, load_history
@@ -71,6 +72,7 @@ def create_run_history_page() -> None:
     ]
 
     table_container: list[ui.element] = []
+    refresh_btn_ref: list[ui.button] = []
 
     def _report_id_from_row(row: dict[str, Any]) -> str:
         report_path = row.get("report_path", "")
@@ -78,9 +80,8 @@ def create_run_history_page() -> None:
             return Path(report_path).stem
         return row.get("id", "unknown")
 
-    def _build_table() -> None:
+    def _build_table(rows: list[dict[str, Any]]) -> None:
         """Build the history table inside the current container."""
-        rows = _get_rows()
         if not rows:
             empty_state(
                 "history",
@@ -90,11 +91,15 @@ def create_run_history_page() -> None:
                 on_action=lambda: ui.navigate.to("/"),
             )
             return
-        with ui.table(
-            columns=columns,
-            rows=rows,
-            row_key="row_id",
-        ).classes("w-full") as table:
+        with (
+            ui.table(
+                columns=columns,
+                rows=rows,
+                row_key="row_id",
+            )
+            .classes("w-full")
+            .props("filter") as table
+        ):
             table.add_slot(
                 "body-cell-status",
                 # fmt: off
@@ -138,12 +143,16 @@ def create_run_history_page() -> None:
 
             table.on("view", _on_view)
 
-    def _refresh_table() -> None:
-        """Clear and rebuild the table."""
-        if table_container:
-            table_container[0].clear()
-            with table_container[0]:
-                _build_table()
+    async def _refresh_table() -> None:
+        """Clear and rebuild the table with a brief loading indicator."""
+        if not refresh_btn_ref:
+            return
+        async with button_loading(refresh_btn_ref[0]):
+            rows = await run.io_bound(_get_rows)
+            if table_container:
+                table_container[0].clear()
+                with table_container[0]:
+                    _build_table(rows)
 
     async def _clear_all() -> None:
         confirmed = await confirm(
@@ -154,18 +163,23 @@ def create_run_history_page() -> None:
             return
         clear_history()
         ui.notify("History cleared", color="positive")
-        _refresh_table()
+        await _refresh_table()
 
     with ui.column().classes("w-full") as cont:
         table_container.append(cont)
-        _build_table()
+        _build_table(_get_rows())
 
     with ui.row().classes("q-mt-md gap-sm"):
-        ui.button(
-            "Refresh",
-            on_click=_refresh_table,
-            icon="refresh",
-        ).props("outline")
+        refresh_btn = (
+            ui.button(
+                "Refresh",
+                on_click=_refresh_table,
+                icon="refresh",
+            )
+            .props("outline")
+            .classes("btn-secondary")
+        )
+        refresh_btn_ref.append(refresh_btn)
         ui.button(
             "Clear All",
             on_click=_clear_all,

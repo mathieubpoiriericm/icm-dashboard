@@ -5,8 +5,10 @@ from __future__ import annotations
 import dataclasses
 import os
 import shutil
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from nicegui import ui
 
@@ -69,10 +71,11 @@ def create_configure_run_page(
     runner = PipelineRunner(lock)
 
     def _refresh_stage_tracker() -> None:
-        if stage_container:
-            stage_container[0].clear()
-            with stage_container[0]:
-                create_stage_tracker(PIPELINE_STAGES, stage_statuses)
+        with suppress(RuntimeError):
+            if stage_container:
+                stage_container[0].clear()
+                with stage_container[0]:
+                    create_stage_tracker(PIPELINE_STAGES, stage_statuses)
 
     with ui.splitter(value=40).classes("w-full") as splitter:
         with splitter.before, ui.card().classes("w-full q-pa-md theme-card"):
@@ -473,10 +476,29 @@ def create_configure_run_page(
                 "Refresh",
                 on_click=_refresh_stage_tracker,
                 icon="refresh",
-            ).props("outline").classes("q-mb-sm")
+            ).props("outline").classes("btn-secondary q-mb-sm")
 
             status_lbl = ui.label("").classes("text-muted q-mb-sm")
             run_status_label.append(status_lbl)
+
+            def _set_run_status(
+                text: str,
+                state: Literal["neutral", "positive", "negative"] = "neutral",
+            ) -> None:
+                with suppress(RuntimeError):
+                    if not run_status_label:
+                        return
+                    lbl = run_status_label[0]
+                    lbl.text = text
+                    tone_class = {
+                        "neutral": "text-muted",
+                        "positive": "text-positive",
+                        "negative": "text-negative",
+                    }[state]
+                    lbl.classes(
+                        remove="text-muted text-positive text-negative",
+                        add=tone_class,
+                    )
 
             log_viewer = LogViewer()
             log_viewer_ref.append(log_viewer)
@@ -500,27 +522,29 @@ def create_configure_run_page(
                         stage_statuses[s] = "pending"
                     if log_viewer_ref:
                         log_viewer_ref[0].clear()
-                    if run_status_label:
-                        run_status_label[0].text = "Running..."
+                    _set_run_status("Running...", "neutral")
                     _refresh_stage_tracker()
 
                     current_stage: list[str] = []
 
                     def _on_stdout(line: str) -> None:
-                        if log_viewer_ref:
-                            log_viewer_ref[0].append(line)
+                        with suppress(RuntimeError):
+                            if log_viewer_ref:
+                                log_viewer_ref[0].append(line)
 
                     def _on_stderr(line: str) -> None:
-                        if log_viewer_ref:
-                            log_viewer_ref[0].append_stderr(line)
+                        with suppress(RuntimeError):
+                            if log_viewer_ref:
+                                log_viewer_ref[0].append_stderr(line)
 
                     def _on_stage(stage: str) -> None:
-                        if current_stage:
-                            stage_statuses[current_stage[0]] = "completed"
-                        current_stage.clear()
-                        current_stage.append(stage)
-                        stage_statuses[stage] = "running"
-                        _refresh_stage_tracker()
+                        with suppress(RuntimeError):
+                            if current_stage:
+                                stage_statuses[current_stage[0]] = "completed"
+                            current_stage.clear()
+                            current_stage.append(stage)
+                            stage_statuses[stage] = "running"
+                            _refresh_stage_tracker()
 
                     started_at = datetime.now()
                     fresh_secrets = load_env_secrets(config.project_root)
@@ -546,14 +570,14 @@ def create_configure_run_page(
                             on_stage=_on_stage,
                         )
                     except ValueError as exc:
-                        ui.notify(str(exc), color="negative")
-                        if run_status_label:
-                            run_status_label[0].text = f"Failed: {exc}"
+                        with suppress(RuntimeError):
+                            ui.notify(str(exc), color="negative")
+                        _set_run_status(f"Failed: {exc}", "negative")
                         return
                     except Exception as exc:
-                        ui.notify(f"Unexpected error: {exc}", color="negative")
-                        if run_status_label:
-                            run_status_label[0].text = f"Error: {exc}"
+                        with suppress(RuntimeError):
+                            ui.notify(f"Unexpected error: {exc}", color="negative")
+                        _set_run_status(f"Error: {exc}", "negative")
                         return
 
                     if current_stage:
@@ -568,10 +592,10 @@ def create_configure_run_page(
                     _refresh_stage_tracker()
 
                     status = "success" if result.exit_code == 0 else "failed"
-                    if run_status_label:
-                        run_status_label[
-                            0
-                        ].text = f"Finished: {status} (exit {result.exit_code})"
+                    _set_run_status(
+                        f"Finished: {status} (exit {result.exit_code})",
+                        "positive" if status == "success" else "negative",
+                    )
 
                     # Store the stem so it passes the Results page safe-ID
                     # regex (a raw path would contain slashes).
@@ -590,13 +614,15 @@ def create_configure_run_page(
                         "config": strip_secrets_from_config(dataclasses.asdict(config)),
                     }
                     add_run_to_history(run_record)
-                    ui.notify(
-                        f"Run {status}",
-                        color=("positive" if status == "success" else "negative"),
-                    )
+                    with suppress(RuntimeError):
+                        ui.notify(
+                            f"Run {status}",
+                            color=("positive" if status == "success" else "negative"),
+                        )
                 finally:
-                    if run_btn_ref:
-                        run_btn_ref[0].enable()
+                    with suppress(RuntimeError):
+                        if run_btn_ref:
+                            run_btn_ref[0].enable()
 
             run_btn = (
                 ui.button(

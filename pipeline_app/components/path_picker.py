@@ -304,7 +304,7 @@ async def pick_path(
             icon = "folder" if item.is_dir else "description"
             base_cls = "path-picker-row w-full rounded-borders"
             if is_selected_file:
-                base_cls += " bg-primary text-white"
+                base_cls += " path-picker-row-selected"
             elif not item.is_dir and not item.matches_filter:
                 base_cls += " text-muted"
 

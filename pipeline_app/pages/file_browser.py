@@ -7,8 +7,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from nicegui import ui
+from nicegui import run, ui
 
+from pipeline_app.components.button_loading import button_loading
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.components.file_content import render_file_content
 from pipeline_app.components.fs_nav import is_within, scan_directory
@@ -28,11 +29,12 @@ def create_file_browser_page(project_root: str) -> None:
     if not project_root:
         ui.label(
             f"Project root is not configured; browsing logs/ relative to {root}."
-        ).classes("text-warning q-mb-sm")
+        ).classes("theme-note theme-note-warning q-mb-sm")
 
     selected_path: list[Path] = []
     content_container: list[ui.element] = []
     tree_container: list[ui.element] = []
+    refresh_btn_ref: list[ui.button] = []
 
     def _build_tree_nodes() -> list[dict[str, Any]]:
         if not logs_dir.exists():
@@ -64,26 +66,29 @@ def create_file_browser_page(project_root: str) -> None:
         if content_container:
             await render_file_content(path, content_container[0])
 
-    def _refresh_tree() -> None:
-        if tree_container:
-            tree_container[0].clear()
-            nodes = _build_tree_nodes()
-            with tree_container[0]:
-                if nodes:
-                    ui.tree(
-                        nodes,
-                        label_key="label",
-                        node_key="id",
-                        on_select=_on_file_select,
-                    ).classes("w-full")
-                else:
-                    empty_state(
-                        "folder_off",
-                        "No supported files",
-                        f"Nothing viewable was found under {logs_dir}. "
-                        "Supported types: JSON, CSV, Markdown, text, logs, "
-                        "images, PDF.",
-                    )
+    async def _refresh_tree() -> None:
+        if not refresh_btn_ref:
+            return
+        async with button_loading(refresh_btn_ref[0]):
+            nodes = await run.io_bound(_build_tree_nodes)
+            if tree_container:
+                tree_container[0].clear()
+                with tree_container[0]:
+                    if nodes:
+                        ui.tree(
+                            nodes,
+                            label_key="label",
+                            node_key="id",
+                            on_select=_on_file_select,
+                        ).classes("w-full")
+                    else:
+                        empty_state(
+                            "folder_off",
+                            "No supported files",
+                            f"Nothing viewable was found under {logs_dir}. "
+                            "Supported types: JSON, CSV, Markdown, text, logs, "
+                            "images, PDF.",
+                        )
 
     def _open_in_system_app() -> None:
         if not selected_path:
@@ -126,11 +131,16 @@ def create_file_browser_page(project_root: str) -> None:
             ui.notify(f"Error opening file: {e}", color="negative")
 
     with ui.row().classes("q-mb-sm gap-sm"):
-        ui.button(
-            "Refresh",
-            on_click=_refresh_tree,
-            icon="refresh",
-        ).props("outline")
+        refresh_btn = (
+            ui.button(
+                "Refresh",
+                on_click=_refresh_tree,
+                icon="refresh",
+            )
+            .props("outline")
+            .classes("btn-secondary")
+        )
+        refresh_btn_ref.append(refresh_btn)
         ui.button(
             "Open in System App",
             on_click=_open_in_system_app,

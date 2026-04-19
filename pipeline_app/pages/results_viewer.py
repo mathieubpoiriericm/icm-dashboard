@@ -150,7 +150,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
             "Back to History",
             on_click=lambda: ui.navigate.to("/history"),
             icon="arrow_back",
-        )
+        ).props("flat").classes("theme-btn-ghost")
         return
 
     try:
@@ -183,7 +183,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
     with ui.tab_panels(tabs, value=overview_tab).classes("w-full"):
         # ---- Overview ----
         with ui.tab_panel(overview_tab):
-            ui.label("Overview").classes("section-header q-mb-md")
+            ui.label("Overview").classes("title-md q-mb-md")
             papers_count = len(papers_detail)
             # Prefer the pipeline's own counts when present; fall back to
             # flattened-list lengths if the summary dict is missing.
@@ -284,7 +284,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
 
         # ---- Papers ----
         with ui.tab_panel(papers_tab):
-            ui.label("Papers").classes("section-header q-mb-md")
+            ui.label("Papers").classes("title-md q-mb-md")
             if not papers_detail:
                 empty_state(
                     "description",
@@ -348,7 +348,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
 
         # ---- Genes ----
         with ui.tab_panel(genes_tab):
-            ui.label("Genes Extracted").classes("section-header q-mb-md")
+            ui.label("Genes Extracted").classes("title-md q-mb-md")
             if not genes_list:
                 empty_state(
                     "biotech",
@@ -430,7 +430,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
 
         # ---- Rejected Genes ----
         with ui.tab_panel(rejected_tab):
-            ui.label("Rejected Genes").classes("section-header q-mb-md")
+            ui.label("Rejected Genes").classes("title-md q-mb-md")
             if not rejected_list:
                 empty_state(
                     "check_circle",
@@ -473,11 +473,11 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                     columns=columns,
                     rows=rows,
                     row_key="row_id",
-                ).classes("w-full")
+                ).classes("w-full").props("filter")
 
         # ---- Tokens ----
         with ui.tab_panel(tokens_tab):
-            ui.label("Token Usage").classes("section-header q-mb-md")
+            ui.label("Token Usage").classes("title-md q-mb-md")
             if not token_usage:
                 ui.label("No token usage data.").classes("text-muted")
             else:

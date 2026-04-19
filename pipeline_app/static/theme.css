@@ -490,6 +490,14 @@ body, .body--dark {
   background-color: var(--theme-text-secondary);
 }
 
+/* === FILE PREVIEW === */
+
+.file-preview-pdf {
+  width: 100%;
+  height: min(800px, 80vh);
+  border: 0;
+}
+
 /* === ECHART CONTAINERS === */
 
 .chart-container {
@@ -695,6 +703,9 @@ body, .body--dark {
 }
 
 .page-root {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 24px 24px;
   animation: fade-in-up var(--motion-slow) var(--ease-out-expo) both;
 }
 
@@ -813,6 +824,31 @@ a:focus-visible {
 .stat-card-delta.delta-neutral {
   color: var(--theme-text-secondary);
   background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* === NOTE / CALLOUT BLOCKS === */
+
+.theme-note {
+  display: block;
+  background-color: var(--border-subtle);
+  border: 1px solid var(--border-soft);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--theme-text-secondary);
+}
+
+.theme-note-warning {
+  border-left-color: var(--theme-warning);
+  background-color: rgba(255, 181, 71, 0.08);
+  color: var(--theme-warning);
+}
+
+.theme-note-info {
+  border-left-color: var(--theme-info);
+  background-color: rgba(84, 160, 255, 0.08);
 }
 
 /* === EMPTY STATE === */
@@ -1045,11 +1081,16 @@ a:focus-visible {
   transition: color var(--motion-fast) var(--ease-in-out);
 }
 
-.path-picker-row:not(.bg-primary):hover > .q-icon:first-child {
+.path-picker-row:not(.path-picker-row-selected):hover > .q-icon:first-child {
   color: var(--theme-primary);
 }
 
-.path-picker-row.bg-primary > .q-icon:first-child {
+.path-picker-row-selected {
+  background-color: var(--theme-primary);
+  color: #fff;
+}
+
+.path-picker-row-selected > .q-icon:first-child {
   color: #fff;
 }
 

@@ -143,14 +143,7 @@ def create_tuning_page(
                 step=0.1,
                 format="%.1f",
             ).classes("w-full").bind_value(tuning, "f_beta_weight")
-            with (
-                ui.element("div")
-                .classes("rounded-borders q-pa-sm q-mt-xs")
-                .style(
-                    "background: var(--border-subtle);"
-                    " border: 1px solid var(--border-soft);"
-                )
-            ):
+            with ui.element("div").classes("theme-note theme-note-info q-mt-xs"):
                 f_beta_help = (
                     "Beta (β) is the weight parameter that controls how"
                     " much more recall matters relative to precision."
@@ -167,7 +160,7 @@ def create_tuning_page(
                     " precision), which downstream review can filter out.",
                 )
                 for i, text in enumerate(f_beta_help):
-                    cls = "text-caption text-muted"
+                    cls = "text-caption"
                     if i > 0:
                         cls += " q-mt-xs"
                     ui.label(text).classes(cls)
@@ -216,7 +209,7 @@ def create_tuning_page(
                 on_click=lambda: _save_tuning_settings(),
                 icon="save",
                 color="primary",
-            ).classes("w-full theme-btn-primary")
+            ).props("unelevated").classes("w-full theme-btn-primary btn-primary")
 
             def _save_tuning_settings() -> None:
                 save_tuning_config(tuning)
@@ -239,7 +232,7 @@ def create_tuning_page(
                 "Refresh",
                 on_click=lambda: _refresh_stage_tracker(),
                 icon="refresh",
-            ).props("outline").classes("q-mb-sm")
+            ).props("outline").classes("btn-secondary q-mb-sm")
 
             with ui.column().classes("w-full q-mb-sm") as olc:
                 output_links_container.append(olc)
@@ -247,18 +240,25 @@ def create_tuning_page(
             log_viewer = LogViewer()
             log_viewer_ref.append(log_viewer)
 
-            run_btn = ui.button(
-                "Run",
-                icon="play_arrow",
-                color="positive",
-            ).classes("w-full q-mt-md theme-btn-primary")
+            run_btn = (
+                ui.button(
+                    "Run",
+                    icon="play_arrow",
+                    color="positive",
+                )
+                .props("unelevated size=lg")
+                .classes("w-full q-mt-md theme-btn-primary btn-primary")
+            )
             with ui.row().classes("q-mt-sm gap-sm"):
-                next_btn = ui.button(
-                    "Next Stage",
-                    on_click=lambda: runner.advance(),
-                    icon="skip_next",
-                    color="primary",
-                ).props("outline")
+                next_btn = (
+                    ui.button(
+                        "Next Stage",
+                        on_click=lambda: runner.advance(),
+                        icon="skip_next",
+                    )
+                    .props("outline")
+                    .classes("btn-secondary")
+                )
                 next_btn.set_visibility(False)
                 skip_btn = (
                     ui.button(
@@ -310,7 +310,9 @@ def create_tuning_page(
                             for f in output_files:
                                 # Stage prefix disambiguates outputs across
                                 # multiple stages within the same run.
-                                ui.label(f"[{stage}] {f.name}").classes("text-positive")
+                                ui.label(f"[{stage}] {f.name}").style(
+                                    "color: var(--theme-secondary);"
+                                )
 
             def _on_waiting() -> None:
                 with suppress(RuntimeError):

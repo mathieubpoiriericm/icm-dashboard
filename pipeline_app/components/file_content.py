@@ -153,8 +153,7 @@ async def render_file_content(
         with container:
             ui.html(
                 f'<iframe src="data:application/pdf;base64,{data}" '
-                f'style="width:100%; height:min(800px, 80vh); '
-                f'border:0;"></iframe>'
+                f'class="file-preview-pdf"></iframe>'
             )
 
     elif file_type == "text":
