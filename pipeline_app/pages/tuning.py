@@ -8,6 +8,7 @@ from pathlib import Path
 from nicegui import ui
 
 from pipeline_app.components.log_viewer import LogViewer
+from pipeline_app.components.path_picker import pick_path
 from pipeline_app.components.stage_tracker import create_stage_tracker
 from pipeline_app.config import (
     LLM_EFFORTS,
@@ -22,6 +23,7 @@ from pipeline_app.runner import (
     TUNING_STAGES,
     SubprocessLock,
     TuningRunner,
+    get_project_anchor,
 )
 
 
@@ -56,15 +58,63 @@ def create_tuning_page(
         with splitter.before, ui.card().classes("w-full q-pa-md theme-card"):
             ui.label("Tuning Configuration").classes("section-header q-mb-sm")
 
-            ui.input(
-                label="PDF Path",
-                value=tuning.pdf_path,
-            ).classes("w-full").bind_value(tuning, "pdf_path")
+            with ui.row().classes("w-full items-center gap-xs no-wrap"):
+                pdf_inp = (
+                    ui.input(
+                        label="PDF Path",
+                        value=tuning.pdf_path,
+                    )
+                    .classes("flex-1")
+                    .bind_value(tuning, "pdf_path")
+                )
+                ui.button(
+                    icon="folder_open",
+                    on_click=lambda: _pick_pdf_path(pdf_inp),
+                ).props("flat dense").classes("theme-btn-ghost")
 
-            ui.input(
-                label="Gold Standard Path",
-                value=tuning.gold_standard_path,
-            ).classes("w-full").bind_value(tuning, "gold_standard_path")
+            with ui.row().classes("w-full items-center gap-xs no-wrap"):
+                gold_inp = (
+                    ui.input(
+                        label="Gold Standard Path",
+                        value=tuning.gold_standard_path,
+                    )
+                    .classes("flex-1")
+                    .bind_value(tuning, "gold_standard_path")
+                )
+                ui.button(
+                    icon="folder_open",
+                    on_click=lambda: _pick_gold_standard(gold_inp),
+                ).props("flat dense").classes("theme-btn-ghost")
+
+            async def _pick_pdf_path(inp: ui.input) -> None:
+                anchor = get_project_anchor(config)
+                if anchor is None:
+                    ui.notify("Set Project Root first", color="warning")
+                    return
+                result = await pick_path(
+                    mode="file",
+                    anchor=anchor,
+                    current_value=inp.value or "",
+                    extensions=frozenset({".pdf"}),
+                    title="Select PDF for tuning",
+                )
+                if result is not None:
+                    inp.value = result
+
+            async def _pick_gold_standard(inp: ui.input) -> None:
+                anchor = get_project_anchor(config)
+                if anchor is None:
+                    ui.notify("Set Project Root first", color="warning")
+                    return
+                result = await pick_path(
+                    mode="file",
+                    anchor=anchor,
+                    current_value=inp.value or "",
+                    extensions=frozenset({".csv"}),
+                    title="Select gold standard CSV",
+                )
+                if result is not None:
+                    inp.value = result
 
             ui.number(
                 label="Confidence Threshold",

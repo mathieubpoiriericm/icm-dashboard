@@ -593,6 +593,22 @@ body, .body--dark {
   min-width: 360px;
 }
 
+/* === PATH PICKER === */
+
+.path-picker {
+  min-width: 520px;
+  max-width: 720px;
+}
+
+.path-picker-row {
+  transition: background-color 120ms ease;
+  user-select: none;
+}
+
+.path-picker-row:hover {
+  background-color: var(--theme-elevated);
+}
+
 /* === NOTIFY OVERRIDE === */
 
 .q-notification {

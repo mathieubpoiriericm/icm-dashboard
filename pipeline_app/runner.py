@@ -148,6 +148,20 @@ def resolve_project_root(project_root: str) -> Path:
     return Path(project_root).resolve() if project_root else Path(os.getcwd()).resolve()
 
 
+def get_project_anchor(config: PipelineAppConfig) -> Path | None:
+    """Return config.project_root as a resolved anchor, or None if unset.
+
+    Unlike resolve_project_root, returns None (not cwd) when project_root
+    is empty so callers can gate picker dialogs on a user-configured root.
+    """
+    if not config.project_root:
+        return None
+    try:
+        return Path(config.project_root).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
 def build_cli_args(config: PipelineAppConfig) -> list[str]:
     """Build CLI arguments for pipeline/main.py."""
     args = ["pipeline/main.py"]

@@ -9,83 +9,14 @@ from typing import Any
 
 from nicegui import ui
 
-from pipeline_app.components.file_content import (
-    SUPPORTED_EXTENSIONS,
-    render_file_content,
-)
+from pipeline_app.components.file_content import render_file_content
+from pipeline_app.components.fs_nav import is_within, scan_directory
 from pipeline_app.runner import resolve_project_root
 
-
-def _is_within(path: Path, anchor: Path) -> bool:
-    """True iff ``path`` resolves inside ``anchor``.
-
-    ``anchor`` is expected to already be resolved. ``OSError`` covers
-    the case where ``path.resolve()`` fails on a missing or unreadable
-    intermediate component.
-    """
-    try:
-        path.resolve().relative_to(anchor)
-    except OSError, ValueError:
-        return False
-    return True
-
-
-def _scan_directory(
-    root: Path,
-    base: Path,
-    resolved_root: Path | None = None,
-) -> list[dict[str, Any]]:
-    """Recursively scan a directory and return ui.tree-compatible nodes.
-
-    Args:
-        root: The project root (trust anchor for path validation).
-        base: The directory to scan.
-        resolved_root: Pre-resolved root path (avoids repeated resolve calls).
-
-    Returns:
-        List of tree node dicts with id, label, children keys.
-    """
-    if resolved_root is None:
-        resolved_root = root.resolve()
-
-    nodes: list[dict[str, Any]] = []
-
-    try:
-        entries = sorted(
-            base.iterdir(),
-            key=lambda p: (not p.is_dir(), p.name),
-        )
-    except PermissionError:
-        return nodes
-
-    for entry in entries:
-        if entry.is_symlink():
-            continue
-
-        if not _is_within(entry, resolved_root):
-            continue
-
-        if entry.is_dir():
-            children = _scan_directory(root, entry, resolved_root)
-            if children:  # Exclude empty directories
-                nodes.append(
-                    {
-                        "id": str(entry),
-                        "label": entry.name,
-                        "children": children,
-                    }
-                )
-        elif entry.is_file():
-            if entry.suffix.lower() in SUPPORTED_EXTENSIONS:
-                nodes.append(
-                    {
-                        "id": str(entry),
-                        "label": entry.name,
-                        "children": [],
-                    }
-                )
-
-    return nodes
+# Aliases preserved so existing tests that import _scan_directory / _is_within
+# from this module keep working after the extraction to fs_nav.
+_is_within = is_within
+_scan_directory = scan_directory
 
 
 def create_file_browser_page(project_root: str) -> None:

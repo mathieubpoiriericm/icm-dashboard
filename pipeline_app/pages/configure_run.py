@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -10,6 +12,7 @@ from nicegui import ui
 
 from pipeline_app.components.confirm_dialog import confirm
 from pipeline_app.components.log_viewer import LogViewer
+from pipeline_app.components.path_picker import pick_path
 from pipeline_app.components.preset_dialog import prompt_preset_name
 from pipeline_app.components.stage_tracker import create_stage_tracker
 from pipeline_app.config import (
@@ -31,7 +34,16 @@ from pipeline_app.runner import (
     PIPELINE_STAGES,
     PipelineRunner,
     SubprocessLock,
+    get_project_anchor,
 )
+
+
+def _python_fallback_dir(current: str) -> Path | None:
+    """Resolve a bare name like 'python3' to its parent directory via PATH."""
+    if not current or os.sep in current:
+        return None
+    resolved = shutil.which(current)
+    return Path(resolved).parent if resolved else None
 
 RUN_MODES = {
     "standard": "Standard",
@@ -159,18 +171,67 @@ def create_configure_run_page(
                 )
 
             with ui.column().classes("w-full") as local_pdfs_fields:
-                ui.input(
-                    label="Local PDFs Path",
-                    value=config.local_pdfs_path,
-                ).classes("w-full").bind_value(config, "local_pdfs_path")
+                with ui.row().classes("w-full items-center gap-xs no-wrap"):
+                    local_pdfs_inp = (
+                        ui.input(
+                            label="Local PDFs Path",
+                            value=config.local_pdfs_path,
+                        )
+                        .classes("flex-1")
+                        .bind_value(config, "local_pdfs_path")
+                    )
+                    ui.button(
+                        icon="folder_open",
+                        on_click=lambda: _pick_local_pdfs(local_pdfs_inp),
+                    ).props("flat dense").classes("theme-btn-ghost")
                 ui.checkbox("Skip Validation").bind_value(config, "skip_validation")
 
             with ui.column().classes("w-full") as pmid_list_fields:
-                ui.input(
-                    label="PMIDs File Path",
-                    value=config.pmids_path,
-                ).classes("w-full").bind_value(config, "pmids_path")
+                with ui.row().classes("w-full items-center gap-xs no-wrap"):
+                    pmids_inp = (
+                        ui.input(
+                            label="PMIDs File Path",
+                            value=config.pmids_path,
+                        )
+                        .classes("flex-1")
+                        .bind_value(config, "pmids_path")
+                    )
+                    ui.button(
+                        icon="folder_open",
+                        on_click=lambda: _pick_pmids(pmids_inp),
+                    ).props("flat dense").classes("theme-btn-ghost")
                 ui.checkbox("Skip Validation").bind_value(config, "skip_validation")
+
+            async def _pick_local_pdfs(inp: ui.input) -> None:
+                anchor = get_project_anchor(config)
+                if anchor is None:
+                    ui.notify("Set Project Root first", color="warning")
+                    return
+                result = await pick_path(
+                    mode="file",
+                    anchor=anchor,
+                    current_value=inp.value or "",
+                    extensions=frozenset({".pdf"}),
+                    allow_directories_as_files=True,
+                    title="Select PDF file or folder of PDFs",
+                )
+                if result is not None:
+                    inp.value = result
+
+            async def _pick_pmids(inp: ui.input) -> None:
+                anchor = get_project_anchor(config)
+                if anchor is None:
+                    ui.notify("Set Project Root first", color="warning")
+                    return
+                result = await pick_path(
+                    mode="file",
+                    anchor=anchor,
+                    current_value=inp.value or "",
+                    extensions=frozenset({".txt"}),
+                    title="Select PMIDs file",
+                )
+                if result is not None:
+                    inp.value = result
 
             def _update_run_mode_fields() -> None:
                 mode = config.run_mode
@@ -278,18 +339,88 @@ def create_configure_run_page(
 
             # ---- Environment ----
             ui.label("Environment").classes("section-header")
-            ui.input(
-                label="Python Path",
-                value=config.python_path,
-            ).classes("w-full").bind_value(config, "python_path")
-            ui.input(
-                label="Project Root",
-                value=config.project_root,
-            ).classes("w-full").bind_value(config, "project_root")
-            ui.input(
-                label="Progress File (optional)",
-                value=config.progress_file,
-            ).classes("w-full").bind_value(config, "progress_file")
+            with ui.row().classes("w-full items-center gap-xs no-wrap"):
+                python_inp = (
+                    ui.input(
+                        label="Python Path",
+                        value=config.python_path,
+                    )
+                    .classes("flex-1")
+                    .bind_value(config, "python_path")
+                )
+                ui.button(
+                    icon="folder_open",
+                    on_click=lambda: _pick_python_path(python_inp),
+                ).props("flat dense").classes("theme-btn-ghost")
+            with ui.row().classes("w-full items-center gap-xs no-wrap"):
+                project_inp = (
+                    ui.input(
+                        label="Project Root",
+                        value=config.project_root,
+                    )
+                    .classes("flex-1")
+                    .bind_value(config, "project_root")
+                )
+                ui.button(
+                    icon="folder_open",
+                    on_click=lambda: _pick_project_root(project_inp),
+                ).props("flat dense").classes("theme-btn-ghost")
+            with ui.row().classes("w-full items-center gap-xs no-wrap"):
+                progress_inp = (
+                    ui.input(
+                        label="Progress File (optional)",
+                        value=config.progress_file,
+                    )
+                    .classes("flex-1")
+                    .bind_value(config, "progress_file")
+                )
+                ui.button(
+                    icon="folder_open",
+                    on_click=lambda: _pick_progress_file(progress_inp),
+                ).props("flat dense").classes("theme-btn-ghost")
+
+            async def _pick_python_path(inp: ui.input) -> None:
+                current = inp.value or "python3"
+                result = await pick_path(
+                    mode="file",
+                    anchor=None,
+                    current_value=current,
+                    fallback_start=_python_fallback_dir(current) or Path.home(),
+                    symlinks="preserve",
+                    title="Select Python interpreter",
+                )
+                if result is not None:
+                    inp.value = result
+
+            async def _pick_project_root(inp: ui.input) -> None:
+                current = inp.value or ""
+                result = await pick_path(
+                    mode="directory",
+                    anchor=None,
+                    current_value=current,
+                    fallback_start=Path(os.getcwd()),
+                    title="Select Project Root",
+                )
+                if result is not None:
+                    inp.value = result
+
+            async def _pick_progress_file(inp: ui.input) -> None:
+                anchor = get_project_anchor(config)
+                if anchor is None:
+                    ui.notify("Set Project Root first", color="warning")
+                    return
+                current = inp.value or ""
+                default_filename = Path(current).name if current else "progress.json"
+                result = await pick_path(
+                    mode="directory",
+                    anchor=anchor,
+                    current_value=current,
+                    save_as=True,
+                    default_filename=default_filename,
+                    title="Choose folder + filename for progress file",
+                )
+                if result is not None:
+                    inp.value = result
 
             ui.separator().classes("nav-separator")
 
