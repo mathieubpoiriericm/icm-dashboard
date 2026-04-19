@@ -183,7 +183,7 @@ async def pick_path(
         ui.label(title).classes("section-header")
 
         breadcrumb_row: list[ui.element] = []
-        with ui.row().classes("q-mb-sm items-center gap-xs wrap") as bc_row:
+        with ui.row().classes("items-center wrap path-picker-breadcrumbs") as bc_row:
             breadcrumb_row.append(bc_row)
 
         entries_container: list[ui.element] = []
@@ -203,16 +203,16 @@ async def pick_path(
                     ui.input(
                         label="New file name",
                         value=default_filename,
-                    ).classes("w-full")
+                    ).classes("w-full path-picker-filename-input")
                 )
 
-        selected_label = ui.label("").classes("text-caption text-muted q-mt-xs")
+        selected_label = ui.label("").classes("path-picker-caption")
 
-        with ui.row().classes("w-full justify-end gap-sm q-mt-md"):
+        with ui.row().classes("w-full justify-end path-picker-actions"):
             ui.button(
                 "Cancel",
                 on_click=lambda: dialog.submit(None),
-            ).props("flat size=sm").classes("theme-btn-ghost")
+            ).props("flat").classes("theme-btn-ghost")
 
             select_folder_btn_holder: list[ui.button] = []
             if mode == "file" and allow_directories_as_files:
@@ -220,12 +220,9 @@ async def pick_path(
                     ui.button(
                         "Select current folder",
                         on_click=lambda: dialog.submit(str(current_dir_holder[0])),
-                    ).props("outline size=sm")
+                    ).props("outline")
                 )
-            select_btn = ui.button(
-                "Select",
-                color="primary",
-            ).props("size=sm")
+            select_btn = ui.button("Select", color="primary")
 
         def _on_select_click() -> None:
             result = _compute_selection(
@@ -278,13 +275,13 @@ async def pick_path(
                         on_click=lambda _e=None, s=segment: asyncio.create_task(
                             _navigate_to(s)
                         ),
-                    ).props("flat dense size=sm")
+                    ).props("flat dense")
                     if is_last:
                         btn.classes("text-primary")
                     else:
                         btn.classes("theme-btn-ghost")
                     if not is_last:
-                        ui.label("/").classes("text-muted")
+                        ui.label("/").classes("path-picker-breadcrumb-sep")
 
         async def _refresh_entries() -> None:
             items = await asyncio.to_thread(
@@ -298,7 +295,7 @@ async def pick_path(
             selected = selected_file_holder[0]
             with container:
                 if not items:
-                    ui.label("(empty)").classes("text-muted q-pa-sm")
+                    ui.label("(empty)").classes("path-picker-empty")
                     return
                 for item in items:
                     _render_entry(item, selected)
@@ -311,7 +308,7 @@ async def pick_path(
                 not item.is_dir and selected is not None and selected == item.path
             )
             icon = "folder" if item.is_dir else "description"
-            base_cls = "path-picker-row w-full q-py-xs q-px-sm rounded-borders"
+            base_cls = "path-picker-row w-full rounded-borders"
             if is_selected_file:
                 base_cls += " bg-primary text-white"
             elif not item.is_dir and not item.matches_filter:
