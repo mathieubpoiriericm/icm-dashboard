@@ -212,7 +212,7 @@ def create_tuning_history_page(project_root: str) -> None:
             "Refresh",
             on_click=lambda: ui.navigate.reload(),
             icon="refresh",
-        ).props("outline size=sm")
+        ).props("outline")
 
     with ui.column().classes("w-full") as comp_cont:
         comparison_container.append(comp_cont)

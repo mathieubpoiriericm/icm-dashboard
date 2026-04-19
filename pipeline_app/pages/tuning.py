@@ -238,7 +238,7 @@ def create_tuning_page(
                 "Refresh",
                 on_click=lambda: _refresh_stage_tracker(),
                 icon="refresh",
-            ).props("outline size=sm").classes("q-mb-sm")
+            ).props("outline").classes("q-mb-sm")
 
             with ui.column().classes("w-full q-mb-sm") as olc:
                 output_links_container.append(olc)
@@ -257,7 +257,7 @@ def create_tuning_page(
                     on_click=lambda: runner.advance(),
                     icon="skip_next",
                     color="primary",
-                ).props("outline size=sm")
+                ).props("outline")
                 next_btn.set_visibility(False)
                 skip_btn = (
                     ui.button(
@@ -266,7 +266,7 @@ def create_tuning_page(
                         icon="fast_forward",
                         color="warning",
                     )
-                    .props("flat size=sm")
+                    .props("flat")
                     .classes("theme-btn-ghost")
                 )
                 skip_btn.set_visibility(False)

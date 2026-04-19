@@ -165,10 +165,10 @@ def create_run_history_page() -> None:
             "Refresh",
             on_click=_refresh_table,
             icon="refresh",
-        ).props("outline size=sm")
+        ).props("outline")
         ui.button(
             "Clear All",
             on_click=_clear_all,
             icon="delete_forever",
             color="negative",
-        ).props("flat size=sm").classes("theme-btn-ghost")
+        ).props("flat").classes("theme-btn-ghost")

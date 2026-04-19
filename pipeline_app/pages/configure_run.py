@@ -473,7 +473,7 @@ def create_configure_run_page(
                 "Refresh",
                 on_click=_refresh_stage_tracker,
                 icon="refresh",
-            ).props("outline size=sm").classes("q-mb-sm")
+            ).props("outline").classes("q-mb-sm")
 
             status_lbl = ui.label("").classes("text-muted q-mb-sm")
             run_status_label.append(status_lbl)
