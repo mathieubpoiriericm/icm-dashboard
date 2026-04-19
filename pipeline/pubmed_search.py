@@ -53,9 +53,7 @@ MAX_DAYS_BACK: Final[int] = 365 * 10  # 10 years
 DEFAULT_RETMAX: Final[int] = 500
 
 # Primary disease terms for cSVD/SVD - canonical names used in literature
-DISEASE_TERMS: Final[tuple[str, ...]] = (
-    "cerebral small vessel disease",
-)
+DISEASE_TERMS: Final[tuple[str, ...]] = ("cerebral small vessel disease",)
 
 # cSVD imaging markers and clinical phenotypes
 MARKER_TERMS: Final[tuple[str, ...]] = (
@@ -174,12 +172,8 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
                         )
                     )
                     batch = await asyncio.to_thread(Entrez.read, handle)
-                except (
-                    URLError, HTTPError, HTTPException, OSError, RuntimeError
-                ) as e:
-                    logger.warning(
-                        f"PubMed pagination failed at offset {fetched}: {e}"
-                    )
+                except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
+                    logger.warning(f"PubMed pagination failed at offset {fetched}: {e}")
                     pagination_error = True
                     break
 

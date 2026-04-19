@@ -375,8 +375,7 @@ async def fetch_gene_details(
         symbol = gene_data.get("name", "")
         if not symbol:
             logger.warning(
-                f"NCBI gene_id {gene_id} has no symbol "
-                f"(name field missing or empty)"
+                f"NCBI gene_id {gene_id} has no symbol (name field missing or empty)"
             )
             return None
 

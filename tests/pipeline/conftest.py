@@ -250,7 +250,7 @@ def _reset_pdf_client():
     yield
     import pipeline.pdf_retrieval as pdf
 
-    pdf._http_client = None
+    pdf._client_manager.reset()
 
 
 @pytest.fixture(autouse=True)

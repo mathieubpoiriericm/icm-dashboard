@@ -166,9 +166,7 @@ class TestFetchPaperMetadata:
 
     async def test_timeout(self, mocker):
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=httpx.TimeoutException("timeout")
-        )
+        mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
             "pipeline.main._get_metadata_client",
             return_value=mock_client,

@@ -184,6 +184,7 @@ class TestParsePubmedXml:
         assert result.title == "Gene discovery in SVD"
         assert result.journal == "Nature Genetics"
         assert result.doi == "10.1038/test"
+        assert result.authors is not None
         assert "Smith" in result.authors
 
     def test_no_pubmed_article(self):

@@ -669,8 +669,11 @@ async def run_pipeline(
         stage_idx = idx
         sid, slabel = _STAGES[idx]
         _write_progress(
-            config, status="running", stage=sid,
-            stage_label=slabel, stage_number=idx + 1,
+            config,
+            status="running",
+            stage=sid,
+            stage_label=slabel,
+            stage_number=idx + 1,
             started_at=progress_started_at,
         )
 
@@ -755,7 +758,9 @@ async def run_pipeline(
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
             _write_progress(
-                config, status="completed", stage=_STAGES[stage_idx][0],
+                config,
+                status="completed",
+                stage=_STAGES[stage_idx][0],
                 stage_label="Pipeline completed (dry run)",
                 stage_number=stage_idx + 1,
                 started_at=progress_started_at,
@@ -837,9 +842,12 @@ async def run_pipeline(
             await ping_success(config.healthcheck_url)
 
         _write_progress(
-            config, status="completed", stage=_STAGES[-1][0],
+            config,
+            status="completed",
+            stage=_STAGES[-1][0],
             stage_label="Pipeline completed successfully",
-            stage_number=_TOTAL_STAGES, started_at=progress_started_at,
+            stage_number=_TOTAL_STAGES,
+            started_at=progress_started_at,
         )
 
         return metrics, run_data
@@ -847,7 +855,9 @@ async def run_pipeline(
     except Exception:
         sid, slabel = _STAGES[stage_idx]
         _write_progress(
-            config, status="error", stage=sid,
+            config,
+            status="error",
+            stage=sid,
             stage_label=f"Failed at: {slabel}",
             stage_number=stage_idx + 1,
             started_at=progress_started_at,
@@ -977,13 +987,15 @@ async def run_local_pdf_pipeline(
                         rejected_genes: list[RejectedGene] = []
                         for gene in genes:
                             if gene.confidence < config.confidence_threshold:
-                                rejected_genes.append(RejectedGene(
-                                    gene=gene,
-                                    reasons=[
-                                        f"Low confidence: {gene.confidence:.2f}"
-                                        f" < {config.confidence_threshold}"
-                                    ],
-                                ))
+                                rejected_genes.append(
+                                    RejectedGene(
+                                        gene=gene,
+                                        reasons=[
+                                            f"Low confidence: {gene.confidence:.2f}"
+                                            f" < {config.confidence_threshold}"
+                                        ],
+                                    )
+                                )
                                 metrics.genes_rejected += 1
                             else:
                                 validated_genes.append(gene)
@@ -1179,13 +1191,15 @@ async def run_pmid_pipeline(
                         rejected_genes: list[RejectedGene] = []
                         for gene in genes:
                             if gene.confidence < config.confidence_threshold:
-                                rejected_genes.append(RejectedGene(
-                                    gene=gene,
-                                    reasons=[
-                                        f"Low confidence: {gene.confidence:.2f}"
-                                        f" < {config.confidence_threshold}"
-                                    ],
-                                ))
+                                rejected_genes.append(
+                                    RejectedGene(
+                                        gene=gene,
+                                        reasons=[
+                                            f"Low confidence: {gene.confidence:.2f}"
+                                            f" < {config.confidence_threshold}"
+                                        ],
+                                    )
+                                )
                                 metrics.genes_rejected += 1
                             else:
                                 validated_genes.append(gene)
@@ -1465,18 +1479,20 @@ async def _run_selected_pipelines(
                     config=config,
                     manage_lifecycle=False,
                 )
-                summaries.append({
-                    "name": "pubmed",
-                    "status": "ok",
-                    "metrics": {
-                        "papers_processed": metrics.papers_processed,
-                        "fulltext_retrieved": metrics.fulltext_retrieved,
-                        "genes_extracted": metrics.genes_extracted,
-                        "genes_validated": metrics.genes_validated,
-                        "genes_rejected": metrics.genes_rejected,
-                    },
-                    "errors": [],
-                })
+                summaries.append(
+                    {
+                        "name": "pubmed",
+                        "status": "ok",
+                        "metrics": {
+                            "papers_processed": metrics.papers_processed,
+                            "fulltext_retrieved": metrics.fulltext_retrieved,
+                            "genes_extracted": metrics.genes_extracted,
+                            "genes_validated": metrics.genes_validated,
+                            "genes_rejected": metrics.genes_rejected,
+                        },
+                        "errors": [],
+                    }
+                )
             except Exception as e:
                 logger.exception("PubMed pipeline failed")
                 record_failure(traceback.format_exc())
@@ -1569,11 +1585,7 @@ def main() -> None:
     # --days-back / --test-mode argparse slots) but must not be combined
     # with CT-only or sync-only runs.
     pubmed_only_flags_set = args.test_mode or args.dry_run or args.days_back != 7
-    if (
-        pubmed_only_flags_set
-        and online_selected
-        and not args.pubmed
-    ):
+    if pubmed_only_flags_set and online_selected and not args.pubmed:
         logger.warning(
             "--days-back / --dry-run / --test-mode are PubMed-only;"
             " ignoring because --pubmed was not selected"

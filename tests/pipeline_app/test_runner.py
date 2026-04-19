@@ -18,6 +18,7 @@ from pipeline_app.runner import (
     _find_newest_file,
     _run_process_streamed,
     find_newest_report,
+    validate_python_path,
     validate_rscript_path,
 )
 
@@ -204,7 +205,7 @@ class TestSubprocessLockGuard:
     async def test_run_guard_clears_process_on_exit(self):
         lock = SubprocessLock()
         async with lock.run_guard():
-            lock.set_process("fake_process")
+            lock.set_process("fake_process")  # ty: ignore[invalid-argument-type]
         assert lock._process is None
 
     @pytest.mark.asyncio
@@ -348,7 +349,7 @@ class TestValidateRscriptPath:
         fake.write_text("#!/bin/sh\nexit 0\n")
         fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
         result = validate_rscript_path(str(fake))
-        assert result == str(fake.resolve())
+        assert result == os.path.abspath(str(fake))
 
     def test_rejects_nonexistent_absolute_path(self, tmp_path: Path):
         with pytest.raises(ValueError, match="does not exist"):
@@ -361,6 +362,66 @@ class TestValidateRscriptPath:
         f.chmod(0o644)
         with pytest.raises(ValueError, match="not executable"):
             validate_rscript_path(str(f))
+
+
+class TestValidatePythonPath:
+    def test_resolves_bare_command_via_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        fake = tmp_path / "python3"
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        result = validate_python_path("python3")
+        assert result == str(fake)
+
+    def test_rejects_invalid_bare_name(self):
+        with pytest.raises(ValueError, match="Invalid Python executable name"):
+            validate_python_path("not_python")
+
+    def test_accepts_absolute_path(self, tmp_path: Path):
+        fake = tmp_path / "python3.14"
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        result = validate_python_path(str(fake))
+        assert result == os.path.abspath(str(fake))
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks")
+    def test_preserves_symlink_target_for_venv_python(self, tmp_path: Path):
+        real_bin = tmp_path / "base" / "python3.14"
+        real_bin.parent.mkdir()
+        real_bin.write_text("#!/bin/sh\nexit 0\n")
+        real_bin.chmod(real_bin.stat().st_mode | stat.S_IXUSR)
+
+        venv_bin_dir = tmp_path / "venv" / "bin"
+        venv_bin_dir.mkdir(parents=True)
+        venv_python = venv_bin_dir / "python3.14"
+        venv_python.symlink_to(real_bin)
+
+        result = validate_python_path(str(venv_python))
+        assert result == str(venv_python)
+        assert result != str(real_bin)
+
+    def test_rejects_nonexistent_absolute_path(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="does not exist"):
+            validate_python_path(str(tmp_path / "missing_python"))
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX exec bit")
+    def test_rejects_non_executable_absolute_path(self, tmp_path: Path):
+        fake = tmp_path / "python3"
+        fake.write_text("data")
+        fake.chmod(0o644)
+        with pytest.raises(ValueError, match="not executable"):
+            validate_python_path(str(fake))
+
+    def test_rejects_non_python_interpreter_name(self, tmp_path: Path):
+        fake = tmp_path / "notpython"
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        with pytest.raises(ValueError, match="Not a Python interpreter"):
+            validate_python_path(str(fake))
 
 
 class TestSubprocessLockCancelRace:

@@ -341,7 +341,7 @@ async def fetch_pubmed_citations_batch(
     return [t.result() for t in tasks]
 
 
-def extract_pmids_from_text(text: str) -> list[str]:
+def extract_pmids_from_text(text: str | None) -> list[str]:
     """Extract unique PMIDs from text containing references.
 
     Handles formats like:
@@ -350,7 +350,7 @@ def extract_pmids_from_text(text: str) -> list[str]:
     - Semicolon or comma separated lists
 
     Args:
-        text: Text containing PMID references.
+        text: Text containing PMID references. None/empty returns [].
 
     Returns:
         List of unique PMIDs.

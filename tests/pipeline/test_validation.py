@@ -44,9 +44,7 @@ class TestConfidenceValidation:
         result = await validate_gene_entry(entry, config=cfg)
         assert not result.is_valid
 
-    async def test_above_threshold_with_strict_config(
-        self, make_gene_entry, mocker
-    ):
+    async def test_above_threshold_with_strict_config(self, make_gene_entry, mocker):
         entry = make_gene_entry(confidence=0.95)
         cfg = PipelineConfig(confidence_threshold=0.9)
         mocker.patch(
@@ -65,9 +63,7 @@ class TestConfidenceValidation:
 class TestNcbiValidation:
     async def test_gene_not_found(self, make_gene_entry, mocker):
         entry = make_gene_entry(confidence=0.9)
-        mocker.patch(
-            "pipeline.validation.verify_ncbi_gene", return_value=None
-        )
+        mocker.patch("pipeline.validation.verify_ncbi_gene", return_value=None)
         result = await validate_gene_entry(entry)
         assert not result.is_valid
         assert any("not found in NCBI" in e for e in result.errors)
@@ -90,6 +86,7 @@ class TestNcbiValidation:
         )
         result = await validate_gene_entry(entry)
         assert result.is_valid
+        assert result.normalized_data is not None
         assert result.normalized_data.gene_symbol == "NOTCH3"
         assert any("Normalized" in w for w in result.warnings)
 
@@ -111,9 +108,7 @@ class TestGwasTraitValidation:
         assert not any("Unknown GWAS" in w for w in result.warnings)
 
     async def test_unknown_trait_warns(self, make_gene_entry, mocker):
-        entry = make_gene_entry(
-            gwas_trait=["WMH", "FAKE_TRAIT"], confidence=0.9
-        )
+        entry = make_gene_entry(gwas_trait=["WMH", "FAKE_TRAIT"], confidence=0.9)
         mocker.patch(
             "pipeline.validation.verify_ncbi_gene",
             return_value={"symbol": "NOTCH3", "gene_id": "4854"},
@@ -143,9 +138,7 @@ class TestVerifyNcbiGeneCache:
 
         val._gene_cache["NOTCH3"] = {"symbol": "NOTCH3", "gene_id": "4854"}
 
-        mock_fetch = mocker.patch(
-            "pipeline.validation._fetch_ncbi_gene_uncached"
-        )
+        mock_fetch = mocker.patch("pipeline.validation._fetch_ncbi_gene_uncached")
         result = await verify_ncbi_gene("NOTCH3")
 
         assert result is not None
@@ -166,9 +159,7 @@ class TestVerifyNcbiGeneCache:
 
         val._gene_cache["NOTCH3"] = {"symbol": "NOTCH3", "gene_id": "4854"}
 
-        mock_fetch = mocker.patch(
-            "pipeline.validation._fetch_ncbi_gene_uncached"
-        )
+        mock_fetch = mocker.patch("pipeline.validation._fetch_ncbi_gene_uncached")
         result = await verify_ncbi_gene("notch3")
         assert result is not None
         mock_fetch.assert_not_called()
@@ -222,9 +213,7 @@ class TestFetchNcbiGene:
             }
         }
 
-        mock_client.get = AsyncMock(
-            side_effect=[search_response, summary_response]
-        )
+        mock_client.get = AsyncMock(side_effect=[search_response, summary_response])
         mocker.patch(
             "pipeline.validation._client_manager.get",
             return_value=mock_client,
@@ -264,9 +253,7 @@ class TestFetchNcbiGene:
 
     async def test_request_error_returns_none(self, mocker):
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=httpx.RequestError("connection failed")
-        )
+        mock_client.get = AsyncMock(side_effect=httpx.RequestError("connection failed"))
         mocker.patch(
             "pipeline.validation._client_manager.get",
             return_value=mock_client,

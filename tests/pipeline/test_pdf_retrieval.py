@@ -53,9 +53,7 @@ class TestGetFulltext:
         assert result["text"] == "Full text from PMC"
 
     async def test_unpaywall_fallback(self, mocker):
-        mocker.patch(
-            "pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None
-        )
+        mocker.patch("pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None)
         mocker.patch(
             "pipeline.pdf_retrieval.check_unpaywall",
             return_value="https://example.com/paper.pdf",
@@ -69,12 +67,8 @@ class TestGetFulltext:
         assert result["fulltext"] is True
 
     async def test_abstract_fallback(self, mocker):
-        mocker.patch(
-            "pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None
-        )
-        mocker.patch(
-            "pipeline.pdf_retrieval.check_unpaywall", return_value=None
-        )
+        mocker.patch("pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None)
+        mocker.patch("pipeline.pdf_retrieval.check_unpaywall", return_value=None)
         mocker.patch(
             "pipeline.pdf_retrieval.fetch_abstract",
             return_value="Abstract text",
@@ -85,13 +79,9 @@ class TestGetFulltext:
         assert result["text"] == "Abstract text"
 
     async def test_no_doi_skips_unpaywall(self, mocker):
-        mocker.patch(
-            "pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None
-        )
+        mocker.patch("pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None)
         mock_unpaywall = mocker.patch("pipeline.pdf_retrieval.check_unpaywall")
-        mocker.patch(
-            "pipeline.pdf_retrieval.fetch_abstract", return_value="Abstract"
-        )
+        mocker.patch("pipeline.pdf_retrieval.fetch_abstract", return_value="Abstract")
 
         result = await get_fulltext("12345678", None)
         mock_unpaywall.assert_not_called()
@@ -103,9 +93,7 @@ class TestGetFulltext:
 
     async def test_invalid_doi_falls_through(self, mocker):
         """Invalid DOI should not crash — falls through to abstract."""
-        mocker.patch(
-            "pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None
-        )
+        mocker.patch("pipeline.pdf_retrieval.fetch_pmc_fulltext", return_value=None)
         mocker.patch(
             "pipeline.pdf_retrieval.fetch_abstract",
             return_value="Abstract",
@@ -161,9 +149,7 @@ class TestCheckUnpaywall:
     async def test_timeout(self, mocker):
         mocker.patch("pipeline.pdf_retrieval.UNPAYWALL_EMAIL", "test@test.com")
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=httpx.TimeoutException("timeout")
-        )
+        mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
         mocker.patch(
             "pipeline.pdf_retrieval._client_manager.get",
             return_value=mock_client,

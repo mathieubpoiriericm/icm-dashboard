@@ -17,6 +17,7 @@ from pipeline.llm_extraction import GeneEntry
 
 logger = logging.getLogger(__name__)
 
+
 class MergeResult(TypedDict):
     """Result of merge operation."""
 

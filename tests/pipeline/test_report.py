@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import pytest
 
@@ -11,6 +12,7 @@ from pipeline.config import PipelineConfig
 from pipeline.llm_extraction import GeneEntry
 from pipeline.quality_metrics import PipelineMetrics, TokenUsage
 from pipeline.report import (
+    PipelineRunData,
     _estimate_cost,
     _paper_results_to_summaries,
     build_local_pdf_run_data,
@@ -107,7 +109,7 @@ class TestPaperResultsToSummaries:
 
 class TestBuildRunData:
     def _build(self, **kwargs):
-        defaults = {
+        defaults: dict[str, Any] = {
             "metrics": PipelineMetrics(
                 papers_processed=5,
                 fulltext_retrieved=3,
@@ -187,7 +189,7 @@ class TestBuildRunData:
 
 class TestWriteComprehensiveReport:
     def test_writes_json_file(self, tmp_path):
-        data = {"test": "data", "timestamp": "2024-01-01"}
+        data = cast(PipelineRunData, {"test": "data", "timestamp": "2024-01-01"})
         path = write_comprehensive_report(data, tmp_path)
         assert path.exists()
         assert path.suffix == ".json"
@@ -196,12 +198,12 @@ class TestWriteComprehensiveReport:
 
     def test_creates_directory(self, tmp_path):
         log_dir = tmp_path / "nested" / "logs"
-        data = {"test": True}
+        data = cast(PipelineRunData, {"test": True})
         path = write_comprehensive_report(data, log_dir)
         assert path.exists()
 
     def test_filename_format(self, tmp_path):
-        data = {}
+        data = cast(PipelineRunData, {})
         path = write_comprehensive_report(data, tmp_path)
         assert path.name.startswith("pipeline_report_")
         assert path.name.endswith(".json")
@@ -214,87 +216,96 @@ class TestWriteComprehensiveReport:
 
 class TestPrintRichSummary:
     def test_smoke_empty(self):
-        data = {
-            "pipeline_config": {},
-            "search": {},
-            "papers": {},
-            "genes": {},
-            "token_usage": {},
-            "papers_detail": [],
-        }
+        data = cast(
+            PipelineRunData,
+            {
+                "pipeline_config": {},
+                "search": {},
+                "papers": {},
+                "genes": {},
+                "token_usage": {},
+                "papers_detail": [],
+            },
+        )
         # Should not raise
         print_rich_summary(data)
 
     def test_smoke_with_data(self):
-        data = {
-            "pipeline_config": {
-                "model": "claude-opus-4-7",
-                "dry_run": False,
-                "days_back": 7,
+        data = cast(
+            PipelineRunData,
+            {
+                "pipeline_config": {
+                    "model": "claude-opus-4-7",
+                    "dry_run": False,
+                    "days_back": 7,
+                },
+                "search": {"pmids_found": 10, "pmids_new": 5, "pmids_skipped": 5},
+                "papers": {
+                    "processed": 5,
+                    "fulltext": 3,
+                    "abstract_only": 2,
+                    "fulltext_rate": 0.6,
+                    "failed": 0,
+                },
+                "genes": {
+                    "extracted": 10,
+                    "validated": 8,
+                    "rejected": 2,
+                    "acceptance_rate": 0.8,
+                },
+                "token_usage": {
+                    "total_tokens": 7000,
+                    "input_tokens": 5000,
+                    "output_tokens": 2000,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                    "cache_hit_rate": 0,
+                    "estimated_cost_usd": 0.1125,
+                },
+                "database": {"inserted": 3, "updated": 2},
+                "batch_validation_warnings": ["test warning"],
+                "papers_detail": [
+                    {
+                        "pmid": "111",
+                        "source": "pmc",
+                        "gene_count": 3,
+                        "error": None,
+                        "genes": [
+                            {
+                                "gene_symbol": "NOTCH3",
+                                "protein_name": "Notch 3",
+                                "pmid": "111",
+                                "confidence": 0.9,
+                                "gwas_trait": ["WMH"],
+                                "mendelian_randomization": False,
+                                "omics_evidence": [],
+                            }
+                        ],
+                    }
+                ],
             },
-            "search": {"pmids_found": 10, "pmids_new": 5, "pmids_skipped": 5},
-            "papers": {
-                "processed": 5,
-                "fulltext": 3,
-                "abstract_only": 2,
-                "fulltext_rate": 0.6,
-                "failed": 0,
-            },
-            "genes": {
-                "extracted": 10,
-                "validated": 8,
-                "rejected": 2,
-                "acceptance_rate": 0.8,
-            },
-            "token_usage": {
-                "total_tokens": 7000,
-                "input_tokens": 5000,
-                "output_tokens": 2000,
-                "cache_read_input_tokens": 0,
-                "cache_creation_input_tokens": 0,
-                "cache_hit_rate": 0,
-                "estimated_cost_usd": 0.1125,
-            },
-            "database": {"inserted": 3, "updated": 2},
-            "batch_validation_warnings": ["test warning"],
-            "papers_detail": [
-                {
-                    "pmid": "111",
-                    "source": "pmc",
-                    "gene_count": 3,
-                    "error": None,
-                    "genes": [
-                        {
-                            "gene_symbol": "NOTCH3",
-                            "protein_name": "Notch 3",
-                            "pmid": "111",
-                            "confidence": 0.9,
-                            "gwas_trait": ["WMH"],
-                            "mendelian_randomization": False,
-                            "omics_evidence": [],
-                        }
-                    ],
-                }
-            ],
-        }
+        )
         print_rich_summary(data)
 
     def test_smoke_dry_run(self):
-        data = {
-            "pipeline_config": {"dry_run": True, "model": "test"},
-            "search": {},
-            "papers": {},
-            "genes": {
-                "extracted": 0,
-                "validated": 0,
-                "rejected": 0,
-                "acceptance_rate": 0,
+        data = cast(
+            PipelineRunData,
+            {
+                "pipeline_config": {"dry_run": True, "model": "test"},
+                "search": {},
+                "papers": {},
+                "genes": {
+                    "extracted": 0,
+                    "validated": 0,
+                    "rejected": 0,
+                    "acceptance_rate": 0,
+                },
+                "token_usage": {"total_tokens": 0},
+                "database": None,
+                "batch_validation_warnings": [],
+                "papers_detail": [],
             },
-            "token_usage": {"total_tokens": 0},
-            "database": None,
-            "batch_validation_warnings": [],
-            "papers_detail": [],
-        }
+        )
         print_rich_summary(data)
 
 
@@ -307,7 +318,7 @@ class TestBuildLocalPdfRunData:
     def _build(self, **kwargs):
         from pathlib import Path
 
-        defaults = {
+        defaults: dict[str, Any] = {
             "metrics": PipelineMetrics(
                 papers_processed=3,
                 fulltext_retrieved=3,
@@ -369,7 +380,7 @@ class TestBuildPmidRunData:
     def _build(self, **kwargs):
         from pathlib import Path
 
-        defaults = {
+        defaults: dict[str, Any] = {
             "metrics": PipelineMetrics(
                 papers_processed=2,
                 fulltext_retrieved=1,
@@ -458,49 +469,52 @@ class TestRejectedGeneSerialization:
 
 class TestPrintRichSummaryWithRejected:
     def test_smoke_with_rejected_genes(self):
-        data = {
-            "pipeline_config": {"model": "claude-opus-4-7", "dry_run": False},
-            "search": {},
-            "papers": {},
-            "genes": {
-                "extracted": 2,
-                "validated": 1,
-                "rejected": 1,
-                "acceptance_rate": 0.5,
-            },
-            "token_usage": {"total_tokens": 0},
-            "batch_validation_warnings": [],
-            "papers_detail": [
-                {
-                    "pmid": "123",
-                    "source": "pmc",
-                    "gene_count": 1,
-                    "error": None,
-                    "genes": [
-                        {
-                            "gene_symbol": "NOTCH3",
-                            "protein_name": "Notch 3",
-                            "pmid": "123",
-                            "confidence": 0.95,
-                            "gwas_trait": [],
-                            "mendelian_randomization": False,
-                            "omics_evidence": [],
-                        }
-                    ],
-                    "rejected_gene_count": 1,
-                    "rejected_genes": [
-                        {
-                            "gene": {
-                                "gene_symbol": "BADGENE",
-                                "protein_name": None,
+        data = cast(
+            PipelineRunData,
+            {
+                "pipeline_config": {"model": "claude-opus-4-7", "dry_run": False},
+                "search": {},
+                "papers": {},
+                "genes": {
+                    "extracted": 2,
+                    "validated": 1,
+                    "rejected": 1,
+                    "acceptance_rate": 0.5,
+                },
+                "token_usage": {"total_tokens": 0},
+                "batch_validation_warnings": [],
+                "papers_detail": [
+                    {
+                        "pmid": "123",
+                        "source": "pmc",
+                        "gene_count": 1,
+                        "error": None,
+                        "genes": [
+                            {
+                                "gene_symbol": "NOTCH3",
+                                "protein_name": "Notch 3",
                                 "pmid": "123",
-                                "confidence": 0.2,
-                            },
-                            "reasons": ["NCBI lookup failed"],
-                        }
-                    ],
-                }
-            ],
-        }
+                                "confidence": 0.95,
+                                "gwas_trait": [],
+                                "mendelian_randomization": False,
+                                "omics_evidence": [],
+                            }
+                        ],
+                        "rejected_gene_count": 1,
+                        "rejected_genes": [
+                            {
+                                "gene": {
+                                    "gene_symbol": "BADGENE",
+                                    "protein_name": None,
+                                    "pmid": "123",
+                                    "confidence": 0.2,
+                                },
+                                "reasons": ["NCBI lookup failed"],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
         # Should not raise
         print_rich_summary(data)

@@ -83,9 +83,7 @@ class AsyncRateLimiter:
 
             await asyncio.sleep(sleep_time)
 
-    async def record_actual_usage(
-        self, request_id: int, actual_tokens: int
-    ) -> None:
+    async def record_actual_usage(self, request_id: int, actual_tokens: int) -> None:
         """Correct the pre-estimated token count with actual usage.
 
         Finds the token log entry matching *request_id* and replaces

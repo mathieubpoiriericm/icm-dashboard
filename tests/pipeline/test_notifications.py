@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,7 +26,7 @@ def _make_run_data(
     batch_warnings=None,
 ):
     """Return a minimal PipelineRunData dict."""
-    cfg = {
+    cfg: dict[str, Any] = {
         "model": "claude-opus-4-7",
         "effort": "high",
     }

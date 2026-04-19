@@ -220,8 +220,12 @@ class TestPresets:
         presets2 = save_preset("B", PipelineAppConfig(days_back=2))
         id1 = presets1[-1].id
         id2 = presets2[-1].id
-        assert load_preset(id1).days_back == 1
-        assert load_preset(id2).days_back == 2
+        loaded1 = load_preset(id1)
+        loaded2 = load_preset(id2)
+        assert loaded1 is not None
+        assert loaded2 is not None
+        assert loaded1.days_back == 1
+        assert loaded2.days_back == 2
 
 
 class TestStripSecrets:

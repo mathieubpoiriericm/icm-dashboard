@@ -69,11 +69,11 @@ class TestGeneEntryModel:
 
     def test_missing_gene_symbol_rejected(self):
         with pytest.raises(ValidationError):
-            GeneEntry(confidence=0.9)  # type: ignore[call-arg]
+            GeneEntry(confidence=0.9)  # ty: ignore[missing-argument]
 
     def test_missing_confidence_rejected(self):
         with pytest.raises(ValidationError):
-            GeneEntry(gene_symbol="X")  # type: ignore[call-arg]
+            GeneEntry(gene_symbol="X")  # ty: ignore[missing-argument]
 
     def test_pmid_mutable(self):
         ge = GeneEntry(gene_symbol="X", confidence=0.9)
@@ -91,9 +91,7 @@ class TestExtractionResult:
         assert er.genes == []
 
     def test_with_genes(self):
-        er = ExtractionResult(
-            genes=[GeneEntry(gene_symbol="X", confidence=0.9)]
-        )
+        er = ExtractionResult(genes=[GeneEntry(gene_symbol="X", confidence=0.9)])
         assert len(er.genes) == 1
 
     def test_model_json_schema(self):
@@ -225,9 +223,7 @@ class TestExtractFromPaper:
         assert genes == []
 
     async def test_thinking_blocks_skipped(self, mocker, mock_anthropic_response):
-        response = mock_anthropic_response(
-            text='{"genes": []}', include_thinking=True
-        )
+        response = mock_anthropic_response(text='{"genes": []}', include_thinking=True)
         mock_client = self._make_mock_client(response)
         mocker.patch(
             "pipeline.llm_extraction._get_async_client",
@@ -252,9 +248,7 @@ class TestExtractFromPaper:
         genes, usage = await extract_from_paper("Paper text", "12345678")
         assert genes == []
 
-    async def test_rate_limiter_called(
-        self, mocker, mock_anthropic_response, config
-    ):
+    async def test_rate_limiter_called(self, mocker, mock_anthropic_response, config):
         response = mock_anthropic_response(text='{"genes": []}')
         mock_client = self._make_mock_client(response)
         mocker.patch(

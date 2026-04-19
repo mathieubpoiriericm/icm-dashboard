@@ -36,12 +36,14 @@ class TestCleanGoTerm:
 
     def test_multiple_go_ids(self):
         result = _clean_go_term("process A [GO:0000001]; process B [GO:0000002]")
+        assert result is not None
         assert "[GO:" not in result
         assert "process A" in result
         assert "process B" in result
 
     def test_cleans_double_semicolons(self):
         result = _clean_go_term("term1 [GO:0000001];; term2")
+        assert result is not None
         assert ";;" not in result
 
     def test_cleans_extra_whitespace(self):
@@ -279,6 +281,7 @@ class TestFetchUniProtInfo:
         )
 
         result = await fetch_uniprot_info("NOTCH3")
+        assert result is not None
         assert result.accession == "P12345"
         assert result.url == "https://www.uniprot.org/uniprotkb/P12345/entry"
 
@@ -293,6 +296,7 @@ class TestFetchUniProtInfo:
         )
 
         result = await fetch_uniprot_info("FAKE")
+        assert result is not None
         assert result.accession is None
         assert result.url is None
         assert result.protein_name is None

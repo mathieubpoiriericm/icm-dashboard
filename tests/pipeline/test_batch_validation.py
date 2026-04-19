@@ -52,8 +52,7 @@ class TestGeneDuplication:
     def test_duplication_warning_at_threshold(self):
         """Gene in exactly 4 papers should trigger warning (>3)."""
         genes = [
-            _make_entry(gene_symbol="NOTCH3", pmid=f"1111111{i}")
-            for i in range(4)
+            _make_entry(gene_symbol="NOTCH3", pmid=f"1111111{i}") for i in range(4)
         ]
         warnings = batch_validate(genes)
         assert any("NOTCH3" in w and "4 different papers" in w for w in warnings)
@@ -61,8 +60,7 @@ class TestGeneDuplication:
     def test_no_warning_at_3_papers(self):
         """Gene in exactly 3 papers should NOT trigger warning."""
         genes = [
-            _make_entry(gene_symbol="NOTCH3", pmid=f"1111111{i}")
-            for i in range(3)
+            _make_entry(gene_symbol="NOTCH3", pmid=f"1111111{i}") for i in range(3)
         ]
         warnings = batch_validate(genes)
         dup_warnings = [w for w in warnings if "extracted from" in w]
@@ -121,19 +119,13 @@ class TestNullProteinRate:
 
 class TestPerPaperGeneCount:
     def test_normal_count_no_warning(self):
-        genes = [
-            _make_entry(pmid="111", gene_symbol=f"G{i}")
-            for i in range(10)
-        ]
+        genes = [_make_entry(pmid="111", gene_symbol=f"G{i}") for i in range(10)]
         warnings = batch_validate(genes)
         assert not any("unusual" in w for w in warnings)
 
     def test_excessive_genes_warning(self):
         """More than 20 genes from one paper should trigger warning."""
-        genes = [
-            _make_entry(pmid="111", gene_symbol=f"G{i}")
-            for i in range(21)
-        ]
+        genes = [_make_entry(pmid="111", gene_symbol=f"G{i}") for i in range(21)]
         warnings = batch_validate(genes)
         assert any("21 genes" in w and "unusual" in w for w in warnings)
 

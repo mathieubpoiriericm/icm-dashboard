@@ -273,9 +273,16 @@ def build_local_pdf_run_data(
 ) -> PipelineRunData:
     """Assemble run data for a local-PDF extraction run."""
     return _build_offline_run_data(
-        metrics, results, batch_warnings, config, total_duration,
-        {"mode": "local_pdf", "pdf_directory": str(pdf_dir),
-         "skip_validation": skip_validation},
+        metrics,
+        results,
+        batch_warnings,
+        config,
+        total_duration,
+        {
+            "mode": "local_pdf",
+            "pdf_directory": str(pdf_dir),
+            "skip_validation": skip_validation,
+        },
     )
 
 
@@ -290,9 +297,16 @@ def build_pmid_run_data(
 ) -> PipelineRunData:
     """Assemble run data for a PMID-list extraction run."""
     return _build_offline_run_data(
-        metrics, results, batch_warnings, config, total_duration,
-        {"mode": "pmid_list", "pmid_file": str(pmid_file),
-         "skip_validation": skip_validation},
+        metrics,
+        results,
+        batch_warnings,
+        config,
+        total_duration,
+        {
+            "mode": "pmid_list",
+            "pmid_file": str(pmid_file),
+            "skip_validation": skip_validation,
+        },
     )
 
 

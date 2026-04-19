@@ -101,4 +101,3 @@ class PipelineMetrics:
         if (total := self.papers_processed) == 0:
             return 0.0
         return self.fulltext_retrieved / total
-

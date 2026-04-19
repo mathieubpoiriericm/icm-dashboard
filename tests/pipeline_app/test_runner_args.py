@@ -208,7 +208,7 @@ class TestBuildCliArgsFloat:
 
     def test_days_back_as_float(self):
         config = PipelineAppConfig(days_back=30)
-        config.days_back = 30.0  # type: ignore[assignment]  # NiceGUI sets float
+        config.days_back = 30.0  # ty: ignore[invalid-assignment]
         args = build_cli_args(config)
         assert "--days-back" in args
         assert args[args.index("--days-back") + 1] == "30"
@@ -220,8 +220,8 @@ class TestBuildEnvVarsFloat:
     def test_int_fields_serialized_without_decimal(self):
         config = PipelineAppConfig()
         # Simulate NiceGUI setting float values on int fields
-        config.max_concurrent_papers = 10.0  # type: ignore[assignment]
-        config.rpm_limit = 50.0  # type: ignore[assignment]
+        config.max_concurrent_papers = 10.0  # ty: ignore[invalid-assignment]
+        config.rpm_limit = 50.0  # ty: ignore[invalid-assignment]
         env = build_env_vars(config, EnvSecrets())
         assert env["PIPELINE_MAX_CONCURRENT_PAPERS"] == "10"
         assert env["PIPELINE_RPM_LIMIT"] == "50"

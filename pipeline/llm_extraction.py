@@ -207,10 +207,7 @@ async def extract_from_paper(
 
     # "high" is the API default — only transmit when overridden.
     output_config = dict(_OUTPUT_CONFIG)
-    if (
-        config.llm_model in EFFORT_CAPABLE_MODELS
-        and config.llm_effort != "high"
-    ):
+    if config.llm_model in EFFORT_CAPABLE_MODELS and config.llm_effort != "high":
         output_config["effort"] = config.llm_effort
 
     stream_kwargs: dict[str, Any] = {

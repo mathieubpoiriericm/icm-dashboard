@@ -83,7 +83,10 @@ def _resolve_executable(
             )
         return resolved
 
-    resolved_path = Path(path_str).resolve()
+    # Preserve symlinks: venv python3.x is a symlink to the base interpreter,
+    # and Python only enters venv mode when started via the symlink path
+    # (so pyvenv.cfg and venv site-packages are discovered).
+    resolved_path = Path(os.path.abspath(path_str))
     if not resolved_path.is_file():
         raise ValueError(f"{display_name} path does not exist: {path_str!r}")
     if not os.access(resolved_path, os.X_OK):
@@ -375,7 +378,7 @@ def _signal_process_group(
     if hasattr(os, "killpg"):
         try:
             pgid = os.getpgid(proc.pid)
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError, PermissionError:
             pgid = -1
         if pgid == proc.pid:
             with contextlib.suppress(ProcessLookupError, PermissionError):
