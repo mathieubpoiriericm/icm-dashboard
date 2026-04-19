@@ -158,7 +158,7 @@ def get_project_anchor(config: PipelineAppConfig) -> Path | None:
         return None
     try:
         return Path(config.project_root).expanduser().resolve()
-    except (OSError, RuntimeError):
+    except OSError, RuntimeError:
         return None
 
 
@@ -669,6 +669,8 @@ class TuningRunner:
         # Buffered run state (persists across page navigations)
         self.log_lines: list[tuple[str, str]] = []
         self.stage_statuses: dict[str, str] = {s: "pending" for s in TUNING_STAGES}
+        self.stage_durations: dict[str, float] = {}
+        self._stage_started_at: dict[str, float] = {}
         self.current_repeat: int = 0
         self.total_repeats: int = 0
         self._on_stdout: Callable[[str], None] | None = None
@@ -716,6 +718,8 @@ class TuningRunner:
         """Clear buffered run state so the UI tracker renders fresh."""
         self.log_lines.clear()
         self.stage_statuses = {s: "pending" for s in TUNING_STAGES}
+        self.stage_durations = {}
+        self._stage_started_at = {}
         self.current_repeat = 0
         self.total_repeats = 0
         # Clear any stale skip request so it can't leak into the first
@@ -741,6 +745,7 @@ class TuningRunner:
         total: int,
     ) -> None:
         self.stage_statuses[stage] = "running"
+        self._stage_started_at[stage] = time.monotonic()
         self.current_repeat = repeat
         self.total_repeats = total
         if self._on_stage_start:
@@ -753,6 +758,9 @@ class TuningRunner:
         status: str = "completed",
     ) -> None:
         self.stage_statuses[stage] = status
+        started = self._stage_started_at.pop(stage, None)
+        if started is not None:
+            self.stage_durations[stage] = time.monotonic() - started
         if self._on_stage_complete:
             self._on_stage_complete(stage, files)
 

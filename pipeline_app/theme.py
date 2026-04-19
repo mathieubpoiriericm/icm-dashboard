@@ -15,6 +15,10 @@ _GOOGLE_FONTS = (
     '<link href="https://fonts.googleapis.com/css2'
     "?family=Inter:wght@400;500;600;700"
     "&family=JetBrains+Mono:wght@400"
+    # Bricolage Grotesque: variable display face used for titles and stat
+    # values. opsz axis is referenced from theme.css; opsz range 12–96 covers
+    # everything from small labels up to the .display-xl size.
+    "&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700"
     '&display=swap" rel="stylesheet">'
 )
 
@@ -54,8 +58,9 @@ def chart_title(text: str) -> dict[str, Any]:
         "top": "5%",
         "textStyle": {
             "color": COLORS["text_secondary"],
-            "fontSize": 12,
-            "fontFamily": "Inter",
+            "fontSize": 13,
+            "fontFamily": "Bricolage Grotesque, Inter, sans-serif",
+            "fontWeight": 600,
         },
     }
 

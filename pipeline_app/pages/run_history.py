@@ -8,6 +8,7 @@ from typing import Any
 from nicegui import ui
 
 from pipeline_app.components.confirm_dialog import confirm
+from pipeline_app.components.empty_state import empty_state
 from pipeline_app.config import clear_history, load_history
 
 
@@ -81,7 +82,13 @@ def create_run_history_page() -> None:
         """Build the history table inside the current container."""
         rows = _get_rows()
         if not rows:
-            ui.label("No runs yet.").classes("text-muted")
+            empty_state(
+                "history",
+                "No runs yet",
+                "Pipeline runs appear here once you launch one from Configure & Run.",
+                action_label="Go to Configure & Run",
+                on_action=lambda: ui.navigate.to("/"),
+            )
             return
         with ui.table(
             columns=columns,

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import pytest
-from pipeline_app.pages.file_browser import _scan_directory
+from pipeline_app.components.fs_nav import scan_directory
 
 
 class TestScanDirectory:
@@ -14,14 +14,14 @@ class TestScanDirectory:
         (tmp_path / "report.json").write_text("{}")
         (tmp_path / "data.csv").write_text("a,b")
         (tmp_path / "notes.txt").write_text("hello")
-        nodes = _scan_directory(tmp_path, tmp_path)
+        nodes = scan_directory(tmp_path, tmp_path)
         labels = {n["label"] for n in nodes}
         assert labels == {"report.json", "data.csv", "notes.txt"}
 
     def test_excludes_unsupported_extensions(self, tmp_path: Path):
         (tmp_path / "script.py").write_text("pass")
         (tmp_path / "data.parquet").write_bytes(b"\x00")
-        nodes = _scan_directory(tmp_path, tmp_path)
+        nodes = scan_directory(tmp_path, tmp_path)
         assert nodes == []
 
     def test_skips_symlinks(self, tmp_path: Path):
@@ -29,7 +29,7 @@ class TestScanDirectory:
         real_file.write_text("{}")
         link = tmp_path / "link.json"
         link.symlink_to(real_file)
-        nodes = _scan_directory(tmp_path, tmp_path)
+        nodes = scan_directory(tmp_path, tmp_path)
         labels = {n["label"] for n in nodes}
         assert "real.json" in labels
         assert "link.json" not in labels
@@ -46,7 +46,7 @@ class TestScanDirectory:
         escape_link = root / "escape"
         escape_link.symlink_to(outside)
 
-        nodes = _scan_directory(root, root)
+        nodes = scan_directory(root, root)
         # The symlink directory should be skipped
         assert nodes == []
 
@@ -54,7 +54,7 @@ class TestScanDirectory:
         sub = tmp_path / "subdir"
         sub.mkdir()
         (sub / "nested.json").write_text("{}")
-        nodes = _scan_directory(tmp_path, tmp_path)
+        nodes = scan_directory(tmp_path, tmp_path)
         assert len(nodes) == 1
         assert nodes[0]["label"] == "subdir"
         assert len(nodes[0]["children"]) == 1
@@ -62,7 +62,7 @@ class TestScanDirectory:
 
     def test_excludes_empty_directories(self, tmp_path: Path):
         (tmp_path / "empty_dir").mkdir()
-        nodes = _scan_directory(tmp_path, tmp_path)
+        nodes = scan_directory(tmp_path, tmp_path)
         assert nodes == []
 
     def test_directories_sorted_before_files(self, tmp_path: Path):
@@ -70,7 +70,7 @@ class TestScanDirectory:
         sub = tmp_path / "a_dir"
         sub.mkdir()
         (sub / "nested.json").write_text("{}")
-        nodes = _scan_directory(tmp_path, tmp_path)
+        nodes = scan_directory(tmp_path, tmp_path)
         assert len(nodes) == 2
         assert nodes[0]["label"] == "a_dir"
         assert nodes[1]["label"] == "z_file.json"
@@ -86,7 +86,7 @@ class TestScanDirectory:
         (restricted / "file.json").write_text("{}")
         restricted.chmod(0o000)
         try:
-            nodes = _scan_directory(tmp_path, tmp_path)
+            nodes = scan_directory(tmp_path, tmp_path)
             # restricted directory should be skipped gracefully
             assert not any(n["label"] == "restricted" for n in nodes)
         finally:
@@ -95,6 +95,6 @@ class TestScanDirectory:
     def test_uses_provided_resolved_root(self, tmp_path: Path):
         (tmp_path / "data.json").write_text("{}")
         resolved = tmp_path.resolve()
-        nodes = _scan_directory(tmp_path, tmp_path, resolved_root=resolved)
+        nodes = scan_directory(tmp_path, tmp_path, resolved_root=resolved)
         labels = {n["label"] for n in nodes}
         assert "data.json" in labels

@@ -9,6 +9,8 @@ from typing import Any
 
 from nicegui import ui
 
+from pipeline_app.components.empty_state import empty_state
+from pipeline_app.components.stat_card import stat_card
 from pipeline_app.theme import (
     CHART_ACCENT_COLORS,
     COLORS,
@@ -90,17 +92,6 @@ def _flatten_papers(
                 gene["rejection_reason"] = str(reasons) if reasons else ""
             rejected.append(gene)
     return genes, rejected
-
-
-def _stat_card(
-    value: str | int | float,
-    label: str,
-    accent: str = "primary",
-) -> None:
-    """Render a themed stat card with a value, label, and accent color."""
-    with ui.card().classes(f"stat-card accent-{accent}"):
-        ui.label(str(value)).classes("stat-card-value")
-        ui.label(label).classes("stat-card-label")
 
 
 def _find_report(project_root: str, report_id: str) -> Path | None:
@@ -200,27 +191,27 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
             rejected_count = genes_summary.get("rejected", len(rejected_list))
 
             with ui.row().classes("flex-wrap gap-md"):
-                _stat_card(papers_count, "Papers Processed", "info")
-                _stat_card(genes_count, "Genes Extracted", "secondary")
-                _stat_card(rejected_count, "Rejected Genes", "negative")
+                stat_card(papers_count, "Papers Processed", color="info")
+                stat_card(genes_count, "Genes Extracted", color="secondary")
+                stat_card(rejected_count, "Rejected Genes", color="negative")
 
                 total_cost = token_usage.get("estimated_cost_usd", 0) or 0
-                _stat_card(f"${total_cost:.4f}", "Total Cost", "warning")
+                stat_card(f"${total_cost:.4f}", "Total Cost", color="warning")
 
                 duration = report.get("total_processing_time", 0) or 0
-                _stat_card(
+                stat_card(
                     f"{duration:.1f}s" if duration < 60 else f"{duration / 60:.1f}m",
                     "Duration",
-                    "primary",
+                    color="primary",
                 )
 
                 cache_hit = token_usage.get("cache_hit_rate", None)
                 if cache_hit is not None:
-                    _stat_card(f"{cache_hit:.1%}", "Cache Hit Rate", "info")
+                    stat_card(f"{cache_hit:.1%}", "Cache Hit Rate", color="info")
 
                 bv_warnings = report.get("batch_validation_warnings", [])
                 bv_count = len(bv_warnings) if isinstance(bv_warnings, list) else 0
-                _stat_card(bv_count, "Batch Warnings", "warning")
+                stat_card(bv_count, "Batch Warnings", color="warning")
 
             if genes_count > 0 or rejected_count > 0:
                 with ui.row().classes("q-mt-lg gap-lg items-start"):
@@ -297,7 +288,11 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
         with ui.tab_panel(papers_tab):
             ui.label("Papers").classes("section-header q-mb-md")
             if not papers_detail:
-                ui.label("No papers data.").classes("text-muted")
+                empty_state(
+                    "description",
+                    "No papers in this report",
+                    "This pipeline run did not process any papers.",
+                )
             else:
                 columns = [
                     {
@@ -357,7 +352,11 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
         with ui.tab_panel(genes_tab):
             ui.label("Genes Extracted").classes("section-header q-mb-md")
             if not genes_list:
-                ui.label("No genes data.").classes("text-muted")
+                empty_state(
+                    "biotech",
+                    "No genes extracted",
+                    "Nothing passed the confidence threshold for this run.",
+                )
             else:
                 columns = [
                     {
@@ -435,7 +434,11 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
         with ui.tab_panel(rejected_tab):
             ui.label("Rejected Genes").classes("section-header q-mb-md")
             if not rejected_list:
-                ui.label("No rejected genes.").classes("text-muted")
+                empty_state(
+                    "check_circle",
+                    "No rejections",
+                    "Every extracted gene passed validation for this run.",
+                )
             else:
                 columns = [
                     {
@@ -488,12 +491,12 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                 total_cost = token_usage.get("estimated_cost_usd", 0) or 0
 
                 with ui.row().classes("flex-wrap gap-md"):
-                    _stat_card(f"{input_tok:,}", "Input Tokens", "primary")
-                    _stat_card(f"{output_tok:,}", "Output Tokens", "secondary")
-                    _stat_card(f"{thinking_tok:,}", "Thinking Tokens", "info")
-                    _stat_card(f"{cache_read_tok:,}", "Cache Read", "secondary")
-                    _stat_card(f"{cache_create_tok:,}", "Cache Creation", "info")
-                    _stat_card(f"${total_cost:.4f}", "Total Cost", "warning")
+                    stat_card(f"{input_tok:,}", "Input Tokens", color="primary")
+                    stat_card(f"{output_tok:,}", "Output Tokens", color="secondary")
+                    stat_card(f"{thinking_tok:,}", "Thinking Tokens", color="info")
+                    stat_card(f"{cache_read_tok:,}", "Cache Read", color="secondary")
+                    stat_card(f"{cache_create_tok:,}", "Cache Creation", color="info")
+                    stat_card(f"${total_cost:.4f}", "Total Cost", color="warning")
 
                 token_data = [
                     v

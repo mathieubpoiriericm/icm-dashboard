@@ -125,7 +125,7 @@ def list_directory(
             base.iterdir(),
             key=lambda p: (not p.is_dir(), p.name.lower()),
         )
-    except (PermissionError, OSError):
+    except PermissionError, OSError:
         return []
 
     result: list[DirEntry] = []

@@ -45,6 +45,7 @@ def _python_fallback_dir(current: str) -> Path | None:
     resolved = shutil.which(current)
     return Path(resolved).parent if resolved else None
 
+
 RUN_MODES = {
     "standard": "Standard",
     "local_pdfs": "Local PDFs",
@@ -455,7 +456,7 @@ def create_configure_run_page(
                 on_click=lambda: _save_settings(),
                 icon="save",
                 color="primary",
-            ).classes("w-full theme-btn-primary")
+            ).props("unelevated").classes("w-full theme-btn-primary btn-primary")
 
             def _save_settings() -> None:
                 save_config(config)
@@ -592,10 +593,14 @@ def create_configure_run_page(
                     if run_btn_ref:
                         run_btn_ref[0].enable()
 
-            run_btn = ui.button(
-                "Run Pipeline",
-                on_click=_run_pipeline,
-                icon="play_arrow",
-                color="positive",
-            ).classes("w-full q-mt-md theme-btn-primary")
+            run_btn = (
+                ui.button(
+                    "Run Pipeline",
+                    on_click=_run_pipeline,
+                    icon="play_arrow",
+                    color="positive",
+                )
+                .props("unelevated size=lg")
+                .classes("w-full q-mt-md theme-btn-primary btn-primary")
+            )
             run_btn_ref.append(run_btn)

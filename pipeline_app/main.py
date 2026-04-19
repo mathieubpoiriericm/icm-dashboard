@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 # Ensure the project root is on sys.path so `pipeline_app` is importable
@@ -75,43 +76,99 @@ async def _cancel_any(tuning_runner: TuningRunner) -> None:
     await tuning_runner.cancel()
 
 
-def create_sidebar(tuning_runner: TuningRunner) -> ui.left_drawer:
-    """Build the left drawer sidebar with navigation links."""
+# Sidebar sections: each entry is (heading, heading_icon, [(path, label, icon), ...]).
+_NAV_SECTIONS: tuple[tuple[str, str, tuple[tuple[str, str, str], ...]], ...] = (
+    (
+        "Pipeline",
+        "play_circle_outline",
+        (
+            ("/", "Configure & Run", "settings"),
+            ("/history", "Run History", "history"),
+        ),
+    ),
+    (
+        "Tuning",
+        "tune",
+        (
+            ("/tuning", "Tuning", "tune"),
+            ("/tuning/history", "Tuning History", "analytics"),
+        ),
+    ),
+    (
+        "Results",
+        "folder_open",
+        (("/files", "File Browser", "folder_open"),),
+    ),
+)
+
+# Path → breadcrumb chain of (label, link_or_None). A link of None marks
+# the current page (rendered non-clickable).
+_BREADCRUMBS: dict[str, tuple[tuple[str, str | None], ...]] = {
+    "/": (("Configure & Run", None),),
+    "/history": (("Run History", None),),
+    "/tuning": (("Tuning", None),),
+    "/tuning/history": (
+        ("Tuning", "/tuning"),
+        ("History", None),
+    ),
+    "/files": (("File Browser", None),),
+    "/results": (
+        ("Run History", "/history"),
+        ("Report", None),
+    ),
+}
+
+
+def _breadcrumbs_for(
+    path: str,
+    *,
+    trailing: str | None = None,
+) -> tuple[tuple[str, str | None], ...]:
+    """Return the breadcrumb chain for a semantic path.
+
+    When ``trailing`` is provided, it replaces or appends to the final
+    non-clickable crumb — useful for parametric paths like ``/results``
+    where the tail label is derived at render time.
+    """
+    chain = _BREADCRUMBS.get(path, ())
+    if not trailing:
+        return chain
+    if chain and chain[-1][1] is None:
+        return chain[:-1] + ((trailing, None),)
+    return chain + ((trailing, None),)
+
+
+def create_sidebar(
+    tuning_runner: TuningRunner,
+    current_path: str = "",
+) -> ui.left_drawer:
+    """Build the left drawer sidebar with navigation links.
+
+    Args:
+        tuning_runner: Used to bind the Cancel button's visibility.
+        current_path: Route of the active page; the matching nav button
+            gets the ``nav-active`` class so users always know where they
+            are.
+    """
     with ui.left_drawer(value=True).classes("column q-pa-md") as drawer:
-        ui.label("Pipeline").classes("nav-section-label q-mb-xs")
-        ui.button(
-            "Configure & Run",
-            on_click=lambda: ui.navigate.to("/"),
-            icon="settings",
-        ).props("flat").classes("w-full nav-item")
-        ui.button(
-            "Run History",
-            on_click=lambda: ui.navigate.to("/history"),
-            icon="history",
-        ).props("flat").classes("w-full nav-item")
-
-        ui.separator().classes("nav-separator")
-
-        ui.label("Tuning").classes("nav-section-label q-mb-xs")
-        ui.button(
-            "Tuning",
-            on_click=lambda: ui.navigate.to("/tuning"),
-            icon="tune",
-        ).props("flat").classes("w-full nav-item")
-        ui.button(
-            "Tuning History",
-            on_click=lambda: ui.navigate.to("/tuning/history"),
-            icon="analytics",
-        ).props("flat").classes("w-full nav-item")
-
-        ui.separator().classes("nav-separator")
-
-        ui.label("Results").classes("nav-section-label q-mb-xs")
-        ui.button(
-            "File Browser",
-            on_click=lambda: ui.navigate.to("/files"),
-            icon="folder_open",
-        ).props("flat").classes("w-full nav-item")
+        for s_i, (heading, heading_icon, items) in enumerate(_NAV_SECTIONS):
+            if s_i > 0:
+                ui.separator().classes("nav-separator")
+            with ui.row().classes("items-center q-mb-xs no-wrap"):
+                ui.icon(heading_icon).classes("nav-section-icon")
+                ui.label(heading).classes("nav-section-label")
+            for path, label, icon in items:
+                btn = (
+                    ui.button(
+                        label,
+                        on_click=lambda p=path: ui.navigate.to(p),
+                        icon=icon,
+                    )
+                    .props("flat")
+                    .classes("w-full nav-item")
+                )
+                if path == current_path:
+                    btn.classes("nav-active")
 
         ui.space()
 
@@ -128,14 +185,75 @@ def create_sidebar(tuning_runner: TuningRunner) -> ui.left_drawer:
     return drawer
 
 
-def create_header(drawer: ui.left_drawer) -> None:
-    """Build the top header bar with hamburger toggle and app title."""
-    with ui.header().classes("app-header"):
+def _render_breadcrumbs(
+    crumbs: tuple[tuple[str, str | None], ...],
+) -> None:
+    """Render a breadcrumb chain inside the header."""
+    with ui.row().classes("app-breadcrumbs no-wrap items-center"):
+        ui.label("Home").classes("app-breadcrumb-link").on(
+            "click", lambda: ui.navigate.to("/")
+        )
+        for label, link in crumbs:
+            ui.label("/").classes("app-breadcrumb-separator")
+            if link:
+                target = link
+                ui.label(label).classes("app-breadcrumb-link").on(
+                    "click", lambda _=None, t=target: ui.navigate.to(t)
+                )
+            else:
+                ui.label(label).classes("app-breadcrumb-current")
+
+
+def _render_run_status_chip(tuning_runner: TuningRunner) -> None:
+    """Render the header's run-status chip, bound to tuning_runner.any_running."""
+    with ui.row().classes("run-status-chip items-center no-wrap") as chip:
+        ui.element("span").classes("run-status-chip-dot")
+        ui.label("Running")
+    chip.bind_visibility_from(tuning_runner, "any_running")
+
+
+def create_header(
+    drawer: ui.left_drawer,
+    tuning_runner: TuningRunner,
+    *,
+    current_path: str = "",
+    trailing: str | None = None,
+) -> None:
+    """Build the top header bar with menu, breadcrumbs, title, status chip."""
+    with ui.header().classes("app-header no-wrap"):
         ui.button(
             icon="menu",
             on_click=drawer.toggle,
         ).props("flat round size=sm")
+        _render_breadcrumbs(_breadcrumbs_for(current_path, trailing=trailing))
+        _render_run_status_chip(tuning_runner)
         ui.label("cSVD Pipeline UI").classes("app-header-title")
+
+
+try:
+    _NICEGUI_VERSION: str = version("nicegui")
+except PackageNotFoundError:
+    _NICEGUI_VERSION = "?"
+
+
+def create_footer() -> None:
+    """Slim footer with brand on the left and version info on the right."""
+    with ui.footer().classes("app-footer"):
+        ui.label("cSVD · Paris Brain Institute · ICM").classes("text-muted")
+        ui.label(f"NiceGUI {_NICEGUI_VERSION}")
+
+
+def wrap_page_root() -> ui.element:
+    """Wrapper that triggers the page fade-in-up on mount.
+
+    Callers should use it as a context manager around page content:
+
+    .. code-block:: python
+
+        with wrap_page_root():
+            create_configure_run_page(...)
+    """
+    return ui.element("div").classes("page-root w-full")
 
 
 def setup_pages(
@@ -154,44 +272,68 @@ def setup_pages(
     def configure_run_page() -> None:
         config = load_config()
         secrets = load_env_secrets(config.project_root)
-        drawer = create_sidebar(tuning_runner)
-        create_header(drawer)
-        create_configure_run_page(lock, config, secrets)
+        drawer = create_sidebar(tuning_runner, current_path="/")
+        create_header(drawer, tuning_runner, current_path="/")
+        with wrap_page_root():
+            create_configure_run_page(lock, config, secrets)
+        create_footer()
 
     @ui.page("/history")
     def run_history_page() -> None:
-        drawer = create_sidebar(tuning_runner)
-        create_header(drawer)
-        create_run_history_page()
+        drawer = create_sidebar(tuning_runner, current_path="/history")
+        create_header(drawer, tuning_runner, current_path="/history")
+        with wrap_page_root():
+            create_run_history_page()
+        create_footer()
 
     @ui.page("/results/{report_id}")
     def results_viewer_page(report_id: str) -> None:
         config = load_config()
-        drawer = create_sidebar(tuning_runner)
-        create_header(drawer)
-        create_results_viewer_page(report_id, config.project_root)
+        drawer = create_sidebar(tuning_runner, current_path="/results")
+        # Short report id in the trailing crumb keeps the header from
+        # overflowing when the id is a long timestamped filename.
+        trailing = f"Report · {report_id[:20]}"
+        create_header(
+            drawer,
+            tuning_runner,
+            current_path="/results",
+            trailing=trailing,
+        )
+        with wrap_page_root():
+            create_results_viewer_page(report_id, config.project_root)
+        create_footer()
 
     @ui.page("/tuning")
     def tuning_page() -> None:
         config = load_config()
         tuning_config = load_tuning_config()
-        drawer = create_sidebar(tuning_runner)
-        create_header(drawer)
-        create_tuning_page(lock, config, tuning_config, tuning_runner)
+        drawer = create_sidebar(tuning_runner, current_path="/tuning")
+        create_header(drawer, tuning_runner, current_path="/tuning")
+        with wrap_page_root():
+            create_tuning_page(lock, config, tuning_config, tuning_runner)
+        create_footer()
 
     @ui.page("/tuning/history")
     def tuning_history_page() -> None:
         config = load_config()
-        drawer = create_sidebar(tuning_runner)
-        create_header(drawer)
-        create_tuning_history_page(config.project_root)
+        drawer = create_sidebar(tuning_runner, current_path="/tuning/history")
+        create_header(
+            drawer,
+            tuning_runner,
+            current_path="/tuning/history",
+        )
+        with wrap_page_root():
+            create_tuning_history_page(config.project_root)
+        create_footer()
 
     @ui.page("/files")
     def file_browser_page() -> None:
         config = load_config()
-        drawer = create_sidebar(tuning_runner)
-        create_header(drawer)
-        create_file_browser_page(config.project_root)
+        drawer = create_sidebar(tuning_runner, current_path="/files")
+        create_header(drawer, tuning_runner, current_path="/files")
+        with wrap_page_root():
+            create_file_browser_page(config.project_root)
+        create_footer()
 
 
 def main() -> None:

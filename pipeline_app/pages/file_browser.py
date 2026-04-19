@@ -9,14 +9,10 @@ from typing import Any
 
 from nicegui import ui
 
+from pipeline_app.components.empty_state import empty_state
 from pipeline_app.components.file_content import render_file_content
 from pipeline_app.components.fs_nav import is_within, scan_directory
 from pipeline_app.runner import resolve_project_root
-
-# Aliases preserved so existing tests that import _scan_directory / _is_within
-# from this module keep working after the extraction to fs_nav.
-_is_within = is_within
-_scan_directory = scan_directory
 
 
 def create_file_browser_page(project_root: str) -> None:
@@ -41,7 +37,7 @@ def create_file_browser_page(project_root: str) -> None:
     def _build_tree_nodes() -> list[dict[str, Any]]:
         if not logs_dir.exists():
             return []
-        return _scan_directory(root, logs_dir)
+        return scan_directory(root, logs_dir)
 
     async def _on_file_select(e) -> None:
         file_path_str = e.value if hasattr(e, "value") else str(e)
@@ -55,7 +51,7 @@ def create_file_browser_page(project_root: str) -> None:
 
         # The tree's node IDs come back through the WebSocket; treat them as
         # untrusted and confine reads to logs/ regardless of what was sent.
-        if not _is_within(path, resolved_logs):
+        if not is_within(path, resolved_logs):
             ui.notify("Access denied: path outside logs/", color="negative")
             return
 
@@ -81,7 +77,13 @@ def create_file_browser_page(project_root: str) -> None:
                         on_select=_on_file_select,
                     ).classes("w-full")
                 else:
-                    ui.label(f"No supported files in {logs_dir}").classes("text-muted")
+                    empty_state(
+                        "folder_off",
+                        "No supported files",
+                        f"Nothing viewable was found under {logs_dir}. "
+                        "Supported types: JSON, CSV, Markdown, text, logs, "
+                        "images, PDF.",
+                    )
 
     def _open_in_system_app() -> None:
         if not selected_path:
@@ -89,7 +91,7 @@ def create_file_browser_page(project_root: str) -> None:
             return
         path = selected_path[0]
 
-        if not _is_within(path, resolved_logs):
+        if not is_within(path, resolved_logs):
             ui.notify("Access denied", color="negative")
             return
 
@@ -150,8 +152,12 @@ def create_file_browser_page(project_root: str) -> None:
                     on_select=_on_file_select,
                 ).classes("w-full")
             else:
-                ui.label(f"No supported files found in {logs_dir}").classes(
-                    "text-muted"
+                empty_state(
+                    "folder_off",
+                    "No supported files",
+                    f"Nothing viewable was found under {logs_dir}. "
+                    "Supported types: JSON, CSV, Markdown, text, logs, "
+                    "images, PDF.",
                 )
 
         with (

@@ -52,6 +52,7 @@ def create_tuning_page(
                     runner.stage_statuses,
                     repeat,
                     total,
+                    stage_durations=runner.stage_durations,
                 )
 
     with ui.splitter(value=40).classes("w-full") as splitter:
@@ -225,7 +226,13 @@ def create_tuning_page(
 
             with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated") as sc:
                 stage_container.append(sc)
-                create_stage_tracker(TUNING_STAGES, runner.stage_statuses)
+                create_stage_tracker(
+                    TUNING_STAGES,
+                    runner.stage_statuses,
+                    runner.current_repeat,
+                    runner.total_repeats,
+                    stage_durations=runner.stage_durations,
+                )
 
             ui.button(
                 "Refresh",

@@ -59,9 +59,7 @@ class TestIsValidSaveAsFilename:
     def test_rejects_parent_traversal(self):
         assert not is_valid_save_as_filename("..")
 
-    @pytest.mark.parametrize(
-        "name", ["a/b.txt", "a\\b.txt", "x\x00y", "/abs/file.txt"]
-    )
+    @pytest.mark.parametrize("name", ["a/b.txt", "a\\b.txt", "x\x00y", "/abs/file.txt"])
     def test_rejects_separator_or_null(self, name: str):
         assert not is_valid_save_as_filename(name)
 

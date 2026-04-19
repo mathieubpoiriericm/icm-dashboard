@@ -51,7 +51,7 @@ def resolve_start_dir(
     if current_value:
         try:
             resolved = Path(current_value).expanduser().resolve()
-        except (OSError, RuntimeError):
+        except OSError, RuntimeError:
             resolved = None
         if resolved is not None:
             if resolved.is_dir():
@@ -68,7 +68,7 @@ def resolve_start_dir(
     for candidate in candidates:
         try:
             resolved = candidate.expanduser().resolve()
-        except (OSError, RuntimeError):
+        except OSError, RuntimeError:
             continue
         if resolved.is_dir() and resolved != Path(resolved.anchor):
             return resolved
@@ -187,9 +187,13 @@ async def pick_path(
             breadcrumb_row.append(bc_row)
 
         entries_container: list[ui.element] = []
-        with ui.column().classes("w-full").style(
-            "max-height: 360px; min-height: 240px; overflow-y: auto;"
-        ) as entries_col:
+        with (
+            ui.column()
+            .classes("w-full")
+            .style(
+                "max-height: 360px; min-height: 240px; overflow-y: auto;"
+            ) as entries_col
+        ):
             entries_container.append(entries_col)
 
         filename_input_holder: list[ui.input] = []
@@ -319,8 +323,11 @@ async def pick_path(
                 elif mode == "file" and i.matches_filter:
                     asyncio.create_task(_select_file(i.path))
 
-            with ui.row().classes(base_cls).style("cursor: pointer;").on(
-                "click", _on_click
+            with (
+                ui.row()
+                .classes(base_cls)
+                .style("cursor: pointer;")
+                .on("click", _on_click)
             ):
                 ui.icon(icon)
                 ui.label(item.path.name)

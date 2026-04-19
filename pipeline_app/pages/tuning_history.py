@@ -7,6 +7,7 @@ import logging
 
 from nicegui import ui
 
+from pipeline_app.components.empty_state import empty_state
 from pipeline_app.runner import resolve_project_root
 
 logger = logging.getLogger(__name__)
@@ -100,9 +101,13 @@ def create_tuning_history_page(project_root: str) -> None:
         row["_row_id"] = str(i)
 
     if not rows:
-        ui.label("No tuning runs yet.").classes("text-muted")
-        ui.label("Tuning runs are recorded in logs/tuning/tuning_runs.csv").classes(
-            "text-dimmed"
+        empty_state(
+            "analytics",
+            "No tuning runs yet",
+            "Tuning runs are recorded in logs/tuning/tuning_runs.csv. "
+            "Launch one from the Tuning tab to get started.",
+            action_label="Go to Tuning",
+            on_action=lambda: ui.navigate.to("/tuning"),
         )
         return
 
