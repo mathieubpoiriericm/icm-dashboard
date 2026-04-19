@@ -28,7 +28,6 @@ _GOOGLE_FONTS = (
 COLORS: dict[str, str] = {
     "primary": "#6C63FF",
     "secondary": "#00D4AA",
-    "accent": "#54A0FF",
     "info": "#54A0FF",
     "warning": "#FFB547",
     "negative": "#FF5C7C",
@@ -80,7 +79,6 @@ def apply_theme() -> None:
     app.colors(
         primary=COLORS["primary"],
         secondary=COLORS["secondary"],
-        accent=COLORS["accent"],
         dark=COLORS["dark"],
         dark_page=COLORS["dark_page"],
         positive=COLORS["secondary"],

@@ -147,29 +147,30 @@ def create_tuning_page(
                 ui.element("div")
                 .classes("rounded-borders q-pa-sm q-mt-xs")
                 .style(
-                    "background: rgba(255,255,255,0.04);"
-                    " border: 1px solid rgba(255,255,255,0.08);"
+                    "background: var(--border-subtle);"
+                    " border: 1px solid var(--border-soft);"
                 )
             ):
-                ui.label(
+                f_beta_help = (
                     "Beta (β) is the weight parameter that controls how"
                     " much more recall matters relative to precision."
                     " F-beta is the score computed from that weight — the"
                     " weighted harmonic mean of precision and recall:"
-                    " F_β = (1+β²)·P·R / (β²·P+R)."
-                ).classes("text-caption text-grey")
-                ui.label(
+                    " F_β = (1+β²)·P·R / (β²·P+R).",
                     "β=1 (F1): precision and recall weighted equally."
                     " β=2 (F2, default): recall weighted 2× more than"
                     " precision. β=0.5 (F0.5): precision weighted 2×"
-                    " more than recall."
-                ).classes("text-caption text-grey q-mt-xs")
-                ui.label(
+                    " more than recall.",
                     "The default β=2 favors gene discovery because"
                     " missing a real causal gene (low recall) is harder"
                     " to catch than including a spurious one (low"
-                    " precision), which downstream review can filter out."
-                ).classes("text-caption text-grey q-mt-xs")
+                    " precision), which downstream review can filter out.",
+                )
+                for i, text in enumerate(f_beta_help):
+                    cls = "text-caption text-muted"
+                    if i > 0:
+                        cls += " q-mt-xs"
+                    ui.label(text).classes(cls)
 
             ui.textarea(
                 label="Notes",
@@ -309,9 +310,7 @@ def create_tuning_page(
                             for f in output_files:
                                 # Stage prefix disambiguates outputs across
                                 # multiple stages within the same run.
-                                ui.label(f"[{stage}] {f.name}").classes(
-                                    "text-muted"
-                                ).style("color: var(--theme-secondary)")
+                                ui.label(f"[{stage}] {f.name}").classes("text-positive")
 
             def _on_waiting() -> None:
                 with suppress(RuntimeError):

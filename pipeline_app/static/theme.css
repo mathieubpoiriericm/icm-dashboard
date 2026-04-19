@@ -32,12 +32,8 @@
   --theme-shadow-card: 0 2px 12px rgba(0, 0, 0, 0.3);
   --theme-shadow-elevated: 0 4px 24px rgba(0, 0, 0, 0.4);
 
-  /* Spacing scale */
-  --sp-xs: 4px;
+  /* Spacing (used only by .q-field--dark .q-field__control) */
   --sp-sm: 8px;
-  --sp-md: 16px;
-  --sp-lg: 24px;
-  --sp-xl: 32px;
 }
 
 /* === GLOBAL OVERRIDES === */
@@ -89,7 +85,7 @@ body, .body--dark {
 }
 
 .nav-item.nav-active {
-  background-color: rgba(108, 99, 255, 0.15) !important;
+  background-color: var(--primary-active) !important;
   color: var(--theme-primary) !important;
   border-left: 3px solid var(--theme-primary);
 }
@@ -175,7 +171,7 @@ body, .body--dark {
 
 .preset-action-btn {
   font-size: 14px !important;
-  border: 1px solid var(--theme-border-hover) !important;
+  border: 1px solid var(--border-emphasis) !important;
 }
 
 /* === TABLES === */
@@ -273,6 +269,23 @@ body, .body--dark {
 .q-field--dark .q-field__native,
 .q-field--dark .q-field__input {
   color: var(--theme-text-primary) !important;
+}
+
+.q-field--dark input::placeholder,
+.q-field--dark textarea::placeholder {
+  color: var(--theme-text-disabled);
+  opacity: 0.85;
+}
+
+.q-field--dark.q-field--disabled .q-field__control,
+.q-field--dark[disabled] .q-field__control {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.q-field--dark.q-field--disabled .q-field__native,
+.q-field--dark[disabled] .q-field__native {
+  color: var(--theme-text-disabled) !important;
 }
 
 /* === STAT CARDS === */
@@ -418,15 +431,6 @@ body, .body--dark {
   background-color: var(--theme-border) !important;
 }
 
-/* === PAGE TITLE === */
-
-.page-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--theme-text-primary);
-  margin-bottom: 16px;
-}
-
 /* === TEXT UTILITIES === */
 
 .text-muted {
@@ -478,7 +482,7 @@ body, .body--dark {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--theme-text-disabled);
+  background-color: var(--theme-border-hover);
   border-radius: 3px;
 }
 
@@ -494,10 +498,25 @@ body, .body--dark {
   padding: 8px;
 }
 
+.chart-donut-sm {
+  width: 200px;
+  height: 200px;
+}
+
+.chart-bar-md {
+  width: 320px;
+  height: 200px;
+}
+
+.chart-donut-md {
+  width: 360px;
+  height: 280px;
+}
+
 /* === TREE === */
 
 .q-tree--dark .q-tree__node--selected .q-tree__node-header {
-  background-color: rgba(108, 99, 255, 0.15);
+  background-color: var(--primary-active);
   border-radius: 6px;
 }
 
@@ -549,10 +568,18 @@ body, .body--dark {
   align-items: center;
   transition: background-color var(--motion-fast) var(--ease-in-out);
   user-select: none;
+  cursor: pointer;
 }
 
 .path-picker-row:hover {
   background-color: var(--theme-elevated);
+}
+
+.path-picker-entries {
+  width: 100%;
+  max-height: 360px;
+  min-height: 240px;
+  overflow-y: auto;
 }
 
 /* === NOTIFY OVERRIDE === */
@@ -581,10 +608,12 @@ body, .body--dark {
   --surface-2: var(--theme-elevated);
   --surface-3: var(--theme-overlay);
 
-  --primary-soft:  rgba(108, 99, 255, 0.12);
-  --primary-glow:  rgba(108, 99, 255, 0.28);
+  --primary-soft:   rgba(108, 99, 255, 0.12);
+  --primary-active: rgba(108, 99, 255, 0.15);
+  --primary-glow:   rgba(108, 99, 255, 0.28);
 
   --border-subtle:   rgba(255, 255, 255, 0.04);
+  --border-soft:     rgba(255, 255, 255, 0.08);
   --border-emphasis: rgba(255, 255, 255, 0.18);
 
   --font-display: 'Bricolage Grotesque', 'Inter', system-ui, sans-serif;
@@ -729,15 +758,26 @@ body, .body--dark {
   color: var(--theme-text-primary) !important;
 }
 
+/* === FOCUS VISIBLE === */
+
+.q-btn:focus-visible,
+.nav-item:focus-visible,
+.app-breadcrumb-link:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--theme-primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
 /* === STAT CARD EXTENSIONS === */
 
 .stat-card-icon {
   position: absolute;
   top: 12px;
   right: 14px;
-  color: var(--theme-text-disabled);
+  color: var(--theme-text-secondary);
   font-size: 18px !important;
-  opacity: 0.7;
+  opacity: 0.5;
 }
 
 .stat-card-value-display {

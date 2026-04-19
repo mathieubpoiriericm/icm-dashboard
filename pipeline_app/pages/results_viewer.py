@@ -241,7 +241,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                             ],
                             "color": [COLORS["secondary"], COLORS["negative"]],
                         }
-                    ).classes("chart-container").style("width: 200px; height: 200px")
+                    ).classes("chart-container chart-donut-sm")
 
                     if genes_list:
                         buckets = [0] * 10
@@ -280,9 +280,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                                     }
                                 ],
                             }
-                        ).classes("chart-container").style(
-                            "width: 320px; height: 200px"
-                        )
+                        ).classes("chart-container chart-bar-md")
 
         # ---- Papers ----
         with ui.tab_panel(papers_tab):
@@ -543,9 +541,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                                 ],
                                 "color": CHART_ACCENT_COLORS,
                             }
-                        ).classes("chart-container").style(
-                            "width: 360px; height: 280px"
-                        )
+                        ).classes("chart-container chart-donut-md")
 
     ui.separator().classes("nav-separator q-my-md")
     with ui.row().classes("items-center gap-sm"):

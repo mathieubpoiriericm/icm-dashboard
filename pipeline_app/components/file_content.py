@@ -152,8 +152,9 @@ async def render_file_content(
         data = base64.b64encode(raw).decode()
         with container:
             ui.html(
-                f'<iframe src="data:application/pdf;base64,'
-                f'{data}" width="100%" height="800px"></iframe>'
+                f'<iframe src="data:application/pdf;base64,{data}" '
+                f'style="width:100%; height:min(800px, 80vh); '
+                f'border:0;"></iframe>'
             )
 
     elif file_type == "text":

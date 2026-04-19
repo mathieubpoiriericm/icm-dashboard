@@ -16,7 +16,6 @@ class TestColors:
         required = {
             "primary",
             "secondary",
-            "accent",
             "info",
             "warning",
             "negative",
