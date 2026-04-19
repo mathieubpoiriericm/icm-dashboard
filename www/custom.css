@@ -1287,17 +1287,21 @@ table.dataTable thead th:first-child {
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
 }
 
+/* !important on the body backgrounds forces opacity over inline
+   background-color styles that Table 2's drawCallback sets on merged
+   cells — without it, the sticky first column would inherit the
+   translucent row-stripe color and leak scrolled content through */
 table.dataTable tbody td:first-child {
-  background: white;
+  background: white !important;
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.04);
 }
 
 table.dataTable tbody tr:nth-child(even) td:first-child {
-  background: var(--svd-bg-sticky-even);
+  background: var(--svd-bg-sticky-even) !important;
 }
 
 table.dataTable tbody tr:hover td:first-child {
-  background: var(--svd-bg-light) !important;
+  background: #edebf5 !important;
 }
 
 /* === DATATABLE SCROLLING === */

@@ -67,10 +67,6 @@ build_table1_filtered_data <- function(
     row.names(result) <- NULL
     # Remove row_id column (used for filtering) before display
     result <- result[, !names(result) %in% "row_id", drop = FALSE]
-    result <- cbind(
-      data.frame(`#` = seq_len(nrow(result)), check.names = FALSE),
-      result
-    )
     result
   }) |>
     shiny::bindCache(
@@ -153,7 +149,6 @@ build_table1_datatable <- function(filtered_data) {
         class = "display",
         thead(
           tr(
-            th(rowspan = 2L, "#"),
             th(
               colspan = 3L,
               class = "col-group-border",
@@ -202,7 +197,7 @@ build_table1_datatable <- function(filtered_data) {
         options = list(
           columnDefs = list(
             list(
-              targets = c(6L, 7L, 8L, 9L, 10L),
+              targets = c(5L, 6L, 7L, 8L, 9L),
               render = DT::JS(
                 "function(data, type, row, meta) {
                   if (type === 'filter' || type === 'search') {
@@ -215,7 +210,7 @@ build_table1_datatable <- function(filtered_data) {
               )
             ),
             list(
-              targets = c(1L, 2L),
+              targets = c(0L, 1L),
               orderable = TRUE,
               type = "html",
               render = DT::JS(
