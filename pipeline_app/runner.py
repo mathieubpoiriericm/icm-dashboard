@@ -158,7 +158,7 @@ def get_project_anchor(config: PipelineAppConfig) -> Path | None:
         return None
     try:
         return Path(config.project_root).expanduser().resolve()
-    except OSError, RuntimeError:
+    except (OSError, RuntimeError):
         return None
 
 
@@ -392,7 +392,7 @@ def _signal_process_group(
     if hasattr(os, "killpg"):
         try:
             pgid = os.getpgid(proc.pid)
-        except ProcessLookupError, PermissionError:
+        except (ProcessLookupError, PermissionError):
             pgid = -1
         if pgid == proc.pid:
             with contextlib.suppress(ProcessLookupError, PermissionError):

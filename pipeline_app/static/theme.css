@@ -650,11 +650,6 @@ body, .body--dark {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes shimmer {
-  from { background-position: -400px 0; }
-  to   { background-position: 400px 0; }
-}
-
 @keyframes pulse-subtle {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.45; }
@@ -684,14 +679,10 @@ body, .body--dark {
 @media (prefers-reduced-motion: reduce) {
   .page-root,
   .stagger-children > *,
-  .skeleton,
   .run-status-chip-dot,
   .stage-label.label-running,
   .stage-icon.icon-running {
     animation: none !important;
-  }
-  .skeleton {
-    background-image: none;
   }
 }
 
@@ -812,78 +803,6 @@ body, .body--dark {
   max-width: 420px;
 }
 .empty-state-action { margin-top: 8px; }
-
-/* === SKELETON LOADERS === */
-
-.skeleton {
-  background-color: var(--surface-2);
-  background-image: linear-gradient(
-    90deg,
-    transparent 0,
-    rgba(255, 255, 255, 0.045) 50%,
-    transparent 100%
-  );
-  background-size: 800px 100%;
-  background-repeat: no-repeat;
-  border-radius: 6px;
-  animation: shimmer 1.4s linear infinite;
-}
-
-.skeleton-card {
-  padding: 20px;
-  background-color: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 240px;
-}
-.skeleton-row {
-  height: 12px;
-  width: 100%;
-}
-.skeleton-row.skeleton-row-short  { width: 40%; }
-.skeleton-row.skeleton-row-medium { width: 70%; }
-.skeleton-row.skeleton-row-title  { height: 18px; width: 55%; }
-
-.skeleton-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  width: 100%;
-}
-.skeleton-stat-item {
-  background-color: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--surface-2);
-  border-radius: 12px;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 92px;
-}
-
-.skeleton-table {
-  background-color: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
-  width: 100%;
-}
-.skeleton-table-row {
-  display: flex;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.skeleton-table-row:last-child { border-bottom: none; }
-.skeleton-table-row.skeleton-table-header { background-color: var(--surface-2); }
-.skeleton-table-cell {
-  height: 14px;
-  flex: 1;
-}
 
 /* === LOG VIEWER SEVERITY === */
 
