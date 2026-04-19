@@ -373,7 +373,10 @@ def create_tuning_page(
                         secrets=fresh_secrets,
                     )
                     with suppress(RuntimeError):
-                        ui.notify("Tuning experiment complete", color="positive")
+                        if runner.was_cancelled:
+                            ui.notify("Tuning experiment cancelled", color="warning")
+                        else:
+                            ui.notify("Tuning experiment complete", color="positive")
                 except Exception as e:
                     with suppress(RuntimeError):
                         ui.notify(f"Error: {e}", color="negative")

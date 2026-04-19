@@ -221,6 +221,15 @@ def _load_dataclass[T](path: Path, cls: type[T]) -> T:
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("Failed to read %s, using defaults: %s", path, e)
         return cls()
+    if not isinstance(data, dict):
+        # Valid JSON can still decode to a list/null/string — guard so the
+        # next .items() call doesn't raise AttributeError and brick startup.
+        logger.warning(
+            "Expected dict in %s, got %s; using defaults",
+            path,
+            type(data).__name__,
+        )
+        return cls()
     return cls(**_filter_dataclass_fields(data, cls))
 
 

@@ -560,6 +560,11 @@ def create_configure_run_page(
                         stage_statuses[current_stage[0]] = (
                             "completed" if result.exit_code == 0 else "failed"
                         )
+                    elif result.exit_code != 0 and PIPELINE_STAGES:
+                        # Subprocess exited before emitting any stage marker
+                        # — surface the failure on the first stage so the
+                        # tracker matches the run status label.
+                        stage_statuses[PIPELINE_STAGES[0]] = "failed"
                     _refresh_stage_tracker()
 
                     status = "success" if result.exit_code == 0 else "failed"

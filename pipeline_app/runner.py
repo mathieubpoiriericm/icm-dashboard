@@ -690,6 +690,16 @@ class TuningRunner:
         return self._is_waiting
 
     @property
+    def was_cancelled(self) -> bool:
+        """True if the last run_experiment ended via ``cancel()``.
+
+        Latches True on ``cancel()`` and resets to False at the top of the
+        next ``run_experiment``; lets the UI distinguish a user cancel from
+        a clean finish when both return normally.
+        """
+        return self._cancelled
+
+    @property
     def any_running(self) -> bool:
         """True if a tuning experiment OR plain pipeline subprocess is active.
 
@@ -801,6 +811,10 @@ class TuningRunner:
         self.reset_state()
 
         total_repeats = int(tuning.repeats)
+        if total_repeats < 1:
+            raise ValueError(
+                f"tuning.repeats must be >= 1, got {total_repeats}"
+            )
         run_group = time.strftime("%Y%m%d_%H%M%S") if total_repeats > 1 else ""
         project_root = validate_project_root(config.project_root)
         logs_dir = Path(project_root) / "logs"
