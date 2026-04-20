@@ -181,6 +181,7 @@ rshiny_dashboard/
 ├── Makevars                      # R compilation flags (OpenMP/clang) for macOS (arm64)
 ├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
 ├── README.md                     # Project documentation
+├── renv.lock                     # R dependency lockfile (used by Docker)
 ├── requirements.txt              # Python dependencies
 ├── R/
 │   ├── clean_table1.R            # Table 1 data cleaning
@@ -260,6 +261,7 @@ rshiny_dashboard/
 │   ├── alembic.ini               # Alembic migration config
 │   ├── batch_validation.py       # Pandera batch quality checks
 │   ├── cache_utils.py            # LRU cache eviction utilities
+│   ├── clinical_trials_fetch.py  # ClinicalTrials.gov API fetch
 │   ├── config.py                 # Centralized configuration with env overrides
 │   ├── data_merger.py            # Data transformation & database loading
 │   ├── database.py               # Async PostgreSQL operations
@@ -289,6 +291,36 @@ rshiny_dashboard/
 │   │       └── 003_add_pipeline_runs_table.py  # Pipeline runs audit table
 │   └── templates/                # Jinja2 notification templates
 │       └── digest.md.j2          # Markdown notification template
+├── pipeline_app/                 # NiceGUI pipeline app (dev/testing UI)
+│   ├── __init__.py               # Package marker
+│   ├── config.json               # Persisted non-sensitive app config
+│   ├── config.py                 # Config dataclasses and persistence
+│   ├── main.py                   # NiceGUI entry point and route registration
+│   ├── runner.py                 # Subprocess runner for pipeline and tuning
+│   ├── theme.py                  # Shared dark theme
+│   ├── tuning_config.json        # Persisted tuning preset config
+│   ├── components/               # Reusable UI elements
+│   │   ├── __init__.py           # Package marker
+│   │   ├── button_loading.py     # Button with loading state
+│   │   ├── confirm_dialog.py     # Confirmation dialog
+│   │   ├── empty_state.py        # Empty state placeholder
+│   │   ├── file_content.py       # File content viewer
+│   │   ├── fs_nav.py             # Filesystem navigation
+│   │   ├── log_viewer.py         # Log viewer with severity filters
+│   │   ├── path_picker.py        # Path picker dialog
+│   │   ├── preset_dialog.py      # Preset save/load dialog
+│   │   ├── stage_tracker.py      # Pipeline stage progress tracker
+│   │   └── stat_card.py          # Statistic display card
+│   ├── pages/                    # Application pages
+│   │   ├── __init__.py           # Package marker
+│   │   ├── configure_run.py      # Configure & Run page
+│   │   ├── file_browser.py       # File Browser page
+│   │   ├── results_viewer.py     # Results Viewer page
+│   │   ├── run_history.py        # Run History page
+│   │   ├── tuning.py             # Tuning page (6-stage workflow)
+│   │   └── tuning_history.py     # Tuning History page
+│   └── static/                   # Static assets
+│       └── theme.css             # Theme stylesheet
 ├── scripts/
 │   ├── plot_tuning_runs.R        # Tuning experiment visualization
 │   ├── python_plot.py            # Clinical trials visualization generator
@@ -302,29 +334,50 @@ rshiny_dashboard/
 │       └── run_experiment.completion.zsh  # Zsh tab-completion
 ├── tests/
 │   ├── test_all.R                # R test suite (testthat + shinytest2)
-│   └── pipeline/                 # Python test suite (pytest)
-│       ├── conftest.py           # Shared fixtures
-│       ├── test_batch_validation.py      # Tests for batch_validation.py
-│       ├── test_config.py                # Tests for config.py
-│       ├── test_data_merger.py           # Tests for data_merger.py
-│       ├── test_database.py              # Tests for database.py
-│       ├── test_event_log.py             # Tests for event_log.py
-│       ├── test_external_data_sync.py    # Tests for external_data_sync.py
-│       ├── test_healthcheck.py           # Tests for healthcheck.py
-│       ├── test_llm_extraction.py        # Tests for llm_extraction.py
-│       ├── test_main.py                  # Tests for main.py
-│       ├── test_ncbi_gene_fetch.py       # Tests for ncbi_gene_fetch.py
-│       ├── test_notification_config.py   # Tests for notification config
-│       ├── test_notifications.py         # Tests for notifications.py
-│       ├── test_pdf_retrieval.py         # Tests for pdf_retrieval.py
-│       ├── test_prompts.py               # Tests for prompts.py
-│       ├── test_pubmed_citations.py      # Tests for pubmed_citations.py
-│       ├── test_pubmed_search.py         # Tests for pubmed_search.py
-│       ├── test_quality_metrics.py       # Tests for quality_metrics.py
-│       ├── test_rate_limiter.py          # Tests for rate_limiter.py
-│       ├── test_report.py                # Tests for report.py
-│       ├── test_uniprot_fetch.py         # Tests for uniprot_fetch.py
-│       └── test_validation.py            # Tests for validation.py
+│   ├── pipeline/                 # Python test suite (pytest)
+│   │   ├── conftest.py           # Shared fixtures
+│   │   ├── test_batch_validation.py      # Tests for batch_validation.py
+│   │   ├── test_clinical_trials_fetch.py # Tests for clinical_trials_fetch.py
+│   │   ├── test_clinical_trials_pipeline.py  # Tests for CT pipeline orchestration
+│   │   ├── test_config.py                # Tests for config.py
+│   │   ├── test_data_merger.py           # Tests for data_merger.py
+│   │   ├── test_database.py              # Tests for database.py
+│   │   ├── test_event_log.py             # Tests for event_log.py
+│   │   ├── test_external_data_sync.py    # Tests for external_data_sync.py
+│   │   ├── test_healthcheck.py           # Tests for healthcheck.py
+│   │   ├── test_llm_extraction.py        # Tests for llm_extraction.py
+│   │   ├── test_main.py                  # Tests for main.py
+│   │   ├── test_ncbi_gene_fetch.py       # Tests for ncbi_gene_fetch.py
+│   │   ├── test_notification_config.py   # Tests for notification config
+│   │   ├── test_notifications.py         # Tests for notifications.py
+│   │   ├── test_pdf_retrieval.py         # Tests for pdf_retrieval.py
+│   │   ├── test_prompts.py               # Tests for prompts.py
+│   │   ├── test_pubmed_citations.py      # Tests for pubmed_citations.py
+│   │   ├── test_pubmed_search.py         # Tests for pubmed_search.py
+│   │   ├── test_quality_metrics.py       # Tests for quality_metrics.py
+│   │   ├── test_rate_limiter.py          # Tests for rate_limiter.py
+│   │   ├── test_report.py                # Tests for report.py
+│   │   ├── test_uniprot_fetch.py         # Tests for uniprot_fetch.py
+│   │   └── test_validation.py            # Tests for validation.py
+│   └── pipeline_app/             # Pipeline app test suite (pytest)
+│       ├── conftest.py                   # Shared fixtures (tmp_config_dir)
+│       ├── test_config.py                # Tests for pipeline_app/config.py
+│       ├── test_empty_state.py           # Tests for empty_state component
+│       ├── test_file_browser.py          # Tests for File Browser page
+│       ├── test_file_content.py          # Tests for file_content component
+│       ├── test_fs_nav.py                # Tests for fs_nav component
+│       ├── test_log_viewer_severity.py   # Tests for log_viewer severity filter
+│       ├── test_main.py                  # Tests for pipeline_app/main.py
+│       ├── test_main_breadcrumbs.py      # Tests for main breadcrumbs
+│       ├── test_path_picker.py           # Tests for path_picker component
+│       ├── test_results_viewer.py        # Tests for Results Viewer page
+│       ├── test_runner.py                # Tests for runner.py
+│       ├── test_runner_args.py           # Tests for runner CLI arg building
+│       ├── test_stage_tracker.py         # Tests for stage_tracker component
+│       ├── test_stat_card.py             # Tests for stat_card component
+│       ├── test_theme.py                 # Tests for theme
+│       ├── test_tuning_history.py        # Tests for Tuning History page
+│       └── test_tuning_runner.py         # Tests for TuningRunner
 └── www/                          # Static web assets
     ├── custom.css                # Custom styles (source)
     ├── custom.js                 # Custom JavaScript (source)
