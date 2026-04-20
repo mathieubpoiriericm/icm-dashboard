@@ -56,6 +56,7 @@ build_table1_filtered_data <- function(
 
     result <- table1_display[kept_rows, , drop = FALSE]
     row.names(result) <- NULL
+    result <- result[, !names(result) %in% "row_id", drop = FALSE]
     result
   }) |>
     shiny::bindCache(
