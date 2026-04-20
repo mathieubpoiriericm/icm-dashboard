@@ -8,10 +8,11 @@ GETTEXT_LOC = /opt/homebrew/opt/gettext
 # Compiler settings - use Homebrew's clang
 CC = $(LLVM_LOC)/bin/clang
 CXX = $(LLVM_LOC)/bin/clang++
-CXX11 = $(LLVM_LOC)/bin/clang++
 CXX14 = $(LLVM_LOC)/bin/clang++
 CXX17 = $(LLVM_LOC)/bin/clang++
 CXX20 = $(LLVM_LOC)/bin/clang++
+CXX23 = $(LLVM_LOC)/bin/clang++
+CXX26 = $(LLVM_LOC)/bin/clang++
 
 # OpenMP and gettext flags
 CPPFLAGS += -I$(LIBOMP_LOC)/include -I$(GETTEXT_LOC)/include -Xclang -fopenmp
