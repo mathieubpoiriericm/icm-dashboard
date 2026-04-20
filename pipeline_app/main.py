@@ -220,7 +220,7 @@ def create_header(
     trailing: str | None = None,
 ) -> None:
     """Build the top header bar with menu, breadcrumbs, title, status chip."""
-    with ui.header().classes("app-header no-wrap"):
+    with ui.header().props("elevated").classes("app-header no-wrap"):
         ui.button(
             icon="menu",
             on_click=drawer.toggle,
@@ -238,7 +238,7 @@ except PackageNotFoundError:
 
 def create_footer() -> None:
     """Slim footer with brand on the left and version info on the right."""
-    with ui.footer().classes("app-footer"):
+    with ui.footer().props("elevated").classes("app-footer"):
         ui.label("cSVD · Paris Brain Institute · ICM").classes("text-muted")
         ui.label(f"NiceGUI {_NICEGUI_VERSION}")
 

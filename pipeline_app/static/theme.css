@@ -44,6 +44,16 @@
 
     /* Spacing (used only by .q-field .q-field__control) */
     --sp-sm: 8px;
+
+    /* Layering — matches Quasar's default QHeader z-index so the sticky
+       header/footer and the drawer resize handle share one semantic layer. */
+    --z-sticky-chrome: 2000;
+
+    /* File Browser splitter sizing. Offset covers the app header, page
+       title row, action buttons, and the app footer that share the viewport
+       with the splitter. */
+    --file-browser-chrome-offset: 220px;
+    --file-browser-min-height: 480px;
 }
 
 /* === GLOBAL OVERRIDES === */
@@ -128,7 +138,7 @@ body {
     width: 4px;
     height: 100%;
     cursor: ew-resize;
-    z-index: 2000;
+    z-index: var(--z-sticky-chrome);
     background: transparent;
     transition: background 150ms ease;
 }
@@ -604,7 +614,9 @@ body.drawer-resizing {
     display: flex;
     align-items: center;
     gap: 12px;
-    position: relative;
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky-chrome);
 }
 
 .app-header-title {
@@ -1146,7 +1158,18 @@ a:focus-visible {
     font-size: 11px;
     color: var(--theme-text-disabled);
     letter-spacing: 0.02em;
+    position: sticky;
+    bottom: 0;
+    z-index: var(--z-sticky-chrome);
 }
+
+/* === FILE BROWSER SPLITTER === */
+
+.file-browser-splitter {
+    height: calc(100vh - var(--file-browser-chrome-offset));
+    min-height: var(--file-browser-min-height);
+}
+
 /* === SIDEBAR SECTION ICON === */
 
 .nav-section-icon {

@@ -154,10 +154,12 @@ def create_file_browser_page(project_root: str) -> None:
             icon="open_in_new",
         ).props("flat").classes("theme-btn-ghost")
 
-    with ui.splitter(value=30).classes("w-full") as splitter:
+    with ui.splitter(horizontal=True, value=35).classes(
+        "w-full file-browser-splitter"
+    ) as splitter:
         with (
             splitter.before,
-            ui.card().classes("w-full h-full q-pa-sm theme-card") as tc,
+            ui.card().classes("w-full h-full q-pa-sm overflow-auto theme-card") as tc,
         ):
             tree_container.append(tc)
             # Placeholder until the async loader swaps in the tree; keeps the
@@ -166,9 +168,14 @@ def create_file_browser_page(project_root: str) -> None:
 
         with (
             splitter.after,
-            ui.card().classes("w-full h-full q-pa-sm overflow-auto theme-card") as cc,
+            ui.card().classes("w-full h-full q-pa-sm overflow-hidden theme-card"),
         ):
+            # Scroll wrapper lives inside the card so large previews (tables,
+            # PDF iframes) scroll here instead of the card — avoids a nested
+            # scroll boundary that would trap the inner element's scrollbar.
+            cc = ui.column().classes("w-full h-full overflow-auto")
             content_container.append(cc)
-            ui.label("Select a file to view its contents.").classes("text-muted")
+            with cc:
+                ui.label("Select a file to view its contents.").classes("text-muted")
 
     ui.timer(0.0, _load_tree, once=True)
