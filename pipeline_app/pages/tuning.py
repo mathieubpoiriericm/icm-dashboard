@@ -97,7 +97,8 @@ def create_tuning_page(
                     anchor=anchor,
                     current_value=inp.value or "",
                     extensions=frozenset({".pdf"}),
-                    title="Select PDF for tuning",
+                    allow_directories_as_files=True,
+                    title="Select PDF file or folder of PDFs",
                 )
                 if result is not None:
                     inp.value = result
