@@ -1,0 +1,83 @@
+{{- if .Values.notifications.healthchecks.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-healthchecks
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: healthchecks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: healthchecks
+  template:
+    metadata:
+      labels:
+        {{- include "svd-dashboard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: healthchecks
+    spec:
+      containers:
+        - name: healthchecks
+          image: "{{ .Values.notifications.healthchecks.image.repository }}:{{ .Values.notifications.healthchecks.image.tag }}"
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ALLOWED_HOSTS
+              value: "*, {{ .Values.ingress.hosts.healthchecks }}"
+            - name: APPRISE_ENABLED
+              value: "True"
+            - name: DB
+              value: "sqlite"
+            - name: DB_NAME
+              value: "/data/hc.sqlite"
+            - name: DEBUG
+              value: "False"
+            - name: DEFAULT_FROM_EMAIL
+              value: "noreply@svd-dashboard.org"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "svd-dashboard.fullname" . }}-healthchecks
+                  key: SECRET_KEY
+            - name: SITE_NAME
+              value: "SVD Pipeline Healthchecks"
+            - name: SITE_ROOT
+              value: "{{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.hosts.healthchecks }}"
+          livenessProbe:
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.notifications.healthchecks.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "svd-dashboard.fullname" . }}-healthchecks-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-healthchecks-data
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: healthchecks
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.notifications.healthchecks.storage.size }}
+{{- end }}

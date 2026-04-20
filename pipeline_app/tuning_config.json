@@ -1,0 +1,16 @@
+{
+  "pdf_path": "/Users/mathieupoirier/Documents/rshiny_dashboard/data/test_data/quick_run/",
+  "gold_standard_path": "data/test_data/gold_standard/gold_standard_v2.csv",
+  "confidence_threshold": 0.7,
+  "repeats": 1.0,
+  "auto_advance": true,
+  "f_beta_weight": 2.0,
+  "notes": "",
+  "use_main_config": true,
+  "llm_model": "claude-opus-4-7",
+  "llm_effort": "high",
+  "llm_max_tokens": 0,
+  "prompt_version": "v5",
+  "python_path": "python3",
+  "project_root": ""
+}

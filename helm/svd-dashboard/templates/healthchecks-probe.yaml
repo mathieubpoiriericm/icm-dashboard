@@ -1,0 +1,22 @@
+{{- if and .Values.notifications.healthchecks.enabled .Values.monitoring.blackboxExporter.enabled .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-healthchecks-http
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: healthchecks
+    {{- range $key, $value := .Values.monitoring.serviceMonitor.labels }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  interval: {{ .Values.monitoring.serviceMonitor.interval }}
+  module: http_2xx
+  prober:
+    url: {{ include "svd-dashboard.fullname" . }}-blackbox-exporter.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.monitoring.blackboxExporter.port }}
+  targets:
+    staticConfig:
+      static:
+        - http://{{ include "svd-dashboard.fullname" . }}-healthchecks.{{ .Release.Namespace }}.svc.cluster.local:8000/api/v3/status/
+        - http://{{ include "svd-dashboard.fullname" . }}-dashboard.{{ .Release.Namespace }}.svc.cluster.local:3838/
+{{- end }}

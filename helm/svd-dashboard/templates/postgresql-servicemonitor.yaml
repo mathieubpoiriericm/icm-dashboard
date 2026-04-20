@@ -1,0 +1,26 @@
+{{- if and .Values.postgresql.exporter.enabled .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-postgresql
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+    {{- range $key, $value := .Values.monitoring.serviceMonitor.labels }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'pg_stat_database_xact_(commit|rollback)'
+          targetLabel: __name__
+          replacement: '${0}_total'
+{{- end }}

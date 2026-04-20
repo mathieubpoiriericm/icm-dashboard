@@ -1,0 +1,27 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-dashboard
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dashboard
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-postgresql
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql

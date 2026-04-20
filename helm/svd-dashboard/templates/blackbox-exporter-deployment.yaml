@@ -1,0 +1,49 @@
+{{- if .Values.monitoring.blackboxExporter.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-blackbox-exporter
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: blackbox-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "svd-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: blackbox-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "svd-dashboard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: blackbox-exporter
+    spec:
+      containers:
+        - name: blackbox-exporter
+          image: "{{ .Values.monitoring.blackboxExporter.image.repository }}:{{ .Values.monitoring.blackboxExporter.image.tag }}"
+          args:
+            - "--config.file=/config/blackbox.yml"
+          ports:
+            - name: http
+              containerPort: {{ .Values.monitoring.blackboxExporter.port }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.monitoring.blackboxExporter.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "svd-dashboard.fullname" . }}-blackbox-exporter
+{{- end }}

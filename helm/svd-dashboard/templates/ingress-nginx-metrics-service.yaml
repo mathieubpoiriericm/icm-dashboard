@@ -1,0 +1,20 @@
+{{- if and .Values.monitoring.serviceMonitor.enabled .Values.monitoring.ingressNginx.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-ingress-nginx-metrics
+  namespace: {{ .Values.monitoring.ingressNginx.namespace }}
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    {{- toYaml .Values.monitoring.ingressNginx.selectorLabels | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    {{- toYaml .Values.monitoring.ingressNginx.selectorLabels | nindent 4 }}
+  ports:
+    - name: {{ .Values.monitoring.ingressNginx.portName }}
+      port: {{ .Values.monitoring.ingressNginx.metricsPort }}
+      targetPort: {{ .Values.monitoring.ingressNginx.metricsPort }}
+      protocol: TCP
+{{- end }}

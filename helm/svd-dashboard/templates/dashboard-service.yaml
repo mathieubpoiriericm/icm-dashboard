@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "svd-dashboard.fullname" . }}-dashboard
+  labels:
+    {{- include "svd-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "svd-dashboard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+  ports:
+    - port: 3838
+      targetPort: 3838
+      protocol: TCP
