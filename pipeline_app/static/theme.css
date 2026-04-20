@@ -5,42 +5,50 @@
 /* === CSS CUSTOM PROPERTIES === */
 
 :root {
-    /* Background layers */
-    --theme-base: #0b0f1a;
-    --theme-surface: #131829;
-    --theme-elevated: #1c2237;
-    --theme-overlay: #252b44;
+    /* Background layers — warm paper stack */
+    --theme-base: #fafaf7;
+    --theme-surface: #ffffff;
+    --theme-elevated: #f6f3ec;
+    --theme-overlay: #e4e0d6;
+    --theme-muted: #f1eee7;
 
     /* Accent colors */
-    --theme-primary: #3b5bdb;
-    --theme-primary-rgb: 59, 91, 219;
-    --theme-secondary: #00d4aa;
-    --theme-warning: #ffb547;
-    --theme-negative: #ff5c7c;
-    --theme-info: #54a0ff;
+    --theme-primary: #281e78;
+    --theme-primary-rgb: 40, 30, 120;
+    --theme-secondary: #0e8a5f;
+    --theme-secondary-rgb: 14, 138, 95;
+    --theme-warning: #b85c00;
+    --theme-warning-rgb: 184, 92, 0;
+    --theme-negative: #c2185b;
+    --theme-negative-rgb: 194, 24, 91;
+    --theme-info: #2a5a9e;
+    --theme-info-rgb: 42, 90, 158;
+    --theme-accent: #fa4616;
+    --theme-accent-dark: #e03d12;
 
     /* Text */
-    --theme-text-primary: #e8ecf4;
-    --theme-text-secondary: #8b95b0;
-    --theme-text-disabled: #4a5272;
+    --theme-text-primary: #1a1430;
+    --theme-text-secondary: #605a78;
+    --theme-text-disabled: #a6a2b0;
 
     /* Borders */
-    --theme-border: rgba(255, 255, 255, 0.06);
-    --theme-border-hover: rgba(255, 255, 255, 0.12);
+    --theme-border: #e4e0d6;
+    --theme-border-hover: #bcb4a0;
 
-    /* Shadows & glows */
-    --theme-glow-primary: 0 0 20px rgba(var(--theme-primary-rgb), 0.3);
-    --theme-shadow-card: 0 2px 12px rgba(0, 0, 0, 0.3);
-    --theme-shadow-elevated: 0 4px 24px rgba(0, 0, 0, 0.4);
+    /* Shadows & glows — indigo-tinted so they read as brand ink, not gray */
+    --theme-glow-primary: 0 4px 14px rgba(var(--theme-primary-rgb), 0.2);
+    --theme-shadow-card:
+        0 1px 2px rgba(26, 20, 48, 0.04), 0 2px 8px rgba(26, 20, 48, 0.06);
+    --theme-shadow-elevated:
+        0 4px 16px rgba(26, 20, 48, 0.08), 0 8px 32px rgba(26, 20, 48, 0.06);
 
-    /* Spacing (used only by .q-field--dark .q-field__control) */
+    /* Spacing (used only by .q-field .q-field__control) */
     --sp-sm: 8px;
 }
 
 /* === GLOBAL OVERRIDES === */
 
-body,
-.body--dark {
+body {
     font-family:
         "Inter",
         system-ui,
@@ -210,7 +218,7 @@ body,
 }
 
 .q-table tbody tr:nth-child(even) {
-    background-color: rgba(255, 255, 255, 0.015);
+    background-color: #fafaf7;
 }
 
 .q-table tbody td {
@@ -234,65 +242,65 @@ body,
 }
 
 .badge-success {
-    background-color: rgba(0, 212, 170, 0.15) !important;
+    background-color: rgba(var(--theme-secondary-rgb), 0.15) !important;
     color: var(--theme-secondary) !important;
 }
 
 .badge-error {
-    background-color: rgba(255, 92, 124, 0.15) !important;
+    background-color: rgba(var(--theme-negative-rgb), 0.15) !important;
     color: var(--theme-negative) !important;
 }
 
 .badge-warning {
-    background-color: rgba(255, 181, 71, 0.15) !important;
+    background-color: rgba(var(--theme-warning-rgb), 0.15) !important;
     color: var(--theme-warning) !important;
 }
 
 /* === FORM INPUTS === */
 
-.q-field--dark .q-field__control {
+.q-field .q-field__control {
     background-color: var(--theme-elevated) !important;
     border-radius: 8px;
     padding-inline: var(--sp-sm);
 }
 
-.q-field--dark .q-field__control::before {
+.q-field .q-field__control::before {
     border-color: var(--theme-border) !important;
     border-radius: 8px;
 }
 
-.q-field--dark .q-field__control:hover::before {
+.q-field .q-field__control:hover::before {
     border-color: var(--theme-border-hover) !important;
 }
 
-.q-field--dark.q-field--focused .q-field__control::after {
+.q-field.q-field--focused .q-field__control::after {
     border-color: var(--theme-primary) !important;
     border-width: 2px;
 }
 
-.q-field--dark .q-field__label {
+.q-field .q-field__label {
     color: var(--theme-text-secondary) !important;
 }
 
-.q-field--dark .q-field__native,
-.q-field--dark .q-field__input {
+.q-field .q-field__native,
+.q-field .q-field__input {
     color: var(--theme-text-primary) !important;
 }
 
-.q-field--dark input::placeholder,
-.q-field--dark textarea::placeholder {
+.q-field input::placeholder,
+.q-field textarea::placeholder {
     color: var(--theme-text-disabled);
     opacity: 0.85;
 }
 
-.q-field--dark.q-field--disabled .q-field__control,
-.q-field--dark[disabled] .q-field__control {
+.q-field.q-field--disabled .q-field__control,
+.q-field[disabled] .q-field__control {
     opacity: 0.55;
     cursor: not-allowed;
 }
 
-.q-field--dark.q-field--disabled .q-field__native,
-.q-field--dark[disabled] .q-field__native {
+.q-field.q-field--disabled .q-field__native,
+.q-field[disabled] .q-field__native {
     color: var(--theme-text-disabled) !important;
 }
 
@@ -393,15 +401,29 @@ body,
 
 /* === LOG VIEWER === */
 
+/* Dark ink panel on the light page — GitHub/Vercel/ChatGPT convention.
+   Keeps severity colors readable at high scroll speed. Variables are scoped
+   here so the dark-on-light exception doesn't leak into :root. */
+.theme-log {
+    --log-panel-bg: #0f1221;
+    --log-panel-border: #d4cfc1;
+    --log-line-base: #d8d3e8;
+    --log-line-info: #e8ecf4;
+    --log-line-warn: #ffb547;
+    --log-line-error: #ff8a9a;
+    --log-line-debug: #7f7b92;
+}
+
 .theme-log .q-log {
     font-family:
         "JetBrains Mono", "Fira Code", "Consolas", monospace !important;
     font-size: 12px;
-    background-color: var(--theme-base) !important;
-    border: 1px solid var(--theme-border);
+    background-color: var(--log-panel-bg) !important;
+    border: 1px solid var(--log-panel-border);
     border-radius: 8px;
-    color: var(--theme-text-secondary);
+    color: var(--log-line-base);
     line-height: 1.6;
+    padding: 8px 12px;
 }
 
 /* === TABS === */
@@ -438,7 +460,7 @@ body,
 
 /* === SEPARATOR === */
 
-.q-separator--dark {
+.q-separator {
     background-color: var(--theme-border) !important;
 }
 
@@ -476,7 +498,7 @@ body,
 
 /* === CHECKBOX === */
 
-.q-checkbox--dark .q-checkbox__inner--truthy .q-checkbox__bg {
+.q-checkbox .q-checkbox__inner--truthy .q-checkbox__bg {
     background-color: var(--theme-primary) !important;
     border-color: var(--theme-primary) !important;
 }
@@ -534,12 +556,12 @@ body,
 
 /* === TREE === */
 
-.q-tree--dark .q-tree__node--selected .q-tree__node-header {
+.q-tree .q-tree__node--selected .q-tree__node-header {
     background-color: var(--primary-active);
     border-radius: 6px;
 }
 
-.q-tree--dark .q-tree__node-header:hover {
+.q-tree .q-tree__node-header:hover {
     background-color: var(--theme-elevated);
     border-radius: 6px;
 }
@@ -634,11 +656,11 @@ body,
 
     --primary-soft: rgba(var(--theme-primary-rgb), 0.12);
     --primary-active: rgba(var(--theme-primary-rgb), 0.15);
-    --primary-glow: rgba(var(--theme-primary-rgb), 0.28);
+    --primary-glow: rgba(var(--theme-primary-rgb), 0.22);
 
-    --border-subtle: rgba(255, 255, 255, 0.04);
-    --border-soft: rgba(255, 255, 255, 0.08);
-    --border-emphasis: rgba(255, 255, 255, 0.18);
+    --border-subtle: rgba(var(--theme-primary-rgb), 0.04);
+    --border-soft: rgba(var(--theme-primary-rgb), 0.08);
+    --border-emphasis: #d4cfc1;
 
     --font-display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
     --font-body: "Inter", system-ui, -apple-system, sans-serif;
@@ -792,7 +814,7 @@ body,
 .btn-primary {
     background-color: var(--theme-primary) !important;
     color: #fff !important;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 1px 2px rgba(var(--theme-primary-rgb), 0.15);
     transition:
         box-shadow var(--motion-fast) var(--ease-in-out),
         transform var(--motion-fast) var(--ease-in-out);
@@ -846,7 +868,7 @@ a:focus-visible {
     right: 14px;
     color: var(--theme-text-secondary);
     font-size: 18px !important;
-    opacity: 0.5;
+    opacity: 0.7;
 }
 
 .stat-card-value-display {
@@ -873,15 +895,15 @@ a:focus-visible {
 }
 .stat-card-delta.delta-positive {
     color: var(--theme-secondary);
-    background-color: rgba(0, 212, 170, 0.12);
+    background-color: rgba(var(--theme-secondary-rgb), 0.1);
 }
 .stat-card-delta.delta-negative {
     color: var(--theme-negative);
-    background-color: rgba(255, 92, 124, 0.12);
+    background-color: rgba(var(--theme-negative-rgb), 0.1);
 }
 .stat-card-delta.delta-neutral {
     color: var(--theme-text-secondary);
-    background-color: rgba(255, 255, 255, 0.06);
+    background-color: var(--theme-muted);
 }
 
 /* === NOTE / CALLOUT BLOCKS === */
@@ -900,13 +922,13 @@ a:focus-visible {
 
 .theme-note-warning {
     border-left-color: var(--theme-warning);
-    background-color: rgba(255, 181, 71, 0.08);
+    background-color: rgba(var(--theme-warning-rgb), 0.1);
     color: var(--theme-warning);
 }
 
 .theme-note-info {
     border-left-color: var(--theme-info);
-    background-color: rgba(84, 160, 255, 0.08);
+    background-color: rgba(var(--theme-info-rgb), 0.08);
 }
 
 /* === EMPTY STATE === */
@@ -948,20 +970,20 @@ a:focus-visible {
 /* === LOG VIEWER SEVERITY === */
 
 .theme-log .q-log .log-line-info {
-    color: var(--theme-text-primary);
+    color: var(--log-line-info);
 }
 .theme-log .q-log .log-line-warn {
-    color: var(--theme-warning);
+    color: var(--log-line-warn);
 }
 .theme-log .q-log .log-line-error {
-    color: var(--theme-negative);
+    color: var(--log-line-error);
 }
 .theme-log .q-log .log-line-stderr {
-    color: var(--theme-negative);
+    color: var(--log-line-error);
     font-style: italic;
 }
 .theme-log .q-log .log-line-debug {
-    color: var(--theme-text-disabled);
+    color: var(--log-line-debug);
 }
 
 /* === STAGE TRACKER UPGRADES === */
@@ -1005,7 +1027,7 @@ a:focus-visible {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-size: 11px;
-    color: var(--theme-text-disabled);
+    color: var(--theme-text-secondary);
     margin-left: 10px;
 }
 
@@ -1028,7 +1050,7 @@ a:focus-visible {
     white-space: nowrap;
 }
 .app-breadcrumb-separator {
-    color: var(--theme-text-disabled);
+    color: var(--theme-text-secondary);
     font-size: 12px;
     user-select: none;
 }
@@ -1050,19 +1072,19 @@ a:focus-visible {
     gap: 6px;
     padding: 4px 10px;
     border-radius: 999px;
-    background-color: rgba(255, 181, 71, 0.12);
-    border: 1px solid rgba(255, 181, 71, 0.25);
+    background-color: var(--theme-accent);
+    border: 1px solid var(--theme-accent-dark);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--theme-warning);
+    color: #ffffff;
 }
 .run-status-chip-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background-color: var(--theme-warning);
+    background-color: #ffffff;
     animation: pulse-subtle 1.6s ease-in-out infinite;
 }
 

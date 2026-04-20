@@ -22,30 +22,36 @@ _GOOGLE_FONTS = (
     '&display=swap" rel="stylesheet">'
 )
 
-# Single source of truth for the color palette.
+# Single source of truth for the color palette — ICM Paper light theme.
 # Referenced by app.colors(), theme.css (via matching custom properties),
 # and ECharts configs (which can't read CSS vars server-side).
 COLORS: dict[str, str] = {
-    "primary": "#3B5BDB",
-    "secondary": "#00D4AA",
-    "info": "#54A0FF",
-    "warning": "#FFB547",
-    "negative": "#FF5C7C",
-    "dark": "#0B0F1A",
-    "dark_page": "#131829",
-    "elevated": "#1C2237",
-    "overlay": "#252B44",
-    "text_primary": "#E8ECF4",
-    "text_secondary": "#8B95B0",
-    "text_disabled": "#4A5272",
+    "primary": "#281E78",
+    "secondary": "#0E8A5F",
+    "info": "#2A5A9E",
+    "warning": "#B85C00",
+    "negative": "#C2185B",
+    # "dark" / "dark_page" are Quasar token slots; repurposed as light
+    # surfaces so Quasar plumbing and the test_theme.py key-set assertion
+    # survive the light-theme flip.
+    "dark": "#FAFAF7",
+    "dark_page": "#FFFFFF",
+    "elevated": "#F1EEE7",
+    "overlay": "#E4E0D6",
+    "text_primary": "#1A1430",
+    "text_secondary": "#605A78",
+    "text_disabled": "#A6A2B0",
 }
+
+# ICM brand orange; sits outside COLORS because Quasar has no token slot for it.
+ACCENT_ORANGE: str = "#FA4616"
 
 CHART_ACCENT_COLORS: list[str] = [
     COLORS["primary"],
     COLORS["secondary"],
+    ACCENT_ORANGE,
     COLORS["info"],
     COLORS["warning"],
-    COLORS["negative"],
 ]
 
 
@@ -66,7 +72,7 @@ def chart_title(text: str) -> dict[str, Any]:
 
 def chart_axis_label() -> dict[str, Any]:
     """Return a standard ECharts axis label style."""
-    return {"color": COLORS["text_disabled"], "fontSize": 10}
+    return {"color": COLORS["text_secondary"], "fontSize": 10}
 
 
 def chart_split_line() -> dict[str, Any]:
@@ -78,7 +84,9 @@ def apply_theme() -> None:
     """Apply the custom theme: Quasar colors, fonts, and CSS."""
     app.colors(
         primary=COLORS["primary"],
-        secondary=COLORS["secondary"],
+        # Route Quasar `secondary` to navy so `color="secondary"` stays on-brand;
+        # emerald green still reaches the UI via `positive=COLORS["secondary"]`.
+        secondary=COLORS["primary"],
         dark=COLORS["dark"],
         dark_page=COLORS["dark_page"],
         positive=COLORS["secondary"],
