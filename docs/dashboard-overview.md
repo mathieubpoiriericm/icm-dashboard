@@ -1,6 +1,6 @@
 # Dashboard Technical Overview
 
-Technical reference for the ICM Cerebral SVD Dashboard runtime architecture, features, data flow, and frontend stack. For the Python ETL pipeline, see [python-etl-pipeline.md](python-etl-pipeline.md). For Kubernetes deployment, see [kubernetes-cluster-overview.md](kubernetes-cluster-overview.md).
+Technical reference for the ICM Cerebral SVD Dashboard runtime architecture, features, data flow, and frontend stack. For the Python ETL pipeline, see [python-etl-pipeline.md](python-etl-pipeline.md). For deployment, see the "Production (docker compose)" section of the top-level `README.md`.
 
 ---
 
@@ -212,5 +212,4 @@ Rscript -e 'testthat::test_file("tests/test_all.R")'
 ## Related Documentation
 
 - [Python ETL Pipeline](python-etl-pipeline.md) -- PubMed search, LLM extraction, validation, database loading
-- [Pipeline Security](pipeline-security.md) -- credential management, API key handling
-- [Kubernetes Cluster Overview](kubernetes-cluster-overview.md) -- deployment architecture, Helm charts
+- [Pipeline Security](pipeline-security.md) -- credential management, API key handling, container hardening

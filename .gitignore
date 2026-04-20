@@ -33,6 +33,7 @@ www/*min.js
 .env
 .Renviron
 secrets-values.yaml
+/certs/
 
 # VSCode-specific
 .vscode

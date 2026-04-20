@@ -341,38 +341,27 @@ def _is_within(path: Path, anchor: Path) -> bool:
 
 ## Container Hardening
 
-### Docker
+### Docker images
 
 | Image | Base | User | Notes |
 | --- | --- | --- | --- |
-| `Dockerfile` (dashboard) | `rocker/shiny:4.5.2` (pinned) | `USER shiny` (`:59`) | `HEALTHCHECK` curl probe on `:3838` (`:63-64`); `--no-install-recommends` for apt; `chown -R shiny:shiny` on app and log dirs (`:54-57`) |
-| `Dockerfile.pipeline` (pipeline) | `python:3.14-slim` (pinned) | `USER 65534` / nobody (`:42`) | kubectl install verified via `sha256sum --check` against the published checksum (`:31-35`); `chown -R 65534:65534 /app/logs` (`:39`) |
+| `Dockerfile` (dashboard) | `rocker/shiny:4.5.3` (pinned) | `USER shiny` (uid 997) | `HEALTHCHECK` curl probe on `:3838`; `--no-install-recommends` for apt; `chown -R shiny:shiny` on app and log dirs |
+| `Dockerfile.pipeline` (pipeline) | `python:3.14-slim` (pinned) | `USER 65534` / nobody | Overridden to uid 997 at runtime by `docker-compose.yml` so the pipeline can write the shared `qs_data` volume as the shiny uid |
 
-### Kubernetes (Helm chart at `helm/svd-dashboard/`)
+### docker-compose posture
 
-**Dashboard `Deployment`** (`templates/dashboard-deployment.yaml`):
-
-| Control | Implementation |
-| --- | --- |
-| Pod `securityContext` | `runAsNonRoot: true`, `runAsUser: 997`, `fsGroup: 997` (`:20-24`) |
-| Container `securityContext` | `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` (`:44-49`) |
-| Root filesystem | `readOnlyRootFilesystem: false` — **intentional**: Shiny Server needs to write to `/var/lib/shiny-server` |
-| Probes | startup / liveness / readiness on `/` (`:58-76`) |
-| `.Renviron` mount | Mounted from a `Secret` and marked `readOnly: true` (`:54-57`, `:83-85`) |
-
-The `fix-qs-permissions` initContainer runs as root by design (`runAsUser: 0`) to `chown` the shared PVC for the non-root dashboard process; it executes `busybox chown` and exits before the main container starts.
-
-**Pipeline `CronJob`** (`templates/pipeline-cronjob.yaml`):
+`docker-compose.yml` runs four services: `dashboard`, `postgres`,
+`pipeline` (gated by the `run` profile, invoked one-shot from
+`scripts/run_pipeline.sh`), and `caddy`.
 
 | Control | Implementation |
 | --- | --- |
-| Pod `securityContext` | `runAsNonRoot: true`, `runAsUser: 65534`, `seccompProfile.type: RuntimeDefault` (`:25-30`) |
-| Container `securityContext` | `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` on every step (`:36-40`, `:57-61`, `:78-82`, `:108-112`) |
-| Concurrency | `concurrencyPolicy: Forbid` so a slow run cannot stack on top of itself (`:10`) |
-| Job deadlines | `activeDeadlineSeconds` from values; `backoffLimit: 1` (`:15-16`) |
-| Secrets | `envFrom: secretRef` for DB credentials and pipeline secrets (`:42-46`); per-key `secretKeyRef` for the R container (`:87-97`) |
-
-**Image pinning:** All images in `values.yaml` are pinned to specific tags (`2.0.0` for dashboard and pipeline). No `:latest` references.
+| Pipeline execution model | `profiles: ["run"]` keeps the pipeline out of `docker compose up`; it is spawned only by the weekly cron wrapper, one-shot, then exits |
+| Network isolation | All services share a single user-defined `svd_net` bridge; only `caddy` publishes ports (80/443) — `postgres` and `dashboard` are not reachable from the host |
+| QS volume coupling | `qs_data` is mounted RW on `pipeline` and RO on `dashboard` (`:ro`) — dashboard cannot mutate the shared data |
+| Secrets | `.env` (pipeline) and `.Renviron` (dashboard R runtime) are bind-mounted read-only; both are gitignored and should be `chmod 600` |
+| TLS | Caddy serves the Cloudflare Origin CA cert/key from `./certs/` (gitignored); traffic from Cloudflare is terminated at Caddy |
+| Image pinning | All `image:` tags in `docker-compose.yml` are pinned (`rshiny-dashboard:3.0.0`, `svd-pipeline:3.0.0`, `postgres:18`, `caddy:2-alpine`). No `:latest` references. |
 
 ---
 

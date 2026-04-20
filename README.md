@@ -79,8 +79,7 @@ This dashboard provides up-to-date and standardized information on:
 <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/-PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" /></a>
 <a href="https://github.com/sqlalchemy/alembic"><img src="https://img.shields.io/badge/-Alembic-333333?logoColor=white" alt="Alembic" /></a>
 <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/-Docker-2496ED?logo=docker&logoColor=white" alt="Docker" /></a>
-<a href="https://kubernetes.io/"><img src="https://img.shields.io/badge/-Kubernetes-326CE5?logo=kubernetes&logoColor=white" alt="Kubernetes" /></a>
-<a href="https://github.com/grafana/grafana"><img src="https://img.shields.io/badge/-Grafana-F46800?logo=grafana&logoColor=white" alt="Grafana" /></a>
+<a href="https://caddyserver.com/"><img src="https://img.shields.io/badge/-Caddy-1F88C0?logo=caddy&logoColor=white" alt="Caddy" /></a>
 <a href="https://github.com/Textualize/rich"><img src="https://img.shields.io/badge/-Rich-333333?logoColor=white" alt="Rich" /></a>
 <a href="https://github.com/r-lib/testthat"><img src="https://img.shields.io/badge/-testthat-333333?logoColor=white" alt="testthat" /></a>
 <a href="https://github.com/pytest-dev/pytest"><img src="https://img.shields.io/badge/-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest" /></a>
@@ -101,8 +100,8 @@ This dashboard provides up-to-date and standardized information on:
 | ETL Pipeline | [Python 3.14+](https://www.python.org/), [httpx](https://github.com/encode/httpx), [Biopython](https://github.com/biopython/biopython), [lxml](https://github.com/lxml/lxml), [PyMuPDF](https://github.com/pymupdf/PyMuPDF), [Rich](https://github.com/Textualize/rich) |
 | Bioinformatics (R) | [biomaRt](https://bioconductor.org/packages/biomaRt/), [UniprotR](https://github.com/Proteomicslab57357/UniprotR), [rentrez](https://github.com/ropensci/rentrez), [RefManageR](https://github.com/ropensci/RefManageR) |
 | Database | [PostgreSQL 18+](https://www.postgresql.org/), [asyncpg](https://github.com/MagicStack/asyncpg), [RPostgres](https://github.com/r-dbi/RPostgres), [Alembic](https://github.com/sqlalchemy/alembic) |
-| Containerization | [Docker](https://www.docker.com/) ([rocker/shiny](https://github.com/rocker-org/rocker-versioned2)) |
-| Orchestration & Monitoring | [Kubernetes](https://kubernetes.io/), [NGINX Ingress](https://github.com/kubernetes/ingress-nginx), [Grafana](https://github.com/grafana/grafana), [VictoriaLogs](https://github.com/VictoriaMetrics/VictoriaMetrics) |
+| Containerization | [Docker](https://www.docker.com/) + [docker compose](https://docs.docker.com/compose/) ([rocker/shiny](https://github.com/rocker-org/rocker-versioned2)) |
+| Reverse Proxy | [Caddy](https://caddyserver.com/) (fronts Cloudflare Origin CA cert) |
 | Testing | [testthat](https://github.com/r-lib/testthat), [shinytest2](https://github.com/rstudio/shinytest2), [pytest](https://github.com/pytest-dev/pytest) |
 | Linting & Type Checking | [Ruff](https://github.com/astral-sh/ruff), [ty](https://github.com/astral-sh/ty), [lintr](https://github.com/r-lib/lintr) |
 
@@ -173,10 +172,11 @@ rshiny_dashboard/
 ├── .env.example                  # Example pipeline environment variables
 ├── .Renviron.example             # Example R environment variables
 ├── app.R                         # Main application entry point
+├── Caddyfile                     # Reverse proxy config (Cloudflare Origin CA cert)
 ├── conftest.py                   # Root pytest config (adds project root to sys.path)
+├── docker-compose.yml            # Dashboard + Postgres + pipeline + Caddy stack
 ├── Dockerfile                    # Dashboard Docker build
 ├── Dockerfile.pipeline           # Pipeline Docker build
-├── helmfile.yaml                 # Orchestrates the svd-dashboard umbrella Helm chart
 ├── LICENSE                       # MIT License
 ├── Makevars                      # R compilation flags (OpenMP/clang) for macOS (arm64)
 ├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
@@ -208,54 +208,11 @@ rshiny_dashboard/
 ├── docs/                         # Technical documentation
 │   ├── dashboard-overview.md     # Dashboard architecture reference
 │   ├── python-etl-pipeline.md    # ETL pipeline documentation
-│   ├── kubernetes-cluster-overview.md  # Kubernetes deployment guide
-│   ├── kubernetes-namespaces.md  # Kubernetes namespace guide
 │   └── pipeline-security.md      # Security audit and threat model
-├── helm/                         # Helm charts for Kubernetes deployment
-│   └── svd-dashboard/            # Main Helm chart
-│       ├── Chart.lock            # Dependency lock file
-│       ├── Chart.yaml            # Chart metadata and dependencies
-│       ├── values.yaml           # Default configuration values
-│       ├── charts/               # Bundled subchart archives
-│       │   ├── kube-prometheus-stack-82.2.1.tgz  # Prometheus monitoring subchart
-│       │   └── victoria-logs-single-0.11.27.tgz  # VictoriaLogs logging subchart
-│       ├── sql/                  # Database init scripts for K8s
-│       │   ├── add_external_data_tables.sql  # Cache table schema
-│       │   └── setup.sql         # Core database schema
-│       └── templates/            # Kubernetes manifest templates
-│           ├── _helpers.tpl      # Helm template helper macros
-│           ├── blackbox-exporter-configmap.yaml    # Blackbox exporter config
-│           ├── blackbox-exporter-deployment.yaml   # Blackbox exporter deployment
-│           ├── blackbox-exporter-service.yaml      # Blackbox exporter service
-│           ├── dashboard-deployment.yaml      # Shiny app deployment
-│           ├── dashboard-service.yaml         # Shiny app service
-│           ├── grafana-external-service.yaml  # Grafana external access
-│           ├── grafana-image-renderer-deployment.yaml  # Grafana renderer pod
-│           ├── grafana-image-renderer-service.yaml     # Grafana renderer service
-│           ├── grafana-victorialogs-datasource.yaml    # VictoriaLogs Grafana datasource
-│           ├── healthchecks-deployment.yaml   # Health check deployment
-│           ├── healthchecks-probe.yaml        # Health check probe
-│           ├── healthchecks-service.yaml      # Health check service
-│           ├── ingress-nginx-metrics-service.yaml     # NGINX metrics service
-│           ├── ingress-nginx-servicemonitor.yaml      # NGINX ServiceMonitor
-│           ├── ingress.yaml                   # Ingress routing rules
-│           ├── network-policies.yaml          # Network access policies
-│           ├── ntfy-deployment.yaml           # Notification server deployment
-│           ├── ntfy-service.yaml              # Notification server service
-│           ├── ntfy-servicemonitor.yaml       # ntfy ServiceMonitor
-│           ├── pdb.yaml                       # Pod disruption budgets
-│           ├── pipeline-cronjob.yaml          # Scheduled pipeline execution
-│           ├── pipeline-rbac.yaml             # Pipeline role-based access
-│           ├── postgresql-initdb-configmap.yaml  # DB init SQL configmap
-│           ├── postgresql-service.yaml        # PostgreSQL service
-│           ├── postgresql-servicemonitor.yaml # PostgreSQL ServiceMonitor
-│           ├── postgresql-statefulset.yaml    # PostgreSQL stateful deployment
-│           ├── qs-data-pvc.yaml               # QS data persistent volume
-│           └── secrets.yaml                   # Kubernetes secrets
 ├── logs/                         # Pipeline execution logs (gitignored)
-├── monitoring/                   # Monitoring and observability
-│   └── grafana/                  # Grafana dashboard definitions
-│       └── full-k3s-monitoring.json  # Host OS & app monitoring
+├── sql/                          # PostgreSQL init scripts (bind-mounted into postgres)
+│   ├── add_external_data_tables.sql  # Cache table schema
+│   └── setup.sql                 # Core database schema
 ├── pipeline/
 │   ├── __init__.py               # Package marker
 │   ├── alembic.ini               # Alembic migration config
@@ -324,6 +281,7 @@ rshiny_dashboard/
 ├── scripts/
 │   ├── plot_tuning_runs.R        # Tuning experiment visualization
 │   ├── python_plot.py            # Clinical trials visualization generator
+│   ├── run_pipeline.sh           # Weekly cron wrapper (pipeline + trigger + restart)
 │   ├── trigger_update.r          # Regenerate QS files from database
 │   ├── validate_pipeline.py      # Pipeline validation script
 │   └── tuning/                   # Threshold calibration experiments
@@ -589,11 +547,15 @@ ty>=0.0.1a0
 
    ```bash
    # Initialize core schema
-   psql -U csvd_user -d csvd_dashboard -f helm/svd-dashboard/sql/setup.sql
+   psql -U csvd_user -d csvd_dashboard -f sql/setup.sql
 
    # Add external data cache tables
-   psql -U csvd_user -d csvd_dashboard -f helm/svd-dashboard/sql/add_external_data_tables.sql
+   psql -U csvd_user -d csvd_dashboard -f sql/add_external_data_tables.sql
    ```
+
+   (Under the docker-compose deployment these are applied automatically on
+   first boot — `sql/` is bind-mounted into the `postgres` container at
+   `/docker-entrypoint-initdb.d`.)
 
 </details>
 
@@ -646,59 +608,73 @@ Rscript -e "shiny::runApp()"
 shiny::runApp()
 ```
 
-### Kubernetes Cluster
+### Production (docker compose)
 
-The Helm chart at `helm/svd-dashboard/` deploys the full platform: the Shiny dashboard, PostgreSQL, the ETL pipeline (as a weekly CronJob), ntfy/Healthchecks notifications, and an optional observability stack (kube-prometheus-stack + VictoriaLogs).
+The full deployment is four services in one `docker-compose.yml`: the
+Shiny `dashboard`, a `postgres` database, a one-shot `pipeline` service
+(guarded by the `run` compose profile), and a `caddy` reverse proxy
+serving a Cloudflare Origin CA certificate for traffic coming through
+Cloudflare Access.
 
-**Prerequisites:** Helm 3, an [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/), and locally-built Docker images (the chart uses `pullPolicy: Never` by default).
+**Prerequisites:**
 
-**Build images:**
+- Docker 20.10+ with the Compose V2 plugin
+- Cloudflare Origin CA certificate + key (from Cloudflare dashboard →
+  SSL/TLS → Origin Server → Create Certificate)
+- `.env` with `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST=postgres`,
+  `ANTHROPIC_API_KEY`, `NCBI_API_KEY`, `ENTREZ_EMAIL`, `UNPAYWALL_EMAIL`
+- `.Renviron` with the same DB + NCBI vars (read by `trigger_update.r`)
+
+**Steps:**
 
 ```bash
-docker build -t rshiny-dashboard:2.0.0 .
-docker build -f Dockerfile.pipeline -t svd-pipeline:2.0.0 .
+# 1. Place your Cloudflare Origin CA cert and key in ./certs/
+mkdir -p certs
+# (put origin.pem and origin.key in certs/; gitignored)
+
+# 2. Build images (local — no registry)
+docker build -t rshiny-dashboard:3.0.0 .
+docker build -f Dockerfile.pipeline -t svd-pipeline:3.0.0 .
+
+# 3. Start the long-running services
+docker compose up -d
+# brings up: dashboard, postgres, caddy
+
+# 4. Seed data (first run only)
+./scripts/run_pipeline.sh
+# runs pipeline + sync-external + trigger_update + restart dashboard
+
+# 5. Install the weekly cron line (replace <repo> with the absolute path)
+echo "0 3 * * 1 /<repo>/scripts/run_pipeline.sh" | crontab -
 ```
 
-**Install:**
+**Cloudflare Access:** Caddy listens on `:443` with the Origin CA cert
+(`Caddyfile` specifies the hostname and cert paths). Point Cloudflare at
+the server's public IP (or use `cloudflared` alongside); Zero Trust
+policies are unchanged from the previous deployment.
 
-```bash
-helm dependency build helm/svd-dashboard
+**Volumes:**
 
-helm install svd helm/svd-dashboard -n svd --create-namespace \
-  --set postgresql.credentials.username=<DB_USER> \
-  --set postgresql.credentials.password=<DB_PASSWORD> \
-  --set secrets.anthropicApiKey=<KEY> \
-  --set secrets.ncbiApiKey=<KEY> \
-  --set secrets.entrezEmail=<EMAIL> \
-  --set secrets.unpaywallEmail=<EMAIL>
-```
-
-**Helmfile:** `helmfile.yaml` at the repository root orchestrates the chart for declarative deployment (`helmfile apply`).
-
-**Pipeline automation:** A CronJob runs the ETL pipeline every Monday at 03:00 UTC (`0 3 * * 1`), looking back 7 days and syncing external data. Jobs are killed after 2 hours (`activeDeadlineSeconds: 7200`).
-
-**Ingress hosts** (override via `-f my-values.yaml`):
-
-| Service | Default Host |
-| --- | --- |
-| Dashboard | `csvd-dashboard.matbpoirierk8shomelab.net` |
-| ntfy | `ntfy.matbpoirierk8shomelab.net` |
-| Healthchecks | `healthchecks.matbpoirierk8shomelab.net` |
-| Grafana | `grafana.matbpoirierk8shomelab.net` |
-
-**Key configuration overrides (`values.yaml`):**
-
-| Parameter | Default | Description |
+| Volume | Owner | Purpose |
 | --- | --- | --- |
-| `dashboard.replicas` | `1` | Dashboard pod replicas |
-| `dashboard.preloadTable2` | `TRUE` | Preload Table 2 at startup |
-| `pipeline.schedule` | `0 3 * * 1` | CronJob cron expression |
-| `pipeline.daysBack` | `7` | PubMed lookback window (days) |
-| `qsData.storage.accessMode` | `ReadWriteOnce` | Use `ReadWriteMany` for multiple dashboard replicas |
-| `observability.prometheus.enabled` | `false` | Deploy kube-prometheus-stack subchart |
-| `observability.victoriaLogs.enabled` | `true` | Deploy VictoriaLogs subchart |
-| `networkPolicies.enabled` | `false` | Enable NetworkPolicy resources (requires Calico/Cilium) |
-| `ingress.tls.enabled` | `true` | Enable TLS on Ingress |
+| `qs_data` (named) | Pipeline writes, Dashboard reads | Binary QS files bridging pipeline → app |
+| `postgres_data` (named) | Postgres | Database data directory |
+| `caddy_data`, `caddy_config` (named) | Caddy | Proxy state |
+| `./logs` (bind) | Pipeline | Timestamped cron + pipeline logs |
+| `./sql` (bind, RO) | Postgres | First-boot `docker-entrypoint-initdb.d` schema |
+| `./certs` (bind, RO) | Caddy | Cloudflare Origin CA cert + key |
+
+**Weekly schedule:** `scripts/run_pipeline.sh` chains four steps and
+writes a log per invocation at `logs/cron_<ts>.log`:
+
+1. `docker compose run --rm pipeline python pipeline/main.py --days-back 7`
+2. `docker compose run --rm pipeline python pipeline/main.py --sync-external-data`
+3. `docker compose run --rm pipeline Rscript scripts/trigger_update.r`
+4. `docker compose restart dashboard` (dashboard re-reads `qs_data`)
+
+**Notifications / observability:** disabled by design. The pipeline
+supports Apprise-based notifications and Healthchecks.io pings, but the
+current deployment keeps things minimal — logs only.
 
 ---
 
@@ -780,18 +756,21 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 
 > **Note:** Geocoded trial location data (`geocoded_trials.qs`) is generated at runtime by the Shiny app's map functionality (`R/fetch_trial_locations.R`), not by `trigger_update.R`.
 
-### Notifications
+### Notifications (optional)
 
-The pipeline includes an Apprise-based notification system (`pipeline/notifications.py`) that sends run digests after each execution:
-
-- **Multi-channel delivery**: ntfy push notifications with email backup
-- **Jinja2 templates**: HTML and Markdown digest templates (`pipeline/templates/`)
-- **Retry with backoff**: Tenacity exponential backoff on delivery failures
-- **Dead-man's-switch**: Healthchecks.io integration (`pipeline/healthcheck.py`) pings on success/failure
+The pipeline includes an optional Apprise-based notification system
+(`pipeline/notifications.py`) plus a Healthchecks.io dead-man's-switch
+(`pipeline/healthcheck.py`). Both are inert unless the relevant env vars
+(`PIPELINE_NOTIFY_URLS`, `PIPELINE_HEALTHCHECK_URL`) are set. The
+current docker-compose deployment leaves them unset — pipeline output is
+kept as plain logs in `logs/cron_<ts>.log` and `logs/pipeline_*.log`.
 
 ### Automated Updates
 
-Pipeline automation is handled by a Kubernetes CronJob that runs weekly. See the [Kubernetes Cluster](#kubernetes-cluster) section for configuration details (schedule, resource limits, Helm values).
+Pipeline automation is a host crontab line that invokes
+`scripts/run_pipeline.sh` weekly (default: Monday 03:00). See
+[Production (docker compose)](#production-docker-compose) for the
+command and the four chained steps.
 
 ---
 
@@ -1034,8 +1013,6 @@ Detailed documentation is available in the `docs/` directory:
 | ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
 | ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
 | ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
-| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Kubernetes Cluster Overview](docs/kubernetes-cluster-overview.md) | Kubernetes cluster architecture, Helm chart components, and data flow |
-| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Kubernetes Namespaces](docs/kubernetes-namespaces.md) | Namespaces used in the Kubernetes cluster and the pods within each |
 
 ---
 

@@ -1,0 +1,77 @@
+services:
+  dashboard:
+    image: rshiny-dashboard:${APP_VERSION:-3.0.0}
+    restart: unless-stopped
+    environment:
+      PRELOAD_TABLE2: ${PRELOAD_TABLE2:-TRUE}
+    volumes:
+      - qs_data:/srv/shiny-server/data/qs:ro
+      - ./.Renviron:/home/shiny/.Renviron:ro
+    networks:
+      - svd_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3838/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    networks:
+      - svd_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pipeline:
+    image: svd-pipeline:${APP_VERSION:-3.0.0}
+    profiles: ["run"]
+    env_file: .env
+    environment:
+      # Override .env's DB_HOST so the same .env works for host-side Python runs
+      # (DB_HOST=localhost) and for in-container runs (service hostname).
+      DB_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - qs_data:/app/data/qs
+      - ./logs:/app/logs
+    networks:
+      - svd_net
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - dashboard
+    networks:
+      - svd_net
+
+networks:
+  svd_net:
+    driver: bridge
+
+volumes:
+  qs_data:
+  postgres_data:
+  caddy_data:
+  caddy_config:
