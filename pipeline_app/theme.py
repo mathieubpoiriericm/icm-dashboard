@@ -26,7 +26,7 @@ _GOOGLE_FONTS = (
 # Referenced by app.colors(), theme.css (via matching custom properties),
 # and ECharts configs (which can't read CSS vars server-side).
 COLORS: dict[str, str] = {
-    "primary": "#6C63FF",
+    "primary": "#3B5BDB",
     "secondary": "#00D4AA",
     "info": "#54A0FF",
     "warning": "#FFB547",
