@@ -63,6 +63,7 @@ body {
 .q-drawer--left .q-drawer__content {
     background-color: var(--theme-base) !important;
     border-right: 1px solid var(--theme-border);
+    overflow-x: hidden;
 }
 
 .nav-title {
