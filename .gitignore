@@ -1,29 +1,39 @@
-# macOS-specific
-.DS_Store
-
-# Python cache
+# Caches
+.bslib-cache
+.pytest_cache
+.ruff_cache
 __pycache__
 
-# Secrets
-.env
-.Renviron
+# Claude Code-related
+.claude
+.superpowers
+docs/superpowers
+CLAUDE.md
+
+# Code linting-related
+.lintr
+.markdownlint-cli2.yaml
+
+# Files and directories
+data
+docs/other
+logs
+
+# macOS-specific
+.DS_Store
 
 # Minified CSS and JS (regenerated at runtime)
 www/*min.css
 www/*min.js
 
-# Files and directories
-.bslib-cache
-.claude
-.pytest_cache
-.ruff_cache
-.superpowers
+# Python-related
 .venv
-.vscode
-data
-docs/other
-docs/superpowers
-logs
-CLAUDE.md
-rshiny_dashboard.code-workspace
+
+# Secrets
+.env
+.Renviron
 secrets-values.yaml
+
+# VSCode-specific
+.vscode
+rshiny_dashboard.code-workspace
