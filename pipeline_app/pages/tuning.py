@@ -7,9 +7,14 @@ from pathlib import Path
 
 from nicegui import ui
 
-from pipeline_app.components.log_viewer import LogViewer
+from pipeline_app.components.log_viewer import (
+    STDERR_CSS_CLASS,
+    LogViewer,
+    css_class_for,
+    detect_severity,
+)
 from pipeline_app.components.path_picker import pick_path
-from pipeline_app.components.stage_tracker import create_stage_tracker
+from pipeline_app.components.stage_tracker import StageTracker, create_stage_tracker
 from pipeline_app.config import (
     LLM_EFFORTS,
     LLM_MODELS,
@@ -36,7 +41,7 @@ def create_tuning_page(
     """Render the Tuning Config & Run page."""
     ui.label("Tuning").classes("page-title")
 
-    stage_container: list[ui.element] = []
+    stage_tracker_ref: list[StageTracker] = []
     log_viewer_ref: list[LogViewer] = []
     output_links_container: list[ui.element] = []
 
@@ -44,16 +49,15 @@ def create_tuning_page(
         repeat: int = 0,
         total: int = 0,
     ) -> None:
-        if stage_container:
-            stage_container[0].clear()
-            with stage_container[0]:
-                create_stage_tracker(
-                    TUNING_STAGES,
-                    runner.stage_statuses,
-                    repeat,
-                    total,
-                    stage_durations=runner.stage_durations,
-                )
+        # In-place update: the tracker's DOM is built once at mount, this
+        # just mutates icon/label classes instead of clear+rebuild.
+        if stage_tracker_ref:
+            stage_tracker_ref[0].update(
+                runner.stage_statuses,
+                repeat,
+                total,
+                stage_durations=runner.stage_durations,
+            )
 
     with ui.splitter(value=40).classes("w-full") as splitter:
         with splitter.before, ui.card().classes("w-full q-pa-md theme-card"):
@@ -219,14 +223,15 @@ def create_tuning_page(
         with splitter.after, ui.card().classes("w-full q-pa-md theme-card"):
             ui.label("Execution").classes("section-header q-mb-sm")
 
-            with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated") as sc:
-                stage_container.append(sc)
-                create_stage_tracker(
-                    TUNING_STAGES,
-                    runner.stage_statuses,
-                    runner.current_repeat,
-                    runner.total_repeats,
-                    stage_durations=runner.stage_durations,
+            with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated"):
+                stage_tracker_ref.append(
+                    create_stage_tracker(
+                        TUNING_STAGES,
+                        runner.stage_statuses,
+                        runner.current_repeat,
+                        runner.total_repeats,
+                        stage_durations=runner.stage_durations,
+                    )
                 )
 
             ui.button(
@@ -328,13 +333,17 @@ def create_tuning_page(
                 on_waiting=_on_waiting,
             )
 
-            # Restore buffered state (previous or in-progress run)
+            # Restore buffered state (previous or in-progress run). Replay
+            # goes through load_batch so the DOM absorbs thousands of lines
+            # in one paint cycle instead of N × 50 ms flush ticks.
             if runner.log_lines:
+                replay: list[tuple[str, str]] = []
                 for type_, line in runner.log_lines:
                     if type_ == "out":
-                        log_viewer_ref[0].append(line)
+                        replay.append((line, css_class_for(detect_severity(line))))
                     else:
-                        log_viewer_ref[0].append_stderr(line)
+                        replay.append((f"[stderr] {line}", STDERR_CSS_CLASS))
+                log_viewer_ref[0].load_batch(replay)
                 _refresh_stage_tracker(
                     runner.current_repeat,
                     runner.total_repeats,

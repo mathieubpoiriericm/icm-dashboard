@@ -66,29 +66,36 @@ def create_file_browser_page(project_root: str) -> None:
         if content_container:
             await render_file_content(path, content_container[0])
 
+    def _render_tree(nodes: list[dict[str, Any]]) -> None:
+        """Render the tree UI (or empty-state) inside the current context."""
+        if nodes:
+            ui.tree(
+                nodes,
+                label_key="label",
+                node_key="id",
+                on_select=_on_file_select,
+            ).classes("w-full")
+        else:
+            empty_state(
+                "folder_off",
+                "No supported files",
+                f"Nothing viewable was found under {logs_dir}. "
+                "Supported types: JSON, CSV, Markdown, text, logs, "
+                "images, PDF.",
+            )
+
+    async def _load_tree() -> None:
+        nodes = await run.io_bound(_build_tree_nodes)
+        if tree_container:
+            tree_container[0].clear()
+            with tree_container[0]:
+                _render_tree(nodes)
+
     async def _refresh_tree() -> None:
         if not refresh_btn_ref:
             return
         async with button_loading(refresh_btn_ref[0]):
-            nodes = await run.io_bound(_build_tree_nodes)
-            if tree_container:
-                tree_container[0].clear()
-                with tree_container[0]:
-                    if nodes:
-                        ui.tree(
-                            nodes,
-                            label_key="label",
-                            node_key="id",
-                            on_select=_on_file_select,
-                        ).classes("w-full")
-                    else:
-                        empty_state(
-                            "folder_off",
-                            "No supported files",
-                            f"Nothing viewable was found under {logs_dir}. "
-                            "Supported types: JSON, CSV, Markdown, text, logs, "
-                            "images, PDF.",
-                        )
+            await _load_tree()
 
     def _open_in_system_app() -> None:
         if not selected_path:
@@ -153,22 +160,9 @@ def create_file_browser_page(project_root: str) -> None:
             ui.card().classes("w-full h-full q-pa-sm theme-card") as tc,
         ):
             tree_container.append(tc)
-            nodes = _build_tree_nodes()
-            if nodes:
-                ui.tree(
-                    nodes,
-                    label_key="label",
-                    node_key="id",
-                    on_select=_on_file_select,
-                ).classes("w-full")
-            else:
-                empty_state(
-                    "folder_off",
-                    "No supported files",
-                    f"Nothing viewable was found under {logs_dir}. "
-                    "Supported types: JSON, CSV, Markdown, text, logs, "
-                    "images, PDF.",
-                )
+            # Placeholder until the async loader swaps in the tree; keeps the
+            # recursive scan_directory off the event loop during page render.
+            ui.spinner("dots").classes("q-pa-md")
 
         with (
             splitter.after,
@@ -176,3 +170,5 @@ def create_file_browser_page(project_root: str) -> None:
         ):
             content_container.append(cc)
             ui.label("Select a file to view its contents.").classes("text-muted")
+
+    ui.timer(0.0, _load_tree, once=True)

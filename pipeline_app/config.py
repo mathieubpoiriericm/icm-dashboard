@@ -125,11 +125,37 @@ class EnvSecrets:
 # ---- .env loading ----
 
 
-def load_env_secrets(project_root: str = "") -> EnvSecrets:
-    """Read credentials from .env file in project root."""
+# Keyed by project_root → (mtime, EnvSecrets). mtime=-1.0 marks a "file
+# missing" cache entry so a subsequent .env creation triggers a re-read.
+_secrets_cache: dict[str, tuple[float, EnvSecrets]] = {}
+
+
+def load_env_secrets(
+    project_root: str = "",
+    *,
+    use_cache: bool = True,
+) -> EnvSecrets:
+    """Read credentials from .env file in project root.
+
+    Results are cached per ``project_root`` keyed on the .env file's mtime so
+    repeated page renders don't re-parse the same file. Pass
+    ``use_cache=False`` right before spawning a pipeline subprocess to force a
+    fresh read and catch any edits made during the session.
+    """
     env_path = Path(project_root) / ".env" if project_root else Path(".env")
-    values = dotenv_values(env_path) if env_path.exists() else {}
-    return EnvSecrets(
+
+    try:
+        mtime = env_path.stat().st_mtime
+    except OSError:
+        mtime = -1.0
+
+    if use_cache:
+        cached = _secrets_cache.get(project_root)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+
+    values = dotenv_values(env_path) if mtime >= 0 else {}
+    secrets = EnvSecrets(
         anthropic_api_key=values.get("ANTHROPIC_API_KEY") or "",
         db_host=values.get("DB_HOST") or "",
         db_port=values.get("DB_PORT") or "5432",
@@ -140,6 +166,8 @@ def load_env_secrets(project_root: str = "") -> EnvSecrets:
         entrez_email=values.get("ENTREZ_EMAIL") or "",
         unpaywall_email=values.get("UNPAYWALL_EMAIL") or "",
     )
+    _secrets_cache[project_root] = (mtime, secrets)
+    return secrets
 
 
 # ---- Config persistence ----
@@ -304,16 +332,37 @@ class Preset:
     config: dict[str, Any]
 
 
+# Keyed by (PRESETS_PATH, mtime): a single entry works even when tests
+# monkeypatch PRESETS_PATH because the key changes with the path. Cleared on
+# any write via _save_presets.
+_presets_cache: tuple[Path, float, list[Preset]] | None = None
+
+
 def load_presets() -> list[Preset]:
-    """Load all presets from JSON."""
+    """Load all presets from JSON (mtime-cached)."""
+    global _presets_cache
+    try:
+        mtime = PRESETS_PATH.stat().st_mtime
+    except OSError:
+        _presets_cache = None
+        return []
+
+    if _presets_cache is not None:
+        cached_path, cached_mtime, cached_presets = _presets_cache
+        if cached_path == PRESETS_PATH and cached_mtime == mtime:
+            return list(cached_presets)
+
     try:
         data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
     except FileNotFoundError:
+        _presets_cache = None
         return []
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("Failed to read presets, returning empty: %s", e)
+        _presets_cache = None
         return []
     if not isinstance(data, list):
+        _presets_cache = (PRESETS_PATH, mtime, [])
         return []
     presets = []
     for p in data:
@@ -321,14 +370,17 @@ def load_presets() -> list[Preset]:
             presets.append(Preset(**p))
         except (TypeError, KeyError):
             logger.warning("Skipping malformed preset entry: %s", p)
+    _presets_cache = (PRESETS_PATH, mtime, list(presets))
     return presets
 
 
 def _save_presets(presets: list[Preset]) -> None:
+    global _presets_cache
     _atomic_write(
         PRESETS_PATH,
         json.dumps([asdict(p) for p in presets], indent=2),
     )
+    _presets_cache = None
 
 
 def save_preset(name: str, config: PipelineAppConfig) -> list[Preset]:

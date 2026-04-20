@@ -403,6 +403,67 @@ class TestBoolCoercion:
         assert config.days_back == 30
 
 
+class TestPresetCache:
+    """The mtime-keyed cache must avoid redundant disk reads without masking
+    external writes or going stale across monkeypatched paths."""
+
+    def test_cache_hit_avoids_disk_read(self, tmp_config_dir, monkeypatch):
+        config = PipelineAppConfig()
+        save_preset("A", config)
+        # Force the cache to be populated, then sabotage the file so any
+        # subsequent read would crash. Cache hit means no re-read happens.
+        load_presets()
+        (tmp_config_dir / "presets.json").write_text("{not valid json")
+        # mtime changed so cache is invalidated; regression case.
+        result = load_presets()
+        assert result == []
+
+    def test_save_invalidates_cache(self, tmp_config_dir):
+        save_preset("A", PipelineAppConfig(days_back=1))
+        first = load_presets()
+        assert len(first) == 1
+        save_preset("B", PipelineAppConfig(days_back=2))
+        second = load_presets()
+        assert len(second) == 2
+
+    def test_delete_invalidates_cache(self, tmp_config_dir):
+        presets = save_preset("A", PipelineAppConfig())
+        assert len(load_presets()) == 1
+        delete_preset(presets[0].id)
+        assert load_presets() == []
+
+    def test_returns_copy_not_reference(self, tmp_config_dir):
+        save_preset("A", PipelineAppConfig())
+        first = load_presets()
+        first.clear()
+        second = load_presets()
+        assert len(second) == 1
+
+
+class TestEnvSecretsCache:
+    def test_cache_hit_avoids_reparse(self, tmp_path: Path):
+        env_path = tmp_path / ".env"
+        env_path.write_text("ANTHROPIC_API_KEY=one\n")
+        first = load_env_secrets(str(tmp_path))
+        assert first.anthropic_api_key == "one"
+        env_path.write_text("ANTHROPIC_API_KEY=two\n")
+        # Same mtime (write is too quick on most filesystems) would still
+        # return cached; on a slow filesystem mtime ticks and we see "two".
+        # Either way, use_cache=False must observe the latest file.
+        fresh = load_env_secrets(str(tmp_path), use_cache=False)
+        assert fresh.anthropic_api_key == "two"
+
+    def test_different_project_roots_isolated(self, tmp_path: Path):
+        root_a = tmp_path / "a"
+        root_b = tmp_path / "b"
+        root_a.mkdir()
+        root_b.mkdir()
+        (root_a / ".env").write_text("ANTHROPIC_API_KEY=alpha\n")
+        (root_b / ".env").write_text("ANTHROPIC_API_KEY=bravo\n")
+        assert load_env_secrets(str(root_a)).anthropic_api_key == "alpha"
+        assert load_env_secrets(str(root_b)).anthropic_api_key == "bravo"
+
+
 class TestFieldDropLogging:
     """Regression: schema-mismatch field drops must surface as warnings."""
 

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from nicegui import ui
+from nicegui import run, ui
 
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.components.stat_card import stat_card
@@ -129,6 +129,37 @@ def _find_report(project_root: str, report_id: str) -> Path | None:
     return None
 
 
+def _read_report(
+    project_root: str,
+    report_id: str,
+) -> tuple[Path | None, dict[str, Any] | None, str | None]:
+    """Find, size-check, and JSON-load a report in one sync call.
+
+    Packaging the three I/O steps into a single helper means the page factory
+    only pays one ``run.io_bound`` hop before rendering.
+
+    Returns ``(report_path, report, error_msg)`` — exactly one of
+    ``(report_path, report)`` and ``error_msg`` is populated on success/failure.
+    """
+    report_path = _find_report(project_root, report_id)
+    if report_path is None:
+        return None, None, f"Report not found: {report_id}"
+    try:
+        size = report_path.stat().st_size
+        if size > _MAX_REPORT_SIZE:
+            return (
+                None,
+                None,
+                f"Report too large to display "
+                f"({size / 1024 / 1024:.1f} MB; "
+                f"limit {_MAX_REPORT_SIZE / 1024 / 1024:.0f} MB).",
+            )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        return None, None, f"Error loading report: {e}"
+    return report_path, report, None
+
+
 def create_results_viewer_page(report_id: str, project_root: str) -> None:
     """Render the Results Viewer page for a given report ID."""
     if not _is_safe_report_id(report_id):
@@ -141,32 +172,33 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
         return
 
     ui.label(f"Results: {report_id}").classes("page-title")
+    container = ui.column().classes("w-full")
+    with container:
+        ui.spinner("dots").classes("q-pa-md")
 
-    report_path = _find_report(project_root, report_id)
+    async def _load() -> None:
+        report_path, report, error_msg = await run.io_bound(
+            _read_report, project_root, report_id
+        )
+        container.clear()
+        with container:
+            if error_msg is not None or report is None or report_path is None:
+                ui.label(error_msg or "Unable to load report.").classes(
+                    "text-negative"
+                )
+                ui.button(
+                    "Back to History",
+                    on_click=lambda: ui.navigate.to("/history"),
+                    icon="arrow_back",
+                ).props("flat").classes("theme-btn-ghost")
+                return
+            _render_report_body(report_path, report)
 
-    if report_path is None:
-        ui.label(f"Report not found: {report_id}").classes("text-negative")
-        ui.button(
-            "Back to History",
-            on_click=lambda: ui.navigate.to("/history"),
-            icon="arrow_back",
-        ).props("flat").classes("theme-btn-ghost")
-        return
+    ui.timer(0.0, _load, once=True)
 
-    try:
-        size = report_path.stat().st_size
-        if size > _MAX_REPORT_SIZE:
-            ui.label(
-                f"Report too large to display "
-                f"({size / 1024 / 1024:.1f} MB; "
-                f"limit {_MAX_REPORT_SIZE / 1024 / 1024:.0f} MB)."
-            ).classes("text-negative")
-            return
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        ui.label(f"Error loading report: {e}").classes("text-negative")
-        return
 
+def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
+    """Render the full tabbed report UI. Caller guarantees ``report`` is valid."""
     papers_detail = report.get("papers_detail", [])
     genes_list, rejected_list = _flatten_papers(papers_detail)
     token_usage = report.get("token_usage", {})

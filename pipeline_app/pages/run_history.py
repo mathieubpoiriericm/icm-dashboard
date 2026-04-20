@@ -139,16 +139,20 @@ def create_run_history_page() -> None:
 
             table.on("view", _on_view)
 
+    async def _load_and_render() -> None:
+        """Load history off-loop, then replace the placeholder with the table."""
+        rows = await run.io_bound(_get_rows)
+        if table_container:
+            table_container[0].clear()
+            with table_container[0]:
+                _build_table(rows)
+
     async def _refresh_table() -> None:
         """Clear and rebuild the table with a brief loading indicator."""
         if not refresh_btn_ref:
             return
         async with button_loading(refresh_btn_ref[0]):
-            rows = await run.io_bound(_get_rows)
-            if table_container:
-                table_container[0].clear()
-                with table_container[0]:
-                    _build_table(rows)
+            await _load_and_render()
 
     async def _clear_all() -> None:
         confirmed = await confirm(
@@ -163,7 +167,11 @@ def create_run_history_page() -> None:
 
     with ui.column().classes("w-full") as cont:
         table_container.append(cont)
-        _build_table(_get_rows())
+        # Placeholder shown until the async loader swaps in the table; the
+        # initial paint returns immediately without blocking on JSON I/O.
+        ui.spinner("dots").classes("q-pa-md")
+
+    ui.timer(0.0, _load_and_render, once=True)
 
     with ui.row().classes("q-mt-md gap-sm"):
         refresh_btn = (

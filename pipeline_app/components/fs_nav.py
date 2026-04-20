@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import os.path
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -42,6 +44,12 @@ def scan_directory(
 ) -> list[dict[str, Any]]:
     """Recursively scan a directory and return ui.tree-compatible nodes.
 
+    Uses ``os.scandir`` so each entry's type checks read from the cached
+    dirent instead of issuing extra stat syscalls. After the symlink filter,
+    every non-symlink entry is structurally contained within ``resolved_root``
+    (recursion never follows a symlink out of the tree) so per-entry
+    ``is_within`` is unnecessary here.
+
     Args:
         root: The project root (trust anchor for path validation).
         base: The directory to scan.
@@ -53,38 +61,38 @@ def scan_directory(
     if resolved_root is None:
         resolved_root = root.resolve()
 
-    nodes: list[dict[str, Any]] = []
-
     try:
-        entries = sorted(
-            base.iterdir(),
-            key=lambda p: (not p.is_dir(), p.name),
-        )
-    except PermissionError:
-        return nodes
+        with os.scandir(base) as it:
+            raw_entries = list(it)
+    except (PermissionError, FileNotFoundError, NotADirectoryError, OSError):
+        return []
 
-    for entry in entries:
+    raw_entries.sort(
+        key=lambda e: (not e.is_dir(follow_symlinks=False), e.name),
+    )
+
+    nodes: list[dict[str, Any]] = []
+    for entry in raw_entries:
         if entry.is_symlink():
             continue
 
-        if not is_within(entry, resolved_root):
-            continue
-
-        if entry.is_dir():
-            children = scan_directory(root, entry, resolved_root)
+        if entry.is_dir(follow_symlinks=False):
+            children = scan_directory(root, Path(entry.path), resolved_root)
             if children:  # Exclude empty directories
                 nodes.append(
                     {
-                        "id": str(entry),
+                        "id": entry.path,
                         "label": entry.name,
                         "children": children,
                     }
                 )
-        elif entry.is_file():
-            if entry.suffix.lower() in SUPPORTED_EXTENSIONS:
+        elif entry.is_file(follow_symlinks=False):
+            # splitext avoids constructing a Path just to read .suffix — the
+            # scan can iterate thousands of entries, so the allocation matters.
+            if os.path.splitext(entry.name)[1].lower() in SUPPORTED_EXTENSIONS:
                 nodes.append(
                     {
-                        "id": str(entry),
+                        "id": entry.path,
                         "label": entry.name,
                         "children": [],
                     }

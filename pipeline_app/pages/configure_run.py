@@ -16,7 +16,7 @@ from pipeline_app.components.confirm_dialog import confirm
 from pipeline_app.components.log_viewer import LogViewer
 from pipeline_app.components.path_picker import pick_path
 from pipeline_app.components.preset_dialog import prompt_preset_name
-from pipeline_app.components.stage_tracker import create_stage_tracker
+from pipeline_app.components.stage_tracker import StageTracker, create_stage_tracker
 from pipeline_app.config import (
     LLM_EFFORTS,
     LLM_MODELS,
@@ -65,17 +65,17 @@ def create_configure_run_page(
 
     stage_statuses: dict[str, str] = {s: "pending" for s in PIPELINE_STAGES}
     run_status_label: list[ui.label] = []
-    stage_container: list[ui.element] = []
+    stage_tracker_ref: list[StageTracker] = []
     log_viewer_ref: list[LogViewer] = []
     run_btn_ref: list[ui.button] = []
     runner = PipelineRunner(lock)
 
     def _refresh_stage_tracker() -> None:
+        # In-place update: tracker elements already exist in the DOM, just
+        # re-read stage_statuses. No clear+rebuild, no visible flash.
         with suppress(RuntimeError):
-            if stage_container:
-                stage_container[0].clear()
-                with stage_container[0]:
-                    create_stage_tracker(PIPELINE_STAGES, stage_statuses)
+            if stage_tracker_ref:
+                stage_tracker_ref[0].update(stage_statuses)
 
     with ui.splitter(value=40).classes("w-full") as splitter:
         with splitter.before, ui.card().classes("w-full q-pa-md theme-card"):
@@ -468,9 +468,10 @@ def create_configure_run_page(
         with splitter.after, ui.card().classes("w-full q-pa-md theme-card"):
             ui.label("Execution").classes("section-header q-mb-sm")
 
-            with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated") as sc:
-                stage_container.append(sc)
-                create_stage_tracker(PIPELINE_STAGES, stage_statuses)
+            with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated"):
+                stage_tracker_ref.append(
+                    create_stage_tracker(PIPELINE_STAGES, stage_statuses)
+                )
 
             ui.button(
                 "Refresh",
@@ -547,7 +548,9 @@ def create_configure_run_page(
                             _refresh_stage_tracker()
 
                     started_at = datetime.now()
-                    fresh_secrets = load_env_secrets(config.project_root)
+                    fresh_secrets = load_env_secrets(
+                        config.project_root, use_cache=False
+                    )
 
                     missing: list[str] = []
                     if not fresh_secrets.anthropic_api_key:

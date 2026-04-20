@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import logging
 
-from nicegui import ui
+from nicegui import run, ui
 
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.runner import resolve_project_root
@@ -96,10 +96,22 @@ def create_tuning_history_page(project_root: str) -> None:
     """Render the Tuning History page."""
     ui.label("Tuning History").classes("page-title")
 
-    rows = _load_tuning_runs(project_root)
-    for i, row in enumerate(rows):
-        row["_row_id"] = str(i)
+    container = ui.column().classes("w-full")
+    with container:
+        ui.spinner("dots").classes("q-pa-md")
 
+    async def _load() -> None:
+        rows = await run.io_bound(_load_tuning_runs, project_root)
+        for i, row in enumerate(rows):
+            row["_row_id"] = str(i)
+        container.clear()
+        with container:
+            _render_body(rows)
+
+    ui.timer(0.0, _load, once=True)
+
+
+def _render_body(rows: list[dict[str, str]]) -> None:
     if not rows:
         empty_state(
             "analytics",
@@ -142,61 +154,58 @@ def create_tuning_history_page(project_root: str) -> None:
     ]
 
     selected_rows: list[dict[str, str]] = []
-    comparison_container: list[ui.element] = []
+
+    @ui.refreshable
+    def _comparison_panel() -> None:
+        if len(selected_rows) != 2:
+            return
+        row1, row2 = selected_rows[0], selected_rows[1]
+        ui.label("Comparison (Row 1 vs Row 2)").classes(
+            "section-header q-mb-md q-mt-md"
+        )
+        comp_cols = [
+            {"name": "metric", "label": "Metric", "field": "metric"},
+            {"name": "row1", "label": "Run 1", "field": "row1"},
+            {"name": "row2", "label": "Run 2", "field": "row2"},
+            {"name": "diff", "label": "Diff (2 - 1)", "field": "diff"},
+        ]
+        comp_rows = []
+        for k in display_keys:
+            v1 = row1.get(k, "")
+            v2 = row2.get(k, "")
+            diff = _diff_value(v1, v2, k)
+            comp_rows.append(
+                {
+                    "metric": k.replace("_", " ").title(),
+                    "row1": v1,
+                    "row2": v2,
+                    "diff": diff,
+                }
+            )
+        comp_table = ui.table(
+            columns=comp_cols,
+            rows=comp_rows,
+            row_key="metric",
+        ).classes("w-full")
+        comp_table.add_slot(
+            "body-cell-diff",
+            """
+            <q-td :props="props">
+                <span
+                    :class="props.value.startsWith('+') ? 'diff-positive'
+                          : props.value.startsWith('-') ? 'diff-negative'
+                          : ''"
+                >
+                    {{ props.value }}
+                </span>
+            </q-td>
+            """,
+        )
 
     def _on_selection(e) -> None:
         selected_rows.clear()
         selected_rows.extend(e.selection)
-        _update_comparison()
-
-    def _update_comparison() -> None:
-        if comparison_container:
-            comparison_container[0].clear()
-        if len(selected_rows) != 2:
-            return
-        row1, row2 = selected_rows[0], selected_rows[1]
-        with comparison_container[0]:
-            ui.label("Comparison (Row 1 vs Row 2)").classes(
-                "section-header q-mb-md q-mt-md"
-            )
-            comp_cols = [
-                {"name": "metric", "label": "Metric", "field": "metric"},
-                {"name": "row1", "label": "Run 1", "field": "row1"},
-                {"name": "row2", "label": "Run 2", "field": "row2"},
-                {"name": "diff", "label": "Diff (2 - 1)", "field": "diff"},
-            ]
-            comp_rows = []
-            for k in display_keys:
-                v1 = row1.get(k, "")
-                v2 = row2.get(k, "")
-                diff = _diff_value(v1, v2, k)
-                comp_rows.append(
-                    {
-                        "metric": k.replace("_", " ").title(),
-                        "row1": v1,
-                        "row2": v2,
-                        "diff": diff,
-                    }
-                )
-            comp_table = ui.table(
-                columns=comp_cols,
-                rows=comp_rows,
-                row_key="metric",
-            ).classes("w-full")
-            comp_table.add_slot(
-                "body-cell-diff",
-                """
-                <q-td :props="props">
-                    <span
-                        :class="props.value.startsWith('+') ? 'diff-positive'
-                              : props.value.startsWith('-') ? 'diff-negative'
-                              : ''"
-                    >
-                        {{ props.value }}
-                    </span>
-                </q-td>
-                """,
-            )
+        _comparison_panel.refresh()
 
     table = ui.table(
         columns=columns,
@@ -214,5 +223,4 @@ def create_tuning_history_page(project_root: str) -> None:
             icon="refresh",
         ).props("outline")
 
-    with ui.column().classes("w-full") as comp_cont:
-        comparison_container.append(comp_cont)
+    _comparison_panel()
