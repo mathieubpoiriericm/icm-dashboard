@@ -23,9 +23,7 @@
             font-style: normal;
             font-display: swap;
         }
-    </style>
 
-    <style>
         body {
             background: #ffffff;
             display: flex;
@@ -54,14 +52,23 @@
             pointer-events: none;
             width: 350px;
 
-            /* Glossy highlight */
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.45);
             border: 1px solid rgba(255, 255, 255, 0.12);
 
-            /* Layout */
             display: flex;
             flex-direction: column;
             z-index: 1000;
+
+            opacity: 0;
+            transform: translate(-50%, -105%) scale(0.92);
+            transition:
+                opacity 0.2s ease-out,
+                transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #tooltip.show {
+            opacity: 1;
+            transform: translate(-50%, -105%) scale(1);
         }
 
         #tooltip::before {
@@ -77,19 +84,6 @@
                     rgba(255, 255, 255, 0) 70%);
             transform: rotate(25deg);
             pointer-events: none;
-        }
-
-        #tooltip {
-            opacity: 0;
-            transform: translate(-50%, -105%) scale(0.92);
-            transition:
-                opacity 0.2s ease-out,
-                transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        #tooltip.show {
-            opacity: 1;
-            transform: translate(-50%, -105%) scale(1);
         }
 
         #dot {
@@ -121,6 +115,10 @@
             font-weight: bold;
             margin-bottom: 10px;
             display: block;
+            text-align: left;
+        }
+
+        .tooltip-citation {
             text-align: left;
         }
 
@@ -185,27 +183,18 @@
             return { key, r: parts[0], g: parts[1], b: parts[2] };
         });
 
-        // Placeholder text per phenotype; replace string values as details become available.
-        const DEFAULT_COLOR_DETAILS = Object.fromEntries(
-            Object.entries(COLOR_TOOLTIPS).map(([color, label]) => [
-                color,
-                `Add details for ${label} here.`
-            ])
-        );
-
         const COLOR_DETAILS = {
-            ...DEFAULT_COLOR_DETAILS,
             "rgba(128, 129, 128)": "(none found)",
             "rgba(255, 0, 0)": "Small Vessel Stroke",
-            "rgba(0, 1, 254)": "<span class='tooltip-subtitle'>Basal Ganglia Perivascular Spaces</span><div style='text-align: left;'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), basal ganglia perivascular spaces (BG-PVS) are defined as:</i></span>Fluid-filled space, which follows the typical course of a vessel penetrating the brain through grey or white matter; has signal intensity similar to CSF on all sequences; has a round, ovoid, or linear shape (depending on the slice direction) with a diameter commonly not exceeding 2 mm when imaged perpendicular to the course of the vessel.",
-            "rgba(1, 254, 0)": "<span class='tooltip-subtitle'>White Matter Hyperintensities (of presumed vascular origin)</span><div style='text-align: left;'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), white matter hyperintensitites (WMH) are defined as:</i></span>Signal abnormality of variable size in the white matter that is hyperintense on T2-weighted images, such as fluid-attenuated inversion recovery (FLAIR), without cavitation (signal different from CSF). Lesions in the subcortical grey matter or brainstem are not included into this category unless explicitly statedwhere deep grey matter and brainstem hyperintensities are included as well, the collective name should be subcortical hyperintensities.",
+            "rgba(0, 1, 254)": "<span class='tooltip-subtitle'>Basal Ganglia Perivascular Spaces</span><div class='tooltip-citation'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), basal ganglia perivascular spaces (BG-PVS) are defined as:</i></span>Fluid-filled space, which follows the typical course of a vessel penetrating the brain through grey or white matter; has signal intensity similar to CSF on all sequences; has a round, ovoid, or linear shape (depending on the slice direction) with a diameter commonly not exceeding 2 mm when imaged perpendicular to the course of the vessel.",
+            "rgba(1, 254, 0)": "<span class='tooltip-subtitle'>White Matter Hyperintensities (of presumed vascular origin)</span><div class='tooltip-citation'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), white matter hyperintensitites (WMH) are defined as:</i></span>Signal abnormality of variable size in the white matter that is hyperintense on T2-weighted images, such as fluid-attenuated inversion recovery (FLAIR), without cavitation (signal different from CSF). Lesions in the subcortical grey matter or brainstem are not included into this category unless explicitly statedwhere deep grey matter and brainstem hyperintensities are included as well, the collective name should be subcortical hyperintensities.",
             "rgba(254, 254, 0)": "Hippocampal Perivascular Spaces",
             "rgba(254, 103, 1)": "Peak Width of Skeletonized Mean Diffusivity",
             "rgba(1, 254, 255)": "Extreme Cerebral Small Vessel Disease",
             "rgba(254, 1, 255)": "White Matter Perivascular Spaces",
-            "rgba(128, 1, 1)": "<span class='tooltip-subtitle'>Lacunes (of presumed vascular origin)</span><div style='text-align: left;'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), lacunes are defined as:</i></span>Round or ovoid, subcortical, fluid filled (similar signal to CSF) cavity up to 15 mm in diameter that is likely to be end tissue damage from a recent small subcortical infarct, small subcortical haemorrhage, incidental diffusion-weighted imaging-positive lesion, or end-stage cavitation in a white matter hyperintensity.",
+            "rgba(128, 1, 1)": "<span class='tooltip-subtitle'>Lacunes (of presumed vascular origin)</span><div class='tooltip-citation'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), lacunes are defined as:</i></span>Round or ovoid, subcortical, fluid filled (similar signal to CSF) cavity up to 15 mm in diameter that is likely to be end tissue damage from a recent small subcortical infarct, small subcortical haemorrhage, incidental diffusion-weighted imaging-positive lesion, or end-stage cavitation in a white matter hyperintensity.",
             "rgba(85, 152, 254)": "Stroke",
-            "rgba(32, 121, 33)": "<span class='tooltip-subtitle'>Cerebral Microbleeds</span><div style='text-align: left;'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), cerebral microbleeds (CMB) are defined as:</i></span>Small (usually 2–5 mm or sometimes 10 mm in size) areas of signal void with associated blooming artifact on T2* or other MRI sequences sensitive to susceptibility effects.",
+            "rgba(32, 121, 33)": "<span class='tooltip-subtitle'>Cerebral Microbleeds</span><div class='tooltip-citation'>Duering, M. <i>et al.</i> Neuroimaging standards for research into small vessel disease—advances since 2013. <i>The Lancet Neurology</i> <strong>22</strong>, 602–618 (2023).</div><span class='strive-criteria'><i>Based on the STRIVE-2 criteria (referenced above), cerebral microbleeds (CMB) are defined as:</i></span>Small (usually 2–5 mm or sometimes 10 mm in size) areas of signal void with associated blooming artifact on T2* or other MRI sequences sensitive to susceptibility effects.",
             "rgba(212, 171, 1)": "Neurite Orientation Dispersion and Density Imaging",
             "rgba(1, 170, 136)": "Fractional Anisotropy",
             "rgba(255, 204, 1)": "Mediodorsal Nucleus of Thalamus",
@@ -217,10 +206,13 @@
         // ----------------------------
         const img = document.getElementById("sourceImage");
         const canvas = document.getElementById("canvas");
-        const ctx = canvas.getContext("2d");
+        // willReadFrequently hints the browser to optimize for per-pixel getImageData calls.
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
         const tooltip = document.getElementById("tooltip");
+        const tooltipLabel = document.getElementById("label");
+        const tooltipDot = document.getElementById("dot");
+        const tooltipDetails = document.getElementById("tooltipDetails");
 
-        // Draw the hidden PNG on the canvas once it's loaded so pixels exist for hover logic.
         function drawImageOnCanvas() {
             if (!img.naturalWidth || !img.naturalHeight) return;
             canvas.width = img.naturalWidth;
@@ -229,51 +221,46 @@
             ctx.drawImage(img, 0, 0);
         }
 
-        if (img.complete) {
+        // addEventListener avoids clobbering the inline onerror attribute that
+        // performs the WebP→PNG fallback. The error listener only logs if the
+        // PNG fallback also fails.
+        img.addEventListener("load", drawImageOnCanvas);
+        img.addEventListener("error", () => {
+            if (img.src.endsWith("phenogram.png")) {
+                console.error("Failed to load phenogram image.");
+            }
+        });
+        if (img.complete && img.naturalWidth) {
             drawImageOnCanvas();
-        } else {
-            img.onload = drawImageOnCanvas;
-            img.onerror = () => console.error("Failed to load phenogram image.");
         }
 
-        // RGB to hex converter function
-        function rgbToHex(r, g, b) {
-            return "#" + [r, g, b].map(x => {
-                const hex = x.toString(16);
-                return hex.length === 1 ? "0" + hex : hex;
-            }).join("");
-        }
-
-        // RGBA-based color matching function (optimized with pre-parsed colors)
-        function nearestColorRGBA(r, g, b, a) {
+        function nearestColor(r, g, b) {
             let best = null;
-            let bestDist = 1e9;
+            let bestDistSq = 1e9;
 
-            // Use pre-parsed color array instead of parsing strings on each call
             for (let i = 0; i < PARSED_COLORS.length; i++) {
                 const c = PARSED_COLORS[i];
-
-                // Euclidean distance in RGB space
-                const dist = Math.sqrt(
+                const distSq =
                     (r - c.r) ** 2 +
                     (g - c.g) ** 2 +
-                    (b - c.b) ** 2
-                );
+                    (b - c.b) ** 2;
 
-                if (dist < bestDist) {
-                    bestDist = dist;
+                if (distSq < bestDistSq) {
+                    bestDistSq = distSq;
                     best = c.key;
                 }
             }
 
-            return bestDist < 40 ? best : null;
+            // 40² = 1600; squared comparison avoids sqrt on every mousemove.
+            return bestDistSq < 1600 ? best : null;
         }
 
         // -----------------------------------------
         // 3. Detect pixel on hover and show tooltip
         // -----------------------------------------
 
-        // Cache canvas bounding rect to avoid layout recalculation on every mousemove
+        // Cache canvas rect; invalidate only on window resize. Safe because
+        // body { overflow: hidden } prevents page scroll.
         let cachedCanvasRect = null;
         function getCanvasRect() {
             if (!cachedCanvasRect) {
@@ -281,8 +268,10 @@
             }
             return cachedCanvasRect;
         }
-        // Invalidate cache on resize
         window.addEventListener('resize', () => { cachedCanvasRect = null; });
+
+        let lastMatchedColor = null;
+        let tooltipVisible = false;
 
         canvas.onmousemove = (e) => {
             const rect = getCanvasRect();
@@ -291,62 +280,56 @@
             const x = Math.floor((e.clientX - rect.left) * scaleX);
             const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-            // Get pixel (r,g,b,a)
             const pixel = ctx.getImageData(x, y, 1, 1).data;
-            const matched = nearestColorRGBA(pixel[0], pixel[1], pixel[2], pixel[3]);
+            const matched = nearestColor(pixel[0], pixel[1], pixel[2]);
 
-            if (matched) {
-                const tooltipX = e.clientX - rect.left;
-                const tooltipY = e.clientY - rect.top;
+            if (!matched) {
+                if (tooltipVisible) {
+                    tooltip.classList.remove("show");
+                    tooltipVisible = false;
+                }
+                lastMatchedColor = null;
+                return;
+            }
 
-                document.getElementById("label").textContent = COLOR_TOOLTIPS[matched];
-                document.getElementById("dot").style.background = matched;
-                document.getElementById("tooltipDetails").innerHTML =
+            if (matched !== lastMatchedColor) {
+                tooltipLabel.textContent = COLOR_TOOLTIPS[matched];
+                tooltipDot.style.background = matched;
+                tooltipDetails.innerHTML =
                     COLOR_DETAILS[matched] || "Add phenotype details here.";
+                lastMatchedColor = matched;
+            }
 
-                // Get tooltip dimensions (fallback if not yet rendered)
-                const tooltipWidth = 350; // Fixed width from CSS
-                let tooltipHeight = tooltip.offsetHeight;
-                if (tooltipHeight === 0) tooltipHeight = 120;
+            const tooltipX = e.clientX - rect.left;
+            const tooltipY = e.clientY - rect.top;
 
-                // Calculate the offset created by transform: translate(-50%, -105%)
-                // -50% centers it horizontally, -105% moves it up
-                const horizontalOffset = tooltipWidth * 0.5;
-                const verticalOffset = tooltipHeight * 1.05;
+            // transform: translate(-50%, -105%) centers the tooltip horizontally
+            // and lifts it above the cursor; offsets mirror those percentages.
+            const tooltipWidth = 350;
+            const tooltipHeight = tooltip.offsetHeight || 120;
+            const horizontalOffset = tooltipWidth * 0.5;
+            const verticalOffset = tooltipHeight * 1.05;
 
-                // Calculate the actual edges of the tooltip after transform
-                const tooltipLeft = tooltipX - horizontalOffset;
-                const tooltipRight = tooltipX + horizontalOffset;
-                const tooltipTop = tooltipY - verticalOffset;
+            let clampedX = tooltipX;
+            let clampedY = tooltipY;
+            if (tooltipX - horizontalOffset < 0) clampedX = horizontalOffset;
+            if (tooltipX + horizontalOffset > rect.width) clampedX = rect.width - horizontalOffset;
+            if (tooltipY - verticalOffset < 0) clampedY = verticalOffset;
 
-                // Clamp the position to keep tooltip within canvas bounds
-                let clampedX = tooltipX;
-                let clampedY = tooltipY;
+            tooltip.style.left = `${clampedX}px`;
+            tooltip.style.top = `${clampedY}px`;
 
-                // Keep left edge within bounds
-                if (tooltipLeft < 0) {
-                    clampedX = horizontalOffset;
-                }
-                // Keep right edge within bounds
-                if (tooltipRight > rect.width) {
-                    clampedX = rect.width - horizontalOffset;
-                }
-                // Keep top edge within bounds
-                if (tooltipTop < 0) {
-                    clampedY = verticalOffset;
-                }
-
-                tooltip.style.left = `${clampedX}px`;
-                tooltip.style.top = `${clampedY}px`;
+            if (!tooltipVisible) {
                 tooltip.classList.add("show");
-            } else {
-                tooltip.classList.remove("show");
+                tooltipVisible = true;
             }
         };
 
-        // Hide tooltip when cursor leaves canvas
         canvas.onmouseleave = () => {
-            tooltip.classList.remove("show");
+            if (tooltipVisible) {
+                tooltip.classList.remove("show");
+                tooltipVisible = false;
+            }
         };
     </script>
 
