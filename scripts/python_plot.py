@@ -17,17 +17,26 @@ phase_rings = {
 # Opacity per clinical trial phase (darker = later phase)
 PHASE_OPACITY = {"I": 0.35, "II": 0.6, "III": 1.0}
 
+# Multi-word populations are named once so label special-cases can't drift on typos
+POP_CAA = "CAA"
+POP_COGNITIVE_IMPAIRMENT = "Cognitive Impairment"
+POP_STROKE = "Stroke"
+POP_ANY_SVD = "Any SVD (including monogenic)"
+
 # Order & colors for SVD populations (angular sectors)
-populations = ["CAA", "Cognitive Impairment", "Stroke", "Any SVD (including monogenic)"]
+populations = [POP_CAA, POP_COGNITIVE_IMPAIRMENT, POP_STROKE, POP_ANY_SVD]
 pop_colors = {
-    "CAA": "#440154",  # viridis purple
-    "Cognitive Impairment": "#31688e",  # viridis blue
-    "Stroke": "#35b779",  # viridis green
-    "Any SVD (including monogenic)": "#fde725",  # viridis yellow
+    POP_CAA: "#440154",  # viridis purple
+    POP_COGNITIVE_IMPAIRMENT: "#31688e",  # viridis blue
+    POP_STROKE: "#35b779",  # viridis green
+    POP_ANY_SVD: "#fde725",  # viridis yellow
 }
 
 MARKER_R = 9
 LABEL_MARKER_GAP = 10
+
+# SVG line-height multiplier (matches tspan dy="1.2em")
+LINE_HEIGHT_EM = 1.2
 
 # Shadow configuration (manual shadows to avoid Chromium filter bugs)
 SHADOW_OFFSET_X = 2
@@ -38,15 +47,95 @@ SHADOW_OPACITY = 0.2
 # Legend background inset from the legend's title anchor
 LEGEND_INSET_X = 20
 LEGEND_INSET_Y = 30
+LEGEND_BG_COLOR = "#eaeff5"  # matches dashboard page background
 
 # Manual positioning adjustments for SVD Population labels
 # Each population can have: h_offset, v_offset (distances from boundary)
 pop_label_config = {
-    "CAA": {"h_offset": 15, "v_offset": 0},
-    "Cognitive Impairment": {"h_offset": 5, "v_offset": 0},
-    "Stroke": {"h_offset": 0, "v_offset": -20},
-    "Any SVD (including monogenic)": {"h_offset": 200, "v_offset": -35},
+    POP_CAA: {"h_offset": 15, "v_offset": 0},
+    POP_COGNITIVE_IMPAIRMENT: {"h_offset": 5, "v_offset": 0},
+    POP_STROKE: {"h_offset": 0, "v_offset": -20},
+    POP_ANY_SVD: {"h_offset": 200, "v_offset": -35},
 }
+
+# Approximate character widths as fraction of font size for Raleway
+_CHAR_WIDTHS = {
+    "i": 0.25,
+    "l": 0.25,
+    "I": 0.25,
+    "j": 0.25,
+    "t": 0.35,
+    "f": 0.35,
+    "r": 0.38,
+    " ": 0.25,
+    ".": 0.25,
+    ",": 0.25,
+    ":": 0.25,
+    ";": 0.25,
+    "!": 0.25,
+    "|": 0.25,
+    "a": 0.55,
+    "c": 0.52,
+    "e": 0.55,
+    "g": 0.55,
+    "n": 0.55,
+    "o": 0.55,
+    "s": 0.50,
+    "b": 0.55,
+    "d": 0.55,
+    "h": 0.55,
+    "k": 0.50,
+    "p": 0.55,
+    "q": 0.55,
+    "u": 0.55,
+    "v": 0.50,
+    "x": 0.50,
+    "y": 0.50,
+    "z": 0.50,
+    "m": 0.85,
+    "w": 0.75,
+    "A": 0.65,
+    "B": 0.65,
+    "C": 0.65,
+    "D": 0.68,
+    "E": 0.60,
+    "F": 0.58,
+    "G": 0.70,
+    "H": 0.68,
+    "J": 0.50,
+    "K": 0.65,
+    "L": 0.55,
+    "M": 0.82,
+    "N": 0.68,
+    "O": 0.72,
+    "P": 0.62,
+    "Q": 0.72,
+    "R": 0.65,
+    "S": 0.60,
+    "T": 0.60,
+    "U": 0.68,
+    "V": 0.65,
+    "W": 0.90,
+    "X": 0.65,
+    "Y": 0.62,
+    "Z": 0.60,
+    "0": 0.55,
+    "1": 0.55,
+    "2": 0.55,
+    "3": 0.55,
+    "4": 0.55,
+    "5": 0.55,
+    "6": 0.55,
+    "7": 0.55,
+    "8": 0.55,
+    "9": 0.55,
+    "-": 0.35,
+    "–": 0.50,
+    "—": 0.70,
+    "(": 0.35,
+    ")": 0.35,
+}
+_CHAR_WIDTH_FALLBACK = 0.55
 
 # ---------- HELPERS ----------
 
@@ -56,91 +145,7 @@ def estimate_text_width(text, font_size):
     Estimate text width in pixels for Raleway font.
     Uses approximate character widths based on Raleway metrics.
     """
-    # Approximate character widths as fraction of font size for Raleway
-    char_widths = {
-        "i": 0.25,
-        "l": 0.25,
-        "I": 0.25,
-        "j": 0.25,
-        "t": 0.35,
-        "f": 0.35,
-        "r": 0.38,
-        " ": 0.25,
-        ".": 0.25,
-        ",": 0.25,
-        ":": 0.25,
-        ";": 0.25,
-        "!": 0.25,
-        "|": 0.25,
-        "a": 0.55,
-        "c": 0.52,
-        "e": 0.55,
-        "g": 0.55,
-        "n": 0.55,
-        "o": 0.55,
-        "s": 0.50,
-        "b": 0.55,
-        "d": 0.55,
-        "h": 0.55,
-        "k": 0.50,
-        "p": 0.55,
-        "q": 0.55,
-        "u": 0.55,
-        "v": 0.50,
-        "x": 0.50,
-        "y": 0.50,
-        "z": 0.50,
-        "m": 0.85,
-        "w": 0.75,
-        "A": 0.65,
-        "B": 0.65,
-        "C": 0.65,
-        "D": 0.68,
-        "E": 0.60,
-        "F": 0.58,
-        "G": 0.70,
-        "H": 0.68,
-        "J": 0.50,
-        "K": 0.65,
-        "L": 0.55,
-        "M": 0.82,
-        "N": 0.68,
-        "O": 0.72,
-        "P": 0.62,
-        "Q": 0.72,
-        "R": 0.65,
-        "S": 0.60,
-        "T": 0.60,
-        "U": 0.68,
-        "V": 0.65,
-        "W": 0.90,
-        "X": 0.65,
-        "Y": 0.62,
-        "Z": 0.60,
-        "0": 0.55,
-        "1": 0.55,
-        "2": 0.55,
-        "3": 0.55,
-        "4": 0.55,
-        "5": 0.55,
-        "6": 0.55,
-        "7": 0.55,
-        "8": 0.55,
-        "9": 0.55,
-        "-": 0.35,
-        "–": 0.50,
-        "—": 0.70,
-        "(": 0.35,
-        ")": 0.35,
-    }
-
-    width = 0
-    for char in text:
-        width += (
-            char_widths.get(char, 0.55) * font_size
-        )  # default to 0.55 for unknown chars
-
-    return width
+    return sum(_CHAR_WIDTHS.get(c, _CHAR_WIDTH_FALLBACK) for c in text) * font_size
 
 
 def pol2cart(r, theta):
@@ -189,6 +194,14 @@ def shadow_rect(x, y, w, h, rx=6):
     )
 
 
+def shadow_circle(cx, cy, r):
+    """SVG <circle> for a drop shadow offset by SHADOW_OFFSET_X/Y."""
+    return (
+        f'<circle cx="{cx + SHADOW_OFFSET_X:.2f}" cy="{cy + SHADOW_OFFSET_Y:.2f}" r="{r}" '
+        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
+    )
+
+
 # ---------- LOAD DATA ----------
 rows = []
 with open("./data/csv/table2_for_py.csv", newline="", encoding="utf-8-sig") as f:
@@ -197,7 +210,7 @@ with open("./data/csv/table2_for_py.csv", newline="", encoding="utf-8-sig") as f
         rows.append(row)
 
 # Map CSV population names to display names (identities use the .get fallback)
-pop_name_mapping = {"SVD": "Any SVD (including monogenic)"}
+pop_name_mapping = {"SVD": POP_ANY_SVD}
 
 # Group rows by population to distribute angles & markers
 pop_to_rows = {p: [] for p in populations}
@@ -268,8 +281,9 @@ svg_parts.append(
 
 global_r_outer = max(r[1] for r in phase_rings.values())
 
-# ---------- POPULATION × PHASE WEDGES AND LABELS (two-pass rendering) ----------
-# First, collect all render data for wedges, population labels, and phase labels
+# ---------- POPULATION × PHASE WEDGES AND LABELS ----------
+# Shadows are emitted before their colored counterparts so the painter's
+# algorithm layers them correctly under overlapping labels.
 
 wedge_render_data = []
 pop_label_render_data = []
@@ -283,12 +297,14 @@ for pop in populations:
     for row in pop_rows:
         phases_with_drugs.add(row["Clinical Trial Phase"].strip())
 
+    pop_color = pop_colors.get(pop, "#444")
+
     for phase, (r_inner, r_outer) in phase_rings.items():
         if phase not in phases_with_drugs:
             color = "#c8c8c8"
             grey_opacity = 0.4
         else:
-            color = pop_colors.get(pop, "#444")
+            color = pop_color
             grey_opacity = None
 
         d = annular_sector_path(r_inner, r_outer, theta0, theta1)
@@ -299,7 +315,14 @@ for pop in populations:
             opacity = PHASE_OPACITY.get(phase, 0.6)
 
         wedge_render_data.append(
-            {"d": d, "pop": pop, "phase": phase, "color": color, "opacity": opacity}
+            {
+                "d": d,
+                "pop": pop,
+                "phase": phase,
+                "color": color,
+                "pop_color": pop_color,
+                "opacity": opacity,
+            }
         )
 
     # Collect population label data
@@ -327,7 +350,7 @@ for pop in populations:
     base_col = pop_colors.get(pop, "#444")
     text_ly = ly
 
-    if pop == "Cognitive Impairment":
+    if pop == POP_COGNITIVE_IMPAIRMENT:
         est_width = max(
             estimate_text_width("Cognitive", 18), estimate_text_width("Impairment", 18)
         )
@@ -337,9 +360,9 @@ for pop in populations:
             box_x = lx - padX
         else:
             box_x = lx - est_width - padX
-        text_ly = ly - (18 * 1.2) / 2
+        text_ly = ly - (18 * LINE_HEIGHT_EM) / 2
         box_y = text_ly - 18 / 2 - padY
-    elif pop == "Any SVD (including monogenic)":
+    elif pop == POP_ANY_SVD:
         est_width = max(
             estimate_text_width("Any SVD", 18),
             estimate_text_width("(including monogenic)", 18),
@@ -348,7 +371,7 @@ for pop in populations:
         padX, padY = 8, 4
         lx += (est_width + padX * 2) / 2
         box_x = lx - est_width / 2 - padX
-        text_ly = ly - (18 * 1.2) / 2
+        text_ly = ly - (18 * LINE_HEIGHT_EM) / 2
         box_y = text_ly - 18 / 2 - padY
     else:
         est_width = estimate_text_width(pop, 18)
@@ -377,7 +400,7 @@ for pop in populations:
         }
     )
 
-boundary_angle = pop_theta1["Any SVD (including monogenic)"]
+boundary_angle = pop_theta1[POP_ANY_SVD]
 
 # Collect phase label data
 phase_label_render_data = []
@@ -386,7 +409,7 @@ for phase, (r0, r1) in phase_rings.items():
     lx, ly = pol2cart(r_mid, boundary_angle)
     phase_text = f"Phase {phase}"
     est_width = estimate_text_width(phase_text, 16)
-    est_height = 16 * 1.2
+    est_height = 16 * LINE_HEIGHT_EM
     padX, padY = 8, 4
     box_x = lx - est_width / 2 - padX
     box_y = ly - est_height / 2 - padY
@@ -405,7 +428,6 @@ for phase, (r0, r1) in phase_rings.items():
         }
     )
 
-# FIRST PASS: Render ALL shadows (population labels, phase labels)
 for p in pop_label_render_data:
     svg_parts.append(
         shadow_rect(
@@ -426,27 +448,26 @@ for ph in phase_label_render_data:
         )
     )
 
-# SECOND PASS: Render ALL main elements (wedges, population labels, phase labels)
 for w in wedge_render_data:
     svg_parts.append(
         f'<path class="wedge" '
         f'data-pop="{w["pop"]}" data-phase="{w["phase"]}" '
-        f'data-pop-color="{pop_colors.get(w["pop"], "#444")}" '
+        f'data-pop-color="{w["pop_color"]}" '
         f'd="{w["d"]}" fill="{w["color"]}" fill-opacity="{w["opacity"]}"/>'
     )
 
 for p in pop_label_render_data:
     pop = p["pop"]
     # Use white text for dark backgrounds (CAA, Cognitive Impairment)
-    text_color = "#fff" if pop in ["CAA", "Cognitive Impairment"] else "#000"
-    if pop == "Cognitive Impairment":
+    text_color = "#fff" if pop in (POP_CAA, POP_COGNITIVE_IMPAIRMENT) else "#000"
+    if pop == POP_COGNITIVE_IMPAIRMENT:
         text_elem = (
             f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
             f'text-anchor="{p["anchor"]}" dy="0.35em">'
             f'<tspan x="{p["lx"]:.2f}" dy="0">Cognitive</tspan>'
             f'<tspan x="{p["lx"]:.2f}" dy="1.2em">Impairment</tspan></text>'
         )
-    elif pop == "Any SVD (including monogenic)":
+    elif pop == POP_ANY_SVD:
         text_elem = (
             f'<text x="{p["lx"]:.2f}" y="{p["text_ly"]:.2f}" fill="{text_color}" font-size="18" '
             f'text-anchor="middle" dy="0.35em">'
@@ -508,8 +529,7 @@ mech_colors = {
     mech: marker_palette[i % len(marker_palette)] for i, mech in enumerate(mechanisms)
 }
 
-# ---------- DRUG MARKERS (two-pass rendering: all shadows first, then all main elements) ----------
-# First, collect all drug data for two-pass rendering
+# ---------- DRUG MARKERS ----------
 drug_render_data = []
 
 for pop in populations:
@@ -548,8 +568,14 @@ for pop in populations:
             ly = y
 
             tooltip = f"{drug} — Phase {phase}, {pop}"
-            has_genetic_evidence = row.get("Genetic Evidence", "").strip() == "Yes"
-            label_bg_color = "#90ee90" if has_genetic_evidence else "#ffffff"
+            label_bg_color = (
+                "#90ee90"
+                if row.get("Genetic Evidence", "").strip() == "Yes"
+                else "#ffffff"
+            )
+
+            mech = (row.get("Mechanism of Action") or "").strip()
+            mech_color = mech_colors.get(mech, "#888888")
 
             est_width = estimate_text_width(drug, 12)
             est_height = 12 * 1.3
@@ -566,6 +592,8 @@ for pop in populations:
                     "phase": phase,
                     "pop": pop,
                     "row": row,
+                    "mech": mech,
+                    "mech_color": mech_color,
                     "x": x,
                     "y": y,
                     "lx": lx,
@@ -584,14 +612,8 @@ for pop in populations:
 
 svg_parts.append('<g id="drugs" font-family="Raleway" font-size="12" fill="#000">')
 
-# FIRST PASS: Render ALL shadows
 for d in drug_render_data:
-    # Shadow for drug marker
-    svg_parts.append(
-        f'<circle cx="{d["x"] + SHADOW_OFFSET_X:.2f}" cy="{d["y"] + SHADOW_OFFSET_Y:.2f}" r="{MARKER_R}" '
-        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-    )
-    # Shadow for drug label box
+    svg_parts.append(shadow_circle(d["x"], d["y"], MARKER_R))
     svg_parts.append(
         shadow_rect(
             d["box_x"],
@@ -601,7 +623,6 @@ for d in drug_render_data:
         )
     )
 
-# SECOND PASS: Render ALL main elements
 for d in drug_render_data:
     row = d["row"]
     svg_parts.append(
@@ -610,7 +631,7 @@ for d in drug_render_data:
         f'data-phase="{d["phase"]}" '
         f'data-pop="{d["pop"]}" '
         f'data-pop-color="{pop_colors.get(d["pop"], "#444")}" '
-        f'data-mech="{(row.get("Mechanism of Action") or "").strip()}" '
+        f'data-mech="{d["mech"]}" '
         f'data-gtarget="{(row.get("Genetic Target") or "").strip()}" '
         f'data-ge="{(row.get("Genetic Evidence") or "").strip()}" '
         f'data-tname="{(row.get("Trial Name") or "").strip()}" '
@@ -621,10 +642,8 @@ for d in drug_render_data:
         f'data-pco="{(row.get("Primary Outcome") or "").strip()}" '
         f'data-sptype="{(row.get("Sponsor Type") or "").strip()}">'
         f"<title>{d['tooltip']}</title>"
-        # Main drug marker
         f'<use href="#marker" '
-        f'x="{d["x"]:.2f}" y="{d["y"]:.2f}" color="{mech_colors.get(row.get("Mechanism of Action", "").strip(), "#888888")}"/>'
-        # Main drug label box
+        f'x="{d["x"]:.2f}" y="{d["y"]:.2f}" color="{d["mech_color"]}"/>'
         f'<rect class="label-bg drug-bg" x="{d["box_x"]:.2f}" y="{d["box_y"]:.2f}" '
         f'width="{d["est_width"] + d["padX"] * 2:.2f}" height="{d["est_height"] + d["padY"] * 2:.2f}" rx="6" '
         f'fill="{d["label_bg_color"]}" fill-opacity="1" pointer-events="none"/>'
@@ -635,7 +654,7 @@ for d in drug_render_data:
     )
 
 svg_parts.append("</g>")
-# ---------- LEGENDS (two-pass rendering: all shadows first, then all main elements) ----------
+# ---------- LEGENDS ----------
 # Position legend at top-right of plot
 legend_x = CX + global_r_outer + 150
 legend_y = CY - global_r_outer + 20
@@ -691,23 +710,20 @@ svg_parts.append(
 
 # Layer 2: Legend background rects
 svg_parts.append(
-    f'<rect id="legend-bg" x="{legend_bg_x}" y="{legend_bg_y}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
-    f'rx="10" fill="#eaeff5" fill-opacity="1"/>'
+    f'<rect id="legend-bg" x="{legend_bg_x:.2f}" y="{legend_bg_y:.2f}" width="{legend_width:.2f}" height="{legend_height:.2f}" '
+    f'rx="10" fill="{LEGEND_BG_COLOR}" fill-opacity="1"/>'
 )
 svg_parts.append(
-    f'<rect id="legend-moa-bg" x="{moa_bg_x}" y="{moa_bg_y}" width="{moa_legend_width:.2f}" height="{moa_legend_height:.2f}" '
-    f'rx="10" fill="#eaeff5" fill-opacity="1"/>'
+    f'<rect id="legend-moa-bg" x="{moa_bg_x:.2f}" y="{moa_bg_y:.2f}" width="{moa_legend_width:.2f}" height="{moa_legend_height:.2f}" '
+    f'rx="10" fill="{LEGEND_BG_COLOR}" fill-opacity="1"/>'
 )
 
 # Layer 3: Inner element shadows (Yes/No boxes, mechanism circles)
 svg_parts.append(shadow_rect(legend_box_x, legend_y + 2, box_width, 20))
 svg_parts.append(shadow_rect(legend_box_x, legend_y + 30, box_width, 20))
-# Shadows for all mechanism circles
 for i, _mech in enumerate(mechanisms):
     y = legend_moa_y + 16 + i * 36
-    svg_parts.append(
-        f'<circle cx="{legend_moa_x + SHADOW_OFFSET_X}" cy="{y + SHADOW_OFFSET_Y}" r="9" fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}"/>'
-    )
+    svg_parts.append(shadow_circle(legend_moa_x, y, 9))
 
 # Layer 4: Inner elements (Yes/No boxes, mechanism circles, text)
 # Genetic Evidence legend content
