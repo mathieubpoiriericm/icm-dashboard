@@ -982,6 +982,10 @@ body #sample_size_filter_card strong {
   border-bottom: 1px dotted var(--svd-accent);
 }
 
+/* Rest-state border is 2px (not 1px) so the hover change to solid
+   doesn't widen the box — keeps the hover transition paint-only and
+   avoids scroll-anchor drift inside #firstTable's sticky-column +
+   autoWidth DataTable */
 .tooltip-box {
   background-color: var(--svd-bg-light);
   color: inherit;
@@ -990,17 +994,18 @@ body #sample_size_filter_card strong {
   border-radius: var(--svd-radius-sm);
   display: inline-block;
   box-shadow: var(--svd-shadow-xs);
-  border-bottom: 1px dotted var(--svd-accent);
+  border-bottom: 2px dotted var(--svd-accent);
   cursor: help;
-  transition: box-shadow var(--svd-transition), transform var(--svd-transition);
+  transition: box-shadow var(--svd-transition),
+              background-color var(--svd-transition),
+              border-bottom-color var(--svd-transition);
 }
 
 .tooltip-box:hover {
-  transform: translateY(-2px);
   box-shadow: var(--svd-shadow-md);
   background-color: var(--svd-bg-tooltip-hover);
   border-bottom-color: var(--svd-primary);
-  border-bottom-width: 2px;
+  border-bottom-style: solid;
 }
 
 .tooltip-box-italic {
@@ -1313,6 +1318,7 @@ table.dataTable tbody tr:hover td:first-child {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   overflow-x: scroll !important;
+  overflow-anchor: none;
   margin-bottom: 0 !important;
   padding-bottom: 10px;
   width: 100% !important;
@@ -1849,7 +1855,6 @@ table.dataTable tbody tr:hover td:first-child {
   .tooltip-box:hover,
   .tooltip-box-italic:hover {
     box-shadow: var(--svd-shadow-sm) !important;
-    transform: none !important;
   }
 
   .tip-box:hover {
