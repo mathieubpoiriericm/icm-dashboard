@@ -71,7 +71,52 @@ class TestLoadTuningRuns:
         )
         rows = _load_tuning_runs(str(tmp_path))
         assert len(rows) == 1
-        assert rows[0]["precision"] == "0.8"
+        # Numeric columns coerced to float so Quasar sorts numerically.
+        assert rows[0]["precision"] == 0.8
+
+    def test_numeric_columns_coerced_to_float(self, tmp_path: Path):
+        """Integer count columns must be floats so '15' > '5' sorts correctly."""
+        csv_dir = tmp_path / "logs" / "tuning"
+        csv_dir.mkdir(parents=True)
+        (csv_dir / "tuning_runs.csv").write_text(
+            "timestamp,tp,precision,notes\n"
+            "2026-01-01,5,0.85,first\n"
+            "2026-01-02,15,0.90,second\n"
+            "2026-01-03,100,0.75,third\n"
+        )
+        rows = _load_tuning_runs(str(tmp_path))
+        assert len(rows) == 3
+        # Numeric columns are floats.
+        for row in rows:
+            assert isinstance(row["tp"], float)
+            assert isinstance(row["precision"], float)
+        # Non-numeric columns stay strings.
+        assert isinstance(rows[0]["notes"], str)
+        assert isinstance(rows[0]["timestamp"], str)
+        # Numeric values are sortable as floats.
+        tps = sorted(r["tp"] for r in rows)
+        assert tps == [5.0, 15.0, 100.0]
+
+    def test_unparseable_numeric_value_stays_string(self, tmp_path: Path):
+        csv_dir = tmp_path / "logs" / "tuning"
+        csv_dir.mkdir(parents=True)
+        (csv_dir / "tuning_runs.csv").write_text(
+            "timestamp,tp\n2026-01-01,N/A\n2026-01-02,10\n"
+        )
+        rows = _load_tuning_runs(str(tmp_path))
+        # Newest first: "N/A" row stays as string, "10" row becomes float.
+        assert rows[0]["tp"] == 10.0
+        assert rows[1]["tp"] == "N/A"
+
+    def test_empty_numeric_cell_stays_string(self, tmp_path: Path):
+        csv_dir = tmp_path / "logs" / "tuning"
+        csv_dir.mkdir(parents=True)
+        (csv_dir / "tuning_runs.csv").write_text(
+            "timestamp,tp\n2026-01-01,\n"
+        )
+        rows = _load_tuning_runs(str(tmp_path))
+        # Empty string is left alone so float('') doesn't crash.
+        assert rows[0]["tp"] == ""
 
     def test_empty_project_root(self, tmp_path: Path, monkeypatch):
         monkeypatch.chdir(tmp_path)

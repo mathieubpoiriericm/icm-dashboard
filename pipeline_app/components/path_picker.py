@@ -51,7 +51,7 @@ def resolve_start_dir(
     if current_value:
         try:
             resolved = Path(current_value).expanduser().resolve()
-        except OSError, RuntimeError:
+        except (OSError, RuntimeError):
             resolved = None
         if resolved is not None:
             if resolved.is_dir():
@@ -68,7 +68,7 @@ def resolve_start_dir(
     for candidate in candidates:
         try:
             resolved = candidate.expanduser().resolve()
-        except OSError, RuntimeError:
+        except (OSError, RuntimeError):
             continue
         if resolved.is_dir() and resolved != Path(resolved.anchor):
             return resolved

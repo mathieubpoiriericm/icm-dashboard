@@ -76,9 +76,11 @@ class LogViewer:
         """Queue a log line with optional explicit severity.
 
         Args:
-            line: The raw log text (may contain newlines).
-            severity: Explicit severity. When None, it is inferred from
-                the line content via ``detect_severity``.
+            line: A single log line. Callers must strip newlines —
+                embedded ``\\n`` is rendered verbatim inside one
+                ``ui.log`` entry.
+            severity: Explicit severity. If None, inferred via
+                ``detect_severity``.
         """
         sev = severity if severity in _VALID_SEVERITIES else detect_severity(line)
         self._buf.append((line, css_class_for(sev)))

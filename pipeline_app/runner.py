@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import re
 import shutil
@@ -21,6 +22,8 @@ from pipeline_app.config import (
     PipelineAppConfig,
     TuningConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 STAGE_MARKER_RE = re.compile(r"^##STAGE:(\w+)##\s*$")
 
@@ -267,11 +270,20 @@ async def _stream_lines(
     stream: asyncio.StreamReader,
     on_line: Callable[[str], None],
 ) -> None:
-    """Read lines from an async stream, decode, and call back."""
+    """Read lines from an async stream, decode, and call back.
+
+    Callback exceptions are logged and swallowed — propagating them would
+    cancel the sibling pipe reader in ``_run_process_streamed`` and
+    deadlock the subprocess on its next pipe write.
+    """
     async for raw in stream:
         # rstrip both \r and \n so CRLF lines from Windows-spawned subprocesses
         # don't leave a trailing \r that breaks the stage-marker regex.
-        on_line(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        try:
+            on_line(line)
+        except Exception:  # noqa: BLE001
+            logger.exception("stream callback raised; continuing to drain")
 
 
 async def _drain_streams(

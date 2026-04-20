@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import logging
 
@@ -49,8 +50,13 @@ NUMERIC_COLUMNS: frozenset[str] = frozenset(
 )
 
 
-def _load_tuning_runs(project_root: str) -> list[dict[str, str]]:
-    """Load tuning runs from CSV file, newest first."""
+def _load_tuning_runs(project_root: str) -> list[dict[str, object]]:
+    """Load tuning runs from CSV file, newest first.
+
+    Coerce NUMERIC_COLUMNS values to float so the Quasar table sorts them
+    numerically — otherwise '15' < '5' as strings and integer count
+    columns render in the wrong order.
+    """
     root = resolve_project_root(project_root)
     csv_path = root / "logs" / "tuning" / "tuning_runs.csv"
     if not csv_path.exists():
@@ -58,12 +64,23 @@ def _load_tuning_runs(project_root: str) -> list[dict[str, str]]:
     try:
         with csv_path.open(newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            rows = list(reader)
+            raw_rows = list(reader)
     except (OSError, UnicodeDecodeError, csv.Error) as e:
         logger.warning("Failed to read tuning_runs.csv: %s", e)
         return []
+    coerced: list[dict[str, object]] = []
+    for r in raw_rows:
+        row: dict[str, object] = dict(r)
+        for k in NUMERIC_COLUMNS:
+            v = row.get(k)
+            if isinstance(v, str) and v:
+                # Leave as string on parse failure so the cell still renders;
+                # this one malformed row loses numeric sort.
+                with contextlib.suppress(ValueError):
+                    row[k] = float(v)
+        coerced.append(row)
     # Newest first — assume rows are in append order
-    return list(reversed(rows))
+    return list(reversed(coerced))
 
 
 def _compute_display_keys(
@@ -80,9 +97,14 @@ def _compute_display_keys(
     return display_keys
 
 
-def _diff_value(v1: str, v2: str, col: str) -> str:
-    """Compute the numeric diff between two values."""
+def _diff_value(v1: object, v2: object, col: str) -> str:
+    """Compute the numeric diff between two values.
+
+    Accepts str, int, or float; anything else yields "".
+    """
     if col not in NUMERIC_COLUMNS:
+        return ""
+    if not isinstance(v1, (str, int, float)) or not isinstance(v2, (str, int, float)):
         return ""
     try:
         diff = float(v2) - float(v1)
@@ -111,7 +133,7 @@ def create_tuning_history_page(project_root: str) -> None:
     ui.timer(0.0, _load, once=True)
 
 
-def _render_body(rows: list[dict[str, str]]) -> None:
+def _render_body(rows: list[dict[str, object]]) -> None:
     if not rows:
         empty_state(
             "analytics",
@@ -153,7 +175,7 @@ def _render_body(rows: list[dict[str, str]]) -> None:
         for k in display_keys
     ]
 
-    selected_rows: list[dict[str, str]] = []
+    selected_rows: list[dict[str, object]] = []
 
     @ui.refreshable
     def _comparison_panel() -> None:

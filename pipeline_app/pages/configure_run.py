@@ -29,8 +29,8 @@ from pipeline_app.config import (
     load_preset,
     load_presets,
     save_config,
-    save_preset,
     strip_secrets_from_config,
+    upsert_preset,
 )
 from pipeline_app.runner import (
     PIPELINE_STAGES,
@@ -121,15 +121,26 @@ def create_configure_run_page(
 
             async def _save_current_preset() -> None:
                 result = await prompt_preset_name()
-                if result:
-                    updated = save_preset(result, config)
-                    ui.notify(f"Saved preset: {result}", color="positive")
-                    preset_select.options = {p.id: p.name for p in updated}
-                    # Select the newly saved preset so Delete works on it
-                    # immediately without an extra dropdown click.
-                    if updated:
-                        preset_select.value = updated[-1].id
-                    preset_select.update()
+                if not result:
+                    return
+                existing_names = {p.name for p in load_presets()}
+                if result in existing_names:
+                    confirmed = await confirm(
+                        f"A preset named '{result}' already exists. "
+                        f"Overwrite it?",
+                        title="Overwrite Preset",
+                    )
+                    if not confirmed:
+                        return
+                updated = upsert_preset(result, config)
+                ui.notify(f"Saved preset: {result}", color="positive")
+                preset_select.options = {p.id: p.name for p in updated}
+                # Name-match (not "last") so the right id is selected whether
+                # we inserted or replaced.
+                preset_select.value = next(
+                    (p.id for p in updated if p.name == result), None
+                )
+                preset_select.update()
 
             async def _delete_preset(preset_id: str | None) -> None:
                 if not preset_id:

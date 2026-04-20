@@ -26,6 +26,7 @@ from pipeline_app.config import (
     save_preset,
     save_tuning_config,
     strip_secrets_from_config,
+    upsert_preset,
 )
 
 
@@ -226,6 +227,44 @@ class TestPresets:
         assert loaded2 is not None
         assert loaded1.days_back == 1
         assert loaded2.days_back == 2
+
+
+class TestUpsertPreset:
+    """``upsert_preset`` replaces by name so the dropdown can't grow
+    duplicate-label entries distinguishable only by hidden UUID."""
+
+    def test_creates_when_name_absent(self, tmp_config_dir):
+        presets = upsert_preset("A", PipelineAppConfig(days_back=1))
+        assert len(presets) == 1
+        assert presets[0].name == "A"
+        assert presets[0].config["days_back"] == 1
+
+    def test_replaces_existing_by_name(self, tmp_config_dir):
+        upsert_preset("A", PipelineAppConfig(days_back=1))
+        updated = upsert_preset("A", PipelineAppConfig(days_back=99))
+        assert len(updated) == 1
+        assert updated[0].config["days_back"] == 99
+
+    def test_preserves_id_on_replace(self, tmp_config_dir):
+        first = upsert_preset("A", PipelineAppConfig(days_back=1))
+        original_id = first[0].id
+        replaced = upsert_preset("A", PipelineAppConfig(days_back=2))
+        assert replaced[0].id == original_id
+
+    def test_does_not_touch_other_presets(self, tmp_config_dir):
+        upsert_preset("A", PipelineAppConfig(days_back=1))
+        upsert_preset("B", PipelineAppConfig(days_back=2))
+        updated = upsert_preset("A", PipelineAppConfig(days_back=99))
+        by_name = {p.name: p for p in updated}
+        assert by_name["A"].config["days_back"] == 99
+        assert by_name["B"].config["days_back"] == 2
+
+    def test_strips_secrets(self, tmp_config_dir):
+        # Confirm the same secret-scrubbing contract as save_preset.
+        cfg = PipelineAppConfig()
+        presets = upsert_preset("A", cfg)
+        for field in ("anthropic_api_key", "db_password", "ncbi_api_key"):
+            assert field not in presets[0].config
 
 
 class TestStripSecrets:

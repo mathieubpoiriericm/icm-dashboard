@@ -398,6 +398,24 @@ def save_preset(name: str, config: PipelineAppConfig) -> list[Preset]:
     return presets
 
 
+def upsert_preset(name: str, config: PipelineAppConfig) -> list[Preset]:
+    """Save a preset, replacing any existing one with the same name.
+
+    Preserves the UUID of a replaced preset so a select binding on the
+    preset id stays valid after the overwrite.
+    """
+    presets = load_presets()
+    stripped = strip_secrets_from_config(asdict(config))
+    for i, p in enumerate(presets):
+        if p.name == name:
+            presets[i] = Preset(id=p.id, name=name, config=stripped)
+            _save_presets(presets)
+            return presets
+    presets.append(Preset(id=str(uuid.uuid4()), name=name, config=stripped))
+    _save_presets(presets)
+    return presets
+
+
 def load_preset(preset_id: str) -> PipelineAppConfig | None:
     """Load a preset by ID, or return None if not found."""
     for p in load_presets():

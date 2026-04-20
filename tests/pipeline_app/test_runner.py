@@ -17,6 +17,7 @@ from pipeline_app.runner import (
     SubprocessLock,
     _find_newest_file,
     _run_process_streamed,
+    _stream_lines,
     find_newest_report,
     validate_python_path,
     validate_rscript_path,
@@ -56,6 +57,38 @@ class TestFindNewestReport:
         new.write_text("{}")
         result = find_newest_report(tmp_path, time.time() - 120)
         assert result == new
+
+
+class TestStreamLines:
+    """Callback errors must not abort pipe draining — otherwise the subprocess
+    blocks on its next write and leaks to PID 1."""
+
+    @pytest.mark.asyncio
+    async def test_survives_callback_exception(self):
+        reader = asyncio.StreamReader()
+        reader.feed_data(b"line1\nline2\nline3\n")
+        reader.feed_eof()
+
+        received: list[str] = []
+
+        def on_line(line: str) -> None:
+            received.append(line)
+            if line == "line2":
+                raise ValueError("boom from callback")
+
+        await _stream_lines(reader, on_line)
+        # line3 must still be delivered even though line2's callback raised.
+        assert received == ["line1", "line2", "line3"]
+
+    @pytest.mark.asyncio
+    async def test_strips_crlf(self):
+        reader = asyncio.StreamReader()
+        reader.feed_data(b"windows\r\nunix\n")
+        reader.feed_eof()
+
+        received: list[str] = []
+        await _stream_lines(reader, received.append)
+        assert received == ["windows", "unix"]
 
 
 class TestSubprocessLock:
