@@ -24,7 +24,9 @@
     margin: 0;
     padding: 0;
     background: #ffffff;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-gutter: stable;
   }
   body.svg-loading .fig {
     opacity: 0;
@@ -44,7 +46,7 @@
       z-index: 1;
   }
   #sidebar {
-    position: absolute;
+    position: fixed;
     left: 0;
     top: 0;
     height: 100%;
@@ -90,7 +92,7 @@
   }
   #tooltip {
     --tip-color-rgba: rgba(255,255,255,0.25);
-    position: absolute;
+    position: fixed;
     padding: 9px 10px;
     border-radius: 20px;
     min-width: 240px;
@@ -166,10 +168,10 @@
 <symbol id="marker_tri" overflow="visible"><polygon points="0,-9 9,9 -9,9" fill="currentColor"/></symbol>
 </defs>
 <rect x="100" y="0" width="800" height="800" fill="#ffffff" fill-opacity="0"/>
-<rect x="745.27" y="172.73" width="51.10" height="26.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>
-<rect x="820.10" y="451.02" width="104.34" height="48.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>
-<rect x="348.44" y="708.10" width="68.74" height="26.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>
-<rect x="65.73" y="126.93" width="194.02" height="48.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>
+<rect x="745.27" y="172.73" width="51.10" height="26.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none" data-shadow-for="CAA"/>
+<rect x="820.10" y="451.02" width="104.34" height="48.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none" data-shadow-for="Cognitive Impairment"/>
+<rect x="348.44" y="708.10" width="68.74" height="26.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none" data-shadow-for="Stroke"/>
+<rect x="65.73" y="126.93" width="194.02" height="48.00" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none" data-shadow-for="Any SVD (including monogenic)"/>
 <rect x="463.84" y="298.40" width="76.32" height="27.20" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>
 <rect x="465.84" y="173.40" width="72.32" height="27.20" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>
 <rect x="467.84" y="103.40" width="68.32" height="27.20" rx="6" fill="#000000" fill-opacity="0.2" pointer-events="none"/>

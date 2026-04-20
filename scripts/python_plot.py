@@ -185,12 +185,18 @@ def annular_sector_path(r_inner, r_outer, theta0, theta1):
     return " ".join(d)
 
 
-def shadow_rect(x, y, w, h, rx=6):
-    """SVG <rect> for a drop shadow offset by SHADOW_OFFSET_X/Y."""
+def shadow_rect(x, y, w, h, rx=6, shadow_for=None):
+    """SVG <rect> for a drop shadow offset by SHADOW_OFFSET_X/Y.
+
+    Pass shadow_for to tag the shadow with data-shadow-for="<id>" so JS
+    can resize it in sync with its owning label.
+    """
+    extra = f' data-shadow-for="{shadow_for}"' if shadow_for else ""
     return (
         f'<rect x="{x + SHADOW_OFFSET_X:.2f}" y="{y + SHADOW_OFFSET_Y:.2f}" '
         f'width="{w:.2f}" height="{h:.2f}" rx="{rx}" '
-        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" pointer-events="none"/>'
+        f'fill="{SHADOW_COLOR}" fill-opacity="{SHADOW_OPACITY}" '
+        f'pointer-events="none"{extra}/>'
     )
 
 
@@ -435,6 +441,7 @@ for p in pop_label_render_data:
             p["box_y"],
             p["est_width"] + p["padX"] * 2,
             p["est_height"] + p["padY"] * 2,
+            shadow_for=p["pop"],
         )
     )
 
@@ -804,7 +811,9 @@ html = f"""<!DOCTYPE html>
     margin: 0;
     padding: 0;
     background: #ffffff;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-gutter: stable;
   }}
   body.svg-loading .fig {{
     opacity: 0;
@@ -824,7 +833,7 @@ html = f"""<!DOCTYPE html>
       z-index: 1;
   }}
   #sidebar {{
-    position: absolute;
+    position: fixed;
     left: 0;
     top: 0;
     height: 100%;
@@ -870,7 +879,7 @@ html = f"""<!DOCTYPE html>
   }}
   #tooltip {{
     --tip-color-rgba: rgba(255,255,255,0.25);
-    position: absolute;
+    position: fixed;
     padding: 9px 10px;
     border-radius: 20px;
     min-width: 240px;
@@ -952,9 +961,11 @@ html = f"""<!DOCTYPE html>
 with open("www/python_plot.html", "w", encoding="utf-8") as f:
     f.write(html)
 
-js_code = r"""
-(function() {
-  document.body.classList.add('svg-loading');
+js_code = f"""
+(function() {{
+  const SHADOW_OFFSET_X = {SHADOW_OFFSET_X};
+  const SHADOW_OFFSET_Y = {SHADOW_OFFSET_Y};
+""" + r"""  document.body.classList.add('svg-loading');
 
   const readyTimer = setTimeout(markReady, 2000);
 
@@ -981,6 +992,14 @@ js_code = r"""
     try { bbox = el.getBBox(); } catch(e) { return null; }
     if (!bbox || bbox.width === 0) return null;
     return bbox;
+  }
+
+  // Resize rect to wrap a bbox with padX horizontal and padY vertical padding
+  function resizeRectToBbox(rect, bbox, padX, padY) {
+    rect.setAttribute('x', (bbox.x - padX).toFixed(2));
+    rect.setAttribute('y', (bbox.y - padY).toFixed(2));
+    rect.setAttribute('width', (bbox.width + padX * 2).toFixed(2));
+    rect.setAttribute('height', (bbox.height + padY * 2).toFixed(2));
   }
 
     // Prevent label boxes from overlapping their own drug markers
@@ -1027,11 +1046,7 @@ js_code = r"""
 
         const newBox = safeGetBBox(text);
         if (!newBox) return;
-        const padX = 8, padY = 4;
-        rect.setAttribute('x', (newBox.x - padX).toFixed(2));
-        rect.setAttribute('y', (newBox.y - padY).toFixed(2));
-        rect.setAttribute('width', (newBox.width + padX*2).toFixed(2));
-        rect.setAttribute('height', (newBox.height + padY*2).toFixed(2));
+        resizeRectToBbox(rect, newBox, 8, 4);
       }
     });
   }
@@ -1065,14 +1080,42 @@ js_code = r"""
         if (rect) {
           const nb = safeGetBBox(text);
           if (!nb) return;
-          const padX = 8, padY = 4;
-          rect.setAttribute('x', (nb.x - padX).toFixed(2));
-          rect.setAttribute('y', (nb.y - padY).toFixed(2));
-          rect.setAttribute('width', (nb.width + padX * 2).toFixed(2));
-          rect.setAttribute('height', (nb.height + padY * 2).toFixed(2));
+          resizeRectToBbox(rect, nb, 8, 4);
         }
       }
     }
+  }
+
+  // Python's pre-computed box dimensions rely on approximate font metrics, which
+  // misalign slightly (especially on multi-line labels with descenders/ascenders).
+  // Measuring the actual rendered text via getBBox gives pixel-perfect alignment
+  // regardless of font metrics or browser rendering.
+  function adjustPopLabelBoxes() {
+    const shadowsByPop = new Map();
+    document.querySelectorAll('rect[data-shadow-for]').forEach(s => {
+      shadowsByPop.set(s.getAttribute('data-shadow-for'), s);
+    });
+
+    document.querySelectorAll('g.pop-label').forEach(g => {
+      const text = g.querySelector('text');
+      const rect = g.querySelector('rect.label-bg');
+      if (!text || !rect) return;
+
+      const bbox = safeGetBBox(text);
+      if (!bbox) return;
+
+      resizeRectToBbox(rect, bbox, 8, 4);
+
+      const shadow = shadowsByPop.get(g.getAttribute('data-pop'));
+      if (shadow) {
+        resizeRectToBbox(shadow, {
+          x: bbox.x + SHADOW_OFFSET_X,
+          y: bbox.y + SHADOW_OFFSET_Y,
+          width: bbox.width,
+          height: bbox.height,
+        }, 8, 4);
+      }
+    });
   }
   // Minimal tooltip-only JS
   function hexToRgb(hex) {
@@ -1363,10 +1406,12 @@ js_code = r"""
     try {
       await waitForFonts();
       await nextFrame();
+      adjustPopLabelBoxes();
       adjustMarkerLabelOverlap();
       avoidCognitiveOverlap();
       await nextFrame();
       setTimeout(() => {
+        adjustPopLabelBoxes();
         adjustMarkerLabelOverlap();
         avoidCognitiveOverlap();
       }, 140);

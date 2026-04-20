@@ -1,5 +1,7 @@
 
 (function() {
+  const SHADOW_OFFSET_X = 2;
+  const SHADOW_OFFSET_Y = 2;
   document.body.classList.add('svg-loading');
 
   const readyTimer = setTimeout(markReady, 2000);
@@ -27,6 +29,14 @@
     try { bbox = el.getBBox(); } catch(e) { return null; }
     if (!bbox || bbox.width === 0) return null;
     return bbox;
+  }
+
+  // Resize rect to wrap a bbox with padX horizontal and padY vertical padding
+  function resizeRectToBbox(rect, bbox, padX, padY) {
+    rect.setAttribute('x', (bbox.x - padX).toFixed(2));
+    rect.setAttribute('y', (bbox.y - padY).toFixed(2));
+    rect.setAttribute('width', (bbox.width + padX * 2).toFixed(2));
+    rect.setAttribute('height', (bbox.height + padY * 2).toFixed(2));
   }
 
     // Prevent label boxes from overlapping their own drug markers
@@ -73,11 +83,7 @@
 
         const newBox = safeGetBBox(text);
         if (!newBox) return;
-        const padX = 8, padY = 4;
-        rect.setAttribute('x', (newBox.x - padX).toFixed(2));
-        rect.setAttribute('y', (newBox.y - padY).toFixed(2));
-        rect.setAttribute('width', (newBox.width + padX*2).toFixed(2));
-        rect.setAttribute('height', (newBox.height + padY*2).toFixed(2));
+        resizeRectToBbox(rect, newBox, 8, 4);
       }
     });
   }
@@ -111,14 +117,42 @@
         if (rect) {
           const nb = safeGetBBox(text);
           if (!nb) return;
-          const padX = 8, padY = 4;
-          rect.setAttribute('x', (nb.x - padX).toFixed(2));
-          rect.setAttribute('y', (nb.y - padY).toFixed(2));
-          rect.setAttribute('width', (nb.width + padX * 2).toFixed(2));
-          rect.setAttribute('height', (nb.height + padY * 2).toFixed(2));
+          resizeRectToBbox(rect, nb, 8, 4);
         }
       }
     }
+  }
+
+  // Python's pre-computed box dimensions rely on approximate font metrics, which
+  // misalign slightly (especially on multi-line labels with descenders/ascenders).
+  // Measuring the actual rendered text via getBBox gives pixel-perfect alignment
+  // regardless of font metrics or browser rendering.
+  function adjustPopLabelBoxes() {
+    const shadowsByPop = new Map();
+    document.querySelectorAll('rect[data-shadow-for]').forEach(s => {
+      shadowsByPop.set(s.getAttribute('data-shadow-for'), s);
+    });
+
+    document.querySelectorAll('g.pop-label').forEach(g => {
+      const text = g.querySelector('text');
+      const rect = g.querySelector('rect.label-bg');
+      if (!text || !rect) return;
+
+      const bbox = safeGetBBox(text);
+      if (!bbox) return;
+
+      resizeRectToBbox(rect, bbox, 8, 4);
+
+      const shadow = shadowsByPop.get(g.getAttribute('data-pop'));
+      if (shadow) {
+        resizeRectToBbox(shadow, {
+          x: bbox.x + SHADOW_OFFSET_X,
+          y: bbox.y + SHADOW_OFFSET_Y,
+          width: bbox.width,
+          height: bbox.height,
+        }, 8, 4);
+      }
+    });
   }
   // Minimal tooltip-only JS
   function hexToRgb(hex) {
@@ -409,10 +443,12 @@
     try {
       await waitForFonts();
       await nextFrame();
+      adjustPopLabelBoxes();
       adjustMarkerLabelOverlap();
       avoidCognitiveOverlap();
       await nextFrame();
       setTimeout(() => {
+        adjustPopLabelBoxes();
         adjustMarkerLabelOverlap();
         avoidCognitiveOverlap();
       }, 140);
