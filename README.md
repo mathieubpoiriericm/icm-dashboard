@@ -254,7 +254,7 @@ rshiny_dashboard/
 ├── logs/                         # Pipeline execution logs (gitignored)
 ├── monitoring/                   # Monitoring and observability
 │   └── grafana/                  # Grafana dashboard definitions
-│       └── Combined Dashboard - RShiny & Host OS Monitoring.json  # Host OS & app monitoring
+│       └── full-k3s-monitoring.json  # Host OS & app monitoring
 ├── pipeline/
 │   ├── __init__.py               # Package marker
 │   ├── alembic.ini               # Alembic migration config
