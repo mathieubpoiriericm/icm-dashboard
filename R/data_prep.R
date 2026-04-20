@@ -17,19 +17,17 @@
 # Returns:
 #   Invisible TRUE if all files verified, stops with error otherwise.
 verify_data_files <- function(data_paths = DATA_PATHS) {
-
   message("Verifying required data files...")
 
   all_files <- unlist(data_paths)
-  missing_files <- character(0)
-  empty_files <- character(0)
-
+  missing_files <- character(0L)
+  empty_files <- character(0L)
 
   for (name in names(all_files)) {
     file_path <- all_files[[name]]
 
     if (!file.exists(file_path)) {
-      # Check for fallback (.qs -> .rds)
+      # Fallback: .qs files may have a companion .rds from legacy deploys.
       if (grepl("\\.qs$", file_path)) {
         rds_path <- sub("\\.qs$", ".rds", file_path)
         if (file.exists(rds_path)) {
@@ -43,7 +41,7 @@ verify_data_files <- function(data_paths = DATA_PATHS) {
     }
 
     file_info <- file.info(file_path)
-    if (is.na(file_info$size) || file_info$size == 0) {
+    if (is.na(file_info$size) || file_info$size == 0L) {
       empty_files <- c(empty_files, file_path)
       message(sprintf("  EMPTY: %s", file_path))
       next
@@ -54,15 +52,15 @@ verify_data_files <- function(data_paths = DATA_PATHS) {
     ))
   }
 
-  if (length(missing_files) > 0 || length(empty_files) > 0) {
-    error_msg <- character(0)
-    if (length(missing_files) > 0) {
+  if (length(missing_files) > 0L || length(empty_files) > 0L) {
+    error_msg <- character(0L)
+    if (length(missing_files) > 0L) {
       error_msg <- c(
         error_msg,
         sprintf("Missing files: %s", paste(missing_files, collapse = ", "))
       )
     }
-    if (length(empty_files) > 0) {
+    if (length(empty_files) > 0L) {
       error_msg <- c(
         error_msg,
         sprintf("Empty files: %s", paste(empty_files, collapse = ", "))
@@ -158,11 +156,7 @@ extract_omics_type <- function(omics_string) {
 # Returns:
 #   Character vector with title case applied and "WNT" preserved.
 preserve_wnt_capitalization <- function(pathway_string) {
-  # Apply title case first
-
   result <- tools::toTitleCase(pathway_string)
-  # Restore WNT capitalization
-
   gsub("Wnt", "WNT", result, fixed = TRUE)
 }
 
@@ -304,29 +298,24 @@ prepare_gene_info_df <- function(gene_info_df) {
 #   - omim_lookup: fastmap for O(1) OMIM lookups by omim_num
 #   - refs: Publication references for tooltips
 load_and_prepare_data <- function() {
-  # Verify all data files exist before attempting to load
   verify_data_files()
 
-  # Load required data with error handling
   message("Loading Table 1 data...")
   table1 <- safe_read_data(DATA_PATHS$table1_clean)
 
-  # Fix empty Mendelian Randomization values (should be "No")
+  # Source data has empty strings where "No" was meant; normalize for filtering.
   table1$`Mendelian Randomization`[
     table1$`Mendelian Randomization` == "" |
       is.na(table1$`Mendelian Randomization`)
   ] <- "No"
 
-  # Load pre-fetched NCBI gene info
   message("Loading gene info...")
   gene_info_results_df <- safe_read_data(DATA_PATHS$gene_info)
   gene_info_results_df <- prepare_gene_info_df(gene_info_results_df)
 
-  # Load pre-fetched protein info
   message("Loading protein info...")
   prot_info_clean <- safe_read_data(DATA_PATHS$prot_info)
 
-  # Create fastmap for O(1) protein lookups by gene name
   message("Pre-computing protein info lookup map...")
   prot_info_lookup <- fastmap::fastmap()
   for (i in seq_len(nrow(prot_info_clean))) {
@@ -340,18 +329,17 @@ load_and_prepare_data <- function() {
     )
   }
 
-  # Title casing for the Affected Pathway column, preserving WNT capitalization
   table1$`Affected Pathway` <- preserve_wnt_capitalization(
     table1$`Affected Pathway`
   )
 
-  # Standardize proteomics capitalization - must handle list column properly
+  # lapply (not vapply) because this is a list column with variable-length
+  # character vectors per row.
   table1$`Evidence From Other Omics Studies` <- lapply(
     table1$`Evidence From Other Omics Studies`,
     function(x) gsub("proteomics", "Proteomics", x, fixed = TRUE)
   )
 
-  # Vectorized extraction of omics types (optimized with vapply)
   all_omics_types <- unlist(lapply(
     table1$`Evidence From Other Omics Studies`,
     function(omics_evidence) {
@@ -371,11 +359,8 @@ load_and_prepare_data <- function() {
     Omics_Type = unique(all_omics_types),
     stringsAsFactors = FALSE
   )
-
-  # Use constant for omics full names
   omics_df$Full_Name <- OMICS_FULL_NAMES[omics_df$Omics_Type]
 
-  # Vectorized extraction of GWAS traits (optimized with lapply)
   gwas_traits_all <- unlist(lapply(
     table1$`GWAS Trait`,
     function(gwas_traits) {
@@ -400,7 +385,6 @@ load_and_prepare_data <- function() {
     stringsAsFactors = FALSE
   )
 
-  # Load GWAS trait full names for tooltips
   message("Loading GWAS trait mappings...")
   gwas_trait_names <- safe_read_data(DATA_PATHS$gwas_trait_names)
 
@@ -409,13 +393,10 @@ load_and_prepare_data <- function() {
     gwas_trait_names$abbrev
   )
 
-  # Pre-compute GWAS trait membership for fast filtering (using fastmap)
-  # Vectorized: expand list column to long format, then split by trait
   gwas_trait_rows <- fastmap::fastmap()
   gwas_col <- table1$`GWAS Trait`
   n_rows <- length(gwas_col)
 
-  # Build expanded data.table: row_id -> trait mapping
   gwas_expanded <- data.table::rbindlist(lapply(seq_len(n_rows), function(i) {
     traits <- gwas_col[[i]]
     if (is.list(traits)) traits <- traits[[1L]]
@@ -428,18 +409,14 @@ load_and_prepare_data <- function() {
     }
   }))
 
-  # Split row indices by trait (vectorized grouping)
   gwas_split <- split(gwas_expanded$row_id, gwas_expanded$trait)
   for (trait in names(gwas_split)) {
     gwas_trait_rows$set(trait, gwas_split[[trait]])
   }
 
-  # Pre-compute omics type membership for fast filtering (using fastmap)
-  # Vectorized: expand list column to long format, then split by type
   omics_type_rows <- fastmap::fastmap()
   omics_col <- table1$`Evidence From Other Omics Studies`
 
-  # Build expanded data.table: row_id -> omics_type mapping
   omics_expanded <- data.table::rbindlist(lapply(seq_len(n_rows), function(i) {
     omics_evidence <- omics_col[[i]]
     if (is.list(omics_evidence)) omics_evidence <- omics_evidence[[1L]]
@@ -449,49 +426,30 @@ load_and_prepare_data <- function() {
                 omics_evidence[1L] == PLACEHOLDER_NONE_FOUND))) {
       data.table::data.table(row_id = i, omics_type = PLACEHOLDER_NONE_FOUND)
     } else {
-      # Extract omics type prefix (before semicolon)
       omics_types <- vapply(omics_evidence, extract_omics_type, character(1L))
       data.table::data.table(row_id = i, omics_type = omics_types)
     }
   }))
 
-  # Split row indices by omics type (vectorized grouping)
   omics_split <- split(omics_expanded$row_id, omics_expanded$omics_type)
   for (omics_type in names(omics_split)) {
     omics_type_rows$set(omics_type, omics_split[[omics_type]])
   }
 
-  # Load OMIM info (using safe CSV reader)
   message("Loading OMIM info...")
   omim_info <- safe_read_csv(DATA_PATHS$omim_info)
 
-  # Pre-process UTF-8 conversions for OMIM text fields (avoids per-row iconv)
-  omim_info$phenotype_clean <- iconv(
-    as.character(omim_info$phenotype),
-    to = "UTF-8",
-    sub = ""
+  # data.table :=  does in-place column assignment; avoids per-column copies
+  # that plain `omim_info$col <- ...` would trigger four times.
+  omim_text_cols <- c(
+    "phenotype", "inheritance", "gene_or_locus", "gene_or_locus_mim_number"
   )
-  omim_info$inheritance_clean <- iconv(
-    as.character(omim_info$inheritance),
-    to = "UTF-8",
-    sub = ""
-  )
-  omim_info$gene_or_locus_clean <- iconv(
-    as.character(omim_info$gene_or_locus),
-    to = "UTF-8",
-    sub = ""
-  )
-  omim_info$gene_or_locus_mim_number_clean <- iconv(
-    as.character(omim_info$gene_or_locus_mim_number),
-    to = "UTF-8",
-    sub = ""
-  )
-
-  # Set data.table key for fast OMIM lookups by omim_num
   data.table::setDT(omim_info)
+  omim_info[, paste0(omim_text_cols, "_clean") := lapply(
+    .SD, function(x) iconv(as.character(x), to = "UTF-8", sub = "")
+  ), .SDcols = omim_text_cols]
   data.table::setkey(omim_info, omim_num)
 
-  # Create fastmap for O(1) OMIM lookups (pre-compute tooltip content)
   message("Pre-computing OMIM lookup map...")
   omim_lookup <- fastmap::fastmap()
   for (i in seq_len(nrow(omim_info))) {
@@ -508,24 +466,24 @@ load_and_prepare_data <- function() {
     )
   }
 
-  # Load pre-fetched references data
   message("Loading publication references...")
   refs <- safe_read_data(DATA_PATHS$refs)
 
-  # Convert table1 to data.table for faster filtering
   data.table::setDT(table1)
-
-  # Pre-assign row_id column to avoid recomputing on each filter operation
-
   table1[, row_id := .I]
 
   message("Table 1 data preparation complete.")
 
-  # Load pipeline status (optional — NULL if no pipeline runs yet)
-  pipeline_status <- tryCatch(
-    qs::qread("data/qs/pipeline_status.qs", nthreads = .N_THREADS),
-    error = function(e) NULL
-  )
+  # Optional file: returns NULL if the pipeline has never run. Bypass
+  # safe_read_data() so "missing" is a silent NULL rather than an error.
+  pipeline_status <- if (file.exists(PIPELINE_STATUS_PATH)) {
+    tryCatch(
+      qs::qread(PIPELINE_STATUS_PATH, nthreads = .N_THREADS),
+      error = function(e) NULL
+    )
+  } else {
+    NULL
+  }
 
   list(
     table1 = table1,

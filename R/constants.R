@@ -73,6 +73,40 @@ PRELOAD_TABLE2 <- local({
 MEMO_CACHE_SIZE <- 50 * 1024^2 # 50MB
 
 # =============================================================================
+# SPONSOR TYPE VALUES
+# =============================================================================
+# Canonical sponsor type string literals used by UI choices and filter logic.
+# The Industry match uses a "^Industry" prefix because source data contains
+# sub-variants ("Industry - Pharma", etc.) that should collapse to one group.
+SPONSOR_ACADEMIC <- "Academic"
+SPONSOR_INDUSTRY <- "Industry"
+
+# =============================================================================
+# TAB VALUES
+# =============================================================================
+# Canonical `value =` strings for each bslib::nav_panel. Used in both ui.R
+# (tab definitions) and server.R / server_map.R (observeEvent filters) so a
+# rename doesn't silently break lazy-load triggers.
+TAB_VALUES <- list(
+  about     = "About",
+  genes     = "Gene Table",
+  phenogram = "Phenogram",
+  ct_table  = "Clinical Trials Table",
+  ct_viz    = "Clinical Trials Visualization",
+  ct_map    = "Clinical Trials Map"
+)
+
+# =============================================================================
+# HTTP REQUEST CONFIGURATION
+# =============================================================================
+# HTTP timeout for ClinicalTrials.gov API requests (seconds)
+HTTP_TIMEOUT_SECONDS <- 30L
+# Maximum retry attempts for failed API requests
+HTTP_MAX_RETRIES <- 3L
+# Base delay for exponential backoff (seconds)
+HTTP_RETRY_BASE_DELAY_SECONDS <- 1L
+
+# =============================================================================
 # CLINICAL TRIAL REGISTRIES
 # =============================================================================
 # Supported clinical trial registry ID patterns
@@ -105,7 +139,8 @@ PUBMED_BASE_URL <- "https://pubmed.ncbi.nlm.nih.gov/"
 # =============================================================================
 # DATA FILE PATHS
 # =============================================================================
-# Paths to data files (qs format by default, falls back to rds)
+# Paths to required data files (qs format by default, falls back to rds).
+# verify_data_files() fails if any of these are missing.
 DATA_PATHS <- list(
   table1_clean = "data/qs/table1_clean.qs",
   table2_clean = "data/qs/table2_clean.qs",
@@ -116,6 +151,10 @@ DATA_PATHS <- list(
   gwas_trait_names = "data/qs/gwas_trait_names.qs",
   omim_info = "data/csv/omim_info.csv"
 )
+
+# Optional: pipeline progress status. NULL when no pipeline has run yet, so
+# it's intentionally not in DATA_PATHS (which marks files as required).
+PIPELINE_STATUS_PATH <- "data/qs/pipeline_status.qs"
 
 # =============================================================================
 # PIPELINE PROGRESS FILE
@@ -221,6 +260,9 @@ MAP_DEFAULT_ZOOM <- 2
 
 # Map container height in pixels
 MAP_HEIGHT_PX <- 700L
+
+# Leaflet marker cluster radius in pixels
+MAP_CLUSTER_RADIUS_PX <- 50L
 # =============================================================================
 # PARALLELISM CONFIGURATION
 # =============================================================================

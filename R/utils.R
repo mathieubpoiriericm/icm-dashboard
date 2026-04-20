@@ -89,16 +89,10 @@ clean_column_names <- function(
   names,
   acronyms = c("GWAS", "SVD", "ID", "Omics")
 ) {
-  # Replace underscores with spaces
-
   names <- gsub("_", " ", names, fixed = TRUE)
-
-  # Apply title case
-
   names <- tools::toTitleCase(names)
 
-  # Fix acronyms that toTitleCase doesn't handle correctly
-
+  # toTitleCase lowercases acronyms ("GWAS" → "Gwas"); restore them here.
   for (acronym in acronyms) {
     pattern <- paste0("\\b", tools::toTitleCase(tolower(acronym)), "\\b")
     names <- gsub(pattern, acronym, names)
@@ -133,7 +127,6 @@ filter_none_class <- FILTER_NONE_CLASS
 # Returns:
 #   A shiny div with the tip-box class.
 tip_box_ui <- function(content, tip_label = "Tip:") {
-  # Wrap content appropriately based on type
   formatted_content <- if (inherits(content, "shiny.tag") ||
                           inherits(content, "html")) {
     shiny::tagList(shiny::tags$strong(tip_label), " ", content)
@@ -165,7 +158,6 @@ tip_row_ui <- function(..., centered = FALSE) {
     return(shiny::div(class = "tip-row"))
   }
 
-  # Build row with dividers between elements
   row_content <- list()
   for (i in seq_along(elements)) {
     row_content <- c(row_content, list(elements[[i]]))

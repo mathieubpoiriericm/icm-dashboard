@@ -95,23 +95,21 @@ window.addEventListener('beforeunload', function() {
 // =============================================================================
 // TAB CHANGE HANDLER - Explicit Bootstrap 5 tab event listener
 // =============================================================================
-// Using shown.bs.tab for explicit tab change handling instead of relying on
-// indirect init.dt events. This provides better control over tab transitions.
+// Using shown.bs.tab rather than init.dt because bslib fires init.dt lazily;
+// we need an event that fires on every tab visit, including revisits.
 $(document).on('shown.bs.tab', function(e) {
   var targetId = $(e.target).attr('data-value') || $(e.target).attr('href');
 
-  // Reinitialize tooltips when switching tabs (elements may have been hidden)
   window.initializeTippy();
 
-  // Sync scrollbar widths for tables in the newly visible tab
   progressiveRetry(function() {
     syncControlsWidth('firstTable');
     syncControlsWidth('secondTable');
   }, [100, 300]);
 
-  // Invalidate Leaflet map size when Trials Map tab becomes visible
+  // Leaflet needs invalidateSize() when its container first becomes visible;
+  // retries cover races with async widget init.
   if (targetId === 'Clinical Trials Map') {
-    // Retry multiple times to handle async widget initialization
     [100, 300, 600, 1000].forEach(function(delay) {
       setTimeout(function() {
         var widget = HTMLWidgets.find('#trials_map');
@@ -127,49 +125,36 @@ $(document).on('shown.bs.tab', function(e) {
 // =============================================================================
 // UNIFIED DATATABLE EVENT HANDLERS
 // =============================================================================
-// Consolidated handlers for init.dt and draw.dt events to reduce overhead
-// from multiple event registrations
 
-// Single init.dt handler that performs all initialization tasks
 $(document).on('init.dt', function(e, settings) {
-  // 1. Initialize tooltips
   window.initializeTippy();
-
-  // 2. Initialize top scrollbar
   initializeTopScrollbar(e, settings);
 
-  // 3. Get table container ID for subsequent operations
   var wrapper = $(e.target).closest('.dataTables_wrapper');
   var tableContainer = wrapper.parent();
   var tableId = tableContainer.attr('id');
 
-  // 4. Connect bslib controls if this table is registered
   if (tableId && bslibControlsRegistry[tableId]) {
     connectBslibControlsForTable(tableId, $(e.target).DataTable());
   }
 
-  // 5. Sync control widths with progressive retry
   progressiveRetry(function() {
     syncControlsWidth(tableId);
   }, [50, 200]);
 
-  // 6. Fix orphan DT labels (slight delay to ensure DT has finished rendering)
+  // Short delay: label nodes exist only after DT finishes its first render.
   setTimeout(fixOrphanDtLabels, 100);
 });
 
-// Single draw.dt handler for all redraw operations
 $(document).on('draw.dt', function(e, settings) {
-  // 1. Re-initialize tooltips after redraw
   window.initializeTippy();
 
-  // 2. Update top scrollbar width
   var wrapper = $(e.target).closest('.dataTables_wrapper');
   var updateFn = wrapper.data('updateTopScrollbarWidth');
   if (typeof updateFn === 'function') {
     progressiveRetry(updateFn, [50, 200]);
   }
 
-  // 3. Sync control widths
   var tableId = $(e.target).closest('.dataTables_wrapper').parent().attr('id');
   progressiveRetry(function() {
     syncControlsWidth(tableId);
@@ -233,7 +218,6 @@ $(document).on('shiny:connected', function() {
 // =============================================================================
 // TOP SCROLLBAR INITIALIZATION
 // =============================================================================
-// Extracted as a reusable function, called from the unified init.dt handler
 
 function initializeTopScrollbar(e, settings) {
   var wrapper = $(e.target).closest('.dataTables_wrapper');
@@ -431,7 +415,7 @@ function syncControlsWidth(tableId) {
   }
 }
 
-// Sync widths on window resize (init.dt and draw.dt handled in unified handler above)
+// Sync widths on window resize.
 $(window).on('resize', function() {
   syncControlsWidth('firstTable');
   syncControlsWidth('secondTable');
@@ -454,5 +438,6 @@ function fixOrphanDtLabels() {
   });
 }
 
-// Run on Shiny connect (init.dt handled in unified handler above)
+// Run on Shiny connect to catch labels that never trigger an init.dt event
+// (e.g. tables created without DT, though currently there are none).
 $(document).on('shiny:connected', fixOrphanDtLabels);

@@ -2,8 +2,9 @@
 # Tooltip generation functions for table displays
 # nolint start: object_usage_linter.
 
-# Memoised tooltip generators for repeated lookups across sessions
-# Uses in-memory cache (faster than disk for session-scoped data)
+# In-process memo cache for tooltip lookups. Persists for the lifetime of
+# this R process and is shared across all user sessions (safe here because
+# the tooltip content is derived from public reference data).
 memo_cache <- cachem::cache_mem(max_size = MEMO_CACHE_SIZE)
 
 # Wrap content in a sortable cell span with data-order attribute
@@ -346,13 +347,10 @@ make_gene_tooltip_html <- function(gene_symbol, gene_info_row, col_names,
 # Args:
 #   table1: Data frame or data.table. Main gene data table.
 #   gene_info_results_df: Data frame. NCBI gene info with URL column.
-#   prot_info_clean: Data frame. UniProt protein info with accession
-#     and URL. Kept for backwards compatibility; use prot_info_lookup instead.
 #   prot_info_lookup: fastmap. Pre-computed protein lookup map for O(1)
-#     access by gene name. If NULL, falls back to prot_info_clean data frame.
+#     access by gene name.
 #   omim_lookup: fastmap. Pre-computed OMIM lookup map for O(1) access.
 #   refs: Data frame. Publication references for tooltip content.
-#   omics_df: Data frame. Omics types with full names.
 #   gwas_trait_mapping: Named character vector. Maps trait abbreviations
 #     to full names.
 #   tooltip_class: Character. CSS class name for standard tooltips.
@@ -364,42 +362,35 @@ make_gene_tooltip_html <- function(gene_symbol, gene_info_row, col_names,
 prepare_table1_display <- function(
   table1,
   gene_info_results_df,
-  prot_info_clean,
-  prot_info_lookup = NULL,
+  prot_info_lookup,
   omim_lookup,
   refs,
-  omics_df,
   gwas_trait_mapping,
   tooltip_class,
   tooltip_class_italic
 ) {
   table1_display <- as.data.frame(table1)
 
-  # Fail fast if schema drifts — tooltips depend on Gene/Protein by name
+  # Fail fast if schema drifts — tooltips depend on Gene/Protein by name.
   stopifnot(
     "table1 must contain a 'Gene' column" = "Gene" %in% names(table1_display),
     "table1 must contain a 'Protein' column" =
       "Protein" %in% names(table1_display)
   )
 
-  # Extract original list columns before they're transformed to HTML
+  # Capture list columns before they get overwritten with HTML below.
   gene_names_orig <- table1_display[["Gene"]]
   gwas_orig <- table1_display[["GWAS Trait"]]
   omics_orig <- table1_display[["Evidence From Other Omics Studies"]]
 
-  # Vectorized gene symbol tooltip
-  # Store original gene names for sorting before HTML transformation
-  original_gene_names <- table1_display[["Gene"]]
-
-  # Pre-extract column names for sprintf (avoid repeated lookup)
-  # Skip column 1 (Name) since it's redundant with the gene symbol being hovered
+  # Skip column 1 (Name) — redundant with the gene symbol being hovered.
   gene_col_names <- names(gene_info_results_df)[2L:4L]
 
   table1_display[["Gene"]] <- purrr::pmap_chr(
     list(
       table1_display[["Gene"]],
       seq_len(nrow(table1_display)),
-      original_gene_names
+      gene_names_orig
     ),
     function(gene_symbol, i, sort_name) {
       gene_link <- make_gene_tooltip_html(
@@ -413,8 +404,6 @@ prepare_table1_display <- function(
     }
   )
 
-  # Vectorized protein tooltip (using fastmap for O(1) lookups)
-  # Store original protein names for sorting before HTML transformation
   original_protein_names <- table1_display[["Protein"]]
 
   table1_display[["Protein"]] <- purrr::pmap_chr(
@@ -424,17 +413,7 @@ prepare_table1_display <- function(
       original_protein_names
     ),
     function(protein_name, gene_name, sort_name) {
-      # Use fastmap O(1) lookup if available, otherwise fall back to data frame
-      prot_info <- if (!is.null(prot_info_lookup)) {
-        prot_info_lookup$get(gene_name)
-      } else {
-        prot_match <- prot_info_clean[prot_info_clean$gene == gene_name, ]
-        if (nrow(prot_match) > 0L) {
-          list(accession = prot_match$accession, url = prot_match$url)
-        } else {
-          NULL
-        }
-      }
+      prot_info <- prot_info_lookup$get(gene_name)
 
       if (!is.null(prot_info)) {
         protein_tooltip_content <- paste0(
@@ -459,8 +438,6 @@ prepare_table1_display <- function(
     }
   )
 
-  # Vectorized OMIM tooltip (using fastmap for O(1) lookups)
-  # Optimized: use vapply instead of purrr::map_chr
   table1_display[["Link to Monogenic Disease"]] <- vapply(
     table1_display[["Link to Monogenic Disease"]],
     function(omim_value) {
@@ -521,7 +498,6 @@ prepare_table1_display <- function(
     character(1L)
   )
 
-  # Brain cell type tooltip (vectorized)
   table1_display[["Brain Cell Types"]] <- vapply(
     table1_display[["Brain Cell Types"]],
     add_cell_type_tooltip,
@@ -529,7 +505,6 @@ prepare_table1_display <- function(
     tooltip_class = tooltip_class
   )
 
-  # References tooltip (vectorized)
   table1_display[["References"]] <- vapply(
     seq_len(nrow(table1_display)),
     function(i) {
@@ -538,12 +513,8 @@ prepare_table1_display <- function(
     character(1L)
   )
 
-  # GWAS Trait tooltip (vectorized)
-  # Optimized: use vapply instead of purrr::map_chr
-  gwas_trait_col <- gwas_orig
-
   table1_display[["GWAS Trait"]] <- vapply(
-    gwas_trait_col,
+    gwas_orig,
     function(gwas_traits) {
       if (is.list(gwas_traits)) {
         gwas_traits <- gwas_traits[[1L]]
@@ -581,12 +552,8 @@ prepare_table1_display <- function(
     character(1L)
   )
 
-  # Evidence From Other Omics Studies tooltip (vectorized)
-  # Optimized: use vapply instead of purrr::map_chr
-  omics_evidence_col <- omics_orig
-
   table1_display[["Evidence From Other Omics Studies"]] <- vapply(
-    omics_evidence_col,
+    omics_orig,
     function(omics_evidence) {
       if (is.list(omics_evidence)) {
         omics_evidence <- omics_evidence[[1L]]
@@ -680,21 +647,16 @@ prepare_table2_display <- function(
 ) {
   table2_display <- as.data.frame(table2)
 
-  # Helper to match a registry ID and return its URL + key
   get_registry_info <- function(registry_id) {
     registry_id <- trimws(registry_id)
-    for (pattern in names(REGISTRY_URLS)) {
-      if (grepl(paste0("^", pattern), registry_id, ignore.case = TRUE)) {
-        return(list(
-          url = paste0(REGISTRY_URLS[[pattern]], registry_id),
-          key = pattern
-        ))
-      }
-    }
-    NULL
+    key <- match_registry_pattern(registry_id)
+    if (is.na(key)) return(NULL)
+    list(
+      url = paste0(REGISTRY_URLS[[key]], registry_id),
+      key = key
+    )
   }
 
-  # Optimized: use mapply instead of purrr::map2_chr
   registry_col <- which(names(table2_display) == "Registry ID")
   registry_ids <- table2_display[[registry_col]]
   n_rows <- nrow(table2_display)
@@ -739,53 +701,50 @@ prepare_table2_display <- function(
     character(1L)
   )
 
-  # Genetic Target tooltip (similar to Table 1 gene tooltips)
-  # Optimized: use vapply instead of purrr::map_chr
   genetic_target_col <- which(names(table2_display) == "Genetic Target")
   if (length(genetic_target_col) > 0L) {
     genetic_target_values <- table2_display[[genetic_target_col]]
+    # O(1) lookup from gene symbol → row index in gene_info_results_df, so the
+    # inner loop doesn't re-scan gene_symbols_lookup per gene.
+    sym_to_idx <- stats::setNames(
+      seq_along(gene_symbols_lookup),
+      gene_symbols_lookup
+    )
+    gene_col_names <- names(gene_info_results_df)[2L:4L]
 
     table2_display[[genetic_target_col]] <- vapply(
       genetic_target_values,
       function(cell_value) {
-        # Handle empty or NA values
         if (is.na(cell_value) || cell_value == "" || cell_value == "(none)") {
           return(as.character(cell_value))
         }
 
-        # Split by comma to handle multiple genes per cell
         gene_symbols <- trimws(strsplit(cell_value, ",")[[1L]])
 
-        # Create tooltip HTML for each gene
         gene_html_parts <- vapply(
           gene_symbols,
           function(gene_symbol) {
-            # Find matching row in gene_info_results_df by gene symbol
-            match_idx <- which(gene_symbols_lookup == gene_symbol)
-
-            if (length(match_idx) > 0L) {
-              match_idx <- match_idx[1L]
-
+            match_idx <- sym_to_idx[[gene_symbol]]
+            if (!is.null(match_idx)) {
               make_gene_tooltip_html(
                 gene_symbol,
                 gene_info_results_df[match_idx, ],
-                names(gene_info_results_df)[2L:4L],
+                gene_col_names,
                 tooltip_class_italic
               )
             } else {
-              # No match found, return gene symbol as-is
               gene_symbol
             }
           },
           character(1L)
         )
 
-        # Group genes 3 per line
+        # Group genes 3 per line so the display column doesn't blow up
+        # horizontally on trials that target many genes.
         n_genes <- length(gene_html_parts)
         if (n_genes <= 3L) {
           paste(gene_html_parts, collapse = " ")
         } else {
-          # Split into chunks of 3
           chunks <- split(
             gene_html_parts,
             ceiling(seq_along(gene_html_parts) / 3L)
@@ -798,7 +757,6 @@ prepare_table2_display <- function(
     )
   }
 
-  # Remove internal columns not meant for display
   table2_display$sample_size_numeric <- NULL
   table2_display$original_row_num <- NULL
 

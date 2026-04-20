@@ -28,7 +28,6 @@ apply_column_filter <- function(
   exclude_all = TRUE,
   match_type = "exact"
 ) {
-  # Type assertions for defensive programming
   stopifnot(
     "dt must be a data.table" = data.table::is.data.table(dt),
     "column must be a single character string" =
@@ -40,23 +39,20 @@ apply_column_filter <- function(
       match_type %in% c("exact", "prefix", "regex")
   )
 
-  # Skip if no filter value
   if (is.null(filter_value) || length(filter_value) == 0L) {
     return(dt)
   }
 
-  # Skip if "all" is selected and exclude_all is TRUE
   if (exclude_all && "all" %in% filter_value) {
     return(dt)
   }
 
-  # Apply filter based on match type
   switch(
     match_type,
     exact = dt[get(column) %in% filter_value],
     prefix = dt[grepl(paste0("^", filter_value, collapse = "|"), get(column))],
     regex = dt[grepl(paste(filter_value, collapse = "|"), get(column))],
-    dt # Default: return unfiltered
+    dt
   )
 }
 
@@ -83,7 +79,6 @@ apply_index_filter <- function(
   row_id_column = "original_row_num",
   exclude_all = TRUE
 ) {
-  # Type assertions for defensive programming
   stopifnot(
     "dt must be a data.table" = data.table::is.data.table(dt),
     "filter_value must be NULL or character" =
@@ -95,17 +90,14 @@ apply_index_filter <- function(
     "exclude_all must be logical" = is.logical(exclude_all)
   )
 
-  # Skip if no filter value
   if (is.null(filter_value) || length(filter_value) == 0L) {
     return(dt)
   }
 
-  # Skip if "all" is selected and exclude_all is TRUE
   if (exclude_all && "all" %in% filter_value) {
     return(dt)
   }
 
-  # Get matching rows from index
   matching_rows <- unique(unlist(index_map$mget(filter_value)))
   dt[get(row_id_column) %in% matching_rows]
 }
@@ -132,7 +124,6 @@ apply_range_filter <- function(
   default_min = NULL,
   default_max = NULL
 ) {
-  # Type assertions for defensive programming
   stopifnot(
     "dt must be a data.table" = data.table::is.data.table(dt),
     "column must be a single character string" =
@@ -146,12 +137,10 @@ apply_range_filter <- function(
       is.null(default_max) || is.numeric(default_max)
   )
 
-  # Skip if no filter value
   if (is.null(range_value)) {
     return(dt)
   }
 
-  # Skip if at default values
   if (
     !is.null(default_min) &&
       !is.null(default_max) &&
@@ -175,7 +164,6 @@ apply_range_filter <- function(
 # Returns:
 #   Filtered data.table.
 apply_sponsor_type_filter <- function(dt, filter_value) {
-  # Skip if no filter value or "all" selected
   if (
     is.null(filter_value) ||
       length(filter_value) == 0L ||
@@ -184,18 +172,16 @@ apply_sponsor_type_filter <- function(dt, filter_value) {
     return(dt)
   }
 
-  # Both selected = keep all
-  if ("Academic" %in% filter_value && "Industry" %in% filter_value) {
+  if (SPONSOR_ACADEMIC %in% filter_value && SPONSOR_INDUSTRY %in% filter_value) {
     return(dt)
   }
 
-  # Single selection
-  if ("Academic" %in% filter_value) {
-    return(dt[get("Sponsor Type") == "Academic"])
+  if (SPONSOR_ACADEMIC %in% filter_value) {
+    return(dt[get("Sponsor Type") == SPONSOR_ACADEMIC])
   }
 
-  # Industry (matches "Industry" prefix)
-  dt[grepl("^Industry", get("Sponsor Type"))]
+  # Prefix match: source data has "Industry - Pharma" and other variants.
+  dt[grepl(paste0("^", SPONSOR_INDUSTRY), get("Sponsor Type"))]
 }
 
 # Apply Single-Value Filter
@@ -211,7 +197,6 @@ apply_sponsor_type_filter <- function(dt, filter_value) {
 # Returns:
 #   Filtered data.table.
 apply_single_value_filter <- function(dt, column, filter_value) {
-  # Only apply when exactly one value is selected
   if (!is.null(filter_value) && length(filter_value) == 1L) {
     return(dt[get(column) %in% filter_value])
   }

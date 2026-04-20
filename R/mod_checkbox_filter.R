@@ -77,10 +77,9 @@ checkbox_filter_server <- function(id, default_selection = "all") {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(default_selection)
 
-    # Debounced filter value (shared by badge and return value)
-    debounced_filter <- shiny::reactive(input$filter) |> shiny::debounce(150)
+    debounced_filter <- shiny::reactive(input$filter) |>
+      shiny::debounce(CHECKBOX_DEBOUNCE_MS)
 
-    # Render active filter count badge from debounced signal
     output$filter_count <- shiny::renderUI({
       sel <- debounced_filter()
       render_filter_count_badge(sel, is.null(sel) || "all" %in% sel)
@@ -98,10 +97,11 @@ checkbox_filter_server <- function(id, default_selection = "all") {
 
         newly_added <- setdiff(selected, prev)
 
-        # If "all" was just selected, reset to only "all"
+        # freezeReactiveValue before updatePrettyCheckboxGroup prevents the
+        # observer from re-firing on the update itself, which would otherwise
+        # cascade: user clicks → update → observer → update → ...
         if ("all" %in% newly_added) {
           shiny::isolate(previous_selection("all"))
-          # Freeze to prevent cascading invalidation
           shiny::freezeReactiveValue(input, "filter")
           shinyWidgets::updatePrettyCheckboxGroup(
             session,
@@ -111,7 +111,6 @@ checkbox_filter_server <- function(id, default_selection = "all") {
           return()
         }
 
-        # If "all" is selected but something else was added, deselect "all"
         if (
           "all" %in%
             selected &&
@@ -120,7 +119,6 @@ checkbox_filter_server <- function(id, default_selection = "all") {
         ) {
           new_selection <- setdiff(selected, "all")
           shiny::isolate(previous_selection(new_selection))
-          # Freeze to prevent cascading invalidation
           shiny::freezeReactiveValue(input, "filter")
           shinyWidgets::updatePrettyCheckboxGroup(
             session,
@@ -135,7 +133,6 @@ checkbox_filter_server <- function(id, default_selection = "all") {
       ignoreNULL = FALSE
     )
 
-    # Return the debounced reactive filter value
     debounced_filter
   })
 }
@@ -154,10 +151,9 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
   shiny::moduleServer(id, function(input, output, session) {
     previous_selection <- shiny::reactiveVal(choices)
 
-    # Debounced filter value (shared by badge and return value)
-    debounced_filter <- shiny::reactive(input$filter) |> shiny::debounce(150)
+    debounced_filter <- shiny::reactive(input$filter) |>
+      shiny::debounce(CHECKBOX_DEBOUNCE_MS)
 
-    # Render active filter count badge from debounced signal
     output$filter_count <- shiny::renderUI({
       sel <- debounced_filter()
       render_filter_count_badge(
@@ -172,7 +168,6 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
         selected <- input$filter
         prev <- shiny::isolate(previous_selection())
 
-        # If all deselected, reset to both choices
         if (is.null(selected)) {
           shiny::isolate(previous_selection(choices))
           shiny::freezeReactiveValue(input, "filter")
@@ -190,15 +185,14 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
 
         newly_added <- setdiff(selected, prev)
 
-        # If toggling from one selection to another single selection,
-        # reset to both
+        # Single-to-single toggle: user clicked the other option. Re-select
+        # both so the filter becomes a no-op rather than stuck on one value.
         if (
           length(selected) == 1 &&
             length(prev) == 1 &&
             length(newly_added) == 1
         ) {
           shiny::isolate(previous_selection(choices))
-          # Freeze to prevent cascading invalidation
           shiny::freezeReactiveValue(input, "filter")
           shinyWidgets::updatePrettyCheckboxGroup(
             session,
@@ -213,7 +207,6 @@ binary_checkbox_filter_server <- function(id, choices = c("Yes", "No")) {
       ignoreNULL = FALSE
     )
 
-    # Return the debounced reactive filter value
     debounced_filter
   })
 }

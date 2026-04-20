@@ -48,11 +48,12 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
       stage_ids <- names(PIPELINE_STAGES)
       n_stages <- length(PIPELINE_STAGES)
 
-      status <- if (!is.null(progress)) progress$status else "inactive"
-      current_idx <- if (!is.null(progress)) {
-        match(progress$stage, stage_ids, nomatch = 0L)
+      if (is.null(progress)) {
+        status <- "inactive"
+        current_idx <- 0L
       } else {
-        0L
+        status <- progress$status
+        current_idx <- match(progress$stage, stage_ids, nomatch = 0L)
       }
 
       if (identical(status, "inactive")) {
@@ -165,15 +166,13 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     # =========================================================================
     # TABLE 2 DATA (PRELOADED OR LAZY LOADED)
     # =========================================================================
-    # Optimization: When preloaded, use direct reference instead of copying
-    # into per-session reactiveVals (saves ~1-3MB per session)
+    # Preloaded branch uses a direct reactive over the shared data so we don't
+    # pay ~1-3 MB of per-session reactiveVal copies.
     if (!is.null(preloaded_table2)) {
-      # Use preloaded data directly - no per-session copies needed
       load_table2 <- shiny::reactive({
         preloaded_table2
       })
     } else {
-      # Lazy loading: create reactiveVals to track loading state
       table2_reactive_vals <- create_table2_reactive_vals()
 
       load_table2 <- build_table2_loader(
@@ -186,7 +185,6 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
         table2_reactive_vals$sample_sizes_hash_data
       )
 
-      # Trigger Table 2 loading when Clinical Trials tabs are accessed
       setup_table2_lazy_load_trigger(input, load_table2)
     }
 
@@ -255,17 +253,9 @@ build_server <- function(app_data, table1_display, preloaded_table2 = NULL) {
     # CLINICAL TRIALS MAP SERVER LOGIC
     # =========================================================================
     map_data_loader <- build_map_data_loader(load_table2)
-
-    # Setup lazy loading trigger for map tab
     setup_map_lazy_load_trigger(input, map_data_loader)
-
-    # Render base map immediately (no data dependency)
     output$trials_map <- build_trials_map_base()
-
-    # Add markers via proxy when map tab is active
     build_map_marker_observer(map_data_loader, input, session)
-
-    # Render map statistics
     output$map_stats <- build_map_stats(map_data_loader)
 
     # =========================================================================
@@ -305,15 +295,13 @@ create_table2_reactive_vals <- function() {
 # Returns:
 #   NULL (side effects only).
 setup_table2_lazy_load_trigger <- function(input, load_table2) {
+  clinical_trial_tabs <- c(
+    TAB_VALUES$ct_table,
+    TAB_VALUES$ct_viz,
+    TAB_VALUES$ct_map
+  )
   shiny::observeEvent(input$tabs, {
-    if (
-      input$tabs %in%
-        c(
-          "Clinical Trials Table",
-          "Clinical Trials Visualization",
-          "Clinical Trials Map"
-        )
-    ) {
+    if (input$tabs %in% clinical_trial_tabs) {
       load_table2()
     }
   })
@@ -351,25 +339,15 @@ initialize_filter_modules <- function() {
 # Returns:
 #   NULL (side effects only).
 configure_output_options <- function(output) {
-  shiny::outputOptions(output, "firstTable", suspendWhenHidden = TRUE)
-  shiny::outputOptions(
-    output,
-    "filter_message_table1",
-    suspendWhenHidden = TRUE
+  # trials_map must stay "live" even when hidden so leafletProxy updates from
+  # build_map_marker_observer() are not dropped.
+  suspend_hidden <- c(
+    "firstTable", "filter_message_table1", "sample_size_histogram",
+    "filter_message_table2", "secondTable", "map_stats", "pipeline_progress"
   )
-  shiny::outputOptions(
-    output,
-    "sample_size_histogram",
-    suspendWhenHidden = TRUE
-  )
-  shiny::outputOptions(
-    output,
-    "filter_message_table2",
-    suspendWhenHidden = TRUE
-  )
-  shiny::outputOptions(output, "secondTable", suspendWhenHidden = TRUE)
+  for (name in suspend_hidden) {
+    shiny::outputOptions(output, name, suspendWhenHidden = TRUE)
+  }
   shiny::outputOptions(output, "trials_map", suspendWhenHidden = FALSE)
-  shiny::outputOptions(output, "map_stats", suspendWhenHidden = TRUE)
-  shiny::outputOptions(output, "pipeline_progress", suspendWhenHidden = TRUE)
 }
 # nolint end: object_usage_linter.

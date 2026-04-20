@@ -102,7 +102,7 @@ message("All packages loaded successfully.")
 # Load Raleway font from local file (faster than font_add_google)
 font_path <- "www/fonts/Raleway-Regular.ttf"
 font_path_bold <- "www/fonts/Raleway-Bold.ttf"
-if (file.exists(font_path) && file.exists(font_path_bold)) {
+if (all(file.exists(c(font_path, font_path_bold)))) {
   font_add("Raleway", regular = font_path, bold = font_path_bold)
 } else {
   warning("Raleway font files not found, using system default")
@@ -276,16 +276,13 @@ initialize_asset_hashes(c(
 message("Loading application data...")
 app_data <- load_and_prepare_data()
 
-# Pre-compute Table 1 display with tooltips
 message("Preparing Table 1 display...")
 table1_display <- prepare_table1_display(
   table1 = app_data$table1,
   gene_info_results_df = app_data$gene_info_results_df,
-  prot_info_clean = app_data$prot_info_clean,
   prot_info_lookup = app_data$prot_info_lookup,
   omim_lookup = app_data$omim_lookup,
   refs = app_data$refs,
-  omics_df = app_data$omics_df,
   gwas_trait_mapping = app_data$gwas_trait_mapping,
   tooltip_class = tooltip_class,
   tooltip_class_italic = tooltip_class_italic

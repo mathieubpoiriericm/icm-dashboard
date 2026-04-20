@@ -135,7 +135,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
         shiny::icon("info-circle", class = "me-1"),
         "About"
       ),
-      value = "About",
+      value = TAB_VALUES$about,
       shiny::div(
         class = "main-container",
         shiny::div(
@@ -306,7 +306,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
     # Gene Table tab with sidebar
     bslib::nav_panel(
       title = shiny::tagList(shiny::icon("dna", class = "me-1"), "Genes"),
-      value = "Gene Table",
+      value = TAB_VALUES$genes,
       bslib::layout_sidebar(
         sidebar = bslib::sidebar(
           width = "auto",
@@ -389,7 +389,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
         shiny::icon("project-diagram", class = "me-1"),
         "Phenogram"
       ),
-      value = "Phenogram",
+      value = TAB_VALUES$phenogram,
       shiny::div(
         class = "main-content phenogram-content",
         shiny::br(),
@@ -419,7 +419,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
         shiny::icon("flask", class = "me-1"),
         "Clinical Trials"
       ),
-      value = "Clinical Trials Table",
+      value = TAB_VALUES$ct_table,
       bslib::layout_sidebar(
         sidebar = bslib::sidebar(
           width = "auto",
@@ -491,8 +491,8 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
             "Sponsor Type",
             choices = c(
               "Show All" = "all",
-              Academic = "Academic",
-              Industry = "Industry"
+              setNames(SPONSOR_ACADEMIC, SPONSOR_ACADEMIC),
+              setNames(SPONSOR_INDUSTRY, SPONSOR_INDUSTRY)
             ),
             selected = "all"
           )
@@ -533,7 +533,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
         shiny::icon("chart-line", class = "me-1"),
         "Trials Timeline"
       ),
-      value = "Clinical Trials Visualization",
+      value = TAB_VALUES$ct_viz,
       shiny::div(
         class = "main-content viz-content",
         shiny::br(),
@@ -580,7 +580,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
         shiny::icon("globe", class = "me-1"),
         "Trials Map"
       ),
-      value = "Clinical Trials Map",
+      value = TAB_VALUES$ct_map,
       shiny::div(
         class = "main-content map-content",
         shiny::br(),

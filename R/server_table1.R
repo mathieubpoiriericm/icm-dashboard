@@ -28,45 +28,34 @@ build_table1_filtered_data <- function(
   omics_filter
 ) {
   shiny::reactive({
-    # Validate required data is available
     shiny::req(table1, table1_display)
 
-    # Start with all row IDs, filter by intersection (avoids data.table copy)
+    # Filter by accumulating row-ID intersections rather than subsetting the
+    # data.table itself — avoids a full copy per filter combination.
     kept_rows <- table1$row_id
+    mr <- mr_filter()
+    gwas <- gwas_trait_filter()
+    omics <- omics_filter()
 
-    # MR filter (skip if both Yes and No are selected - means show all)
-    if (!is.null(mr_filter()) && length(mr_filter()) == 1L) {
-      mr_rows <- table1[
-        get("Mendelian Randomization") %in% mr_filter(),
-        row_id
-      ]
+    # MR: length-1 selection means "Yes only" or "No only"; both selected is
+    # equivalent to no filter, so we skip it.
+    if (!is.null(mr) && length(mr) == 1L) {
+      mr_rows <- table1[get("Mendelian Randomization") %in% mr, row_id]
       kept_rows <- intersect(kept_rows, mr_rows)
     }
 
-    # GWAS trait filter (using fastmap $mget for O(1) lookups)
-    if (
-      !is.null(gwas_trait_filter()) &&
-        length(gwas_trait_filter()) > 0L &&
-        !"all" %in% gwas_trait_filter()
-    ) {
-      gwas_rows <- unique(unlist(gwas_trait_rows$mget(gwas_trait_filter())))
+    if (!is.null(gwas) && length(gwas) > 0L && !"all" %in% gwas) {
+      gwas_rows <- unique(unlist(gwas_trait_rows$mget(gwas)))
       kept_rows <- intersect(kept_rows, gwas_rows)
     }
 
-    # Omics filter (using fastmap $mget for O(1) lookups)
-    if (
-      !is.null(omics_filter()) &&
-        length(omics_filter()) > 0L &&
-        !"all" %in% omics_filter()
-    ) {
-      omics_rows <- unique(unlist(omics_type_rows$mget(omics_filter())))
+    if (!is.null(omics) && length(omics) > 0L && !"all" %in% omics) {
+      omics_rows <- unique(unlist(omics_type_rows$mget(omics)))
       kept_rows <- intersect(kept_rows, omics_rows)
     }
 
     result <- table1_display[kept_rows, , drop = FALSE]
     row.names(result) <- NULL
-    # Remove row_id column (used for filtering) before display
-    result <- result[, !names(result) %in% "row_id", drop = FALSE]
     result
   }) |>
     shiny::bindCache(
@@ -132,7 +121,6 @@ build_table1_filter_message <- function(
 build_table1_datatable <- function(filtered_data) {
   DT::renderDT(
     {
-      # Get filtered data and validate it's not empty
       data <- filtered_data()
       shiny::validate(
         shiny::need(
@@ -144,7 +132,7 @@ build_table1_datatable <- function(filtered_data) {
         )
       )
 
-      # Create custom header with spanning column for Gene Information
+      # Two-row header with column groups (Causal Genes / Omics / Expression).
       sketch <- htmltools::withTags(table(
         class = "display",
         thead(

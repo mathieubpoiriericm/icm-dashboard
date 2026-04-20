@@ -179,90 +179,69 @@ build_table2_filtered_data <- function(
 ) {
   shiny::reactive({
     data <- load_table2()
-    # Guard against NULL data during lazy loading
     shiny::req(data, data$table2, data$registry_rows)
     table2 <- data$table2
     registry_rows <- data$registry_rows
 
-    # Start with all row IDs, filter by intersection (avoids data.table copy)
+    ge <- ge_filter()
+    reg <- reg_filter()
+    ct <- ct_filter()
+    pop <- pop_filter()
+    spon <- spon_filter()
+    size_range <- sample_size_filter_debounced()
+
+    # Filter by accumulating row-ID intersections rather than subsetting the
+    # data.table itself — avoids a full copy per filter combination.
     kept_rows <- table2$original_row_num
 
-    # Apply filters by computing row intersections
-    # Genetic Evidence filter
-    if (!is.null(ge_filter()) && length(ge_filter()) == 1L) {
-      ge_rows <- table2[
-        get("Genetic Evidence") %in% ge_filter(), original_row_num
-      ]
+    if (!is.null(ge) && length(ge) == 1L) {
+      ge_rows <- table2[get("Genetic Evidence") %in% ge, original_row_num]
       kept_rows <- intersect(kept_rows, ge_rows)
     }
 
-    # Registry filter (using fastmap for O(1) lookups)
-    if (
-      !is.null(reg_filter()) &&
-        length(reg_filter()) > 0L &&
-        !"all" %in% reg_filter()
-    ) {
-      reg_rows <- unique(unlist(registry_rows$mget(reg_filter())))
+    if (!is.null(reg) && length(reg) > 0L && !"all" %in% reg) {
+      reg_rows <- unique(unlist(registry_rows$mget(reg)))
       kept_rows <- intersect(kept_rows, reg_rows)
     }
 
-    # Clinical Trial Phase filter
-    if (
-      !is.null(ct_filter()) &&
-        length(ct_filter()) > 0L &&
-        !"all" %in% ct_filter()
-    ) {
+    if (!is.null(ct) && length(ct) > 0L && !"all" %in% ct) {
       ct_rows <- table2[
-        get("Clinical Trial Phase") %in% ct_filter(),
-        original_row_num
+        get("Clinical Trial Phase") %in% ct, original_row_num
       ]
       kept_rows <- intersect(kept_rows, ct_rows)
     }
 
-    # SVD Population filter
-    if (
-      !is.null(pop_filter()) &&
-        length(pop_filter()) > 0L &&
-        !"all" %in% pop_filter()
-    ) {
-      pop_rows <- table2[
-        get("SVD Population") %in% pop_filter(), original_row_num
-      ]
+    if (!is.null(pop) && length(pop) > 0L && !"all" %in% pop) {
+      pop_rows <- table2[get("SVD Population") %in% pop, original_row_num]
       kept_rows <- intersect(kept_rows, pop_rows)
     }
 
-    # Sponsor Type filter (special logic for Academic/Industry)
-    if (!"all" %in% spon_filter() && length(spon_filter()) > 0L) {
-      spon_filtered <- apply_sponsor_type_filter(table2, spon_filter())
+    # Sponsor needs its own helper because source data has "Industry - ..."
+    # variants that all collapse into one filter option.
+    if (!"all" %in% spon && length(spon) > 0L) {
+      spon_filtered <- apply_sponsor_type_filter(table2, spon)
       if (nrow(spon_filtered) < nrow(table2)) {
         kept_rows <- intersect(kept_rows, spon_filtered$original_row_num)
       }
     }
 
-    # Sample size range filter
-    if (!is.null(sample_size_filter_debounced())) {
-      range_val <- sample_size_filter_debounced()
-      if (
-        range_val[1L] != SAMPLE_SIZE_MIN || range_val[2L] != SAMPLE_SIZE_MAX
-      ) {
-        size_rows <- table2[
-          sample_size_numeric >= range_val[1L] &
-            sample_size_numeric <= range_val[2L],
-          original_row_num
-        ]
-        kept_rows <- intersect(kept_rows, size_rows)
-      }
+    if (!is.null(size_range) &&
+          (size_range[1L] != SAMPLE_SIZE_MIN ||
+             size_range[2L] != SAMPLE_SIZE_MAX)) {
+      size_rows <- table2[
+        sample_size_numeric >= size_range[1L] &
+          sample_size_numeric <= size_range[2L],
+        original_row_num
+      ]
+      kept_rows <- intersect(kept_rows, size_rows)
     }
 
-    # Get filtered display data, sorted by Drug for proper row merging
+    # Sorted by Drug so JS row-merging can collapse consecutive rows.
     filtered_display <- data$table2_display[kept_rows, ]
     filtered_display <- filtered_display[order(filtered_display$Drug), ]
     rownames(filtered_display) <- NULL
 
-    # Pre-compute drug group indices for JavaScript row merging
-    filtered_display <- add_drug_group_indices(filtered_display)
-
-    filtered_display
+    add_drug_group_indices(filtered_display)
   }) |>
     shiny::bindCache(
       ge_filter(),
@@ -299,36 +278,29 @@ add_drug_group_indices <- function(display_df) {
     return(display_df)
   }
 
-  # Strip HTML helper for text comparison
   strip_html <- function(x) gsub("<[^>]+>", "", x)
 
-  # Columns to merge (0-indexed): Drug, Genetic Target, Trial Phase, Population
+  # Columns the JS row-merger collapses (DT uses 0-indexed targets).
   merge_cols <- c("Drug", "Genetic Target", "Clinical Trial Phase",
                   "SVD Population")
 
-  # Extract text values for comparison (strip HTML)
   col_values <- lapply(merge_cols, function(col) {
     if (col %in% names(display_df)) strip_html(display_df[[col]])
     else rep("", n_rows)
   })
 
-  # Compute drug groups (vectorized using cumsum)
   drugs <- col_values[[1L]]
   drug_group_idx <- cumsum(c(TRUE, drugs[-1L] != drugs[-n_rows]))
-
-  # Compute color classes (alternating by drug group)
-  # Group 1 = class 0, Group 2 = class 1, Group 3 = class 0, etc.
   color_class <- (drug_group_idx - 1L) %% 2L
 
-  # Compute rowspans for each column
-  # For each row, rowspan = 0 means hidden, rowspan > 0 means visible with span
+  # rowspan = 0 hides the cell (already merged into the first row of its run);
+  # rowspan > 0 marks the first row of a run with its length.
   rowspans_matrix <- matrix(0L, nrow = n_rows, ncol = length(merge_cols))
 
   for (col_idx in seq_along(merge_cols)) {
     vals <- col_values[[col_idx]]
     i <- 1L
     while (i <= n_rows) {
-      # Find span of identical values within same drug group
       span_start <- i
       current_val <- vals[i]
       current_drug_group <- drug_group_idx[i]
@@ -340,22 +312,17 @@ add_drug_group_indices <- function(display_df) {
         i <- i + 1L
       }
 
-      # Set rowspan for first row of group, 0 for others (hidden)
       rowspans_matrix[span_start, col_idx] <- i - span_start + 1L
-      # Rows span_start+1 to i remain 0 (hidden)
-
       i <- i + 1L
     }
   }
 
-  # Convert rowspans to JSON strings (vectorized paste instead of per-row toJSON)
   rowspans_json <- paste0(
     "[", rowspans_matrix[, 1L], ",", rowspans_matrix[, 2L], ",",
     rowspans_matrix[, 3L], ",", rowspans_matrix[, 4L], "]"
   )
 
-  # Add hidden columns
-  display_df$`__drug_group__` <- drug_group_idx - 1L  # 0-indexed
+  display_df$`__drug_group__` <- drug_group_idx - 1L
   display_df$`__color_class__` <- color_class
   display_df$`__rowspans__` <- rowspans_json
 
@@ -462,7 +429,6 @@ build_table2_datatable <- function(filtered_data2) {
   DT::renderDT(
     {
       display_data <- filtered_data2()
-      # Validate data is available and not empty
       shiny::validate(
         shiny::need(
           !is.null(display_data) && nrow(display_data) > 0L,
@@ -473,7 +439,7 @@ build_table2_datatable <- function(filtered_data2) {
         )
       )
 
-      # Get indices of hidden metadata columns (0-indexed for JS)
+      # 0-indexed for DT's columnDefs targets.
       col_names <- names(display_data)
       drug_group_col_idx <- which(col_names == "__drug_group__") - 1L
       color_class_col_idx <- which(col_names == "__color_class__") - 1L

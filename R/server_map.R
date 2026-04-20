@@ -5,16 +5,15 @@
 # =============================================================================
 # MAP CONFIGURATION
 # =============================================================================
-# Constants loaded from constants.R:
-# MAP_DEFAULT_LAT, MAP_DEFAULT_LNG, MAP_DEFAULT_ZOOM, MAP_HEIGHT_PX
+# Other map constants live in constants.R: MAP_DEFAULT_LAT, MAP_DEFAULT_LNG,
+# MAP_DEFAULT_ZOOM, MAP_HEIGHT_PX, MAP_CLUSTER_RADIUS_PX.
 
-# Marker cluster options
-map_cluster_options <- leaflet::markerClusterOptions(
+MAP_CLUSTER_OPTIONS <- leaflet::markerClusterOptions(
   showCoverageOnHover = TRUE,
   zoomToBoundsOnClick = TRUE,
   spiderfyOnMaxZoom = TRUE,
   removeOutsideVisibleBounds = TRUE,
-  maxClusterRadius = 50
+  maxClusterRadius = MAP_CLUSTER_RADIUS_PX
 )
 
 # =============================================================================
@@ -33,23 +32,21 @@ map_cluster_options <- leaflet::markerClusterOptions(
 # Returns:
 #   Reactive returning geocoded map data.
 build_map_data_loader <- function(load_table2) {
-  # Use reactiveVal to cache the loaded data
+  # Cache across tab visits: geocoding is slow (100+ network calls) and the
+  # underlying table2 data doesn't change during a session.
   map_data_cache <- shiny::reactiveVal(NULL)
   shiny::reactive({
-    # Return cached data if available
     cached <- map_data_cache()
     if (!is.null(cached)) {
       return(cached)
     }
 
-    # Get Table 2 data with validation
     table2_data <- load_table2()
     shiny::req(table2_data, table2_data$table2)
 
     table2 <- table2_data$table2
     shiny::req(nrow(table2) > 0L)
 
-    # Load or fetch geocoded locations
     locations <- tryCatch({
       load_or_fetch_geocoded_trials(table2)
     }, error = function(e) {
@@ -57,12 +54,8 @@ build_map_data_loader <- function(load_table2) {
       NULL
     })
 
-    # Prepare map data
     map_data <- prepare_map_data(locations, table2)
-
-    # Cache the result
     map_data_cache(map_data)
-
     map_data
   })
 }
@@ -107,27 +100,27 @@ build_trials_map_base <- function() {
 build_map_marker_observer <- function(map_data_reactive, input, session) {
   markers_drawn <- shiny::reactiveVal(FALSE)
 
-  # Reset drawn flag when underlying data changes (skip if not yet drawn)
+  # Clear the drawn flag only when data identity actually changes; otherwise
+  # every tab switch would force a redraw of the same markers.
+  last_data <- shiny::reactiveVal(NULL)
   shiny::observe({
-    map_data_reactive()
-    if (shiny::isolate(markers_drawn())) {
-      markers_drawn(FALSE)
+    current <- map_data_reactive()
+    if (!identical(current, shiny::isolate(last_data()))) {
+      last_data(current)
+      if (shiny::isolate(markers_drawn())) {
+        markers_drawn(FALSE)
+      }
     }
   })
 
   shiny::observe({
-    # Only fire when map tab is active (ensures leaflet widget exists)
-    shiny::req(identical(input$tabs, "Clinical Trials Map"))
+    shiny::req(identical(input$tabs, TAB_VALUES$ct_map))
     shiny::req(!markers_drawn())
     map_data <- map_data_reactive()
 
-    # Clear existing markers and add new ones
-    proxy <- leaflet::leafletProxy("trials_map", session = session)
+    proxy <- leaflet::leafletProxy("trials_map", session = session) |>
+      leaflet::clearMarkerClusters()
 
-    # Clear any existing marker clusters
-    proxy <- proxy |> leaflet::clearMarkerClusters()
-
-    # Add markers if data is available
     if (!is.null(map_data) && nrow(map_data) > 0L) {
       proxy |>
         leaflet::addCircleMarkers(
@@ -140,7 +133,7 @@ build_map_marker_observer <- function(map_data_reactive, input, session) {
           fillColor = BRAND_COLOR_ACCENT,
           fillOpacity = 0.7,
           weight = 2,
-          clusterOptions = map_cluster_options
+          clusterOptions = MAP_CLUSTER_OPTIONS
         )
     }
 
@@ -206,7 +199,7 @@ build_map_stats <- function(map_data_reactive) {
 #   NULL (side effects only).
 setup_map_lazy_load_trigger <- function(input, map_data_loader) {
   shiny::observeEvent(input$tabs, {
-    if (identical(input$tabs, "Clinical Trials Map")) {
+    if (identical(input$tabs, TAB_VALUES$ct_map)) {
       map_data_loader()
     }
   })

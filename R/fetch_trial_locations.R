@@ -3,21 +3,13 @@
 # and geocoding them for map display
 # nolint start: object_usage_linter.
 
-# Load constants from constants.R (imported via source() in app.R)
-# Uses: MAP_CT_API_BASE_URL, MAP_API_DELAY_MS, MAP_CACHE_PATH
+# HTTP/map constants (MAP_CT_API_BASE_URL, MAP_API_DELAY_MS, MAP_CACHE_PATH,
+# HTTP_TIMEOUT_SECONDS, HTTP_MAX_RETRIES, HTTP_RETRY_BASE_DELAY_SECONDS) are
+# defined in constants.R and sourced before this file in app.R.
 
-# =============================================================================
-# HTTP CONFIGURATION
-# =============================================================================
-
-# HTTP timeout for API requests (seconds)
-http_timeout_seconds <- 30L
-
-# Maximum retry attempts for failed API requests
-max_retry_attempts <- 3L
-
-# Base delay for exponential backoff (seconds)
-retry_base_delay_seconds <- 1L
+# Null-coalesce: returns `default` when `x` is NULL, otherwise `x`.
+# Defined locally to avoid pulling in rlang just for this one operator.
+`%||%` <- function(x, default) if (is.null(x)) default else x
 
 # =============================================================================
 # API FETCHING FUNCTIONS
@@ -57,16 +49,15 @@ extract_nct_ids <- function(table2) {
 #   trial_title, status, or NULL if request fails or no locations found.
 fetch_trial_locations <- function(
   nct_id,
-  timeout_seconds = http_timeout_seconds,
-  max_retries = max_retry_attempts
+  timeout_seconds = HTTP_TIMEOUT_SECONDS,
+  max_retries = HTTP_MAX_RETRIES
 ) {
-  # Validate NCT ID format (defense-in-depth)
+  # Defense-in-depth: caller extract_nct_ids() already filters on this pattern.
   if (!grepl("^NCT[0-9]{8}$", nct_id, ignore.case = TRUE)) {
     warning(sprintf("Invalid NCT ID format: %s", nct_id))
     return(NULL)
   }
 
-  # URL-encode NCT ID to prevent injection
   encoded_nct_id <- utils::URLencode(nct_id, reserved = TRUE)
   url <- paste0(
     MAP_CT_API_BASE_URL,
@@ -76,7 +67,6 @@ fetch_trial_locations <- function(
     "protocolSection.statusModule.overallStatus"
   )
 
-  # Retry loop with exponential backoff
   for (attempt in seq_len(max_retries)) {
     result <- tryCatch({
       response <- httr2::request(url) |>
@@ -88,15 +78,13 @@ fetch_trial_locations <- function(
       if (httr2::resp_is_error(response)) {
         status_code <- httr2::resp_status(response)
 
-        # Handle rate limiting (429 Too Many Requests)
         if (status_code == 429L) {
           retry_after <- httr2::resp_header(response, "Retry-After")
           delay <- if (!is.null(retry_after)) as.integer(retry_after) else 60L
           Sys.sleep(delay)
           NULL
         } else if (status_code >= 500L && attempt < max_retries) {
-          # Server error - retry with backoff
-          delay <- retry_base_delay_seconds * (2L ^ (attempt - 1L))
+          delay <- HTTP_RETRY_BASE_DELAY_SECONDS * (2L ^ (attempt - 1L))
           Sys.sleep(delay)
           NULL
         } else {
@@ -115,46 +103,23 @@ fetch_trial_locations <- function(
         return(list(success = TRUE, data = NULL))
       }
 
-      facility <- if (!is.null(locations$facility)) {
-        locations$facility
-      } else {
-        NA_character_
-      }
-      city_val <- if (!is.null(locations$city)) {
-        locations$city
-      } else {
-        NA_character_
-      }
-      state_val <- if (!is.null(locations$state)) {
-        locations$state
-      } else {
-        NA_character_
-      }
-      country_val <- if (!is.null(locations$country)) {
-        locations$country
-      } else {
-        NA_character_
-      }
-      title_val <- if (!is.null(trial_title)) trial_title else NA_character_
-      status_val <- if (!is.null(status)) status else NA_character_
-
       list(
         success = TRUE,
         data = data.frame(
           nct_id = nct_id,
-          facility_name = facility,
-          city = city_val,
-          state = state_val,
-          country = country_val,
-          trial_title = title_val,
-          status = status_val,
+          facility_name = locations$facility %||% NA_character_,
+          city = locations$city %||% NA_character_,
+          state = locations$state %||% NA_character_,
+          country = locations$country %||% NA_character_,
+          trial_title = trial_title %||% NA_character_,
+          status = status %||% NA_character_,
           stringsAsFactors = FALSE
         )
       )
       }
     }, error = function(e) {
       if (attempt < max_retries) {
-        delay <- retry_base_delay_seconds * (2L ^ (attempt - 1L))
+        delay <- HTTP_RETRY_BASE_DELAY_SECONDS * (2L ^ (attempt - 1L))
         Sys.sleep(delay)
         return(NULL)
       }
@@ -209,7 +174,9 @@ fetch_all_trial_locations <- function(
   n_trials <- length(nct_ids)
   message(sprintf("Fetching locations for %d NCT trials...", n_trials))
 
-  # Set up parallel processing with robust cleanup
+  # Restore the caller's future plan even if plan() below succeeds and a
+  # subsequent step errors — otherwise a crashed run leaves multisession
+  # workers holding sockets.
   old_plan <- future::plan()
   on.exit({
     tryCatch(
@@ -222,7 +189,6 @@ fetch_all_trial_locations <- function(
   }, add = TRUE)
   future::plan(future::multisession, workers = n_workers)
 
-  # Process in chunks to allow rate limiting between batches
   chunk_size <- n_workers * 2L
   n_chunks <- ceiling(n_trials / chunk_size)
   all_locations <- vector("list", n_trials)
@@ -233,14 +199,12 @@ fetch_all_trial_locations <- function(
     end_idx <- min(chunk_idx * chunk_size, n_trials)
     chunk_ids <- nct_ids[start_idx:end_idx]
 
-    # Fetch chunk in parallel
     chunk_results <- future.apply::future_lapply(
       chunk_ids,
       fetch_trial_locations,
       future.seed = TRUE
     )
 
-    # Store results
     for (i in seq_along(chunk_results)) {
       result <- chunk_results[[i]]
       if (!is.null(result) && nrow(result) > 0L) {
@@ -250,16 +214,15 @@ fetch_all_trial_locations <- function(
       }
     }
 
-    # Progress update
     message(sprintf("  Processed %d/%d trials", end_idx, n_trials))
 
-    # Rate limiting between chunks (not after last chunk)
+    # Rate limiting between chunks; skipped after the last so the function
+    # doesn't sleep before returning.
     if (chunk_idx < n_chunks) {
       Sys.sleep(chunk_delay_ms / 1000)
     }
   }
 
-  # Report failures if any
   if (failed_count > 0L) {
     message(sprintf(
       "  Warning: %d/%d trials failed to fetch or had no locations",
@@ -267,7 +230,6 @@ fetch_all_trial_locations <- function(
     ))
   }
 
-  # Combine results
   all_locations <- all_locations[!vapply(all_locations, is.null, logical(1L))]
 
   if (length(all_locations) == 0L) {
@@ -486,63 +448,49 @@ load_or_fetch_geocoded_trials <- function(table2, force_refresh = FALSE) {
   locations
 }
 
+# Single-source mapping of API status values → CSS class + display label.
+# Any status not listed falls through to "unknown" / the raw status value.
+TRIAL_STATUS_CLASS_MAP <- c(
+  "RECRUITING"              = "popup-status-recruiting",
+  "ENROLLING_BY_INVITATION" = "popup-status-recruiting",
+  "ACTIVE_NOT_RECRUITING"   = "popup-status-active",
+  "NOT_YET_RECRUITING"      = "popup-status-active",
+  "COMPLETED"               = "popup-status-completed",
+  "TERMINATED"              = "popup-status-terminated",
+  "WITHDRAWN"               = "popup-status-terminated",
+  "SUSPENDED"               = "popup-status-terminated"
+)
+
+TRIAL_STATUS_LABEL_MAP <- c(
+  "RECRUITING"              = "Recruiting",
+  "ENROLLING_BY_INVITATION" = "Enrolling by Invitation",
+  "ACTIVE_NOT_RECRUITING"   = "Active, Not Recruiting",
+  "NOT_YET_RECRUITING"      = "Not Yet Recruiting",
+  "COMPLETED"               = "Completed",
+  "TERMINATED"              = "Terminated",
+  "WITHDRAWN"               = "Withdrawn",
+  "SUSPENDED"               = "Suspended",
+  "UNKNOWN"                 = "Unknown"
+)
+
 # Get CSS Class for Status Badge
 #
-# Returns the appropriate CSS class based on trial recruitment status.
-#
-# Args:
-#   status: Character. The trial recruitment status.
-#
-# Returns:
-#   Character. CSS class name for the status badge.
+# Returns the CSS class for a trial recruitment status. Scalar wrapper around
+# the vectorized map; accepts NA and unknown values.
 get_status_class <- function(status) {
   if (is.na(status)) return("popup-status-unknown")
-  status_upper <- toupper(status)
-  recruiting_statuses <- c("RECRUITING", "ENROLLING_BY_INVITATION")
-  active_statuses <- c("ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING")
-  terminated_statuses <- c("TERMINATED", "WITHDRAWN", "SUSPENDED")
-
-  if (status_upper %in% recruiting_statuses) {
-    "popup-status-recruiting"
-  } else if (status_upper %in% active_statuses) {
-    "popup-status-active"
-  } else if (status_upper == "COMPLETED") {
-    "popup-status-completed"
-  } else if (status_upper %in% terminated_statuses) {
-    "popup-status-terminated"
-  } else {
-    "popup-status-unknown"
-  }
+  cls <- TRIAL_STATUS_CLASS_MAP[toupper(status)]
+  if (is.na(cls)) "popup-status-unknown" else unname(cls)
 }
 
 # Format Status Display Text
 #
-# Converts API status values to human-readable display text.
-#
-# Args:
-#   status: Character. The trial recruitment status from API.
-#
-# Returns:
-#   Character. Formatted status text for display.
+# Returns the human-readable label for a trial status. Scalar wrapper; accepts
+# NA and unknown values (unknown values pass through unchanged).
 format_status_text <- function(status) {
   if (is.na(status)) return("Unknown")
-  status_map <- c(
-    "RECRUITING" = "Recruiting",
-    "ENROLLING_BY_INVITATION" = "Enrolling by Invitation",
-    "ACTIVE_NOT_RECRUITING" = "Active, Not Recruiting",
-    "NOT_YET_RECRUITING" = "Not Yet Recruiting",
-    "COMPLETED" = "Completed",
-    "TERMINATED" = "Terminated",
-    "WITHDRAWN" = "Withdrawn",
-    "SUSPENDED" = "Suspended",
-    "UNKNOWN" = "Unknown"
-  )
-  status_upper <- toupper(status)
-  if (status_upper %in% names(status_map)) {
-    status_map[[status_upper]]
-  } else {
-    status
-  }
+  label <- TRIAL_STATUS_LABEL_MAP[toupper(status)]
+  if (is.na(label)) status else unname(label)
 }
 
 # Jitter Duplicate Coordinates
@@ -562,10 +510,7 @@ jitter_duplicate_coordinates <- function(map_data, radius = 0.003) {
     return(map_data)
   }
 
-  # Create coordinate key for grouping
   coord_key <- paste(map_data$lat, map_data$lon, sep = "_")
-
-  # Find duplicates
   coord_counts <- table(coord_key)
   duplicate_keys <- names(coord_counts[coord_counts > 1L])
 
@@ -573,23 +518,18 @@ jitter_duplicate_coordinates <- function(map_data, radius = 0.003) {
     return(map_data)
   }
 
-  # Process each duplicate location. Offsets use deterministic sin/cos —
-  # no RNG involved, so no seed management needed.
+  # Offsets use deterministic sin/cos — no RNG, so no seed management.
+  # First marker stays at the center; others fan out in a circle so each is
+  # individually clickable.
   for (key in duplicate_keys) {
     indices <- which(coord_key == key)
     n <- length(indices)
+    if (n <= 1L) next
 
-    if (n == 1L) next
-
-    # Keep first marker at center, arrange others in circle
-    for (i in seq_along(indices)[-1L]) {
-      # Position around circle (skip position 0 which is center)
-      angle <- 2 * pi * (i - 1L) / (n - 1L)
-      map_data$lat[indices[i]] <- map_data$lat[indices[i]] +
-        radius * sin(angle)
-      map_data$lon[indices[i]] <- map_data$lon[indices[i]] +
-        radius * cos(angle)
-    }
+    tail_idx <- indices[-1L]
+    angles <- 2 * pi * seq_len(n - 1L) / (n - 1L)
+    map_data$lat[tail_idx] <- map_data$lat[tail_idx] + radius * sin(angles)
+    map_data$lon[tail_idx] <- map_data$lon[tail_idx] + radius * cos(angles)
   }
 
   map_data
@@ -749,11 +689,14 @@ build_popup_content_vectorized <- function(map_data) {
   sample_size_esc <- esc(sample_size)
   completion_date_esc <- esc(completion_date)
 
-  # Get status classes and formatted text (vectorized)
-  status_class <- vapply(status, get_status_class, character(1L),
-                         USE.NAMES = FALSE)
-  status_text <- vapply(status, format_status_text, character(1L),
-                        USE.NAMES = FALSE)
+  # Vectorized lookup via named-vector subsetting (O(n) table lookup, no loop).
+  status_upper <- toupper(status)
+  status_class <- unname(TRIAL_STATUS_CLASS_MAP[status_upper])
+  status_class[is.na(status_class)] <- "popup-status-unknown"
+  status_text <- unname(TRIAL_STATUS_LABEL_MAP[status_upper])
+  unmapped <- is.na(status_text)
+  status_text[unmapped & !is.na(status)] <- status[unmapped & !is.na(status)]
+  status_text[is.na(status_text)] <- "Unknown"
   status_text_esc <- esc(status_text)
 
   # Build state suffix (", STATE" or "")
