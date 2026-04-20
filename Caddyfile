@@ -1,4 +1,4 @@
 csvd-dashboard.matbpoirierk8shomelab.net {
-    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+    tls /etc/caddy/certs/cloudflare-origin-cert.pem /etc/caddy/certs/cloudflare-origin-key.pem
     reverse_proxy dashboard:3838
 }

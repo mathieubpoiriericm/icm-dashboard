@@ -5,7 +5,7 @@ services:
     environment:
       PRELOAD_TABLE2: ${PRELOAD_TABLE2:-TRUE}
     volumes:
-      - qs_data:/srv/shiny-server/data/qs:ro
+      - ./data/qs:/srv/shiny-server/data/qs:ro
       - ./.Renviron:/home/shiny/.Renviron:ro
     networks:
       - svd_net
@@ -23,7 +23,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
       - ./sql:/docker-entrypoint-initdb.d:ro
     networks:
       - svd_net
@@ -45,7 +45,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - qs_data:/app/data/qs
+      - ./data/qs:/app/data/qs
       - ./logs:/app/logs
     networks:
       - svd_net
@@ -71,7 +71,6 @@ networks:
     driver: bridge
 
 volumes:
-  qs_data:
   postgres_data:
   caddy_data:
   caddy_config:
