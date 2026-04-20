@@ -118,6 +118,33 @@ body {
     margin: 8px 12px;
 }
 
+/* === DRAWER RESIZE HANDLE === */
+
+.drawer-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 4px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 2000;
+    background: transparent;
+    transition: background 150ms ease;
+}
+
+.drawer-resizer:hover {
+    background: var(--theme-border-hover);
+}
+
+.drawer-resizer.dragging {
+    background: var(--theme-primary);
+}
+
+body.drawer-resizing {
+    user-select: none;
+    cursor: ew-resize;
+}
+
 /* === CARDS === */
 
 .theme-card {

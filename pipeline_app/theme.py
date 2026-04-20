@@ -22,6 +22,61 @@ _GOOGLE_FONTS = (
     '&display=swap" rel="stylesheet">'
 )
 
+# Quasar's QDrawer has no built-in resize affordance; this script
+# appends a drag handle to the left drawer's right edge.
+_DRAWER_RESIZER_JS = """
+<script>
+(function () {
+  const MIN = 220, MAX = 500, KEY = 'csvd-pipeline-drawer-width';
+  function init() {
+    const d = document.querySelector('.q-drawer--left');
+    if (!d || d.querySelector('.drawer-resizer')) return true;
+    const p = document.querySelector('.q-page-container');
+    const setWidth = (px) => {
+      d.style.width = px + 'px';
+      if (p) p.style.paddingLeft = px + 'px';
+    };
+    const h = document.createElement('div');
+    h.className = 'drawer-resizer';
+    d.appendChild(h);
+    const saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= MIN && saved <= MAX) setWidth(saved);
+    h.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      h.classList.add('dragging');
+      document.body.classList.add('drawer-resizing');
+      const rect = d.getBoundingClientRect();
+      const move = (ev) => {
+        const w = Math.min(MAX, Math.max(MIN, ev.clientX - rect.left));
+        setWidth(w);
+      };
+      const up = () => {
+        h.classList.remove('dragging');
+        document.body.classList.remove('drawer-resizing');
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        const cur = parseInt(d.style.width, 10);
+        if (cur >= MIN && cur <= MAX) localStorage.setItem(KEY, cur);
+        window.dispatchEvent(new Event('resize'));
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+    h.addEventListener('dblclick', () => {
+      localStorage.removeItem(KEY);
+      d.style.width = '';
+      if (p) p.style.paddingLeft = '';
+      window.dispatchEvent(new Event('resize'));
+    });
+    return true;
+  }
+  // NiceGUI mounts .q-drawer after DOMContentLoaded; poll briefly.
+  const iv = setInterval(() => { if (init()) clearInterval(iv); }, 50);
+  setTimeout(() => clearInterval(iv), 5000);
+})();
+</script>
+"""
+
 # Single source of truth for the color palette — ICM Paper light theme.
 # Referenced by app.colors(), theme.css (via matching custom properties),
 # and ECharts configs (which can't read CSS vars server-side).
@@ -95,5 +150,6 @@ def apply_theme() -> None:
         warning=COLORS["warning"],
     )
     ui.add_head_html(_GOOGLE_FONTS, shared=True)
+    ui.add_head_html(_DRAWER_RESIZER_JS, shared=True)
     if _THEME_CSS.is_file():
         ui.add_css(_THEME_CSS.read_text(encoding="utf-8"), shared=True)
