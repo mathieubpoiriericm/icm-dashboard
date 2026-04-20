@@ -4,6 +4,14 @@
 # Python cache
 __pycache__
 
+# Secrets
+.env
+.Renviron
+
+# Minified CSS and JS (regenerated at runtime)
+www/*min.css
+www/*min.js
+
 # Files and directories
 .bslib-cache
 .claude
@@ -12,17 +20,10 @@ __pycache__
 .superpowers
 .venv
 .vscode
-data/
+data
 docs/other
-logs
-.env
-.Renviron
-CLAUDE.md
 docs/superpowers
+logs
+CLAUDE.md
 rshiny_dashboard.code-workspace
 secrets-values.yaml
-www/*min.css
-www/*min.js
-
-# Tauri standalone app for pipeline testing
-tauri-app

@@ -273,3 +273,52 @@ sidebar_filters_header <- function() {
     shiny::tags$hr()
   )
 }
+
+# =============================================================================
+# STATIC ASSET CACHE BUSTING
+# =============================================================================
+
+.asset_hashes <- new.env(parent = emptyenv())
+
+# Compute Content Hashes for Static Assets
+#
+# Reads each asset and stores the first 8 hex chars of its xxhash64 digest.
+# asset_url() appends these as a ?v= query string so edits to CSS/JS force
+# browsers (and proxies that vary on query strings) to re-fetch after deploy.
+# xxhash64 is used (not SHA) because this is change detection, not security.
+#
+# Args:
+#   asset_paths: Character vector of paths relative to base_dir.
+#   base_dir: Directory holding the assets. Defaults to "www".
+#
+# Returns:
+#   Invisibly, the .asset_hashes environment.
+initialize_asset_hashes <- function(asset_paths, base_dir = "www") {
+  for (path in asset_paths) {
+    full_path <- file.path(base_dir, path)
+    if (file.exists(full_path)) {
+      .asset_hashes[[path]] <- substr(
+        digest::digest(file = full_path, algo = "xxhash64"),
+        1L, 8L
+      )
+    }
+  }
+  invisible(.asset_hashes)
+}
+
+# Return a Cache-Busted URL for a Static Asset
+#
+# If initialize_asset_hashes() has registered a hash for `path`, returns
+# "path?v=<hash>"; otherwise returns the path unchanged so callers degrade
+# gracefully (e.g. during tests that do not invoke startup).
+#
+# Args:
+#   path: Character. Asset path relative to the Shiny www/ root.
+#
+# Returns:
+#   Character. Path with "?v=<hash>" appended, or unchanged.
+asset_url <- function(path) {
+  hash <- .asset_hashes[[path]]
+  if (is.null(hash)) return(path)
+  paste0(path, "?v=", hash)
+}

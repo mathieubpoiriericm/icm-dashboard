@@ -882,6 +882,62 @@ test_that("checkbox_filter_server selects 'all' when clicking Show All", {
 })
 
 # =============================================================================
+# TESTS FOR asset_url / initialize_asset_hashes (cache-busting)
+# =============================================================================
+
+with_temp_asset_dir <- function(fn) {
+  tmp_dir <- tempfile("assets")
+  dir.create(tmp_dir)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+  on.exit(rm(list = ls(.asset_hashes), envir = .asset_hashes), add = TRUE)
+  fn(tmp_dir)
+}
+
+test_that("asset_url returns path unchanged when no hash is registered", {
+  expect_equal(asset_url("nonexistent-asset.css"), "nonexistent-asset.css")
+})
+
+test_that("asset_url appends ?v=<hash> when a hash is registered", {
+  on.exit(rm(list = ls(.asset_hashes), envir = .asset_hashes), add = TRUE)
+  .asset_hashes[["unit-test.css"]] <- "abcd1234"
+  expect_equal(asset_url("unit-test.css"), "unit-test.css?v=abcd1234")
+})
+
+test_that("initialize_asset_hashes computes 8-char hex hashes for real files", {
+  with_temp_asset_dir(function(tmp_dir) {
+    writeLines("body { color: red; }", file.path(tmp_dir, "a.css"))
+    writeLines("console.log('hi');", file.path(tmp_dir, "b.js"))
+
+    initialize_asset_hashes(c("a.css", "b.js"), base_dir = tmp_dir)
+
+    expect_match(.asset_hashes[["a.css"]], "^[0-9a-f]{8}$")
+    expect_match(.asset_hashes[["b.js"]], "^[0-9a-f]{8}$")
+    expect_false(identical(.asset_hashes[["a.css"]], .asset_hashes[["b.js"]]))
+  })
+})
+
+test_that("initialize_asset_hashes changes the hash when file content changes", {
+  with_temp_asset_dir(function(tmp_dir) {
+    writeLines("body { color: red; }", file.path(tmp_dir, "c.css"))
+    initialize_asset_hashes("c.css", base_dir = tmp_dir)
+    hash_before <- .asset_hashes[["c.css"]]
+
+    writeLines("body { color: blue; }", file.path(tmp_dir, "c.css"))
+    initialize_asset_hashes("c.css", base_dir = tmp_dir)
+    hash_after <- .asset_hashes[["c.css"]]
+
+    expect_false(identical(hash_before, hash_after))
+  })
+})
+
+test_that("initialize_asset_hashes silently skips files that do not exist", {
+  with_temp_asset_dir(function(tmp_dir) {
+    expect_silent(initialize_asset_hashes("missing.css", base_dir = tmp_dir))
+    expect_null(.asset_hashes[["missing.css"]])
+  })
+})
+
+# =============================================================================
 # SUMMARY
 # =============================================================================
 

@@ -263,6 +263,15 @@ source("R/server_map.R")
 source("R/ui.R")
 source("R/server.R")
 
+# Register content hashes for cache-busting static assets. Must run after
+# minification (so hashes reflect the minified bytes browsers actually fetch)
+# and before build_ui() (which calls asset_url()).
+initialize_asset_hashes(c(
+  "custom.min.css",
+  "custom.min.js",
+  "python_plot.html"
+))
+
 # Load and prepare data at startup
 message("Loading application data...")
 app_data <- load_and_prepare_data()

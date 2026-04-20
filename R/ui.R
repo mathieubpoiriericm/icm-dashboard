@@ -75,7 +75,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
         ),
 
         # External CSS (minified at startup in app.R for faster loading)
-        shiny::tags$link(rel = "stylesheet", href = "custom.min.css"),
+        shiny::tags$link(rel = "stylesheet", href = asset_url("custom.min.css")),
 
         # Tippy components (bundled locally for faster loading)
         # Using defer to prevent render-blocking
@@ -92,7 +92,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
 
         # External JavaScript (minified for faster loading, defer for
         # non-blocking)
-        shiny::tags$script(src = "custom.min.js", defer = NA)
+        shiny::tags$script(src = asset_url("custom.min.js"), defer = NA)
       ),
       # Main title (visually merges with navbar above)
       shiny::div(
@@ -565,7 +565,7 @@ build_ui <- function(n_genes = 0L, n_drugs = 0L, n_trials = 0L, n_pubs = 0L,
         shiny::tags$div(
           class = "iframe-container",
           shiny::tags$iframe(
-            src = "python_plot.html",
+            src = asset_url("python_plot.html"),
             class = "viz-iframe trials-iframe",
             loading = "lazy",
             sandbox = "allow-scripts allow-same-origin"
