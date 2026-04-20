@@ -1817,6 +1817,11 @@ table.dataTable tbody tr:hover td:first-child {
     padding-right: 1rem;
   }
 
+  .navbar {
+    margin-left: 1rem;
+    margin-right: 1rem;
+  }
+
   .main-content {
     padding: 1rem;
   }
