@@ -75,7 +75,7 @@ def create_tuning_page(
                 ui.button(
                     icon="folder_open",
                     on_click=lambda: _pick_pdf_path(pdf_inp),
-                ).props("flat dense").classes("theme-btn-ghost")
+                ).props("flat dense").classes("btn-icon")
 
             with ui.row().classes("w-full items-center gap-xs no-wrap"):
                 gold_inp = (
@@ -89,7 +89,7 @@ def create_tuning_page(
                 ui.button(
                     icon="folder_open",
                     on_click=lambda: _pick_gold_standard(gold_inp),
-                ).props("flat dense").classes("theme-btn-ghost")
+                ).props("flat dense").classes("btn-icon")
 
             async def _pick_pdf_path(inp: ui.input) -> None:
                 anchor = get_project_anchor(config)
@@ -213,8 +213,7 @@ def create_tuning_page(
                 "Save Settings",
                 on_click=lambda: _save_tuning_settings(),
                 icon="save",
-                color="primary",
-            ).props("unelevated").classes("w-full theme-btn-primary btn-primary")
+            ).props("unelevated").classes("w-full btn-primary")
 
             def _save_tuning_settings() -> None:
                 save_tuning_config(tuning)
@@ -250,10 +249,9 @@ def create_tuning_page(
                 ui.button(
                     "Run",
                     icon="play_arrow",
-                    color="positive",
                 )
                 .props("unelevated size=lg")
-                .classes("w-full q-mt-md theme-btn-primary btn-primary")
+                .classes("w-full q-mt-md btn-execute")
             )
             with ui.row().classes("q-mt-sm gap-sm"):
                 next_btn = (
@@ -271,10 +269,9 @@ def create_tuning_page(
                         "Skip Stage",
                         on_click=lambda: runner.skip(),
                         icon="fast_forward",
-                        color="warning",
                     )
                     .props("flat")
-                    .classes("theme-btn-ghost")
+                    .classes("btn-ghost")
                 )
                 skip_btn.set_visibility(False)
 

@@ -206,7 +206,7 @@ async def pick_path(
             ui.button(
                 "Cancel",
                 on_click=lambda: dialog.submit(None),
-            ).props("flat").classes("theme-btn-ghost")
+            ).props("flat").classes("btn-ghost")
 
             select_folder_btn_holder: list[ui.button] = []
             if mode == "file" and allow_directories_as_files:
@@ -214,9 +214,11 @@ async def pick_path(
                     ui.button(
                         "Select current folder",
                         on_click=lambda: dialog.submit(str(current_dir_holder[0])),
-                    ).props("outline")
+                    )
+                    .props("outline")
+                    .classes("btn-secondary")
                 )
-            select_btn = ui.button("Select", color="primary")
+            select_btn = ui.button("Select").props("unelevated").classes("btn-primary")
 
         def _on_select_click() -> None:
             result = _compute_selection(
@@ -264,17 +266,15 @@ async def pick_path(
                 for idx, segment in enumerate(segments):
                     is_last = idx == last_idx
                     label = segment.name or str(segment)
-                    btn = ui.button(
-                        label,
-                        on_click=lambda _e=None, s=segment: asyncio.create_task(
-                            _navigate_to(s)
-                        ),
-                    ).props("flat dense")
                     if is_last:
-                        btn.classes("text-primary")
+                        ui.label(label).classes("path-picker-breadcrumb-current")
                     else:
-                        btn.classes("theme-btn-ghost")
-                    if not is_last:
+                        ui.button(
+                            label,
+                            on_click=lambda _e=None, s=segment: asyncio.create_task(
+                                _navigate_to(s)
+                            ),
+                        ).props("flat dense").classes("btn-ghost")
                         ui.label("/").classes("path-picker-breadcrumb-sep")
 
         async def _refresh_entries() -> None:

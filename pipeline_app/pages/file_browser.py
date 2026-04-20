@@ -152,7 +152,7 @@ def create_file_browser_page(project_root: str) -> None:
             "Open in System App",
             on_click=_open_in_system_app,
             icon="open_in_new",
-        ).props("flat").classes("theme-btn-ghost")
+        ).props("flat").classes("btn-ghost")
 
     with ui.splitter(horizontal=True, value=35).classes(
         "w-full file-browser-splitter"

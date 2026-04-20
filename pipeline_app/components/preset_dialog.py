@@ -20,12 +20,11 @@ async def prompt_preset_name() -> str | None:
             ui.button(
                 "Cancel",
                 on_click=lambda: dialog.submit(None),
-            ).props("flat size=sm").classes("theme-btn-ghost")
+            ).props("flat size=sm").classes("btn-ghost")
             ui.button(
                 "Save",
                 on_click=lambda: dialog.submit(name_input.value),
-                color="positive",
-            ).props("size=sm")
+            ).props("unelevated size=sm").classes("btn-primary")
     result = await dialog
     with suppress(RuntimeError):
         dialog.delete()

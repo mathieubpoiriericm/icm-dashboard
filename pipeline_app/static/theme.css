@@ -201,28 +201,6 @@ body.drawer-resizing {
     transition: all 150ms ease;
 }
 
-.theme-btn-primary {
-    box-shadow: 0 2px 8px rgba(var(--theme-primary-rgb), 0.25);
-}
-
-.theme-btn-primary:hover {
-    box-shadow: var(--theme-glow-primary);
-    transform: translateY(-1px);
-}
-
-.theme-btn-secondary .q-btn__content {
-    color: var(--theme-text-primary);
-}
-
-.theme-btn-ghost {
-    color: var(--theme-text-secondary) !important;
-}
-
-.theme-btn-ghost:hover {
-    background-color: var(--theme-elevated) !important;
-    color: var(--theme-text-primary) !important;
-}
-
 .preset-action-btn {
     font-size: 14px !important;
     border: 1px solid var(--border-emphasis) !important;
@@ -889,6 +867,41 @@ body.drawer-resizing {
     color: var(--theme-text-primary) !important;
 }
 
+.btn-execute {
+    background-color: var(--theme-secondary) !important;
+    color: #fff !important;
+    box-shadow: 0 1px 2px rgba(var(--theme-secondary-rgb), 0.18);
+    transition:
+        box-shadow var(--motion-fast) var(--ease-in-out),
+        transform var(--motion-fast) var(--ease-in-out);
+}
+.btn-execute:hover {
+    box-shadow: 0 4px 14px rgba(var(--theme-secondary-rgb), 0.32);
+    transform: translateY(-1px);
+}
+.btn-execute .q-btn__content {
+    color: #fff;
+}
+
+.btn-destructive {
+    background-color: transparent !important;
+    color: var(--theme-negative) !important;
+}
+.btn-destructive:hover {
+    background-color: rgba(var(--theme-negative-rgb), 0.08) !important;
+    color: var(--theme-negative) !important;
+}
+
+.btn-icon {
+    background-color: transparent !important;
+    color: var(--theme-text-secondary) !important;
+    padding: 4px 8px !important;
+}
+.btn-icon:hover {
+    background-color: var(--surface-2) !important;
+    color: var(--theme-text-primary) !important;
+}
+
 /* === FOCUS VISIBLE === */
 
 .q-btn:focus-visible,
@@ -1226,6 +1239,14 @@ a:focus-visible {
     color: var(--theme-text-disabled);
     padding-inline: 2px;
     user-select: none;
+}
+
+.path-picker-breadcrumb-current {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--theme-primary);
+    padding: 4px 10px;
+    line-height: 1.25;
 }
 
 .path-picker-row .q-icon {

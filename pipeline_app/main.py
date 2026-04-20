@@ -172,12 +172,15 @@ def create_sidebar(
 
         ui.space()
 
-        cancel_btn = ui.button(
-            "Cancel",
-            on_click=lambda: _cancel_any(tuning_runner),
-            icon="cancel",
-            color="negative",
-        ).classes("w-full theme-btn-primary")
+        cancel_btn = (
+            ui.button(
+                "Cancel",
+                on_click=lambda: _cancel_any(tuning_runner),
+                icon="cancel",
+            )
+            .props("flat")
+            .classes("w-full btn-destructive")
+        )
         # Covers tuning inter-stage waits, when the lock is momentarily
         # released between stages but the experiment is still live.
         cancel_btn.bind_visibility_from(tuning_runner, "any_running")
@@ -224,7 +227,7 @@ def create_header(
         ui.button(
             icon="menu",
             on_click=drawer.toggle,
-        ).props("flat round size=sm")
+        ).props("flat round size=sm").classes("btn-icon")
         _render_breadcrumbs(_breadcrumbs_for(current_path, trailing=trailing))
         _render_run_status_chip(tuning_runner)
         ui.label("cSVD Pipeline UI").classes("app-header-title")

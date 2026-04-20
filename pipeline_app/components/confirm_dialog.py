@@ -24,12 +24,11 @@ async def confirm(message: str, title: str = "Confirm") -> bool:
             ui.button(
                 "Cancel",
                 on_click=lambda: dialog.submit(False),
-            ).props("flat size=sm").classes("theme-btn-ghost")
+            ).props("flat size=sm").classes("btn-ghost")
             ui.button(
                 "Confirm",
                 on_click=lambda: dialog.submit(True),
-                color="negative",
-            ).props("size=sm")
+            ).props("flat size=sm").classes("btn-destructive")
     result = await dialog
     with suppress(RuntimeError):
         dialog.delete()

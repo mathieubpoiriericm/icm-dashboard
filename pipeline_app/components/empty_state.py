@@ -40,5 +40,5 @@ def empty_state(
             ui.button(
                 action_label,
                 on_click=on_action,
-            ).classes("empty-state-action btn-primary").props("unelevated")
+            ).classes("empty-state-action btn-execute").props("unelevated")
     return container

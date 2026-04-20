@@ -188,5 +188,4 @@ def create_run_history_page() -> None:
             "Clear All",
             on_click=_clear_all,
             icon="delete_forever",
-            color="negative",
-        ).props("flat").classes("theme-btn-ghost")
+        ).props("flat").classes("btn-destructive")

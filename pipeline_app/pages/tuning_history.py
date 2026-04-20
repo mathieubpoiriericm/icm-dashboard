@@ -243,6 +243,6 @@ def _render_body(rows: list[dict[str, object]]) -> None:
             "Refresh",
             on_click=lambda: ui.navigate.reload(),
             icon="refresh",
-        ).props("outline")
+        ).props("outline").classes("btn-secondary")
 
     _comparison_panel()

@@ -168,7 +168,7 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
             "Back to History",
             on_click=lambda: ui.navigate.to("/history"),
             icon="arrow_back",
-        )
+        ).props("flat").classes("btn-ghost")
         return
 
     ui.label(f"Results: {report_id}").classes("page-title")
@@ -183,14 +183,12 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
         container.clear()
         with container:
             if error_msg is not None or report is None or report_path is None:
-                ui.label(error_msg or "Unable to load report.").classes(
-                    "text-negative"
-                )
+                ui.label(error_msg or "Unable to load report.").classes("text-negative")
                 ui.button(
                     "Back to History",
                     on_click=lambda: ui.navigate.to("/history"),
                     icon="arrow_back",
-                ).props("flat").classes("theme-btn-ghost")
+                ).props("flat").classes("btn-ghost")
                 return
             _render_report_body(report_path, report)
 
@@ -581,5 +579,5 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
             "Back to History",
             on_click=lambda: ui.navigate.to("/history"),
             icon="arrow_back",
-        ).props("flat").classes("theme-btn-ghost")
+        ).props("flat").classes("btn-ghost")
         ui.label(f"File: {report_path.name}").classes("text-muted self-center")

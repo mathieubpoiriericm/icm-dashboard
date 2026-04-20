@@ -94,18 +94,17 @@ def create_configure_run_page(
                     "Load",
                     on_click=lambda: _load_preset(preset_select.value),
                     icon="download",
-                ).props("flat size=sm").classes("theme-btn-ghost preset-action-btn")
+                ).props("flat size=sm").classes("btn-ghost preset-action-btn")
                 ui.button(
                     "Save",
                     on_click=lambda: _save_current_preset(),
                     icon="save",
-                ).props("flat size=sm").classes("theme-btn-ghost preset-action-btn")
+                ).props("flat size=sm").classes("btn-ghost preset-action-btn")
                 ui.button(
                     "Delete",
                     on_click=lambda: _delete_preset(preset_select.value),
                     icon="delete",
-                    color="negative",
-                ).props("flat size=sm").classes("theme-btn-ghost preset-action-btn")
+                ).props("flat size=sm").classes("btn-destructive preset-action-btn")
 
             def _load_preset(preset_id: str | None) -> None:
                 if not preset_id:
@@ -126,8 +125,7 @@ def create_configure_run_page(
                 existing_names = {p.name for p in load_presets()}
                 if result in existing_names:
                     confirmed = await confirm(
-                        f"A preset named '{result}' already exists. "
-                        f"Overwrite it?",
+                        f"A preset named '{result}' already exists. Overwrite it?",
                         title="Overwrite Preset",
                     )
                     if not confirmed:
@@ -198,7 +196,7 @@ def create_configure_run_page(
                     ui.button(
                         icon="folder_open",
                         on_click=lambda: _pick_local_pdfs(local_pdfs_inp),
-                    ).props("flat dense").classes("theme-btn-ghost")
+                    ).props("flat dense").classes("btn-icon")
                 ui.checkbox("Skip Validation").bind_value(config, "skip_validation")
 
             with ui.column().classes("w-full") as pmid_list_fields:
@@ -214,7 +212,7 @@ def create_configure_run_page(
                     ui.button(
                         icon="folder_open",
                         on_click=lambda: _pick_pmids(pmids_inp),
-                    ).props("flat dense").classes("theme-btn-ghost")
+                    ).props("flat dense").classes("btn-icon")
                 ui.checkbox("Skip Validation").bind_value(config, "skip_validation")
 
             async def _pick_local_pdfs(inp: ui.input) -> None:
@@ -366,7 +364,7 @@ def create_configure_run_page(
                 ui.button(
                     icon="folder_open",
                     on_click=lambda: _pick_python_path(python_inp),
-                ).props("flat dense").classes("theme-btn-ghost")
+                ).props("flat dense").classes("btn-icon")
             with ui.row().classes("w-full items-center gap-xs no-wrap"):
                 project_inp = (
                     ui.input(
@@ -379,7 +377,7 @@ def create_configure_run_page(
                 ui.button(
                     icon="folder_open",
                     on_click=lambda: _pick_project_root(project_inp),
-                ).props("flat dense").classes("theme-btn-ghost")
+                ).props("flat dense").classes("btn-icon")
             with ui.row().classes("w-full items-center gap-xs no-wrap"):
                 progress_inp = (
                     ui.input(
@@ -392,7 +390,7 @@ def create_configure_run_page(
                 ui.button(
                     icon="folder_open",
                     on_click=lambda: _pick_progress_file(progress_inp),
-                ).props("flat dense").classes("theme-btn-ghost")
+                ).props("flat dense").classes("btn-icon")
 
             async def _pick_python_path(inp: ui.input) -> None:
                 current = inp.value or "python3"
@@ -469,8 +467,7 @@ def create_configure_run_page(
                 "Save Settings",
                 on_click=lambda: _save_settings(),
                 icon="save",
-                color="primary",
-            ).props("unelevated").classes("w-full theme-btn-primary btn-primary")
+            ).props("unelevated").classes("w-full btn-primary")
 
             def _save_settings() -> None:
                 save_config(config)
@@ -643,9 +640,8 @@ def create_configure_run_page(
                     "Run Pipeline",
                     on_click=_run_pipeline,
                     icon="play_arrow",
-                    color="positive",
                 )
                 .props("unelevated size=lg")
-                .classes("w-full q-mt-md theme-btn-primary btn-primary")
+                .classes("w-full q-mt-md btn-execute")
             )
             run_btn_ref.append(run_btn)
