@@ -544,6 +544,77 @@ body.drawer-resizing {
     border: 0;
 }
 
+/* Image preview.
+   Default state fits the whole image into the viewport (aspect preserved);
+   `.zoomed` state switches the image to an explicit percentage width driven
+   by `--image-zoom`, and the viewport scrolls both axes. The two-layer
+   flex (image-viewer → viewport) is what lets the viewport take the
+   remaining column height so `max-height: 100%` on the image resolves to
+   a real pixel value instead of the image's intrinsic size. */
+
+.image-viewer {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+    gap: 8px;
+}
+
+.image-viewer-controls {
+    flex: 0 0 auto;
+    background-color: var(--theme-elevated);
+    border: 1px solid var(--theme-border);
+    border-radius: 8px;
+    padding: 2px 6px;
+    width: fit-content;
+}
+
+.image-viewer-pct {
+    min-width: 52px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+}
+
+.image-viewer-viewport {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--theme-elevated);
+    border: 1px solid var(--theme-border);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.image-viewer-viewport.zoomed {
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.file-preview-image {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    /* Flex items default to min-*: auto, which refuses to shrink below the
+       image's intrinsic size — max-width/max-height would be ignored for
+       images larger than the viewport. Zero out the floor so the max caps
+       win and the whole image fits. */
+    min-width: 0;
+    min-height: 0;
+    object-fit: contain;
+}
+
+.image-viewer-viewport.zoomed .file-preview-image {
+    max-width: none;
+    max-height: none;
+    width: var(--image-zoom, 100%);
+    height: auto;
+}
+
 /* === ECHART CONTAINERS === */
 
 .chart-container {
@@ -780,8 +851,6 @@ body.drawer-resizing {
 }
 
 .page-root {
-    max-width: 1400px;
-    margin: 0 auto;
     padding: 4px 24px 24px;
     animation: fade-in-up var(--motion-slow) var(--ease-out-expo) both;
 }

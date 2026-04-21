@@ -43,6 +43,12 @@ MAX_CSV_ROWS: int = 1000
 _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif"})
 _TEXT_EXTS = frozenset({".md", ".txt", ".log"})
 
+# 25% floor lets oversized plots shrink past "fit"; 400% ceiling covers
+# pixel-level inspection of small plots.
+_IMAGE_ZOOM_STEP: float = 0.25
+_IMAGE_ZOOM_MIN: float = 0.25
+_IMAGE_ZOOM_MAX: float = 4.0
+
 
 def detect_file_type(filename: str) -> str | None:
     """Classify a filename into json/csv/image/pdf/text or None."""
@@ -75,9 +81,7 @@ def _truncate_for_display(content: str) -> str:
     """Cap ui.code payload so a large file doesn't freeze the browser."""
     if not _exceeds_display_cap(content):
         return content
-    truncated_bytes = content.encode("utf-8", errors="replace")[
-        :MAX_TEXT_DISPLAY_BYTES
-    ]
+    truncated_bytes = content.encode("utf-8", errors="replace")[:MAX_TEXT_DISPLAY_BYTES]
     truncated = truncated_bytes.decode("utf-8", errors="ignore")
     return (
         truncated
@@ -180,8 +184,7 @@ async def render_file_content(
         data = base64.b64encode(raw).decode()
         ext = file_path.suffix.lower().lstrip(".")
         mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-        with container:
-            ui.image(f"data:{mime};base64,{data}")
+        _render_image_viewer(container, f"data:{mime};base64,{data}")
 
     elif file_type == "pdf":
         try:
@@ -210,3 +213,75 @@ async def render_file_content(
     else:
         with container:
             ui.label("Unsupported file type.")
+
+
+def _render_image_viewer(container: Element, src: str) -> None:
+    """Render an image preview with fit-to-container default and zoom.
+
+    At 100% (default) the image is scaled down if needed so the whole file
+    is visible without cropping, preserving aspect ratio. Zooming past 100%
+    grows the image beyond the viewport; the viewport's overflow-auto then
+    provides horizontal and vertical scrollbars.
+    """
+    from nicegui import ui
+
+    zoom = [1.0]
+    pct_label: list[ui.label] = []
+    viewport_ref: list[Element] = []
+    zoom_out_btn: list[ui.button] = []
+    zoom_in_btn: list[ui.button] = []
+    # Cached last-emitted enabled states; set_enabled still sends a prop
+    # patch on same-value writes, and every click toggles only one button's
+    # state at the extremes — the other stays enabled and would re-emit.
+    last_enabled = {"out": True, "in": True}
+
+    def _apply() -> None:
+        z = zoom[0]
+        pct = int(round(z * 100))
+        pct_label[0].set_text(f"{pct}%")
+        vp = viewport_ref[0]
+        if z > 1.0:
+            vp.classes(add="zoomed")
+            vp.style(replace=f"--image-zoom: {pct}%")
+        else:
+            vp.classes(remove="zoomed")
+        out_enabled = z > _IMAGE_ZOOM_MIN
+        in_enabled = z < _IMAGE_ZOOM_MAX
+        if out_enabled != last_enabled["out"]:
+            zoom_out_btn[0].set_enabled(out_enabled)
+            last_enabled["out"] = out_enabled
+        if in_enabled != last_enabled["in"]:
+            zoom_in_btn[0].set_enabled(in_enabled)
+            last_enabled["in"] = in_enabled
+
+    def _zoom_in() -> None:
+        zoom[0] = min(_IMAGE_ZOOM_MAX, round(zoom[0] + _IMAGE_ZOOM_STEP, 2))
+        _apply()
+
+    def _zoom_out() -> None:
+        zoom[0] = max(_IMAGE_ZOOM_MIN, round(zoom[0] - _IMAGE_ZOOM_STEP, 2))
+        _apply()
+
+    def _zoom_reset() -> None:
+        zoom[0] = 1.0
+        _apply()
+
+    with container, ui.element("div").classes("image-viewer"):
+        with ui.row().classes("image-viewer-controls items-center gap-xs no-wrap"):
+            zoom_out_btn.append(
+                ui.button(icon="zoom_out", on_click=_zoom_out)
+                .props("flat round size=sm")
+                .classes("btn-icon")
+            )
+            pct_label.append(ui.label("100%").classes("numeric image-viewer-pct"))
+            zoom_in_btn.append(
+                ui.button(icon="zoom_in", on_click=_zoom_in)
+                .props("flat round size=sm")
+                .classes("btn-icon")
+            )
+            ui.button(icon="fit_screen", on_click=_zoom_reset).props(
+                "flat round size=sm"
+            ).classes("btn-icon")
+        viewport_ref.append(ui.element("div").classes("image-viewer-viewport"))
+        with viewport_ref[0]:
+            ui.html(f'<img src="{src}" class="file-preview-image" alt="" />')
