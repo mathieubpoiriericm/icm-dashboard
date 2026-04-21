@@ -250,33 +250,47 @@ class TestTuningRunner:
 
 
 class TestTuningRunnerBuffering:
-    def test_emit_stdout_caps_at_max(self):
+    """log_lines is a deque(maxlen=MAX_LOG_LINES): once full, new appends
+    evict the oldest entry (rotating window) instead of silently dropping
+    the newest. This matches the UI's ui.log max_lines rotation so a
+    reconnect replay and the live log show the same window.
+    """
+
+    def test_emit_stdout_caps_at_max_and_evicts_oldest(self):
         lock = SubprocessLock()
         runner = TuningRunner(lock)
-        runner.log_lines = [("out", "")] * (MAX_LOG_LINES - 1)
+        for i in range(MAX_LOG_LINES - 1):
+            runner._emit_stdout(f"line_{i}")
         runner._emit_stdout("last allowed")
         assert len(runner.log_lines) == MAX_LOG_LINES
         runner._emit_stdout("over the cap")
         assert len(runner.log_lines) == MAX_LOG_LINES
+        # Oldest evicted; newest retained.
+        assert runner.log_lines[0] == ("out", "line_1")
+        assert runner.log_lines[-1] == ("out", "over the cap")
 
-    def test_emit_stderr_caps_at_max(self):
+    def test_emit_stderr_caps_at_max_and_evicts_oldest(self):
         lock = SubprocessLock()
         runner = TuningRunner(lock)
-        runner.log_lines = [("err", "")] * (MAX_LOG_LINES - 1)
+        for i in range(MAX_LOG_LINES - 1):
+            runner._emit_stderr(f"err_{i}")
         runner._emit_stderr("last allowed")
         assert len(runner.log_lines) == MAX_LOG_LINES
         runner._emit_stderr("over the cap")
         assert len(runner.log_lines) == MAX_LOG_LINES
+        assert runner.log_lines[-1] == ("err", "over the cap")
 
     def test_mixed_stdout_stderr_shares_cap(self):
         lock = SubprocessLock()
         runner = TuningRunner(lock)
-        runner.log_lines = [("out", "")] * (MAX_LOG_LINES - 2)
+        for i in range(MAX_LOG_LINES - 2):
+            runner._emit_stdout(f"out_{i}")
         runner._emit_stdout("stdout")
         runner._emit_stderr("stderr")
         assert len(runner.log_lines) == MAX_LOG_LINES
         runner._emit_stdout("over cap")
         assert len(runner.log_lines) == MAX_LOG_LINES
+        assert runner.log_lines[-1] == ("out", "over cap")
 
     def test_log_lines_tagged_correctly(self):
         lock = SubprocessLock()

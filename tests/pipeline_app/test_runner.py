@@ -11,8 +11,10 @@ import time
 from pathlib import Path
 
 import pytest
+from pipeline_app.components.log_viewer import MAX_LOG_LINES
 from pipeline_app.config import EnvSecrets, PipelineAppConfig
 from pipeline_app.runner import (
+    PIPELINE_STAGES,
     PipelineRunner,
     SubprocessLock,
     _find_newest_file,
@@ -120,12 +122,14 @@ class TestPipelineRunner:
         stderr_lines: list[str] = []
         stages: list[str] = []
 
-        result = await runner.run(
-            config=config,
-            secrets=EnvSecrets(),
+        runner.set_callbacks(
             on_stdout=stdout_lines.append,
             on_stderr=stderr_lines.append,
             on_stage=stages.append,
+        )
+        result = await runner.run(
+            config=config,
+            secrets=EnvSecrets(),
             cli_args_override=[str(script)],
         )
         assert result.exit_code == 0
@@ -150,12 +154,14 @@ class TestPipelineRunner:
         stdout_lines: list[str] = []
         stages: list[str] = []
 
-        await runner.run(
-            config=config,
-            secrets=EnvSecrets(),
+        runner.set_callbacks(
             on_stdout=stdout_lines.append,
             on_stderr=lambda _: None,
             on_stage=stages.append,
+        )
+        await runner.run(
+            config=config,
+            secrets=EnvSecrets(),
             cli_args_override=[str(script)],
         )
         assert stages == ["search", "extract"]
@@ -172,13 +178,15 @@ class TestPipelineRunner:
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
 
+        runner.set_callbacks(
+            on_stdout=lambda _: None,
+            on_stderr=lambda _: None,
+            on_stage=lambda _: None,
+        )
         task = asyncio.create_task(
             runner.run(
                 config=config,
                 secrets=EnvSecrets(),
-                on_stdout=lambda _: None,
-                on_stderr=lambda _: None,
-                on_stage=lambda _: None,
                 cli_args_override=[str(script)],
             )
         )
@@ -199,13 +207,15 @@ class TestPipelineRunner:
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
 
+        runner.set_callbacks(
+            on_stdout=lambda _: None,
+            on_stderr=lambda _: None,
+            on_stage=lambda _: None,
+        )
         task = asyncio.create_task(
             runner.run(
                 config=config,
                 secrets=EnvSecrets(),
-                on_stdout=lambda _: None,
-                on_stderr=lambda _: None,
-                on_stage=lambda _: None,
                 cli_args_override=[str(script)],
             )
         )
@@ -215,9 +225,6 @@ class TestPipelineRunner:
             await runner.run(
                 config=config,
                 secrets=EnvSecrets(),
-                on_stdout=lambda _: None,
-                on_stderr=lambda _: None,
-                on_stage=lambda _: None,
                 cli_args_override=[str(script)],
             )
 
@@ -563,12 +570,14 @@ class TestPipelineRunnerReportPath:
         )
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
-        result = await runner.run(
-            config=config,
-            secrets=EnvSecrets(),
+        runner.set_callbacks(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage=lambda _: None,
+        )
+        result = await runner.run(
+            config=config,
+            secrets=EnvSecrets(),
             cli_args_override=[str(script)],
         )
         assert result.exit_code == 0
@@ -585,12 +594,103 @@ class TestPipelineRunnerReportPath:
         )
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
-        result = await runner.run(
-            config=config,
-            secrets=EnvSecrets(),
+        runner.set_callbacks(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage=lambda _: None,
+        )
+        result = await runner.run(
+            config=config,
+            secrets=EnvSecrets(),
             cli_args_override=[str(script)],
         )
         assert result.exit_code == 1
+
+
+class TestPipelineRunnerBuffering:
+    """Buffered state survives page navigations so a UI reconnect can
+    replay what it missed instead of watching a blank log pane.
+    """
+
+    def test_emit_stdout_accumulates_in_deque(self):
+        lock = SubprocessLock()
+        runner = PipelineRunner(lock)
+        runner._emit_stdout("first")
+        runner._emit_stderr("err")
+        runner._emit_stdout("second")
+        assert list(runner.log_lines) == [
+            ("out", "first"),
+            ("err", "err"),
+            ("out", "second"),
+        ]
+
+    def test_emit_caps_at_max_and_evicts_oldest(self):
+        lock = SubprocessLock()
+        runner = PipelineRunner(lock)
+        for i in range(MAX_LOG_LINES + 5):
+            runner._emit_stdout(f"line_{i}")
+        assert len(runner.log_lines) == MAX_LOG_LINES
+        # First five evicted; newest retained.
+        assert runner.log_lines[0] == ("out", "line_5")
+        assert runner.log_lines[-1] == ("out", f"line_{MAX_LOG_LINES + 4}")
+
+    def test_emit_stage_marks_previous_completed(self):
+        lock = SubprocessLock()
+        runner = PipelineRunner(lock)
+        runner._emit_stage("search")
+        assert runner.stage_statuses["search"] == "running"
+        runner._emit_stage("retrieve")
+        assert runner.stage_statuses["search"] == "completed"
+        assert runner.stage_statuses["retrieve"] == "running"
+
+    def test_reset_state_clears_buffers(self):
+        lock = SubprocessLock()
+        runner = PipelineRunner(lock)
+        runner._emit_stdout("will vanish")
+        runner._emit_stage("search")
+        runner.reset_state()
+        assert len(runner.log_lines) == 0
+        assert all(v == "pending" for v in runner.stage_statuses.values())
+        assert runner.last_result is None
+
+    def test_set_callbacks_fires_on_emit(self):
+        lock = SubprocessLock()
+        runner = PipelineRunner(lock)
+        out: list[str] = []
+        err: list[str] = []
+        stages: list[str] = []
+        runner.set_callbacks(
+            on_stdout=out.append,
+            on_stderr=err.append,
+            on_stage=stages.append,
+        )
+        runner._emit_stdout("o")
+        runner._emit_stderr("e")
+        runner._emit_stage("search")
+        assert out == ["o"]
+        assert err == ["e"]
+        assert stages == ["search"]
+
+    def test_callback_runtime_error_does_not_drop_buffered_line(self):
+        """A disconnected client's callback raises RuntimeError; the
+        line must still land in log_lines so a reconnect can replay it.
+        """
+        lock = SubprocessLock()
+        runner = PipelineRunner(lock)
+
+        def dead_stdout(_: str) -> None:
+            raise RuntimeError("client gone")
+
+        runner.set_callbacks(
+            on_stdout=dead_stdout,
+            on_stderr=lambda _: None,
+            on_stage=lambda _: None,
+        )
+        runner._emit_stdout("survives")
+        assert list(runner.log_lines) == [("out", "survives")]
+
+    def test_initial_stage_statuses_all_pending(self):
+        lock = SubprocessLock()
+        runner = PipelineRunner(lock)
+        for stage in PIPELINE_STAGES:
+            assert runner.stage_statuses[stage] == "pending"

@@ -13,7 +13,12 @@ from typing import Literal
 from nicegui import ui
 
 from pipeline_app.components.confirm_dialog import confirm
-from pipeline_app.components.log_viewer import LogViewer
+from pipeline_app.components.log_viewer import (
+    STDERR_CSS_CLASS,
+    LogViewer,
+    css_class_for,
+    detect_severity,
+)
 from pipeline_app.components.path_picker import pick_path
 from pipeline_app.components.preset_dialog import prompt_preset_name
 from pipeline_app.components.stage_tracker import StageTracker, create_stage_tracker
@@ -59,23 +64,22 @@ def create_configure_run_page(
     lock: SubprocessLock,
     config: PipelineAppConfig,
     secrets: EnvSecrets,
+    runner: PipelineRunner,
 ) -> None:
     """Render the Configure & Run page."""
     ui.label("Configure & Run").classes("page-title")
 
-    stage_statuses: dict[str, str] = {s: "pending" for s in PIPELINE_STAGES}
     run_status_label: list[ui.label] = []
     stage_tracker_ref: list[StageTracker] = []
     log_viewer_ref: list[LogViewer] = []
     run_btn_ref: list[ui.button] = []
-    runner = PipelineRunner(lock)
 
     def _refresh_stage_tracker() -> None:
         # In-place update: tracker elements already exist in the DOM, just
-        # re-read stage_statuses. No clear+rebuild, no visible flash.
+        # re-read runner.stage_statuses. No clear+rebuild, no visible flash.
         with suppress(RuntimeError):
             if stage_tracker_ref:
-                stage_tracker_ref[0].update(stage_statuses)
+                stage_tracker_ref[0].update(runner.stage_statuses)
 
     with ui.splitter(value=40).classes("w-full") as splitter:
         with splitter.before, ui.card().classes("w-full q-pa-md theme-card"):
@@ -478,7 +482,7 @@ def create_configure_run_page(
 
             with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated"):
                 stage_tracker_ref.append(
-                    create_stage_tracker(PIPELINE_STAGES, stage_statuses)
+                    create_stage_tracker(PIPELINE_STAGES, runner.stage_statuses)
                 )
 
             ui.button(
@@ -512,6 +516,49 @@ def create_configure_run_page(
             log_viewer = LogViewer()
             log_viewer_ref.append(log_viewer)
 
+            def _on_stdout(line: str) -> None:
+                if log_viewer_ref:
+                    log_viewer_ref[0].append(line)
+
+            def _on_stderr(line: str) -> None:
+                if log_viewer_ref:
+                    log_viewer_ref[0].append_stderr(line)
+
+            def _on_stage(_stage: str) -> None:
+                # Runner mutates stage_statuses before this callback fires;
+                # the page just has to paint.
+                _refresh_stage_tracker()
+
+            runner.set_callbacks(
+                on_stdout=_on_stdout,
+                on_stderr=_on_stderr,
+                on_stage=_on_stage,
+            )
+
+            # Reconnect path: page may be rendering mid-run (or after the run
+            # already finished). Replay buffered lines via load_batch so the
+            # DOM paints in one cycle instead of N × 50 ms flush ticks, then
+            # re-sync the tracker from runner.stage_statuses.
+            if runner.log_lines:
+                replay: list[tuple[str, str]] = []
+                for type_, line in runner.log_lines:
+                    if type_ == "out":
+                        replay.append((line, css_class_for(detect_severity(line))))
+                    else:
+                        replay.append((f"[stderr] {line}", STDERR_CSS_CLASS))
+                log_viewer.load_batch(replay)
+            _refresh_stage_tracker()
+            if lock.is_running:
+                _set_run_status("Running...", "neutral")
+            elif runner.last_result is not None:
+                # Run finished while the user was on another page.
+                last = runner.last_result
+                last_status = "success" if last.exit_code == 0 else "failed"
+                _set_run_status(
+                    f"Finished: {last_status} (exit {last.exit_code})",
+                    "positive" if last_status == "success" else "negative",
+                )
+
             async def _run_pipeline() -> None:
                 # Disable before any guard check so rapid double-clicks can't
                 # both pass an is_running check that is only true after the
@@ -527,33 +574,9 @@ def create_configure_run_page(
                         )
                         return
 
-                    for s in PIPELINE_STAGES:
-                        stage_statuses[s] = "pending"
                     if log_viewer_ref:
                         log_viewer_ref[0].clear()
                     _set_run_status("Running...", "neutral")
-                    _refresh_stage_tracker()
-
-                    current_stage: list[str] = []
-
-                    def _on_stdout(line: str) -> None:
-                        with suppress(RuntimeError):
-                            if log_viewer_ref:
-                                log_viewer_ref[0].append(line)
-
-                    def _on_stderr(line: str) -> None:
-                        with suppress(RuntimeError):
-                            if log_viewer_ref:
-                                log_viewer_ref[0].append_stderr(line)
-
-                    def _on_stage(stage: str) -> None:
-                        with suppress(RuntimeError):
-                            if current_stage:
-                                stage_statuses[current_stage[0]] = "completed"
-                            current_stage.clear()
-                            current_stage.append(stage)
-                            stage_statuses[stage] = "running"
-                            _refresh_stage_tracker()
 
                     started_at = datetime.now()
                     fresh_secrets = load_env_secrets(
@@ -576,9 +599,6 @@ def create_configure_run_page(
                         result = await runner.run(
                             config=config,
                             secrets=fresh_secrets,
-                            on_stdout=_on_stdout,
-                            on_stderr=_on_stderr,
-                            on_stage=_on_stage,
                         )
                     except ValueError as exc:
                         with suppress(RuntimeError):
@@ -591,15 +611,8 @@ def create_configure_run_page(
                         _set_run_status(f"Error: {exc}", "negative")
                         return
 
-                    if current_stage:
-                        stage_statuses[current_stage[0]] = (
-                            "completed" if result.exit_code == 0 else "failed"
-                        )
-                    elif result.exit_code != 0 and PIPELINE_STAGES:
-                        # Subprocess exited before emitting any stage marker
-                        # — surface the failure on the first stage so the
-                        # tracker matches the run status label.
-                        stage_statuses[PIPELINE_STAGES[0]] = "failed"
+                    # Terminal stage bookkeeping happens inside runner.run();
+                    # just repaint the tracker with the settled statuses.
                     _refresh_stage_tracker()
 
                     status = "success" if result.exit_code == 0 else "failed"

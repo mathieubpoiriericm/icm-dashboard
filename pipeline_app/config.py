@@ -155,10 +155,20 @@ def load_env_secrets(
             return cached[1]
 
     values = dotenv_values(env_path) if mtime >= 0 else {}
+    # dotenv returns strings verbatim; coerce non-numeric DB_PORT to the
+    # default here so the pipeline subprocess gets a valid port string
+    # instead of failing deep in asyncpg.
+    raw_port = values.get("DB_PORT")
+    if raw_port and not raw_port.isdigit():
+        logger.warning(
+            "Invalid DB_PORT=%r in .env; falling back to default 5432",
+            raw_port,
+        )
+        raw_port = None
     secrets = EnvSecrets(
         anthropic_api_key=values.get("ANTHROPIC_API_KEY") or "",
         db_host=values.get("DB_HOST") or "",
-        db_port=values.get("DB_PORT") or "5432",
+        db_port=raw_port or "5432",
         db_name=values.get("DB_NAME") or "",
         db_user=values.get("DB_USER") or "",
         db_password=values.get("DB_PASSWORD") or "",

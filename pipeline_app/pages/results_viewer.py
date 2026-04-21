@@ -277,8 +277,11 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
                         buckets = [0] * 10
                         for g in genes_list:
                             # Bucket i covers [i/10, (i+1)/10); clamp a
-                            # perfect 1.0 into the top bucket.
-                            idx = min(int(_gene_confidence(g) * 10), 9)
+                            # perfect 1.0 into the top bucket and guard a
+                            # negative confidence from wrapping into a valid
+                            # Python negative index that would scribble into
+                            # the top of the histogram.
+                            idx = max(0, min(int(_gene_confidence(g) * 10), 9))
                             buckets[idx] += 1
                         bucket_labels = [f"{i / 10:.1f}" for i in range(10)]
                         ui.echart(

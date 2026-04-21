@@ -10,8 +10,9 @@ import re
 import shutil
 import signal
 import time
+from collections import deque
 from collections.abc import Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,15 @@ REPORT_DEPENDENT_STAGES: frozenset[str] = frozenset(
     {"validate", "error_analysis", "track"}
 )
 RSCRIPT_EXE: str = "Rscript"
+
+# Upper bound on a single log line from the subprocess. Asyncio's default
+# StreamReader limit is 64 KiB; a single overflowing line raises
+# LimitOverrunError from readline() and tears down both pipe readers
+# mid-run. 10 MiB is enormously more than any legitimate pipeline log line
+# (~<1 KiB typical) but small enough that a pathological run can't pin
+# memory. _stream_lines also catches LimitOverrunError to keep going if an
+# even larger line somehow appears.
+_SUBPROCESS_STREAM_LIMIT: int = 10 * 1024 * 1024
 
 
 # ---- Pure functions ----
@@ -275,8 +285,23 @@ async def _stream_lines(
     Callback exceptions are logged and swallowed — propagating them would
     cancel the sibling pipe reader in ``_run_process_streamed`` and
     deadlock the subprocess on its next pipe write.
+
+    LimitOverrunError (a line exceeding the stream's per-line limit) is
+    caught and surfaced as a single truncation-notice callback. Without
+    this, one pathological line would tear down both readers and leave
+    the subprocess blocked on its next pipe write. CPython's readline()
+    re-raises LimitOverrunError as ValueError — we handle both.
     """
-    async for raw in stream:
+    while True:
+        try:
+            raw = await stream.readline()
+        except (asyncio.LimitOverrunError, ValueError) as exc:
+            logger.warning("subprocess log line exceeded per-line limit: %s", exc)
+            with suppress(Exception):
+                on_line("[log-line truncated: exceeded per-line limit]")
+            continue
+        if not raw:
+            break
         # rstrip both \r and \n so CRLF lines from Windows-spawned subprocesses
         # don't leave a trailing \r that breaks the stage-marker regex.
         line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
@@ -503,34 +528,110 @@ class SubprocessLock:
 
 
 class PipelineRunner:
-    """Spawns pipeline/main.py and streams output."""
+    """Spawns pipeline/main.py and streams output.
+
+    Buffers log lines, stage status, and the last result so a UI page that
+    reconnects after navigating away mid-run picks up the run in flight
+    without losing the stream or the tracker state. Mirrors
+    ``TuningRunner``'s set_callbacks / buffered-state pattern so
+    ``configure_run.py`` and ``tuning.py`` stay structurally symmetric.
+    """
 
     def __init__(self, lock: SubprocessLock) -> None:
         self._lock = lock
+        # Buffered run state (persists across page navigations). deque with
+        # maxlen auto-evicts the oldest on overflow so reconnect replay
+        # matches the UI's ui.log rotation window.
+        self.log_lines: deque[tuple[str, str]] = deque(maxlen=MAX_LOG_LINES)
+        self.stage_statuses: dict[str, str] = {s: "pending" for s in PIPELINE_STAGES}
+        self._current_stage: str | None = None
+        self.last_result: RunResult | None = None
+        self._on_stdout: Callable[[str], None] | None = None
+        self._on_stderr: Callable[[str], None] | None = None
+        self._on_stage: Callable[[str], None] | None = None
+
+    def set_callbacks(
+        self,
+        on_stdout: Callable[[str], None],
+        on_stderr: Callable[[str], None],
+        on_stage: Callable[[str], None],
+    ) -> None:
+        """Register or replace UI callbacks (called on each page render).
+
+        Callbacks are wrapped with suppress(RuntimeError) inside the emit
+        methods so a stale callback bound to a disconnected client doesn't
+        tear down the reader — lines still accumulate in log_lines and a
+        reconnect replays them.
+        """
+        self._on_stdout = on_stdout
+        self._on_stderr = on_stderr
+        self._on_stage = on_stage
+
+    def reset_state(self) -> None:
+        """Clear buffered run state so a fresh run renders from zero."""
+        self.log_lines.clear()
+        self.stage_statuses = {s: "pending" for s in PIPELINE_STAGES}
+        self._current_stage = None
+        self.last_result = None
+
+    def _emit_stdout(self, line: str) -> None:
+        self.log_lines.append(("out", line))
+        if self._on_stdout:
+            with suppress(RuntimeError):
+                self._on_stdout(line)
+
+    def _emit_stderr(self, line: str) -> None:
+        self.log_lines.append(("err", line))
+        if self._on_stderr:
+            with suppress(RuntimeError):
+                self._on_stderr(line)
+
+    def _emit_stage(self, stage: str) -> None:
+        # Close out the previous stage before marking the new one running,
+        # so the tracker shows a clean "completed → running" transition
+        # even if the caller never sees individual markers live.
+        prev = self._current_stage
+        if prev is not None and self.stage_statuses.get(prev) == "running":
+            self.stage_statuses[prev] = "completed"
+        self._current_stage = stage
+        self.stage_statuses[stage] = "running"
+        if self._on_stage:
+            with suppress(RuntimeError):
+                self._on_stage(stage)
 
     async def run(
         self,
         config: PipelineAppConfig,
         secrets: EnvSecrets,
-        on_stdout: Callable[[str], None],
-        on_stderr: Callable[[str], None],
-        on_stage: Callable[[str], None],
         cli_args_override: list[str] | None = None,
     ) -> RunResult:
-        """Run the pipeline subprocess and stream output.
+        """Run the pipeline subprocess and stream output into buffered state.
+
+        Callbacks are taken from ``set_callbacks``; pass them before ``run``.
+        Lines are appended to ``log_lines`` first and forwarded to UI
+        callbacks second, so a disconnected client can't drop buffered data.
 
         Args:
-            cli_args_override: Use these args instead of
-                build_cli_args. For testing with arbitrary scripts.
+            cli_args_override: Use these args instead of build_cli_args.
+                For testing with arbitrary scripts.
         """
         if self._lock.is_running:
             raise RuntimeError("A process is already running")
+
+        self.reset_state()
 
         validated_python = validate_python_path(config.python_path)
         project_root = validate_project_root(config.project_root)
         args = cli_args_override or build_cli_args(config)
         env = build_env_vars(config, secrets)
         started_at = time.time()
+
+        def _handle_stdout(line: str) -> None:
+            stage = parse_stage_marker(line)
+            if stage:
+                self._emit_stage(stage)
+            else:
+                self._emit_stdout(line)
 
         async with self._lock.run_guard():
             process = await asyncio.create_subprocess_exec(
@@ -541,25 +642,33 @@ class PipelineRunner:
                 cwd=project_root,
                 env=env,
                 start_new_session=True,
+                limit=_SUBPROCESS_STREAM_LIMIT,
             )
             self._lock.set_process(process)
 
-            def _handle_stdout(line: str) -> None:
-                stage = parse_stage_marker(line)
-                if stage:
-                    on_stage(stage)
-                else:
-                    on_stdout(line)
+            exit_code = await _run_process_streamed(
+                process, _handle_stdout, self._emit_stderr
+            )
 
-            exit_code = await _run_process_streamed(process, _handle_stdout, on_stderr)
+            # Terminal state for the last stage: if at least one stage ran,
+            # finalize it; otherwise if we exited with a failure code,
+            # paint the first stage failed so a reconnecting page sees a
+            # diagnostic tracker instead of "all pending".
+            if self._current_stage is not None:
+                final_status = "completed" if exit_code == 0 else "failed"
+                self.stage_statuses[self._current_stage] = final_status
+            elif exit_code != 0 and PIPELINE_STAGES:
+                self.stage_statuses[PIPELINE_STAGES[0]] = "failed"
 
             logs_dir = Path(project_root) / "logs"
             report = find_newest_report(logs_dir, started_at)
 
-            return RunResult(
+            result = RunResult(
                 exit_code=exit_code,
                 report_path=str(report) if report else None,
             )
+            self.last_result = result
+            return result
 
 
 # ---- Tuning ----
@@ -678,8 +787,10 @@ class TuningRunner:
         self._skip_next: bool = False
         self._cancelled: bool = False
         self._is_waiting: bool = False
-        # Buffered run state (persists across page navigations)
-        self.log_lines: list[tuple[str, str]] = []
+        # Buffered run state (persists across page navigations). A
+        # deque(maxlen=...) so the oldest lines are evicted instead of the
+        # newest being silently dropped — matches the UI ui.log rotation.
+        self.log_lines: deque[tuple[str, str]] = deque(maxlen=MAX_LOG_LINES)
         self.stage_statuses: dict[str, str] = {s: "pending" for s in TUNING_STAGES}
         self.stage_durations: dict[str, float] = {}
         self._stage_started_at: dict[str, float] = {}
@@ -749,14 +860,13 @@ class TuningRunner:
         self._skip_next = False
 
     def _emit_stdout(self, line: str) -> None:
-        if len(self.log_lines) < MAX_LOG_LINES:
-            self.log_lines.append(("out", line))
+        # deque(maxlen=...) auto-evicts the oldest on overflow; no manual cap.
+        self.log_lines.append(("out", line))
         if self._on_stdout:
             self._on_stdout(line)
 
     def _emit_stderr(self, line: str) -> None:
-        if len(self.log_lines) < MAX_LOG_LINES:
-            self.log_lines.append(("err", line))
+        self.log_lines.append(("err", line))
         if self._on_stderr:
             self._on_stderr(line)
 
@@ -824,9 +934,7 @@ class TuningRunner:
 
         total_repeats = int(tuning.repeats)
         if total_repeats < 1:
-            raise ValueError(
-                f"tuning.repeats must be >= 1, got {total_repeats}"
-            )
+            raise ValueError(f"tuning.repeats must be >= 1, got {total_repeats}")
         run_group = time.strftime("%Y%m%d_%H%M%S") if total_repeats > 1 else ""
         project_root = validate_project_root(config.project_root)
         logs_dir = Path(project_root) / "logs"
@@ -910,6 +1018,7 @@ class TuningRunner:
                                 cwd=project_root,
                                 env=env,
                                 start_new_session=True,
+                                limit=_SUBPROCESS_STREAM_LIMIT,
                             )
                             self._lock.set_process(process)
 

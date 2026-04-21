@@ -27,7 +27,11 @@ from pipeline_app.pages.results_viewer import create_results_viewer_page  # noqa
 from pipeline_app.pages.run_history import create_run_history_page  # noqa: E402
 from pipeline_app.pages.tuning import create_tuning_page  # noqa: E402
 from pipeline_app.pages.tuning_history import create_tuning_history_page  # noqa: E402
-from pipeline_app.runner import SubprocessLock, TuningRunner  # noqa: E402
+from pipeline_app.runner import (  # noqa: E402
+    PipelineRunner,
+    SubprocessLock,
+    TuningRunner,
+)
 from pipeline_app.theme import apply_theme  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -262,6 +266,7 @@ def wrap_page_root() -> ui.element:
 def setup_pages(
     lock: SubprocessLock,
     tuning_runner: TuningRunner,
+    pipeline_runner: PipelineRunner,
 ) -> None:
     """Register all @ui.page routes.
 
@@ -278,7 +283,7 @@ def setup_pages(
         drawer = create_sidebar(tuning_runner, current_path="/")
         create_header(drawer, tuning_runner, current_path="/")
         with wrap_page_root():
-            create_configure_run_page(lock, config, secrets)
+            create_configure_run_page(lock, config, secrets, pipeline_runner)
         create_footer()
 
     @ui.page("/history")
@@ -343,8 +348,11 @@ def main() -> None:
     """Create app state, register routes, and start NiceGUI."""
     lock = SubprocessLock()
     tuning_runner = TuningRunner(lock)
+    # Singleton: buffered run state survives page navigations so the
+    # Configure & Run page reconnects cleanly to an in-flight pipeline.
+    pipeline_runner = PipelineRunner(lock)
 
-    setup_pages(lock, tuning_runner)
+    setup_pages(lock, tuning_runner, pipeline_runner)
 
     # Register before ui.run() so NiceGUI wires it into the lifecycle.
     # Without this, start_new_session=True children survive Ctrl+C and

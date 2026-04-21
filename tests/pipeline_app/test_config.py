@@ -140,6 +140,31 @@ class TestEnvSecrets:
         assert secrets.anthropic_api_key == "sk-partial"
         assert secrets.db_host == ""
 
+    def test_invalid_db_port_falls_back_to_default(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Non-numeric DB_PORT must not reach the subprocess verbatim — the
+        pipeline would fail deep in asyncpg with a confusing error. The
+        loader coerces to the default and logs a warning.
+        """
+        env_file = tmp_path / ".env"
+        env_file.write_text("DB_PORT=5432a\n")
+        with caplog.at_level(logging.WARNING, logger="pipeline_app.config"):
+            secrets = load_env_secrets(str(tmp_path), use_cache=False)
+        assert secrets.db_port == "5432"
+        assert any(
+            "Invalid DB_PORT" in r.message and "'5432a'" in r.message
+            for r in caplog.records
+        )
+
+    def test_valid_numeric_db_port_passes_through(self, tmp_path: Path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("DB_PORT=6543\n")
+        secrets = load_env_secrets(str(tmp_path), use_cache=False)
+        assert secrets.db_port == "6543"
+
 
 class TestConfigPersistence:
     def test_save_and_load_roundtrip(self, tmp_config_dir):
