@@ -6,7 +6,7 @@ import dataclasses
 import os
 import shutil
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -199,36 +199,41 @@ def create_configure_run_page(
                     config, "sync_external_data"
                 )
 
-            with ui.column().classes("w-full") as local_pdfs_fields:
-                with ui.row().classes("w-full items-center gap-xs no-wrap"):
-                    local_pdfs_inp = (
-                        ui.input(
-                            label="Local PDFs Path",
-                            value=config.local_pdfs_path,
-                        )
-                        .classes("flex-1")
-                        .bind_value(config, "local_pdfs_path")
+            with (
+                ui.column().classes("w-full") as local_pdfs_fields,
+                ui.row().classes("w-full items-center gap-xs no-wrap"),
+            ):
+                local_pdfs_inp = (
+                    ui.input(
+                        label="Local PDFs Path",
+                        value=config.local_pdfs_path,
                     )
-                    ui.button(
-                        icon="folder_open",
-                        on_click=lambda: _pick_local_pdfs(local_pdfs_inp),
-                    ).props("flat dense").classes("btn-icon")
-                ui.checkbox("Skip Validation").bind_value(config, "skip_validation")
+                    .classes("flex-1")
+                    .bind_value(config, "local_pdfs_path")
+                )
+                ui.button(
+                    icon="folder_open",
+                    on_click=lambda: _pick_local_pdfs(local_pdfs_inp),
+                ).props("flat dense").classes("btn-icon")
 
-            with ui.column().classes("w-full") as pmid_list_fields:
-                with ui.row().classes("w-full items-center gap-xs no-wrap"):
-                    pmids_inp = (
-                        ui.input(
-                            label="PMIDs File Path",
-                            value=config.pmids_path,
-                        )
-                        .classes("flex-1")
-                        .bind_value(config, "pmids_path")
+            with (
+                ui.column().classes("w-full") as pmid_list_fields,
+                ui.row().classes("w-full items-center gap-xs no-wrap"),
+            ):
+                pmids_inp = (
+                    ui.input(
+                        label="PMIDs File Path",
+                        value=config.pmids_path,
                     )
-                    ui.button(
-                        icon="folder_open",
-                        on_click=lambda: _pick_pmids(pmids_inp),
-                    ).props("flat dense").classes("btn-icon")
+                    .classes("flex-1")
+                    .bind_value(config, "pmids_path")
+                )
+                ui.button(
+                    icon="folder_open",
+                    on_click=lambda: _pick_pmids(pmids_inp),
+                ).props("flat dense").classes("btn-icon")
+
+            with ui.column().classes("w-full") as skip_validation_fields:
                 ui.checkbox("Skip Validation").bind_value(config, "skip_validation")
 
             async def _pick_local_pdfs(inp: ui.input) -> None:
@@ -267,6 +272,9 @@ def create_configure_run_page(
                 standard_fields.set_visibility(mode == "standard")
                 local_pdfs_fields.set_visibility(mode == "local_pdfs")
                 pmid_list_fields.set_visibility(mode == "pmid_list")
+                skip_validation_fields.set_visibility(
+                    mode in ("local_pdfs", "pmid_list")
+                )
 
             run_mode_select.on_value_change(lambda _: _update_run_mode_fields())
             _update_run_mode_fields()
@@ -572,24 +580,23 @@ def create_configure_run_page(
                 )
 
             async def _run_pipeline() -> None:
-                # Disable before any guard check so rapid double-clicks can't
-                # both pass an is_running check that is only true after the
-                # first click acquires the lock.
+                # Guard before try/finally so the early-return path doesn't
+                # re-enable the button while another click's run is active.
+                if lock.is_running:
+                    ui.notify(
+                        "A process is already running",
+                        color="warning",
+                    )
+                    return
+
                 if run_btn_ref:
                     run_btn_ref[0].disable()
 
                 try:
-                    if lock.is_running:
-                        ui.notify(
-                            "A process is already running",
-                            color="warning",
-                        )
-                        return
-
                     if log_viewer_ref:
                         log_viewer_ref[0].clear()
 
-                    started_at = datetime.now()
+                    started_at = datetime.now(UTC)
                     fresh_secrets = load_env_secrets(
                         config.project_root, use_cache=False
                     )

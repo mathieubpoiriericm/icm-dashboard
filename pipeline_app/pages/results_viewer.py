@@ -302,7 +302,13 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
                             # the top of the histogram.
                             idx = max(0, min(int(_gene_confidence(g) * 10), 9))
                             buckets[idx] += 1
-                        bucket_labels = [f"{i / 10:.1f}" for i in range(10)]
+                        # Range labels (e.g. "0.9–1.0") so the last bar is not
+                        # mislabelled as "0.9" when it actually contains every
+                        # gene with confidence in [0.9, 1.0] including a
+                        # perfect 1.0.
+                        bucket_labels = [
+                            f"{i / 10:.1f}–{(i + 1) / 10:.1f}" for i in range(10)
+                        ]
                         ui.echart(
                             {
                                 "backgroundColor": "transparent",

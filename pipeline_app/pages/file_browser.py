@@ -49,7 +49,15 @@ def create_file_browser_page(project_root: str) -> None:
         if not file_path_str:
             selected_path.clear()
             return
-        path = Path(file_path_str)
+
+        # Resolve eagerly: is_within resolves internally to check the anchor,
+        # but is_file later would still follow a symlink — confining reads to
+        # logs/ requires every subsequent op to see the canonical path.
+        try:
+            path = Path(file_path_str).resolve()
+        except (OSError, RuntimeError) as err:
+            ui.notify(f"Invalid path: {err}", color="negative")
+            return
 
         # The tree's node IDs come back through the WebSocket; treat them as
         # untrusted and confine reads to logs/ regardless of what was sent.

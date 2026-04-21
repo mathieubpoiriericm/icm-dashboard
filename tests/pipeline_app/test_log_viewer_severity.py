@@ -85,11 +85,21 @@ class TestDetectSeverityTracebackTerminal:
             "ImportError: No module named foo",
             "asyncpg.exceptions.ConnectionDoesNotExistError: connection was closed",
             "pipeline.database.DatabaseError: merge failed",
-            "RuntimeWarning: deprecated usage",
         ],
     )
     def test_exception_class_lines_detected(self, line: str):
         assert detect_severity(line) == "error"
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "RuntimeWarning: deprecated usage",
+            "DeprecationWarning: foo will be removed",
+            "UserWarning: behaviour changed",
+        ],
+    )
+    def test_typed_warning_class_lines_detected_as_warn(self, line: str):
+        assert detect_severity(line) == "warn"
 
     def test_lowercase_warning_label_still_warn(self):
         assert detect_severity("warning: rate limited") == "warn"

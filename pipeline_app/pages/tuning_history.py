@@ -81,7 +81,14 @@ def _load_tuning_runs(project_root: str) -> list[dict[str, object]]:
                 with contextlib.suppress(ValueError):
                     row[k] = float(v)
         coerced.append(row)
-    # Newest first — assume rows are in append order
+    # Sort by timestamp when available so out-of-order writes still render
+    # newest-first; fall back to file order when the column is missing.
+    if coerced and any(r.get("timestamp") for r in coerced):
+        return sorted(
+            coerced,
+            key=lambda r: str(r.get("timestamp") or ""),
+            reverse=True,
+        )
     return list(reversed(coerced))
 
 
@@ -248,7 +255,10 @@ def _render_body(
         # doesn't crash and leave the diff panel silently out of sync.
         selected_rows.clear()
         selected_rows.extend(getattr(e, "selection", []))
-        _comparison_panel.refresh()
+        # A deferred select event from a pre-refresh table targets an
+        # orphaned _comparison_panel; .refresh() raises RuntimeError.
+        with contextlib.suppress(RuntimeError):
+            _comparison_panel.refresh()
 
     table = ui.table(
         columns=columns,

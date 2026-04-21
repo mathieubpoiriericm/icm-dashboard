@@ -60,13 +60,25 @@ def detect_file_type(filename: str) -> str | None:
     return None
 
 
+def _exceeds_display_cap(content: str) -> bool:
+    """True if `content` would exceed the byte cap when sent to the browser.
+
+    Codepoint count ≥ byte cap ⇒ definitely over (1 codepoint ≥ 1 byte).
+    Otherwise pay the encode to disambiguate the multi-byte (CJK, emoji) case.
+    """
+    if len(content) > MAX_TEXT_DISPLAY_BYTES:
+        return True
+    return len(content.encode("utf-8", errors="replace")) > MAX_TEXT_DISPLAY_BYTES
+
+
 def _truncate_for_display(content: str) -> str:
     """Cap ui.code payload so a large file doesn't freeze the browser."""
-    # len(str) counts Unicode codepoints, not bytes — close enough for a
-    # display guard and avoids a full .encode() for the common small case.
-    if len(content) <= MAX_TEXT_DISPLAY_BYTES:
+    if not _exceeds_display_cap(content):
         return content
-    truncated = content[:MAX_TEXT_DISPLAY_BYTES]
+    truncated_bytes = content.encode("utf-8", errors="replace")[
+        :MAX_TEXT_DISPLAY_BYTES
+    ]
+    truncated = truncated_bytes.decode("utf-8", errors="ignore")
     return (
         truncated
         + "\n\n... [truncated: content exceeds "
@@ -117,12 +129,9 @@ async def render_file_content(
             with container:
                 ui.label(f"Error reading file: {e}").classes("text-negative")
             return
-        # Skip the parse + reformat round-trip if the raw content already
-        # exceeds the display cap. json.dumps(indent=2) can balloon compact
-        # JSON 3-5× in memory (a 40 MB compact report reformats to ~150 MB
-        # transient), and the result would be truncated anyway — so parsing
-        # burns memory and CPU for nothing on the oversized path.
-        if len(content) > MAX_TEXT_DISPLAY_BYTES:
+        # json.dumps(indent=2) can balloon compact JSON 3-5× in memory; skip
+        # the round-trip when content is already over the display cap.
+        if _exceeds_display_cap(content):
             formatted = content
         else:
             try:

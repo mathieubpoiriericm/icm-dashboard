@@ -29,8 +29,14 @@ _SEVERITY_PATTERNS: tuple[tuple[re.Pattern[str], Severity], ...] = (
         "error",
     ),
     (
-        re.compile(r"^([\w.]+\.)?[A-Z]\w*(Error|Exception|Warning):"),
+        re.compile(r"^([\w.]+\.)?[A-Z]\w*(Error|Exception):"),
         "error",
+    ),
+    # Typed-name *Warning: lines (DeprecationWarning, RuntimeWarning, …)
+    # — must precede the bracketed WARN pattern so the typed match wins.
+    (
+        re.compile(r"^([\w.]+\.)?[A-Z]\w*Warning:"),
+        "warn",
     ),
     (re.compile(r"\[?\bWARN(ING)?\b\]?", re.IGNORECASE), "warn"),
     (re.compile(r"\[?\bDEBUG\b\]?", re.IGNORECASE), "debug"),

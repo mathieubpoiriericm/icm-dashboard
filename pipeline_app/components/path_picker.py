@@ -213,12 +213,23 @@ async def pick_path(
                 on_click=lambda: dialog.submit(None),
             ).props("flat").classes("btn-ghost")
 
+            def _on_select_folder_click() -> None:
+                # Re-check the anchor at submit time so this path matches
+                # the validation _on_select_click does for file selections.
+                folder = current_dir_holder[0]
+                if resolved_anchor is not None and not is_within(
+                    folder, resolved_anchor
+                ):
+                    ui.notify("Outside allowed folder", color="warning")
+                    return
+                dialog.submit(str(folder))
+
             select_folder_btn_holder: list[ui.button] = []
             if mode == "file" and allow_directories_as_files:
                 select_folder_btn_holder.append(
                     ui.button(
                         "Select current folder",
-                        on_click=lambda: dialog.submit(str(current_dir_holder[0])),
+                        on_click=_on_select_folder_click,
                     )
                     .props("outline")
                     .classes("btn-secondary")
@@ -289,9 +300,12 @@ async def pick_path(
                 extensions=extensions,
                 symlinks=symlinks,
             )
+            # Snapshot after the await so a concurrent _select_file update
+            # is visible at render time (sampling pre-await drops the
+            # highlight on the just-selected file).
+            selected = selected_file_holder[0]
             container = entries_container[0]
             container.clear()
-            selected = selected_file_holder[0]
             with container:
                 if not items:
                     ui.label("(empty)").classes("path-picker-empty")

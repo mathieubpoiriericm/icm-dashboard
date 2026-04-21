@@ -293,10 +293,9 @@ async def _stream_lines(
     re-raises LimitOverrunError as ValueError — we handle both.
 
     ``readline()`` leaves the overflowing bytes in the StreamReader's
-    buffer; without draining them explicitly, the next ``readline()``
-    call immediately re-raises on the same unconsumed bytes, producing
-    an infinite tight loop. ``consumed`` on LimitOverrunError tells us
-    how many bytes to discard before resuming.
+    buffer; without draining to the next newline, ``readline()`` re-raises
+    on the same bytes forever. ``readuntil(b"\\n")`` advances cleanly to
+    the next line boundary regardless of which exception variant fires.
     """
     while True:
         try:
@@ -305,11 +304,15 @@ async def _stream_lines(
             logger.warning("subprocess log line exceeded per-line limit: %s", exc)
             with suppress(Exception):
                 on_line("[log-line truncated: exceeded per-line limit]")
-            # Discard the bytes that triggered the overrun so readline()
-            # doesn't see them on the next iteration and immediately raise
-            # again. readexactly may itself raise IncompleteReadError at EOF.
-            with suppress(asyncio.IncompleteReadError, Exception):
-                await stream.readexactly(exc.consumed)
+            # Drain to the next newline so the next readline() starts on a
+            # clean line boundary. IncompleteReadError fires at EOF; treat
+            # that as end-of-stream by breaking out of the loop.
+            try:
+                await stream.readuntil(b"\n")
+            except asyncio.IncompleteReadError:
+                break
+            except Exception:  # noqa: BLE001
+                pass
             continue
         except ValueError as exc:
             # CPython occasionally re-raises LimitOverrunError as a plain
@@ -504,14 +507,16 @@ class SubprocessLock:
     async def run_guard(self):
         """Acquire lock, track running state, and clean up on exit.
 
-        Raises RuntimeError if another caller already holds the lock. The
-        non-blocking check closes the is_running / run_guard race where
-        two concurrent callers would otherwise both pass an outer
-        ``if lock.is_running`` guard and queue on the lock.
+        Raises RuntimeError if another caller already holds the lock.
+        The ``_is_running`` re-check inside the lock is defensive against
+        a future await being introduced between locked() and acquire().
         """
         if self._lock.locked():
             raise RuntimeError("A process is already running")
-        async with self._lock:
+        await self._lock.acquire()
+        try:
+            if self._is_running:
+                raise RuntimeError("A process is already running")
             self._is_running = True
             self._cancel_requested = False
             self._process_ready.clear()
@@ -524,6 +529,8 @@ class SubprocessLock:
                 # Wake any cancel() awaiting the process so it sees the
                 # cleared state and returns instead of waiting to the deadline.
                 self._process_ready.set()
+        finally:
+            self._lock.release()
 
     async def cancel(self) -> None:
         """Send SIGTERM, then SIGKILL if still alive.
@@ -1024,6 +1031,10 @@ class TuningRunner:
                     break
 
                 self.stage_statuses = {s: "pending" for s in TUNING_STAGES}
+                # Drop stale start-times from the previous repeat so a stage
+                # that aborted without _emit_stage_complete doesn't leak its
+                # start time into the next repeat's duration calculation.
+                self._stage_started_at.clear()
                 report_path: str | None = None
                 score_dist_path: str | None = None
 
@@ -1068,11 +1079,12 @@ class TuningRunner:
                                     score_dist_path=score_dist_path,
                                     run_group=run_group,
                                 )
-                                env = _base_env()
                                 if exe == RSCRIPT_EXE:
                                     if validated_rscript is None:
                                         validated_rscript = validate_rscript_path()
                                     exe = validated_rscript
+                                    # plot is pure-compute; no secrets needed.
+                                    env = _base_env()
                                 else:
                                     # Honor use_main_config for non-extract
                                     # Python stages too, matching the extract
@@ -1082,6 +1094,9 @@ class TuningRunner:
                                         if tuning.use_main_config
                                         else validated_tuning_python
                                     )
+                                    # Non-extract Python stages need DB
+                                    # creds, NCBI keys, and PIPELINE_* knobs.
+                                    env = build_env_vars(config, secrets)
 
                         async with self._lock.run_guard():
                             process = await asyncio.create_subprocess_exec(

@@ -390,7 +390,7 @@ def load_presets() -> list[Preset]:
     if _presets_cache is not None:
         cached_path, cached_mtime, cached_presets = _presets_cache
         if cached_path == PRESETS_PATH and cached_mtime == mtime:
-            return list(cached_presets)
+            return _copy_presets(cached_presets)
 
     try:
         data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
@@ -406,12 +406,41 @@ def load_presets() -> list[Preset]:
         return []
     presets = []
     for p in data:
+        if not isinstance(p, dict):
+            logger.warning("Skipping non-dict preset entry: %r", p)
+            continue
+        # Coerce id/name to str so a hand-edited "id": 42 doesn't become a
+        # ghost preset that load_preset's string equality never matches.
+        raw_id = p.get("id")
+        raw_name = p.get("name")
+        if raw_id is None or raw_name is None:
+            logger.warning("Skipping preset entry missing id/name: %s", p)
+            continue
         try:
-            presets.append(Preset(**p))
-        except (TypeError, KeyError):
+            presets.append(
+                Preset(
+                    id=str(raw_id),
+                    name=str(raw_name),
+                    config=p.get("config"),
+                )
+            )
+        except (TypeError, ValueError):
             logger.warning("Skipping malformed preset entry: %s", p)
     _presets_cache = (PRESETS_PATH, mtime, list(presets))
-    return presets
+    return _copy_presets(presets)
+
+
+def _copy_presets(presets: list[Preset]) -> list[Preset]:
+    """Per-instance copies so callers mutating a returned Preset can't
+    corrupt the module cache. config dict is shallow-copied if present."""
+    return [
+        Preset(
+            id=p.id,
+            name=p.name,
+            config=dict(p.config) if isinstance(p.config, dict) else p.config,
+        )
+        for p in presets
+    ]
 
 
 def _save_presets(presets: list[Preset]) -> None:
