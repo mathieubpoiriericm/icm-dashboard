@@ -240,11 +240,12 @@ def _render_image_viewer(container: Element, src: str) -> None:
         pct = int(round(z * 100))
         pct_label[0].set_text(f"{pct}%")
         vp = viewport_ref[0]
-        if z > 1.0:
-            vp.classes(add="zoomed")
-            vp.style(replace=f"--image-zoom: {pct}%")
-        else:
+        if z == 1.0:
             vp.classes(remove="zoomed")
+            vp.style(remove="--image-zoom")
+        else:
+            vp.classes(add="zoomed")
+            vp.style(replace=f"--image-zoom: {z}")
         out_enabled = z > _IMAGE_ZOOM_MIN
         in_enabled = z < _IMAGE_ZOOM_MAX
         if out_enabled != last_enabled["out"]:
@@ -255,14 +256,22 @@ def _render_image_viewer(container: Element, src: str) -> None:
             last_enabled["in"] = in_enabled
 
     def _zoom_in() -> None:
-        zoom[0] = min(_IMAGE_ZOOM_MAX, round(zoom[0] + _IMAGE_ZOOM_STEP, 2))
+        new_z = min(_IMAGE_ZOOM_MAX, round(zoom[0] + _IMAGE_ZOOM_STEP, 2))
+        if new_z == zoom[0]:
+            return
+        zoom[0] = new_z
         _apply()
 
     def _zoom_out() -> None:
-        zoom[0] = max(_IMAGE_ZOOM_MIN, round(zoom[0] - _IMAGE_ZOOM_STEP, 2))
+        new_z = max(_IMAGE_ZOOM_MIN, round(zoom[0] - _IMAGE_ZOOM_STEP, 2))
+        if new_z == zoom[0]:
+            return
+        zoom[0] = new_z
         _apply()
 
     def _zoom_reset() -> None:
+        if zoom[0] == 1.0:
+            return
         zoom[0] = 1.0
         _apply()
 
@@ -284,4 +293,6 @@ def _render_image_viewer(container: Element, src: str) -> None:
             ).classes("btn-icon")
         viewport_ref.append(ui.element("div").classes("image-viewer-viewport"))
         with viewport_ref[0]:
-            ui.html(f'<img src="{src}" class="file-preview-image" alt="" />')
+            img_el = ui.element("img").classes("file-preview-image")
+            img_el.props["src"] = src
+            img_el.props["alt"] = ""
