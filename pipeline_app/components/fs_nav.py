@@ -22,6 +22,13 @@ class DirEntry:
 
 SymlinkPolicy = Literal["reject", "preserve"]
 
+#: Hard cap on scan_directory recursion depth. CPython's default
+#: ``sys.getrecursionlimit()`` is ~1000, and a pathological bind-mount loop
+#: that re-includes an ancestor would crash with RecursionError (which the
+#: OSError handler doesn't catch, so it would escape to the caller and
+#: freeze the tree pane). 20 levels covers any legitimate project tree.
+_MAX_SCAN_DEPTH: int = 20
+
 
 def is_within(path: Path, anchor: Path) -> bool:
     """True iff ``path`` resolves inside ``anchor``.
@@ -60,7 +67,19 @@ def scan_directory(
     """
     if resolved_root is None:
         resolved_root = root.resolve()
+    return _scan_directory(root, base, resolved_root, 0)
 
+
+def _scan_directory(
+    root: Path,
+    base: Path,
+    resolved_root: Path,
+    depth: int,
+) -> list[dict[str, Any]]:
+    # Depth cap guards against bind-mount loops that would overflow CPython's
+    # recursion limit before OSError can catch anything.
+    if depth >= _MAX_SCAN_DEPTH:
+        return []
     try:
         with os.scandir(base) as it:
             raw_entries = list(it)
@@ -77,7 +96,9 @@ def scan_directory(
             continue
 
         if entry.is_dir(follow_symlinks=False):
-            children = scan_directory(root, Path(entry.path), resolved_root)
+            children = _scan_directory(
+                root, Path(entry.path), resolved_root, depth + 1
+            )
             if children:  # Exclude empty directories
                 nodes.append(
                     {

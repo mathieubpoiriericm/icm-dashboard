@@ -345,7 +345,12 @@ def create_tuning_page(
                     runner.current_repeat,
                     runner.total_repeats,
                 )
-            if lock.is_running:
+            # any_running covers inter-stage waits (when the subprocess lock
+            # is momentarily released between stages) as well as active
+            # subprocess runs — without it, a user reconnecting during the
+            # pause between stages sees the Run button enabled while the
+            # experiment is still live.
+            if runner.any_running:
                 run_btn.disable()
             if runner.is_waiting:
                 # Reconnecting mid-wait: the runner is paused awaiting user

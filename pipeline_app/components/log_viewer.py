@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 from collections import deque
+from contextlib import suppress
 from typing import Literal, get_args
 
-from nicegui import ui
+from nicegui import context, ui
 
 MAX_LOG_LINES: int = 10_000
 
@@ -80,8 +81,15 @@ class LogViewer:
         # Bounded deque gives O(1) drop-oldest on overflow — avoids the O(n)
         # slice-and-delete a plain list would need to honour the cap.
         self._buf: deque[tuple[str, str]] = deque(maxlen=_PENDING_CAP)
-        self._dead = False
-        ui.timer(_FLUSH_INTERVAL_S, self._flush)
+        # Keep a handle on the timer so stop() can cancel it — ui.timer is
+        # NOT auto-cancelled on container teardown (NiceGUI issues #1500,
+        # #4617), so a fresh LogViewer on each page render would otherwise
+        # leak one flush-tick-per-50-ms coroutine per navigation.
+        self._timer = ui.timer(_FLUSH_INTERVAL_S, self._flush)
+        # Register cleanup on client disconnect so per-navigation timers
+        # don't accumulate across a long-lived browser session.
+        with suppress(Exception):
+            context.client.on_disconnect(self.stop)
 
     def append(self, line: str, severity: Severity | None = None) -> None:
         """Queue a log line with optional explicit severity.
@@ -117,19 +125,31 @@ class LogViewer:
         self._buf.clear()
         self._log.clear()
 
+    def stop(self) -> None:
+        """Cancel the flush timer. Call before discarding a LogViewer.
+
+        Without this, a LogViewer created on each page render leaks a live
+        ui.timer per navigation — the callback fires every 50 ms on a
+        disposed element for the rest of the client session.
+        """
+        with suppress(Exception):
+            self._timer.active = False
+        with suppress(Exception):
+            self._timer.delete()
+
     def _flush(self) -> None:
-        if self._dead or not self._buf:
+        if not self._buf:
             return
         # Pop one at a time so a disconnect mid-batch doesn't silently lose
-        # the unpushed tail. First push after client disconnect raises
-        # RuntimeError; latch the dead flag so subsequent ticks short-circuit
-        # instead of re-attempting the push every 50 ms until NiceGUI reaps
-        # the timer.
+        # the unpushed tail. A push after client disconnect raises
+        # RuntimeError — swallow it and leave the unpushed line at the head
+        # of the buffer. Retrying on the next tick is cheap, and on WebSocket
+        # reconnect the push succeeds so the user sees a continuous stream
+        # instead of a permanently frozen pane.
         while self._buf:
             line, css_class = self._buf[0]
             try:
                 self._log.push(line, classes=css_class)
             except RuntimeError:
-                self._dead = True
                 return
             self._buf.popleft()

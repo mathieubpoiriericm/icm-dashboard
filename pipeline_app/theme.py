@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from nicegui import app, ui
+
+logger = logging.getLogger(__name__)
 
 _THEME_CSS = Path(__file__).parent / "static" / "theme.css"
 
@@ -153,3 +156,8 @@ def apply_theme() -> None:
     ui.add_head_html(_DRAWER_RESIZER_JS, shared=True)
     if _THEME_CSS.is_file():
         ui.add_css(_THEME_CSS.read_text(encoding="utf-8"), shared=True)
+    else:
+        # Silent no-op leaves the app running completely unstyled with no
+        # hint at why — surface it so partial checkouts / botched deploys
+        # are caught in logs instead of a "works for me" bug report.
+        logger.warning("Theme CSS not found at %s; app will run unstyled", _THEME_CSS)

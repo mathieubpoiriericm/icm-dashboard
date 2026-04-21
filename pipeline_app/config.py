@@ -186,11 +186,18 @@ def load_env_secrets(
 def _atomic_write(path: Path, content: str) -> None:
     """Write content to path atomically via temp file + rename."""
     fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    # Track fd ownership explicitly: if os.fdopen raises before taking it,
+    # the raw fd would leak and gradually exhaust the process fd table.
+    fd_owned = True
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd_owned = False
             f.write(content)
         os.replace(tmp_path, path)
     except BaseException:
+        if fd_owned:
+            with suppress(OSError):
+                os.close(fd)
         with suppress(OSError):
             os.unlink(tmp_path)
         raise

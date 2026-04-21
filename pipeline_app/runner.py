@@ -291,14 +291,35 @@ async def _stream_lines(
     this, one pathological line would tear down both readers and leave
     the subprocess blocked on its next pipe write. CPython's readline()
     re-raises LimitOverrunError as ValueError — we handle both.
+
+    ``readline()`` leaves the overflowing bytes in the StreamReader's
+    buffer; without draining them explicitly, the next ``readline()``
+    call immediately re-raises on the same unconsumed bytes, producing
+    an infinite tight loop. ``consumed`` on LimitOverrunError tells us
+    how many bytes to discard before resuming.
     """
     while True:
         try:
             raw = await stream.readline()
-        except (asyncio.LimitOverrunError, ValueError) as exc:
+        except asyncio.LimitOverrunError as exc:
             logger.warning("subprocess log line exceeded per-line limit: %s", exc)
             with suppress(Exception):
                 on_line("[log-line truncated: exceeded per-line limit]")
+            # Discard the bytes that triggered the overrun so readline()
+            # doesn't see them on the next iteration and immediately raise
+            # again. readexactly may itself raise IncompleteReadError at EOF.
+            with suppress(asyncio.IncompleteReadError, Exception):
+                await stream.readexactly(exc.consumed)
+            continue
+        except ValueError as exc:
+            # CPython occasionally re-raises LimitOverrunError as a plain
+            # ValueError (no ``consumed`` attribute); we can't target a
+            # precise drain, so read-and-discard up to the next newline.
+            logger.warning("subprocess log line exceeded per-line limit: %s", exc)
+            with suppress(Exception):
+                on_line("[log-line truncated: exceeded per-line limit]")
+            with suppress(Exception):
+                await stream.readuntil(b"\n")
             continue
         if not raw:
             break
@@ -460,6 +481,9 @@ class SubprocessLock:
         # Set if cancel() arrives before set_process() — set_process will
         # honor it by terminating the just-spawned process.
         self._cancel_requested: bool = False
+        # Signaled when set_process fires or when run_guard exits without
+        # ever spawning. Lets cancel() block without polling.
+        self._process_ready: asyncio.Event = asyncio.Event()
 
     @property
     def is_running(self) -> bool:
@@ -473,6 +497,8 @@ class SubprocessLock:
         self._process = proc
         if proc is not None and self._cancel_requested:
             _signal_process_group(proc, signal.SIGTERM)
+        if proc is not None:
+            self._process_ready.set()
 
     @asynccontextmanager
     async def run_guard(self):
@@ -488,12 +514,16 @@ class SubprocessLock:
         async with self._lock:
             self._is_running = True
             self._cancel_requested = False
+            self._process_ready.clear()
             try:
                 yield
             finally:
                 self._is_running = False
                 self._process = None
                 self._cancel_requested = False
+                # Wake any cancel() awaiting the process so it sees the
+                # cleared state and returns instead of waiting to the deadline.
+                self._process_ready.set()
 
     async def cancel(self) -> None:
         """Send SIGTERM, then SIGKILL if still alive.
@@ -510,21 +540,34 @@ class SubprocessLock:
         if proc is None:
             # Subprocess hasn't been spawned yet (we're between
             # `_is_running = True` and `set_process(...)`). Flag the request
-            # so set_process terminates the process as soon as it appears.
+            # so set_process terminates the process as soon as it appears,
+            # then await the ready Event (set by set_process or run_guard's
+            # finally). Without the wait, shutdown handlers return before
+            # cleanup actually happens and the subprocess orphans to PID 1.
             self._cancel_requested = True
-            return
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._process_ready.wait(), timeout=10.0)
+            proc = self._process
+            if proc is None:
+                return
         _signal_process_group(proc, signal.SIGTERM)
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
         except TimeoutError:
-            _signal_process_group(proc, signal.SIGKILL)
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except TimeoutError:
-                # Last-ditch direct kill so the proc isn't left as a permanent
-                # zombie if both signal-group attempts somehow miss.
-                with contextlib.suppress(ProcessLookupError, OSError):
-                    proc.kill()
+            # Guard against racing run_guard's finally: if the proc exited
+            # between the TimeoutError and here, sending SIGKILL to a PID
+            # that may already have been recycled by the OS would kill an
+            # unrelated process.
+            if proc.returncode is None:
+                _signal_process_group(proc, signal.SIGKILL)
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5.0)
+                except TimeoutError:
+                    # Last-ditch direct kill so the proc isn't left as a
+                    # permanent zombie if both signal-group attempts miss.
+                    if proc.returncode is None:
+                        with contextlib.suppress(ProcessLookupError, OSError):
+                            proc.kill()
 
 
 def _safe_call(cb: Callable[..., Any] | None, /, *args: Any) -> None:
@@ -962,7 +1005,15 @@ class TuningRunner:
             project_root = validate_project_root(config.project_root)
             logs_dir = Path(project_root) / "logs"
             validated_config_python = validate_python_path(config.python_path)
-            validated_tuning_python = validate_python_path(tuning.python_path)
+            # Skip tuning.python_path validation when use_main_config is True
+            # — the tuning path is never invoked in that mode, so validating
+            # it would produce spurious "executable not found" errors when
+            # the field is blank or stale.
+            validated_tuning_python = (
+                validated_config_python
+                if tuning.use_main_config
+                else validate_python_path(tuning.python_path)
+            )
 
             self.reset_state()
             # Resolved lazily — only when a plot stage actually runs, so users
@@ -1067,6 +1118,16 @@ class TuningRunner:
                         self._emit_stderr(f"Stage {stage} failed to start: {e}")
                         self._emit_stage_complete(stage, [], status="failed")
                     else:
+                        # If the user cancelled while the subprocess was live,
+                        # its exit_code reflects the signal (not a clean run).
+                        # Mark the stage cancelled and break out of the loop
+                        # — don't scrape partial artifacts and populate
+                        # report_path from a killed extract stage, or the
+                        # next stage's report_path check would silently use
+                        # corrupt data.
+                        if self._cancelled:
+                            self._emit_stage_complete(stage, [], status="cancelled")
+                            break
                         # Non-zero exit is a stage failure. Downstream stages
                         # that need a report file are guarded by needs_report
                         # and self-skip when report_path stays None.

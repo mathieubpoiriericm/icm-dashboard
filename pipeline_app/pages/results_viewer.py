@@ -35,6 +35,19 @@ def is_safe_report_id(report_id: str) -> bool:
     return ".." not in report_id and not report_id.startswith(".")
 
 
+def _safe_int(value: Any, fallback: int) -> int:
+    """Coerce a possibly-stringified or null JSON value to int.
+
+    Malformed or legacy reports may carry a string where an int is
+    expected; let numeric comparisons see an int instead of crashing the
+    whole tab render on TypeError.
+    """
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return fallback
+
+
 def _gene_symbol(g: dict[str, Any]) -> str:
     """Extract gene symbol with key fallback."""
     return g.get("gene_symbol", g.get("symbol", ""))
@@ -217,8 +230,14 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
             papers_count = len(papers_detail)
             # Prefer the pipeline's own counts when present; fall back to
             # flattened-list lengths if the summary dict is missing.
-            genes_count = genes_summary.get("validated", len(genes_list))
-            rejected_count = genes_summary.get("rejected", len(rejected_list))
+            genes_count = _safe_int(
+                genes_summary.get("validated", len(genes_list)),
+                fallback=len(genes_list),
+            )
+            rejected_count = _safe_int(
+                genes_summary.get("rejected", len(rejected_list)),
+                fallback=len(rejected_list),
+            )
 
             with ui.row().classes("flex-wrap gap-md"):
                 stat_card(papers_count, "Papers Processed", color="info")
@@ -369,7 +388,12 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
                             "pmid": pmid,
                             "source": p.get("source", ""),
                             "gene_count": p.get("gene_count", 0),
-                            "processing_time": round(p.get("processing_time", 0), 2),
+                            # get() returns the default only for *missing*
+                            # keys; an explicit JSON null returns None, which
+                            # round() can't accept — fall back via `or 0`.
+                            "processing_time": round(
+                                p.get("processing_time") or 0, 2
+                            ),
                             "errors": p.get("errors", ""),
                         }
                     )
