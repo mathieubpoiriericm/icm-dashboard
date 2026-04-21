@@ -118,6 +118,7 @@ def create_run_history_page() -> None:
                 <q-td :props="props">
                     <q-btn
                         outline size="sm" icon="visibility" label="View"
+                        class="btn-secondary"
                         @click="$parent.$emit('view', props.row)"
                     />
                 </q-td>
@@ -188,4 +189,4 @@ def create_run_history_page() -> None:
             "Clear All",
             on_click=_clear_all,
             icon="delete_forever",
-        ).props("flat").classes("btn-destructive")
+        ).props("unelevated").classes("btn-destructive")

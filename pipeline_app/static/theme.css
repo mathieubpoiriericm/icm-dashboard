@@ -25,6 +25,8 @@
     --theme-info-rgb: 42, 90, 158;
     --theme-accent: #fa4616;
     --theme-accent-dark: #e03d12;
+    --theme-negative-dark: #a4154d;
+    --theme-warning-dark: #9a4d00;
 
     /* Text */
     --theme-text-primary: #1a1430;
@@ -199,11 +201,6 @@ body.drawer-resizing {
     font-weight: 500;
     letter-spacing: 0.01em;
     transition: all 150ms ease;
-}
-
-.preset-action-btn {
-    font-size: 14px !important;
-    border: 1px solid var(--border-emphasis) !important;
 }
 
 /* === TABLES === */
@@ -829,33 +826,86 @@ body.drawer-resizing {
 
 /* === BUTTON HIERARCHY === */
 
+/* Equal box model across every variant: each button reserves the same 1px
+   border slot so side-by-side rows (e.g. Load · Save · Delete preset) stay
+   pixel-aligned whether the border is visible or transparent. */
+.btn-primary,
+.btn-secondary,
+.btn-ghost,
+.btn-execute,
+.btn-destructive,
+.btn-warning,
+.btn-icon {
+    border: 1px solid transparent !important;
+    transition:
+        background-color var(--motion-fast) var(--ease-in-out),
+        border-color var(--motion-fast) var(--ease-in-out),
+        box-shadow var(--motion-fast) var(--ease-in-out),
+        color var(--motion-fast) var(--ease-in-out),
+        transform var(--motion-fast) var(--ease-in-out) !important;
+}
+
+.btn-primary,
+.btn-execute,
+.btn-destructive,
+.btn-warning {
+    color: #fff !important;
+}
+.btn-primary .q-btn__content,
+.btn-execute .q-btn__content,
+.btn-destructive .q-btn__content,
+.btn-warning .q-btn__content {
+    color: #fff;
+}
+
 .btn-primary {
     background-color: var(--theme-primary) !important;
-    color: #fff !important;
-    box-shadow: 0 1px 2px rgba(var(--theme-primary-rgb), 0.15);
-    transition:
-        box-shadow var(--motion-fast) var(--ease-in-out),
-        transform var(--motion-fast) var(--ease-in-out);
+    box-shadow: 0 1px 2px rgba(var(--theme-primary-rgb), 0.18);
 }
 .btn-primary:hover {
     box-shadow: 0 4px 14px var(--primary-glow);
     transform: translateY(-1px);
 }
-.btn-primary .q-btn__content {
-    color: #fff;
+
+.btn-execute {
+    background-color: var(--theme-secondary) !important;
+    box-shadow: 0 1px 2px rgba(var(--theme-secondary-rgb), 0.20);
+}
+.btn-execute:hover {
+    box-shadow: 0 4px 14px rgba(var(--theme-secondary-rgb), 0.32);
+    transform: translateY(-1px);
+}
+
+.btn-destructive {
+    background-color: var(--theme-negative) !important;
+    box-shadow: 0 1px 2px rgba(var(--theme-negative-rgb), 0.20);
+}
+.btn-destructive:hover {
+    background-color: var(--theme-negative-dark) !important;
+    box-shadow: 0 4px 14px rgba(var(--theme-negative-rgb), 0.34);
+    transform: translateY(-1px);
+}
+
+/* Halts a subprocess — not data deletion — so it stops at amber, not red. */
+.btn-warning {
+    background-color: var(--theme-warning) !important;
+    box-shadow: 0 1px 2px rgba(var(--theme-warning-rgb), 0.20);
+}
+.btn-warning:hover {
+    background-color: var(--theme-warning-dark) !important;
+    box-shadow: 0 4px 14px rgba(var(--theme-warning-rgb), 0.32);
+    transform: translateY(-1px);
 }
 
 .btn-secondary {
     background-color: transparent !important;
     color: var(--theme-text-primary) !important;
-    border: 1px solid var(--border-emphasis) !important;
-    transition:
-        background-color var(--motion-fast) var(--ease-in-out),
-        border-color var(--motion-fast) var(--ease-in-out);
+    border-color: var(--border-emphasis) !important;
 }
 .btn-secondary:hover {
     background-color: var(--surface-2) !important;
     border-color: var(--theme-primary) !important;
+    color: var(--theme-primary) !important;
 }
 
 .btn-ghost {
@@ -865,31 +915,6 @@ body.drawer-resizing {
 .btn-ghost:hover {
     background-color: var(--surface-2) !important;
     color: var(--theme-text-primary) !important;
-}
-
-.btn-execute {
-    background-color: var(--theme-secondary) !important;
-    color: #fff !important;
-    box-shadow: 0 1px 2px rgba(var(--theme-secondary-rgb), 0.18);
-    transition:
-        box-shadow var(--motion-fast) var(--ease-in-out),
-        transform var(--motion-fast) var(--ease-in-out);
-}
-.btn-execute:hover {
-    box-shadow: 0 4px 14px rgba(var(--theme-secondary-rgb), 0.32);
-    transform: translateY(-1px);
-}
-.btn-execute .q-btn__content {
-    color: #fff;
-}
-
-.btn-destructive {
-    background-color: transparent !important;
-    color: var(--theme-negative) !important;
-}
-.btn-destructive:hover {
-    background-color: rgba(var(--theme-negative-rgb), 0.08) !important;
-    color: var(--theme-negative) !important;
 }
 
 .btn-icon {

@@ -182,8 +182,8 @@ def create_sidebar(
                 on_click=lambda: _cancel_any(tuning_runner),
                 icon="cancel",
             )
-            .props("flat")
-            .classes("w-full btn-destructive")
+            .props("unelevated")
+            .classes("w-full btn-warning")
         )
         # Covers tuning inter-stage waits, when the lock is momentarily
         # released between stages but the experiment is still live.

@@ -28,7 +28,7 @@ async def confirm(message: str, title: str = "Confirm") -> bool:
             ui.button(
                 "Confirm",
                 on_click=lambda: dialog.submit(True),
-            ).props("flat size=sm").classes("btn-destructive")
+            ).props("unelevated size=sm").classes("btn-destructive")
     result = await dialog
     with suppress(RuntimeError):
         dialog.delete()
