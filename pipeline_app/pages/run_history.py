@@ -11,6 +11,7 @@ from pipeline_app.components.button_loading import button_loading
 from pipeline_app.components.confirm_dialog import confirm
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.config import clear_history, load_history
+from pipeline_app.pages.results_viewer import is_safe_report_id
 
 
 def create_run_history_page() -> None:
@@ -136,7 +137,14 @@ def create_run_history_page() -> None:
                 else:
                     ui.notify("Could not read row data", color="warning")
                     return
-                ui.navigate.to(f"/results/{_report_id_from_row(row)}")
+                report_id = _report_id_from_row(row)
+                # Row payload comes from the browser and could be tampered with
+                # before the $emit. Validate before navigating so a malformed
+                # id can't be spliced into a multi-segment URL.
+                if not is_safe_report_id(report_id):
+                    ui.notify("Invalid report id", color="warning")
+                    return
+                ui.navigate.to(f"/results/{report_id}")
 
             table.on("view", _on_view)
 

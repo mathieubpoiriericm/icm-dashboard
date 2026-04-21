@@ -372,9 +372,12 @@ def create_tuning_page(
                 runner.reset_state()
                 _refresh_stage_tracker()
 
-                run_btn.disable()
+                with suppress(RuntimeError):
+                    run_btn.disable()
                 try:
-                    fresh_secrets = load_env_secrets(config.project_root)
+                    fresh_secrets = load_env_secrets(
+                        config.project_root, use_cache=False
+                    )
                     await runner.run_experiment(
                         config=config,
                         tuning=tuning,

@@ -107,23 +107,28 @@ async def render_file_content(
 
     elif file_type == "csv":
         try:
-            # nrows= avoids iterator/chunksize, so read_csv always returns a
-            # DataFrame — cast narrows the static union without a branch.
+            # Read one extra row so "exactly MAX_CSV_ROWS" can be distinguished
+            # from "truncated" — nrows=MAX_CSV_ROWS alone gives len == cap in
+            # both cases, causing a false "Showing first N rows" label on
+            # files that happen to have exactly the cap.
             df = cast(
                 pd.DataFrame,
                 await asyncio.to_thread(
                     pd.read_csv,
                     file_path,
                     encoding="utf-8",
-                    nrows=MAX_CSV_ROWS,
+                    nrows=MAX_CSV_ROWS + 1,
                 ),
             )
         except (OSError, UnicodeDecodeError, pd.errors.ParserError) as e:
             with container:
                 ui.label(f"Error reading CSV: {e}").classes("text-negative")
             return
+        truncated = len(df) > MAX_CSV_ROWS
+        if truncated:
+            df = df.iloc[:MAX_CSV_ROWS]
         with container:
-            if len(df) >= MAX_CSV_ROWS:
+            if truncated:
                 ui.label(f"Showing first {MAX_CSV_ROWS} rows only.").classes(
                     "text-muted"
                 )

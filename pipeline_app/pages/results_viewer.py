@@ -23,7 +23,7 @@ _SAFE_REPORT_ID = re.compile(r"^[\w\-.:]+$")
 _MAX_REPORT_SIZE: int = 50 * 1024 * 1024  # 50 MB cap on JSON report load
 
 
-def _is_safe_report_id(report_id: str) -> bool:
+def is_safe_report_id(report_id: str) -> bool:
     """Validate report_id matches the safe-chars regex AND is not a traversal.
 
     The base regex ``[\\w\\-.:]+`` accidentally matches ``..`` (two dots are
@@ -162,7 +162,7 @@ def _read_report(
 
 def create_results_viewer_page(report_id: str, project_root: str) -> None:
     """Render the Results Viewer page for a given report ID."""
-    if not _is_safe_report_id(report_id):
+    if not is_safe_report_id(report_id):
         ui.label("Invalid report ID.").classes("text-negative")
         ui.button(
             "Back to History",

@@ -70,6 +70,7 @@ class LogViewer:
         # Bounded deque gives O(1) drop-oldest on overflow — avoids the O(n)
         # slice-and-delete a plain list would need to honour the cap.
         self._buf: deque[tuple[str, str]] = deque(maxlen=_PENDING_CAP)
+        self._dead = False
         ui.timer(_FLUSH_INTERVAL_S, self._flush)
 
     def append(self, line: str, severity: Severity | None = None) -> None:
@@ -107,9 +108,16 @@ class LogViewer:
         self._log.clear()
 
     def _flush(self) -> None:
-        if not self._buf:
+        if self._dead or not self._buf:
             return
         batch = list(self._buf)
         self._buf.clear()
-        for line, css_class in batch:
-            self._log.push(line, classes=css_class)
+        # First push after client disconnect raises RuntimeError. Latch the
+        # dead flag so subsequent ticks short-circuit instead of re-copying
+        # the buffer every 50 ms until NiceGUI reaps the timer.
+        try:
+            for line, css_class in batch:
+                self._log.push(line, classes=css_class)
+        except RuntimeError:
+            self._dead = True
+            self._buf.clear()
