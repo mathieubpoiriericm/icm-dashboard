@@ -218,6 +218,19 @@ def _filter_dataclass_fields(data: dict[str, Any], cls: type) -> dict[str, Any]:
             continue
         if f.default is not MISSING:
             expected_type = type(f.default)
+            # bool is a subclass of int, so isinstance(True, int) is True —
+            # without this guard, JSON `true`/`false` silently lands in an
+            # int field as a bool value and flows through downstream typed
+            # call sites unchanged.
+            if expected_type is not bool and isinstance(v, bool):
+                logger.warning(
+                    "Field %s.%s=%r dropped (%s expected, got bool)",
+                    cls.__name__,
+                    k,
+                    v,
+                    expected_type.__name__,
+                )
+                continue
             if not isinstance(v, expected_type):
                 # bool coercion is limited to int (json true/false decode to bool
                 # already, so this only catches numeric 0/1). bool("False") is True

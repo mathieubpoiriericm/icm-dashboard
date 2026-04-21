@@ -225,8 +225,11 @@ def _render_body(rows: list[dict[str, object]]) -> None:
         )
 
     def _on_selection(e) -> None:
+        # Older NiceGUI/Quasar combinations occasionally deliver an event
+        # without `.selection`; fall back to an empty list so the handler
+        # doesn't crash and leave the diff panel silently out of sync.
         selected_rows.clear()
-        selected_rows.extend(e.selection)
+        selected_rows.extend(getattr(e, "selection", []))
         _comparison_panel.refresh()
 
     table = ui.table(

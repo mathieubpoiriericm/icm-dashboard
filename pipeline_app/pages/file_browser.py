@@ -57,7 +57,14 @@ def create_file_browser_page(project_root: str) -> None:
             ui.notify("Access denied: path outside logs/", color="negative")
             return
 
-        if not path.is_file():
+        # is_file() can raise OSError on NFS stale handles or if the file
+        # was rotated between the tree scan and this click — surface that
+        # as a notification instead of a silent handler crash.
+        try:
+            if not path.is_file():
+                return
+        except OSError as e:
+            ui.notify(f"Cannot read file: {e}", color="negative")
             return
 
         selected_path.clear()

@@ -15,10 +15,16 @@ Severity = Literal["info", "warn", "error", "stderr", "debug"]
 _VALID_SEVERITIES: frozenset[str] = frozenset(get_args(Severity))
 
 # Ordered: first match wins. Bracketed tokens are checked too because many
-# loggers emit lines like "[ERROR] something failed".
+# loggers emit lines like "[ERROR] something failed". The Traceback pattern
+# matches the literal Python stack-trace header so casual log lines that
+# merely mention the word "traceback" don't get miscoloured as errors.
 _SEVERITY_PATTERNS: tuple[tuple[re.Pattern[str], Severity], ...] = (
     (
-        re.compile(r"\[?\bERROR\b\]?|\bCRITICAL\b|\bFATAL\b|Traceback", re.IGNORECASE),
+        re.compile(
+            r"\[?\bERROR\b\]?|\bCRITICAL\b|\bFATAL\b"
+            r"|Traceback \(most recent call last\):",
+            re.IGNORECASE,
+        ),
         "error",
     ),
     (re.compile(r"\[?\bWARN(ING)?\b\]?", re.IGNORECASE), "warn"),
@@ -110,14 +116,16 @@ class LogViewer:
     def _flush(self) -> None:
         if self._dead or not self._buf:
             return
-        batch = list(self._buf)
-        self._buf.clear()
-        # First push after client disconnect raises RuntimeError. Latch the
-        # dead flag so subsequent ticks short-circuit instead of re-copying
-        # the buffer every 50 ms until NiceGUI reaps the timer.
-        try:
-            for line, css_class in batch:
+        # Pop one at a time so a disconnect mid-batch doesn't silently lose
+        # the unpushed tail. First push after client disconnect raises
+        # RuntimeError; latch the dead flag so subsequent ticks short-circuit
+        # instead of re-attempting the push every 50 ms until NiceGUI reaps
+        # the timer.
+        while self._buf:
+            line, css_class = self._buf[0]
+            try:
                 self._log.push(line, classes=css_class)
-        except RuntimeError:
-            self._dead = True
-            self._buf.clear()
+            except RuntimeError:
+                self._dead = True
+                return
+            self._buf.popleft()

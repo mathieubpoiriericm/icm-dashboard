@@ -79,7 +79,7 @@ def create_run_history_page() -> None:
         report_path = row.get("report_path", "")
         if report_path:
             return Path(report_path).stem
-        return row.get("id", "unknown")
+        return row.get("id") or ""
 
     def _build_table(rows: list[dict[str, Any]]) -> None:
         """Build the history table inside the current container."""
@@ -138,6 +138,12 @@ def create_run_history_page() -> None:
                     ui.notify("Could not read row data", color="warning")
                     return
                 report_id = _report_id_from_row(row)
+                if not report_id:
+                    # Legacy record with neither report_path nor id — the
+                    # results page would land on "Report not found: unknown"
+                    # with only a Back button. Say so inline instead.
+                    ui.notify("No report available for this run", color="warning")
+                    return
                 # Row payload comes from the browser and could be tampered with
                 # before the $emit. Validate before navigating so a malformed
                 # id can't be spliced into a multi-segment URL.

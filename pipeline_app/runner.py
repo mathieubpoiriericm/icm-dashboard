@@ -527,6 +527,20 @@ class SubprocessLock:
                     proc.kill()
 
 
+def _safe_call(cb: Callable[..., Any] | None, /, *args: Any) -> None:
+    """Call ``cb(*args)``, silencing RuntimeError from disconnected clients.
+
+    NiceGUI raises RuntimeError when a callback is bound to a page whose
+    client has gone away. Swallowing it keeps the runner's reader loop
+    intact so lines continue to buffer into ``log_lines`` for reconnect
+    replay.
+    """
+    if cb is None:
+        return
+    with suppress(RuntimeError):
+        cb(*args)
+
+
 class PipelineRunner:
     """Spawns pipeline/main.py and streams output.
 
@@ -576,15 +590,11 @@ class PipelineRunner:
 
     def _emit_stdout(self, line: str) -> None:
         self.log_lines.append(("out", line))
-        if self._on_stdout:
-            with suppress(RuntimeError):
-                self._on_stdout(line)
+        _safe_call(self._on_stdout, line)
 
     def _emit_stderr(self, line: str) -> None:
         self.log_lines.append(("err", line))
-        if self._on_stderr:
-            with suppress(RuntimeError):
-                self._on_stderr(line)
+        _safe_call(self._on_stderr, line)
 
     def _emit_stage(self, stage: str) -> None:
         # Close out the previous stage before marking the new one running,
@@ -595,9 +605,7 @@ class PipelineRunner:
             self.stage_statuses[prev] = "completed"
         self._current_stage = stage
         self.stage_statuses[stage] = "running"
-        if self._on_stage:
-            with suppress(RuntimeError):
-                self._on_stage(stage)
+        _safe_call(self._on_stage, stage)
 
     async def run(
         self,
@@ -634,16 +642,27 @@ class PipelineRunner:
                 self._emit_stdout(line)
 
         async with self._lock.run_guard():
-            process = await asyncio.create_subprocess_exec(
-                validated_python,
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=project_root,
-                env=env,
-                start_new_session=True,
-                limit=_SUBPROCESS_STREAM_LIMIT,
-            )
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    validated_python,
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=project_root,
+                    env=env,
+                    start_new_session=True,
+                    limit=_SUBPROCESS_STREAM_LIMIT,
+                )
+            except OSError as spawn_exc:
+                # fd exhaustion, permission, or missing interpreter after
+                # PATH resolution — surface as a failed first stage instead
+                # of leaving the tracker in "all pending" with no last_result.
+                self._emit_stderr(f"Failed to start subprocess: {spawn_exc}")
+                if PIPELINE_STAGES:
+                    self.stage_statuses[PIPELINE_STAGES[0]] = "failed"
+                result = RunResult(exit_code=-1, report_path=None)
+                self.last_result = result
+                return result
             self._lock.set_process(process)
 
             exit_code = await _run_process_streamed(
@@ -860,15 +879,12 @@ class TuningRunner:
         self._skip_next = False
 
     def _emit_stdout(self, line: str) -> None:
-        # deque(maxlen=...) auto-evicts the oldest on overflow; no manual cap.
         self.log_lines.append(("out", line))
-        if self._on_stdout:
-            self._on_stdout(line)
+        _safe_call(self._on_stdout, line)
 
     def _emit_stderr(self, line: str) -> None:
         self.log_lines.append(("err", line))
-        if self._on_stderr:
-            self._on_stderr(line)
+        _safe_call(self._on_stderr, line)
 
     def _emit_stage_start(
         self,
@@ -880,8 +896,7 @@ class TuningRunner:
         self._stage_started_at[stage] = time.monotonic()
         self.current_repeat = repeat
         self.total_repeats = total
-        if self._on_stage_start:
-            self._on_stage_start(stage, repeat, total)
+        _safe_call(self._on_stage_start, stage, repeat, total)
 
     def _emit_stage_complete(
         self,
@@ -893,12 +908,10 @@ class TuningRunner:
         started = self._stage_started_at.pop(stage, None)
         if started is not None:
             self.stage_durations[stage] = time.monotonic() - started
-        if self._on_stage_complete:
-            self._on_stage_complete(stage, files)
+        _safe_call(self._on_stage_complete, stage, files)
 
     def _emit_waiting(self) -> None:
-        if self._on_waiting:
-            self._on_waiting()
+        _safe_call(self._on_waiting)
 
     def advance(self) -> None:
         """User clicked Next Stage."""
@@ -927,24 +940,26 @@ class TuningRunner:
         script_override: str | None = None,
     ) -> None:
         """Run the full tuning experiment (possibly multi-repeat)."""
-        self._cancelled = False
-        self._is_waiting = False
-        self._advance_event = asyncio.Event()
-        self.reset_state()
-
-        total_repeats = int(tuning.repeats)
-        if total_repeats < 1:
-            raise ValueError(f"tuning.repeats must be >= 1, got {total_repeats}")
-        run_group = time.strftime("%Y%m%d_%H%M%S") if total_repeats > 1 else ""
-        project_root = validate_project_root(config.project_root)
-        logs_dir = Path(project_root) / "logs"
-        validated_config_python = validate_python_path(config.python_path)
-        validated_tuning_python = validate_python_path(tuning.python_path)
-        # Resolved lazily — only when a plot stage actually runs, so users
-        # who never reach plot don't need R installed up front.
-        validated_rscript: str | None = None
-
+        # Setup is inside try/finally so validation errors still clear
+        # _advance_event — a leaked Event keeps is_active True and the
+        # sidebar Cancel button wired to a dead run.
         try:
+            self._cancelled = False
+            self._is_waiting = False
+            self._advance_event = asyncio.Event()
+            self.reset_state()
+
+            total_repeats = int(tuning.repeats)
+            if total_repeats < 1:
+                raise ValueError(f"tuning.repeats must be >= 1, got {total_repeats}")
+            run_group = time.strftime("%Y%m%d_%H%M%S") if total_repeats > 1 else ""
+            project_root = validate_project_root(config.project_root)
+            logs_dir = Path(project_root) / "logs"
+            validated_config_python = validate_python_path(config.python_path)
+            validated_tuning_python = validate_python_path(tuning.python_path)
+            # Resolved lazily — only when a plot stage actually runs, so users
+            # who never reach plot don't need R installed up front.
+            validated_rscript: str | None = None
             for repeat in range(1, total_repeats + 1):
                 if self._cancelled:
                     break
@@ -1113,5 +1128,11 @@ class TuningRunner:
                             self._skip_next = False
                             continue
         finally:
+            # Mark any mid-flight stage failed so a reconnect doesn't see a
+            # ghost "running" status after CancelledError or any exception
+            # the inner per-stage except didn't cover.
+            for _stage, _status in self.stage_statuses.items():
+                if _status == "running":
+                    self.stage_statuses[_stage] = "failed"
             self._advance_event = None
             self._is_waiting = False

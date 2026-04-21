@@ -30,6 +30,11 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
 
 MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50 MB
 MAX_BINARY_FILE_SIZE: int = 10 * 1024 * 1024  # 10 MB (images/PDFs embed as data URIs)
+# Secondary cap for what actually reaches the browser's ui.code element.
+# A 20 MB JSON reformatted with indent=2 can exceed 50 MB; sending that as
+# one WebSocket message can freeze low-memory clients for seconds. Truncate
+# at this cap and append a notice instead of the full content.
+MAX_TEXT_DISPLAY_BYTES: int = 2 * 1024 * 1024  # 2 MB
 # Hard cap on rows materialized into the browser table. A 50 MB CSV with
 # narrow columns yields hundreds of thousands of rows; without this cap the
 # pandas DataFrame plus the JSON serialization to the browser blow up memory.
@@ -53,6 +58,20 @@ def detect_file_type(filename: str) -> str | None:
     if ext in _TEXT_EXTS:
         return "text"
     return None
+
+
+def _truncate_for_display(content: str) -> str:
+    """Cap ui.code payload so a large file doesn't freeze the browser."""
+    # len(str) counts Unicode codepoints, not bytes — close enough for a
+    # display guard and avoids a full .encode() for the common small case.
+    if len(content) <= MAX_TEXT_DISPLAY_BYTES:
+        return content
+    truncated = content[:MAX_TEXT_DISPLAY_BYTES]
+    return (
+        truncated
+        + "\n\n... [truncated: content exceeds "
+        + f"{MAX_TEXT_DISPLAY_BYTES // (1024 * 1024)} MB display cap]"
+    )
 
 
 async def render_file_content(
@@ -103,7 +122,7 @@ async def render_file_content(
         except json.JSONDecodeError:
             formatted = content
         with container:
-            ui.code(formatted, language="json")
+            ui.code(_truncate_for_display(formatted), language="json")
 
     elif file_type == "csv":
         try:
@@ -169,7 +188,7 @@ async def render_file_content(
                 ui.label(f"Error reading file: {e}").classes("text-negative")
             return
         with container:
-            ui.code(content)
+            ui.code(_truncate_for_display(content))
 
     else:
         with container:

@@ -110,9 +110,18 @@ def create_configure_run_page(
                     icon="delete",
                 ).props("unelevated").classes("btn-destructive")
 
-            def _load_preset(preset_id: str | None) -> None:
+            async def _load_preset(preset_id: str | None) -> None:
                 if not preset_id:
                     ui.notify("No preset selected", color="warning")
+                    return
+                # Loading overwrites every field in the live config — confirm
+                # so a misclick doesn't silently discard unsaved form edits.
+                confirmed = await confirm(
+                    "Loading this preset will overwrite the current form "
+                    "settings. Continue?",
+                    title="Load Preset",
+                )
+                if not confirmed:
                     return
                 loaded = load_preset(preset_id)
                 if loaded is None:
@@ -180,6 +189,9 @@ def create_configure_run_page(
                     value=config.days_back,
                     min=1,
                     max=365,
+                    # precision=0 blocks decimals; without it 0.5 slips past
+                    # min=1 because int(0.5) == 0.
+                    precision=0,
                 ).classes("w-full").bind_value(config, "days_back")
                 ui.checkbox("Dry Run").bind_value(config, "dry_run")
                 ui.checkbox("Test Mode").bind_value(config, "test_mode")
@@ -576,7 +588,6 @@ def create_configure_run_page(
 
                     if log_viewer_ref:
                         log_viewer_ref[0].clear()
-                    _set_run_status("Running...", "neutral")
 
                     started_at = datetime.now()
                     fresh_secrets = load_env_secrets(
@@ -595,6 +606,10 @@ def create_configure_run_page(
                         )
                         return
 
+                    # Status set after credential check so an early return
+                    # doesn't leave "Running..." displayed.
+                    _set_run_status("Running...", "neutral")
+
                     try:
                         result = await runner.run(
                             config=config,
@@ -604,11 +619,22 @@ def create_configure_run_page(
                         with suppress(RuntimeError):
                             ui.notify(str(exc), color="negative")
                         _set_run_status(f"Failed: {exc}", "negative")
+                        _refresh_stage_tracker()
+                        return
+                    except RuntimeError as exc:
+                        # "already running" from the lock's race-close check
+                        # — keep separate from the catch-all so the notify
+                        # color stays warning rather than negative.
+                        with suppress(RuntimeError):
+                            ui.notify(str(exc), color="warning")
+                        _set_run_status(str(exc), "negative")
+                        _refresh_stage_tracker()
                         return
                     except Exception as exc:
                         with suppress(RuntimeError):
                             ui.notify(f"Unexpected error: {exc}", color="negative")
                         _set_run_status(f"Error: {exc}", "negative")
+                        _refresh_stage_tracker()
                         return
 
                     # Terminal stage bookkeeping happens inside runner.run();

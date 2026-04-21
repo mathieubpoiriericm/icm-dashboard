@@ -123,13 +123,18 @@ def _breadcrumb_segments(current: Path, anchor: Path | None) -> list[Path]:
     cannot navigate above their sandbox via breadcrumb clicks.
     """
     chain: list[Path] = [current]
-    parent = current.parent
     stop = anchor.resolve() if anchor is not None else None
-    while parent != chain[-1]:
-        chain.append(parent)
-        if stop is not None and parent == stop:
+    # Stop BEFORE appending the parent when the current tail is already
+    # the sandbox anchor — otherwise we emit one segment above anchor,
+    # which resolves outside the sandbox and surfaces as a bogus
+    # "Outside allowed folder" notice when the user clicks it.
+    while True:
+        if stop is not None and chain[-1] == stop:
             break
-        parent = parent.parent
+        parent = chain[-1].parent
+        if parent == chain[-1]:
+            break
+        chain.append(parent)
     return list(reversed(chain))
 
 
