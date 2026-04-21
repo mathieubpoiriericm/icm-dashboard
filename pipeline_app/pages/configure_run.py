@@ -98,17 +98,17 @@ def create_configure_run_page(
                     "Load",
                     on_click=lambda: _load_preset(preset_select.value),
                     icon="download",
-                ).props("flat size=sm").classes("btn-ghost")
+                ).props("flat").classes("btn-ghost")
                 ui.button(
                     "Save",
                     on_click=lambda: _save_current_preset(),
                     icon="save",
-                ).props("flat size=sm").classes("btn-ghost")
+                ).props("flat").classes("btn-ghost")
                 ui.button(
                     "Delete",
                     on_click=lambda: _delete_preset(preset_select.value),
                     icon="delete",
-                ).props("unelevated size=sm").classes("btn-destructive")
+                ).props("unelevated").classes("btn-destructive")
 
             def _load_preset(preset_id: str | None) -> None:
                 if not preset_id:
