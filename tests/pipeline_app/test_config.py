@@ -379,6 +379,26 @@ class TestMalformedJson:
         (tmp_config_dir / "presets.json").write_text("{bad")
         assert load_presets() == []
 
+    def test_load_preset_with_null_config_does_not_crash(self, tmp_config_dir):
+        # @dataclass has no runtime type check, so Preset(config=None)
+        # constructs fine on disk-load; load_preset must not crash on
+        # the subsequent None.items() call.
+        import json as _json
+
+        (tmp_config_dir / "presets.json").write_text(
+            _json.dumps([{"id": "abc", "name": "Broken", "config": None}])
+        )
+        loaded = load_preset("abc")
+        assert loaded == PipelineAppConfig()
+
+    def test_load_preset_with_list_config_does_not_crash(self, tmp_config_dir):
+        import json as _json
+
+        entry = {"id": "abc", "name": "Broken", "config": ["not", "a", "dict"]}
+        (tmp_config_dir / "presets.json").write_text(_json.dumps([entry]))
+        loaded = load_preset("abc")
+        assert loaded == PipelineAppConfig()
+
 
 class TestSaveHistoryDirect:
     def test_save_caps_at_max(self, tmp_config_dir):

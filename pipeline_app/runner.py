@@ -626,12 +626,16 @@ class PipelineRunner:
         if self._lock.is_running:
             raise RuntimeError("A process is already running")
 
-        self.reset_state()
-
+        # Validate before resetting state so a bad python_path / project_root
+        # raises cleanly without wiping the previous run's log buffer and
+        # last_result — otherwise the UI shows a blank tracker and "no last
+        # result" that's indistinguishable from a never-run state.
         validated_python = validate_python_path(config.python_path)
         project_root = validate_project_root(config.project_root)
         args = cli_args_override or build_cli_args(config)
         env = build_env_vars(config, secrets)
+
+        self.reset_state()
         started_at = time.time()
 
         def _handle_stdout(line: str) -> None:
@@ -947,8 +951,10 @@ class TuningRunner:
             self._cancelled = False
             self._is_waiting = False
             self._advance_event = asyncio.Event()
-            self.reset_state()
 
+            # Validate before reset_state so a bad repeats / python_path /
+            # project_root raises without wiping the previous experiment's
+            # buffered log lines and stage statuses from the UI.
             total_repeats = int(tuning.repeats)
             if total_repeats < 1:
                 raise ValueError(f"tuning.repeats must be >= 1, got {total_repeats}")
@@ -957,6 +963,8 @@ class TuningRunner:
             logs_dir = Path(project_root) / "logs"
             validated_config_python = validate_python_path(config.python_path)
             validated_tuning_python = validate_python_path(tuning.python_path)
+
+            self.reset_state()
             # Resolved lazily — only when a plot stage actually runs, so users
             # who never reach plot don't need R installed up front.
             validated_rscript: str | None = None
@@ -1043,11 +1051,15 @@ class TuningRunner:
                                 self._emit_stderr,
                             )
                     except (
-                        FileNotFoundError,
-                        PermissionError,
+                        OSError,
                         ValueError,
                         RuntimeError,
                     ) as e:
+                        # OSError covers the full family of spawn failures
+                        # (missing interpreter, permission, fd exhaustion,
+                        # fork failure); without the parent class, EMFILE /
+                        # ENOMEM escape silently and the stage flips to
+                        # failed with no diagnostic line in the log pane.
                         # RuntimeError covers run_guard's "already running"
                         # check — without it the stage tracker would stay
                         # stuck in "running" and the experiment would abort

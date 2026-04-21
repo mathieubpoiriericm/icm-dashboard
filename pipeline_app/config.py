@@ -196,8 +196,18 @@ def _atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def _filter_dataclass_fields(data: dict[str, Any], cls: type) -> dict[str, Any]:
+def _filter_dataclass_fields(data: Any, cls: type) -> dict[str, Any]:
     """Keep only keys that match dataclass field names, with type coercion."""
+    # Guard non-dict inputs: dataclass constructors have no runtime type
+    # checks, so a hand-edited presets.json with `"config": null` or a list
+    # constructs Preset(config=...) cleanly and crashes here on .items().
+    if not isinstance(data, dict):
+        logger.warning(
+            "Expected dict for %s, got %s; using defaults",
+            cls.__name__,
+            type(data).__name__,
+        )
+        return {}
     valid_fields = {f.name: f for f in fields(cls)}
     result = {}
     for k, v in data.items():

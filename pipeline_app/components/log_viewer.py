@@ -27,6 +27,10 @@ _SEVERITY_PATTERNS: tuple[tuple[re.Pattern[str], Severity], ...] = (
         ),
         "error",
     ),
+    (
+        re.compile(r"^([\w.]+\.)?[A-Z]\w*(Error|Exception|Warning):"),
+        "error",
+    ),
     (re.compile(r"\[?\bWARN(ING)?\b\]?", re.IGNORECASE), "warn"),
     (re.compile(r"\[?\bDEBUG\b\]?", re.IGNORECASE), "debug"),
 )

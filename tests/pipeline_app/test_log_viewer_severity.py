@@ -74,3 +74,25 @@ class TestSeverityPriority:
 
     def test_warn_beats_debug(self):
         assert detect_severity("DEBUG: WARN downgrade") == "warn"
+
+
+class TestDetectSeverityTracebackTerminal:
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "ValueError: x is not valid",
+            "KeyError: 'missing_key'",
+            "ImportError: No module named foo",
+            "asyncpg.exceptions.ConnectionDoesNotExistError: connection was closed",
+            "pipeline.database.DatabaseError: merge failed",
+            "RuntimeWarning: deprecated usage",
+        ],
+    )
+    def test_exception_class_lines_detected(self, line: str):
+        assert detect_severity(line) == "error"
+
+    def test_lowercase_warning_label_still_warn(self):
+        assert detect_severity("warning: rate limited") == "warn"
+
+    def test_lowercase_error_label_stays_error(self):
+        assert detect_severity("error: something failed") == "error"

@@ -5,9 +5,11 @@ from __future__ import annotations
 import contextlib
 import csv
 import logging
+from collections.abc import Awaitable, Callable
 
 from nicegui import run, ui
 
+from pipeline_app.components.button_loading import button_loading
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.runner import resolve_project_root
 
@@ -122,18 +124,34 @@ def create_tuning_history_page(project_root: str) -> None:
     with container:
         ui.spinner("dots").classes("q-pa-md")
 
+    refresh_btn_ref: list[ui.button] = []
+
     async def _load() -> None:
         rows = await run.io_bound(_load_tuning_runs, project_root)
         for i, row in enumerate(rows):
             row["_row_id"] = str(i)
         container.clear()
         with container:
-            _render_body(rows)
+            _render_body(rows, _refresh, refresh_btn_ref)
+
+    async def _refresh() -> None:
+        # button_loading both disables the button and serves as the in-flight
+        # guard: rapid re-clicks during the io_bound CSV read would otherwise
+        # race multiple container.clear() + rebuild passes.
+        if not refresh_btn_ref:
+            await _load()
+            return
+        async with button_loading(refresh_btn_ref[0]):
+            await _load()
 
     ui.timer(0.0, _load, once=True)
 
 
-def _render_body(rows: list[dict[str, object]]) -> None:
+def _render_body(
+    rows: list[dict[str, object]],
+    on_refresh: Callable[[], Awaitable[None]] | None = None,
+    refresh_btn_ref: list[ui.button] | None = None,
+) -> None:
     if not rows:
         empty_state(
             "analytics",
@@ -242,10 +260,17 @@ def _render_body(rows: list[dict[str, object]]) -> None:
 
     with ui.row().classes("q-mt-sm items-center gap-sm"):
         ui.label("Select exactly 2 rows to compare metrics.").classes("text-muted")
-        ui.button(
-            "Refresh",
-            on_click=lambda: ui.navigate.reload(),
-            icon="refresh",
-        ).props("outline").classes("btn-secondary")
+        refresh_btn = (
+            ui.button(
+                "Refresh",
+                on_click=on_refresh if on_refresh is not None else ui.navigate.reload,
+                icon="refresh",
+            )
+            .props("outline")
+            .classes("btn-secondary")
+        )
+        if refresh_btn_ref is not None:
+            refresh_btn_ref.clear()
+            refresh_btn_ref.append(refresh_btn)
 
     _comparison_panel()

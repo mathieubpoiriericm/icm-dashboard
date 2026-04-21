@@ -117,10 +117,18 @@ async def render_file_content(
             with container:
                 ui.label(f"Error reading file: {e}").classes("text-negative")
             return
-        try:
-            formatted = json.dumps(json.loads(content), indent=2)
-        except json.JSONDecodeError:
+        # Skip the parse + reformat round-trip if the raw content already
+        # exceeds the display cap. json.dumps(indent=2) can balloon compact
+        # JSON 3-5× in memory (a 40 MB compact report reformats to ~150 MB
+        # transient), and the result would be truncated anyway — so parsing
+        # burns memory and CPU for nothing on the oversized path.
+        if len(content) > MAX_TEXT_DISPLAY_BYTES:
             formatted = content
+        else:
+            try:
+                formatted = json.dumps(json.loads(content), indent=2)
+            except json.JSONDecodeError:
+                formatted = content
         with container:
             ui.code(_truncate_for_display(formatted), language="json")
 
