@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -48,14 +49,34 @@ def _safe_int(value: Any, fallback: int) -> int:
         return fallback
 
 
+def _safe_float(value: Any, fallback: float = 0.0) -> float:
+    """Coerce a possibly-stringified, null, or NaN JSON value to a finite float.
+
+    Guards format specifiers like ``f"{x:.4f}"`` and arithmetic like
+    ``int(x * 10)`` which crash on None / non-numeric strings / NaN / inf
+    and would otherwise blank the whole tab on a single malformed field.
+    """
+    try:
+        f = float(value or 0)
+    except (TypeError, ValueError):
+        return fallback
+    return f if math.isfinite(f) else fallback
+
+
 def _gene_symbol(g: dict[str, Any]) -> str:
-    """Extract gene symbol with key fallback."""
-    return g.get("gene_symbol", g.get("symbol", ""))
+    """Extract gene symbol, tolerating either schema key + explicit null."""
+    v = g.get("gene_symbol")
+    if v is None:
+        v = g.get("symbol")
+    return str(v) if v is not None else ""
 
 
 def _gene_confidence(g: dict[str, Any]) -> float:
-    """Extract and round confidence score with key fallback."""
-    return round(g.get("confidence_score", g.get("confidence", 0)), 3)
+    """Extract and round confidence score, tolerating either schema key."""
+    v = g.get("confidence_score")
+    if v is None:
+        v = g.get("confidence")
+    return round(_safe_float(v), 3)
 
 
 def _join_field(g: dict[str, Any], *keys: str) -> str:
@@ -87,13 +108,17 @@ def _flatten_papers(
     """
     genes: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+    # ``or []`` (not ``.get(k, [])``) because an explicit JSON ``null``
+    # key still returns None and would crash the loop — dict.get's fallback
+    # only fires on missing keys. Same idiom repeated for every nullable
+    # list/dict field in this module.
     for p in papers_detail:
         pmid = p.get("pmid", "")
-        for g in p.get("genes", []):
+        for g in p.get("genes") or []:
             entry = dict(g)
             entry.setdefault("pmid", pmid)
             genes.append(entry)
-        for rg in p.get("rejected_genes", []):
+        for rg in p.get("rejected_genes") or []:
             # `or {}` covers both "gene" missing AND explicit null; plain
             # dict.get default only fires on missing.
             gene = dict(rg.get("gene") or {})
@@ -258,7 +283,7 @@ def _prepare_view_data(
     report_path, report, error_msg = _read_report(project_root, report_id)
     if report is None:
         return report_path, report, error_msg, {}
-    papers_detail = report.get("papers_detail", [])
+    papers_detail = report.get("papers_detail") or []
     genes_list, rejected_list = _flatten_papers(papers_detail)
     tables = {
         "papers": _build_papers_rows(papers_detail),
@@ -313,10 +338,10 @@ def _render_report_body(
     tables: dict[str, list[dict[str, Any]]],
 ) -> None:
     """Render the full tabbed report UI. Caller guarantees ``report`` is valid."""
-    papers_detail = report.get("papers_detail", [])
+    papers_detail = report.get("papers_detail") or []
     genes_list = tables.get("genes_list", [])
     rejected_list = tables.get("rejected_list", [])
-    token_usage = report.get("token_usage", {})
+    token_usage = report.get("token_usage") or {}
     raw_genes = report.get("genes", {})
     genes_summary = raw_genes if isinstance(raw_genes, dict) else {}
 
@@ -348,18 +373,18 @@ def _render_report_body(
                 stat_card(genes_count, "Genes Extracted", color="secondary")
                 stat_card(rejected_count, "Rejected Genes", color="negative")
 
-                total_cost = token_usage.get("estimated_cost_usd", 0) or 0
+                total_cost = _safe_float(token_usage.get("estimated_cost_usd"))
                 stat_card(f"${total_cost:.4f}", "Total Cost", color="warning")
 
-                duration = report.get("total_processing_time", 0) or 0
+                duration = _safe_float(report.get("total_processing_time"))
                 stat_card(
                     f"{duration:.1f}s" if duration < 60 else f"{duration / 60:.1f}m",
                     "Duration",
                     color="primary",
                 )
 
-                cache_hit = token_usage.get("cache_hit_rate", None)
-                if cache_hit is not None:
+                cache_hit = token_usage.get("cache_hit_rate")
+                if isinstance(cache_hit, (int, float)) and math.isfinite(cache_hit):
                     stat_card(f"{cache_hit:.1%}", "Cache Hit Rate", color="info")
 
                 bv_warnings = report.get("batch_validation_warnings", [])
@@ -594,12 +619,16 @@ def _render_report_body(
             if not token_usage:
                 ui.label("No token usage data.").classes("text-muted")
             else:
-                input_tok = token_usage.get("input_tokens", 0)
-                output_tok = token_usage.get("output_tokens", 0)
-                thinking_tok = token_usage.get("thinking_tokens", 0)
-                cache_read_tok = token_usage.get("cache_read_input_tokens", 0)
-                cache_create_tok = token_usage.get("cache_creation_input_tokens", 0)
-                total_cost = token_usage.get("estimated_cost_usd", 0) or 0
+                input_tok = _safe_int(token_usage.get("input_tokens"), 0)
+                output_tok = _safe_int(token_usage.get("output_tokens"), 0)
+                thinking_tok = _safe_int(token_usage.get("thinking_tokens"), 0)
+                cache_read_tok = _safe_int(
+                    token_usage.get("cache_read_input_tokens"), 0
+                )
+                cache_create_tok = _safe_int(
+                    token_usage.get("cache_creation_input_tokens"), 0
+                )
+                total_cost = _safe_float(token_usage.get("estimated_cost_usd"))
 
                 with ui.row().classes("flex-wrap gap-md"):
                     stat_card(f"{input_tok:,}", "Input Tokens", color="primary")
