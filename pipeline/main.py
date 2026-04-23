@@ -670,8 +670,11 @@ async def run_pipeline(
         await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
+    model_display = (
+        config.ollama_model if config.llm_provider == "ollama" else config.llm_model
+    )
     logger.info(
-        f"Config: model={config.llm_model}, "
+        f"Config: model={model_display}, provider={config.llm_provider}, "
         f"concurrency={config.max_concurrent_papers}, "
         f"RPM={config.rpm_limit}, TPM={config.tpm_limit}"
     )
@@ -944,8 +947,11 @@ async def run_local_pdf_pipeline(
     await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
+    model_display = (
+        config.ollama_model if config.llm_provider == "ollama" else config.llm_model
+    )
     logger.info(
-        f"Config: model={config.llm_model}, "
+        f"Config: model={model_display}, provider={config.llm_provider}, "
         f"validation={'disabled' if skip_validation else 'enabled'}"
     )
 
@@ -1151,8 +1157,11 @@ async def run_pmid_pipeline(
     await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")
+    model_display = (
+        config.ollama_model if config.llm_provider == "ollama" else config.llm_model
+    )
     logger.info(
-        f"Config: model={config.llm_model}, "
+        f"Config: model={model_display}, provider={config.llm_provider}, "
         f"validation={'disabled' if skip_validation else 'enabled'}"
     )
 
