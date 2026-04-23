@@ -18,6 +18,7 @@ CLAUDE.md
 data
 docs/other
 logs
+history.json
 presets.json
 
 # macOS-specific
