@@ -14,6 +14,7 @@ from pipeline_app.components.log_viewer import (
     detect_severity,
 )
 from pipeline_app.components.path_picker import pick_path
+from pipeline_app.components.provider_section import apply_provider_widget_state
 from pipeline_app.components.stage_tracker import StageTracker, create_stage_tracker
 from pipeline_app.config import (
     LLM_EFFORTS,
@@ -184,32 +185,52 @@ def create_tuning_page(
             )
 
             with ui.column().classes("w-full") as llm_override_fields:
-                tuning_provider_select = ui.select(
-                    options=PROVIDER_LABELS,
-                    label="Provider",
-                    value=tuning.llm_provider,
-                ).classes("w-full").bind_value(tuning, "llm_provider")
+                tuning_provider_select = (
+                    ui.select(
+                        options=PROVIDER_LABELS,
+                        label="Provider",
+                        value=tuning.llm_provider,
+                    )
+                    .classes("w-full")
+                    .bind_value(tuning, "llm_provider")
+                )
 
-                tuning_claude_model = ui.select(
-                    options=LLM_MODELS,
-                    label="Model",
-                    value=tuning.llm_model,
-                ).classes("w-full").bind_value(tuning, "llm_model")
-                tuning_claude_effort = ui.select(
-                    options=LLM_EFFORTS,
-                    label="Effort",
-                    value=tuning.llm_effort,
-                ).classes("w-full").bind_value(tuning, "llm_effort")
-                tuning_claude_max_tokens = ui.number(
-                    label="Max Tokens (0 = default)",
-                    value=tuning.llm_max_tokens,
-                    min=0,
-                ).classes("w-full").bind_value(tuning, "llm_max_tokens")
-                tuning_ollama_model = ui.input(
-                    label="Ollama model tag",
-                    value=tuning.ollama_model,
-                    placeholder="gemma4:e4b or svd-gemma:v1",
-                ).classes("w-full").bind_value(tuning, "ollama_model")
+                tuning_claude_model = (
+                    ui.select(
+                        options=LLM_MODELS,
+                        label="Model",
+                        value=tuning.llm_model,
+                    )
+                    .classes("w-full")
+                    .bind_value(tuning, "llm_model")
+                )
+                tuning_claude_effort = (
+                    ui.select(
+                        options=LLM_EFFORTS,
+                        label="Effort",
+                        value=tuning.llm_effort,
+                    )
+                    .classes("w-full")
+                    .bind_value(tuning, "llm_effort")
+                )
+                tuning_claude_max_tokens = (
+                    ui.number(
+                        label="Max Tokens (0 = default)",
+                        value=tuning.llm_max_tokens,
+                        min=0,
+                    )
+                    .classes("w-full")
+                    .bind_value(tuning, "llm_max_tokens")
+                )
+                tuning_ollama_model = (
+                    ui.input(
+                        label="Ollama model tag",
+                        value=tuning.ollama_model,
+                        placeholder="gemma4:e4b or svd-gemma:v1",
+                    )
+                    .classes("w-full")
+                    .bind_value(tuning, "ollama_model")
+                )
                 ui.select(
                     options=PROMPT_VERSIONS,
                     label="Prompt Version",
@@ -217,10 +238,14 @@ def create_tuning_page(
                 ).classes("w-full").bind_value(tuning, "prompt_version")
 
                 def _tuning_update_provider_controls() -> None:
-                    is_ollama = tuning.llm_provider == "ollama"
-                    tuning_claude_model.set_enabled(not is_ollama)
-                    tuning_claude_effort.set_enabled(not is_ollama)
-                    tuning_claude_max_tokens.set_enabled(not is_ollama)
+                    is_ollama = apply_provider_widget_state(
+                        tuning.llm_provider,
+                        claude_widgets=(
+                            tuning_claude_model,
+                            tuning_claude_effort,
+                            tuning_claude_max_tokens,
+                        ),
+                    )
                     tuning_ollama_model.set_enabled(is_ollama)
 
                 tuning_provider_select.on_value_change(

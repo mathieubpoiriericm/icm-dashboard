@@ -22,7 +22,6 @@
   "uniprot_rate_limit": 5,
   "max_paper_text_chars": 100000,
   "max_retries": 1,
-  "retry_delay": 2.0,
   "max_rate_limit_retries": 6,
   "rate_limit_retry_delay": 1.0,
   "max_connection_retries": 3,

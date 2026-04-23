@@ -39,7 +39,7 @@ def is_within(path: Path, anchor: Path) -> bool:
     """
     try:
         path.resolve().relative_to(anchor)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
     return True
 
@@ -83,7 +83,7 @@ def _scan_directory(
     try:
         with os.scandir(base) as it:
             raw_entries = list(it)
-    except (PermissionError, FileNotFoundError, NotADirectoryError, OSError):
+    except PermissionError, FileNotFoundError, NotADirectoryError, OSError:
         return []
 
     raw_entries.sort(
@@ -96,9 +96,7 @@ def _scan_directory(
             continue
 
         if entry.is_dir(follow_symlinks=False):
-            children = _scan_directory(
-                root, Path(entry.path), resolved_root, depth + 1
-            )
+            children = _scan_directory(root, Path(entry.path), resolved_root, depth + 1)
             if children:  # Exclude empty directories
                 nodes.append(
                     {
@@ -149,6 +147,7 @@ def list_directory(
         Directories first (alphabetical), then files (alphabetical).
         Returns [] on PermissionError.
     """
+
     def _is_dir_no_follow(p: Path) -> bool:
         # Path.is_dir() follows symlinks and will raise OSError on a broken
         # target or a stalled network mount; follow_symlinks=False uses the
@@ -164,7 +163,7 @@ def list_directory(
             base.iterdir(),
             key=lambda p: (not _is_dir_no_follow(p), p.name.lower()),
         )
-    except (PermissionError, OSError):
+    except PermissionError, OSError:
         return []
 
     result: list[DirEntry] = []

@@ -14,7 +14,6 @@ from pydantic import ValidationError
 
 from pipeline.llm_providers.base import (
     EXTRACTION_JSON_SCHEMA,
-    ExtractionResult,
     GeneEntry,
     parse_extraction_response,
 )
@@ -23,6 +22,8 @@ from pipeline.quality_metrics import TokenUsage
 from pipeline.rate_limiter import compute_backoff
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from pipeline.config import PipelineConfig
     from pipeline.rate_limiter import AsyncRateLimiter
 
@@ -84,6 +85,20 @@ class OllamaProvider:
     def supports_prompt_caching(self) -> bool:
         return False
 
+    def report_metadata(self, config: PipelineConfig) -> dict[str, Any]:
+        # Blanks for the Claude-only fields keep report consumers from ever
+        # rendering fabricated Claude metadata on an Ollama run.
+        return {
+            "model": config.ollama_model,
+            "model_version": "",
+            "thinking_mode": "none",
+            "effort": None,
+            "prompt_version": config.prompt_version,
+        }
+
+    def estimate_cost(self, usage: TokenUsage, config: PipelineConfig) -> float | None:
+        return None
+
     async def close(self) -> None:
         """Close the underlying HTTP client. Idempotent."""
         await close_ollama_client(self._client)
@@ -119,10 +134,8 @@ class OllamaProvider:
             max_chars=config.max_paper_text_chars,
             prompt_version=config.prompt_version,
         )
-        system_text = f"{prompt.system_prompt}\n\n{prompt.extraction_instructions}"
+        system_text = prompt.combined_system_text
 
-        result: ExtractionResult | None = None
-        response: ollama.ChatResponse | None = None
         connection_retries = 0
         validation_attempt = 0
         while True:
@@ -167,7 +180,13 @@ class OllamaProvider:
                     )
                 raw = response.message.content or ""
                 result = parse_extraction_response(raw)
-                break
+                for g in result.genes:
+                    g.pmid = pmid
+                usage = TokenUsage(
+                    input_tokens=response.prompt_eval_count or 0,
+                    output_tokens=response.eval_count or 0,
+                )
+                return result.genes, usage
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.warning(
                     "PMID %s: ollama validation attempt %d/%d failed: %s",
@@ -207,16 +226,3 @@ class OllamaProvider:
                     e,
                 )
                 await asyncio.sleep(backoff)
-
-        # result and response are guaranteed non-None here because the only loop
-        # exits are `break` (both set) or `raise` (propagates).
-        assert result is not None and response is not None
-
-        for g in result.genes:
-            g.pmid = pmid
-
-        usage = TokenUsage(
-            input_tokens=response.prompt_eval_count or 0,
-            output_tokens=response.eval_count or 0,
-        )
-        return result.genes, usage

@@ -10,12 +10,11 @@ import pytest
 
 from pipeline.config import PipelineConfig
 from pipeline.llm_extraction import GeneEntry
+from pipeline.llm_providers import get_provider
 from pipeline.quality_metrics import PipelineMetrics, TokenUsage
 from pipeline.report import (
     PipelineRunData,
-    _estimate_cost,
     _paper_results_to_summaries,
-    _provider_config_fields,
     build_local_pdf_run_data,
     build_pmid_run_data,
     build_run_data,
@@ -23,31 +22,39 @@ from pipeline.report import (
     write_comprehensive_report,
 )
 
+
+def _cost(model: str, input_tokens: int, output_tokens: int) -> float | None:
+    """Compute cost via AnthropicProvider — shim for the provider-based API."""
+    config = PipelineConfig(llm_provider="anthropic", llm_model=model)
+    usage = TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
+    return get_provider(config).estimate_cost(usage, config)
+
+
 # ---------------------------------------------------------------------------
-# _estimate_cost
+# estimate_cost (via AnthropicProvider)
 # ---------------------------------------------------------------------------
 
 
 class TestEstimateCost:
     def test_opus_pricing(self):
-        cost = _estimate_cost("claude-opus-4-7", 1_000_000, 100_000)
+        cost = _cost("claude-opus-4-7", 1_000_000, 100_000)
         # $5/M input + $25/M output -> 5 + 2.5 = 7.5
         assert cost == pytest.approx(7.5)
 
     def test_sonnet_pricing(self):
-        cost = _estimate_cost("claude-sonnet-4-6", 1_000_000, 100_000)
+        cost = _cost("claude-sonnet-4-6", 1_000_000, 100_000)
         # $3/M input + $15/M output -> 3 + 1.5 = 4.5
         assert cost == pytest.approx(4.5)
 
     def test_unknown_model_returns_none(self):
-        assert _estimate_cost("unknown-model", 1000, 500) is None
+        assert _cost("unknown-model", 1000, 500) is None
 
     def test_zero_tokens(self):
-        cost = _estimate_cost("claude-opus-4-7", 0, 0)
+        cost = _cost("claude-opus-4-7", 0, 0)
         assert cost == 0.0
 
     def test_small_cost(self):
-        cost = _estimate_cost("claude-opus-4-7", 1000, 500)
+        cost = _cost("claude-opus-4-7", 1000, 500)
         assert cost is not None
         assert cost > 0
         assert cost < 0.1
@@ -80,14 +87,14 @@ class MockPaperResult:
 class TestProviderConfigFields:
     def test_anthropic_uses_llm_model(self):
         config = PipelineConfig(llm_provider="anthropic", llm_model="claude-opus-4-7")
-        fields = _provider_config_fields(config)
+        fields = get_provider(config).report_metadata(config)
         assert fields["model"] == "claude-opus-4-7"
         assert fields["thinking_mode"] != "none"
         assert fields["effort"] is not None
 
     def test_ollama_uses_ollama_model(self):
         config = PipelineConfig(llm_provider="ollama", ollama_model="gemma4:e4b")
-        fields = _provider_config_fields(config)
+        fields = get_provider(config).report_metadata(config)
         assert fields["model"] == "gemma4:e4b"
         assert fields["thinking_mode"] == "none"
         assert fields["effort"] is None
@@ -97,7 +104,7 @@ class TestProviderConfigFields:
         config = PipelineConfig(llm_provider="ollama", ollama_model="gemma4:e4b")
         # Even though llm_model still has its default "claude-opus-4-7",
         # the effective name for Ollama runs must never be that.
-        assert _provider_config_fields(config)["model"] != config.llm_model
+        assert get_provider(config).report_metadata(config)["model"] != config.llm_model
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal, cast, get_args
 
 from lxml import etree  # type: ignore[import-untyped]
 
@@ -150,7 +150,21 @@ DEFAULT_CT_SEARCH_TERMS: Final[tuple[str, ...]] = (
 
 # Supported LLM providers. "anthropic" uses the Claude API; "ollama" uses a
 # local Ollama server (e.g. for Gemma-based fine-tuned models).
-LLM_PROVIDERS: Final[tuple[str, ...]] = ("anthropic", "ollama")
+LLMProviderName = Literal["anthropic", "ollama"]
+LLM_PROVIDERS: Final[tuple[LLMProviderName, ...]] = get_args(LLMProviderName)
+
+# Prompt versions tuned for a local Gemma-sized model. Kept as a set so the
+# Ollama auto-switch stays robust when the Anthropic default (currently "v5")
+# is bumped — equality checks against the old default would silently skip the
+# swap, whereas membership tolerates any non-Ollama prompt.
+OLLAMA_PROMPT_VERSIONS: Final[frozenset[str]] = frozenset({"ollama_v1"})
+
+# Ollama defaults shared between PipelineConfig (env-overridable) and the
+# pipeline_app dataclasses so a single edit bumps all three at once.
+OLLAMA_DEFAULT_HOST: Final[str] = "http://localhost:11434"
+OLLAMA_DEFAULT_MODEL: Final[str] = "gemma4:e4b"
+OLLAMA_DEFAULT_NUM_CTX: Final[int] = 65_536
+OLLAMA_DEFAULT_KEEP_ALIVE: Final[str] = "30m"
 
 
 def get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
@@ -202,13 +216,6 @@ MODEL_MAX_OUTPUT_TOKENS: Final[dict[str, int]] = {
     "claude-haiku-4-5-20251001": 64_000,
 }
 
-# Pricing per 1M tokens (input, output) — update when models change.
-MODEL_PRICING: Final[dict[str, tuple[float, float]]] = {
-    "claude-opus-4-7": (5.0, 25.0),
-    "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-haiku-4-5-20251001": (1.0, 5.0),
-}
-
 
 @dataclass
 class PipelineConfig:
@@ -237,30 +244,35 @@ class PipelineConfig:
     )
     # Provider selection: "anthropic" (default) or "ollama" (local via Ollama).
     # Normalized to lowercase so PIPELINE_LLM_PROVIDER=Anthropic / OLLAMA work.
-    llm_provider: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_LLM_PROVIDER", "anthropic"
-        ).strip().lower()
+    # Runtime validation lives in __post_init__; the cast is safe because any
+    # invalid value raises there before anyone reads the field.
+    llm_provider: LLMProviderName = field(
+        default_factory=lambda: cast(
+            LLMProviderName,
+            _env_str("PIPELINE_LLM_PROVIDER", "anthropic").strip().lower(),
+        )
     )
     # Ollama server URL (only used when llm_provider == "ollama").
     ollama_host: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_OLLAMA_HOST", "http://localhost:11434"
-        )
+        default_factory=lambda: _env_str("PIPELINE_OLLAMA_HOST", OLLAMA_DEFAULT_HOST)
     )
     # Ollama model tag (e.g. "gemma4:e4b" or "svd-gemma:v1").
     ollama_model: str = field(
-        default_factory=lambda: _env_str("PIPELINE_OLLAMA_MODEL", "gemma4:e4b")
+        default_factory=lambda: _env_str("PIPELINE_OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL)
     )
     # Ollama context window. Gemma 4 E4B supports up to 131072.
     ollama_num_ctx: int = field(
-        default_factory=lambda: _env_int("PIPELINE_OLLAMA_NUM_CTX", 65_536)
+        default_factory=lambda: _env_int(
+            "PIPELINE_OLLAMA_NUM_CTX", OLLAMA_DEFAULT_NUM_CTX
+        )
     )
     # How long Ollama keeps the model resident after each call (Ollama duration
     # syntax: "30m", "1h", "0" to unload immediately). Set to "0" on a shared
     # machine to free VRAM as soon as the pipeline finishes.
     ollama_keep_alive: str = field(
-        default_factory=lambda: _env_str("PIPELINE_OLLAMA_KEEP_ALIVE", "30m")
+        default_factory=lambda: _env_str(
+            "PIPELINE_OLLAMA_KEEP_ALIVE", OLLAMA_DEFAULT_KEEP_ALIVE
+        )
     )
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
@@ -400,14 +412,14 @@ class PipelineConfig:
                 f"got {self.llm_provider!r}"
             )
 
-        # Auto-switch to the ollama_v1 prompt when the user picks the ollama
-        # provider but hasn't explicitly chosen a prompt version. Explicit
-        # overrides (PIPELINE_PROMPT_VERSION set in env) are preserved so the
+        # Auto-switch to an ollama-native prompt when the user picks the
+        # ollama provider but hasn't explicitly chosen one. Explicit overrides
+        # (PIPELINE_PROMPT_VERSION set in env) are preserved so the
         # "same prompt on both providers" baseline comparison still works.
         if (
             self.llm_provider == "ollama"
             and "PIPELINE_PROMPT_VERSION" not in os.environ
-            and self.prompt_version == "v5"
+            and self.prompt_version not in OLLAMA_PROMPT_VERSIONS
         ):
             self.prompt_version = "ollama_v1"
 

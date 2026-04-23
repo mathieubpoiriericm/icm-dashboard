@@ -14,7 +14,15 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from pipeline.config import LLM_PROVIDERS as _PIPELINE_LLM_PROVIDERS
+from pipeline.config import (
+    LLM_PROVIDERS as _PIPELINE_LLM_PROVIDERS,
+)
+from pipeline.config import (
+    OLLAMA_DEFAULT_HOST,
+    OLLAMA_DEFAULT_MODEL,
+    OLLAMA_DEFAULT_NUM_CTX,
+    LLMProviderName,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +53,7 @@ LLM_MODELS: list[str] = [
     "claude-haiku-4-5-20251001",
 ]
 LLM_EFFORTS: list[str] = ["low", "medium", "high", "max"]
-LLM_PROVIDERS: list[str] = list(_PIPELINE_LLM_PROVIDERS)
+LLM_PROVIDERS: list[LLMProviderName] = list(_PIPELINE_LLM_PROVIDERS)
 PROVIDER_LABELS: dict[str, str] = {
     "anthropic": "Anthropic (Claude)",
     "ollama": "Ollama (local)",
@@ -74,10 +82,10 @@ class PipelineAppConfig:
     llm_effort: str = "high"
     llm_max_tokens: int = 0
     prompt_version: str = "v5"
-    llm_provider: str = "anthropic"
-    ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "gemma4:e4b"
-    ollama_num_ctx: int = 65_536
+    llm_provider: LLMProviderName = "anthropic"
+    ollama_host: str = OLLAMA_DEFAULT_HOST
+    ollama_model: str = OLLAMA_DEFAULT_MODEL
+    ollama_num_ctx: int = OLLAMA_DEFAULT_NUM_CTX
     confidence_threshold: float = 0.65
     max_concurrent_papers: int = 5
     rpm_limit: int = 50
@@ -87,7 +95,6 @@ class PipelineAppConfig:
     uniprot_rate_limit: int = 5
     max_paper_text_chars: int = 100_000
     max_retries: int = 1
-    retry_delay: float = 2.0
     max_rate_limit_retries: int = 6
     rate_limit_retry_delay: float = 1.0
     max_connection_retries: int = 3
@@ -114,10 +121,10 @@ class TuningConfig:
     llm_effort: str = "high"
     llm_max_tokens: int = 0
     prompt_version: str = "v5"
-    llm_provider: str = "anthropic"
-    ollama_model: str = "gemma4:e4b"
-    ollama_host: str = "http://localhost:11434"
-    ollama_num_ctx: int = 65_536
+    llm_provider: LLMProviderName = "anthropic"
+    ollama_model: str = OLLAMA_DEFAULT_MODEL
+    ollama_host: str = OLLAMA_DEFAULT_HOST
+    ollama_num_ctx: int = OLLAMA_DEFAULT_NUM_CTX
     python_path: str = "python3"
     project_root: str = ""
 
@@ -294,7 +301,7 @@ def _filter_dataclass_fields(data: Any, cls: type) -> dict[str, Any]:
                 else:
                     try:
                         v = expected_type(v)
-                    except (TypeError, ValueError):
+                    except TypeError, ValueError:
                         logger.warning(
                             "Field %s.%s=%r dropped (could not coerce to %s)",
                             cls.__name__,
@@ -458,7 +465,7 @@ def load_presets() -> list[Preset]:
                     config=p.get("config"),
                 )
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             logger.warning("Skipping malformed preset entry: %s", p)
     _presets_cache = (PRESETS_PATH, mtime_ns, list(presets))
     return _copy_presets(presets)

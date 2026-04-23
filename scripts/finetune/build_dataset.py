@@ -58,13 +58,13 @@ def extract_paper_records(
     """Collapse reports into (pmid, kept_genes). Latest-report-wins on collision.
 
     Filters: gold-PMID exclusion, per-gene confidence >= min_confidence, drop
-    papers with zero surviving genes.
+    papers with zero surviving genes. Caller is responsible for passing
+    reports in chronological order (load_reports returns them alphabetically,
+    which coincides with the timestamped filename format).
     """
-    # Sort reports by timestamp so we can overwrite-with-newer deterministically.
-    sorted_reports = sorted(reports, key=lambda r: r.get("timestamp", ""))
     per_pmid: dict[str, list[dict[str, Any]]] = {}
 
-    for report in sorted_reports:
+    for report in reports:
         for paper in report.get("papers_detail", []):
             pmid = paper.get("pmid")
             if not pmid or pmid in gold_pmids:
@@ -108,7 +108,7 @@ def attach_pdf_text(
     return out
 
 
-def paper_to_chat_record(p: Paper) -> dict:
+def paper_to_chat_record(p: Paper, prompt_version: str = "ollama_v1") -> dict:
     """Format a Paper as an MLX-LM chat JSONL record.
 
     The system + user messages are assembled exactly like the Ollama serving
@@ -120,9 +120,9 @@ def paper_to_chat_record(p: Paper) -> dict:
         paper_text=p.fulltext,
         pmid=p.pmid,
         max_chars=len(p.fulltext) + 1,  # already truncated upstream
-        prompt_version="ollama_v1",
+        prompt_version=prompt_version,
     )
-    system_text = f"{prompt.system_prompt}\n\n{prompt.extraction_instructions}"
+    system_text = prompt.combined_system_text
 
     genes_clean = [{k: v for k, v in g.items() if k != "pmid"} for g in p.genes]
     assistant_obj = {"genes": genes_clean}
@@ -151,6 +151,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="File with one gold-standard PMID per line (excluded from training).",
+    )
+    parser.add_argument(
+        "--prompt-version",
+        default="ollama_v1",
+        help="Prompt version to embed in chat records (default: ollama_v1).",
     )
     return parser
 
@@ -193,7 +198,8 @@ def main() -> None:
         path = args.out_dir / f"{name}.jsonl"
         with path.open("w", encoding="utf-8") as f:
             for p in subset:
-                f.write(json.dumps(paper_to_chat_record(p)) + "\n")
+                record = paper_to_chat_record(p, args.prompt_version)
+                f.write(json.dumps(record) + "\n")
         logger.info("Wrote %d records to %s", len(subset), path)
 
 

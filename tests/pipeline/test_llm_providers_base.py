@@ -74,5 +74,9 @@ class TestLLMProviderProtocol:
                 return False
             def supports_prompt_caching(self):
                 return False
+            def report_metadata(self, config):
+                return {}
+            def estimate_cost(self, usage, config):
+                return None
 
         assert isinstance(Stub(), LLMProvider)

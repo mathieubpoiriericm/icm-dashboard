@@ -32,6 +32,20 @@ from pipeline.prompts import build_extraction_prompt
 from pipeline.quality_metrics import TokenUsage, accumulate_usage
 from pipeline.rate_limiter import AsyncRateLimiter, compute_backoff, resolve_retry_delay
 
+# Pricing per 1M tokens (input, output) — bump when a new Claude model ships
+# or Anthropic changes published rates. Provider-private because Ollama runs
+# don't have a comparable notion of per-token billing.
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
+}
+
+# Prompt-caching multipliers applied to the base input price. The pipeline
+# writes 1h TTL caches (see prompts.py), so writes cost 2x base.
+_CACHE_WRITE_MULTIPLIER: float = 2.0  # 1h TTL
+_CACHE_READ_MULTIPLIER: float = 0.1
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,6 +97,31 @@ class AnthropicProvider:
 
     def supports_prompt_caching(self) -> bool:
         return True
+
+    def report_metadata(self, config: PipelineConfig) -> dict[str, Any]:
+        return {
+            "model": config.llm_model,
+            "model_version": config.model_version,
+            "thinking_mode": config.thinking_mode,
+            "effort": config.llm_effort,
+            "prompt_version": config.prompt_version,
+        }
+
+    def estimate_cost(self, usage: TokenUsage, config: PipelineConfig) -> float | None:
+        pricing = _MODEL_PRICING.get(config.llm_model)
+        if pricing is None:
+            logger.warning(
+                "No pricing data for model %s — cost will be omitted",
+                config.llm_model,
+            )
+            return None
+        input_price, output_price = pricing
+        return (
+            usage.input_tokens * input_price
+            + usage.cache_creation_input_tokens * input_price * _CACHE_WRITE_MULTIPLIER
+            + usage.cache_read_input_tokens * input_price * _CACHE_READ_MULTIPLIER
+            + usage.output_tokens * output_price
+        ) / 1_000_000
 
     async def extract(
         self,

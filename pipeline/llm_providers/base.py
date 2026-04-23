@@ -96,3 +96,16 @@ class LLMProvider(Protocol):
     def supports_thinking(self) -> bool: ...
 
     def supports_prompt_caching(self) -> bool: ...
+
+    def report_metadata(self, config: PipelineConfig) -> dict[str, Any]:
+        """Provider-specific fields for the run-data `pipeline_config` section.
+
+        Keeps report.py from having to branch on provider identity — each
+        backend answers with the subset of model/effort/thinking info that
+        actually applies to it.
+        """
+        ...
+
+    def estimate_cost(self, usage: TokenUsage, config: PipelineConfig) -> float | None:
+        """Estimate USD cost for a run, or None if pricing isn't tracked."""
+        ...

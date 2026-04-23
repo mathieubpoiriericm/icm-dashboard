@@ -46,7 +46,7 @@ def _safe_int(value: Any, fallback: int) -> int:
     """
     try:
         return int(value or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return fallback
 
 
@@ -59,7 +59,7 @@ def _safe_float(value: Any, fallback: float = 0.0) -> float:
     """
     try:
         f = float(value or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return fallback
     return f if math.isfinite(f) else fallback
 

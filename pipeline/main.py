@@ -93,6 +93,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--llm-provider",
+        # Kept in sync with pipeline.config.LLMProviderName manually — importing
+        # LLM_PROVIDERS here would pull in lxml via pipeline.config and break
+        # the stdlib-only fast path used for argcomplete below.
         choices=["anthropic", "ollama"],
         default=None,
         help="Override PIPELINE_LLM_PROVIDER for this run.",
@@ -215,8 +218,7 @@ LOG_LOG_DIR.mkdir(exist_ok=True)
 # UTC matches every other timestamp in the pipeline; PID suffix survives
 # same-second invocations (e.g. scheduler overlap, manual re-runs).
 LOG_FILE = LOG_LOG_DIR / (
-    f"pipeline_{datetime.now(UTC).strftime('%Y-%m-%d_%Hh%Mm%Ss')}"
-    f"_{os.getpid()}.log"
+    f"pipeline_{datetime.now(UTC).strftime('%Y-%m-%d_%Hh%Mm%Ss')}_{os.getpid()}.log"
 )
 
 from rich.logging import RichHandler

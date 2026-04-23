@@ -33,6 +33,7 @@ def _strip_ansi(line: str) -> str:
         line = line.rsplit("\r", 1)[-1]
     return line
 
+
 # Ordered: first match wins. Bracketed tokens are checked too because many
 # loggers emit lines like "[ERROR] something failed". The Traceback pattern
 # matches the literal Python stack-trace header so casual log lines that

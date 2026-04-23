@@ -181,7 +181,7 @@ def get_project_anchor(config: PipelineAppConfig) -> Path | None:
         return None
     try:
         return Path(config.project_root).expanduser().resolve()
-    except (OSError, RuntimeError):
+    except OSError, RuntimeError:
         return None
 
 
@@ -297,7 +297,6 @@ def build_env_vars(
     env["PIPELINE_UNIPROT_RATE_LIMIT"] = _int_str(config.uniprot_rate_limit)
     env["PIPELINE_MAX_PAPER_TEXT_CHARS"] = _int_str(config.max_paper_text_chars)
     env["PIPELINE_MAX_RETRIES"] = _int_str(config.max_retries)
-    env["PIPELINE_RETRY_DELAY"] = str(config.retry_delay)
     env["PIPELINE_MAX_RATE_LIMIT_RETRIES"] = _int_str(config.max_rate_limit_retries)
     env["PIPELINE_RATE_LIMIT_RETRY_DELAY"] = str(config.rate_limit_retry_delay)
     env["PIPELINE_MAX_CONNECTION_RETRIES"] = _int_str(config.max_connection_retries)
@@ -495,7 +494,7 @@ def _signal_process_group(
     if hasattr(os, "killpg"):
         try:
             pgid = os.getpgid(proc.pid)
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError, PermissionError:
             pgid = -1
         if pgid == proc.pid:
             with contextlib.suppress(ProcessLookupError, PermissionError):
@@ -1193,11 +1192,7 @@ class TuningRunner:
                         continue
 
                     needs_score_dist = stage in SCORE_DIST_DEPENDENT_STAGES
-                    if (
-                        needs_score_dist
-                        and not score_dist_path
-                        and not script_override
-                    ):
+                    if needs_score_dist and not score_dist_path and not script_override:
                         self._emit_stderr(
                             f"Skipping {stage}: "
                             "no score distribution from error_analysis stage"

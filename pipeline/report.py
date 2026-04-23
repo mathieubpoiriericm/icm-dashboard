@@ -18,16 +18,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from pipeline.config import MODEL_PRICING, PipelineConfig
+from pipeline.config import PipelineConfig
 from pipeline.data_merger import MergeResult
+from pipeline.llm_providers import LLMProvider, get_provider
 from pipeline.quality_metrics import PipelineMetrics
 
 logger = logging.getLogger(__name__)
-
-# Prompt-caching multipliers applied to the base input price.
-# The pipeline uses 1h TTL caches (see prompts.py), so writes cost 2x base.
-_CACHE_WRITE_MULTIPLIER: float = 2.0  # 1h TTL
-_CACHE_READ_MULTIPLIER: float = 0.1
 
 
 class PaperSummary(TypedDict, total=False):
@@ -66,50 +62,6 @@ class PipelineRunData(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _provider_config_fields(config: PipelineConfig) -> dict[str, Any]:
-    """Provider-specific pipeline_config fields.
-
-    Anthropic runs get the Claude model metadata; Ollama runs substitute
-    the local model tag and blank the Claude-only fields so reports never
-    show fabricated Claude metadata.
-    """
-    is_anthropic = config.llm_provider == "anthropic"
-    return {
-        "model": config.llm_model if is_anthropic else config.ollama_model,
-        "model_version": config.model_version if is_anthropic else "",
-        "thinking_mode": config.thinking_mode if is_anthropic else "none",
-        "effort": config.llm_effort if is_anthropic else None,
-        "prompt_version": config.prompt_version,
-    }
-
-
-def _estimate_cost(
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    cache_creation_input_tokens: int = 0,
-    cache_read_input_tokens: int = 0,
-) -> float | None:
-    """Estimate USD cost from token counts and model pricing.
-
-    Accounts for prompt-caching: cache writes are charged at 2x the base
-    input price (1h TTL) and cache reads at 0.1x.
-
-    Returns None if the model is not in the pricing table.
-    """
-    pricing = MODEL_PRICING.get(model)
-    if pricing is None:
-        logger.warning("No pricing data for model %s — cost will be omitted", model)
-        return None
-    input_price, output_price = pricing
-    return (
-        input_tokens * input_price
-        + cache_creation_input_tokens * input_price * _CACHE_WRITE_MULTIPLIER
-        + cache_read_input_tokens * input_price * _CACHE_READ_MULTIPLIER
-        + output_tokens * output_price
-    ) / 1_000_000
 
 
 def _round_cost(cost: float) -> float:
@@ -165,20 +117,11 @@ def _build_common_run_data(
     config: PipelineConfig,
     total_duration: float,
     pipeline_config: dict[str, Any],
+    provider: LLMProvider,
 ) -> PipelineRunData:
     """Assemble the fields shared by all three run-data builders."""
     tu = metrics.token_usage
-    cost = (
-        None
-        if config.llm_provider == "ollama"
-        else _estimate_cost(
-            config.llm_model,
-            tu.input_tokens,
-            tu.output_tokens,
-            tu.cache_creation_input_tokens,
-            tu.cache_read_input_tokens,
-        )
-    )
+    cost = provider.estimate_cost(tu, config)
 
     failed_count = sum(1 for r in results if not r.succeeded)
     total_compute_time = sum(getattr(r, "processing_time", 0.0) for r in results)
@@ -231,6 +174,7 @@ def build_run_data(
     total_duration: float = 0.0,
 ) -> PipelineRunData:
     """Assemble all pipeline run data into a single dict (standard mode)."""
+    provider = get_provider(config)
     data = _build_common_run_data(
         metrics,
         results,
@@ -238,11 +182,12 @@ def build_run_data(
         config,
         total_duration,
         pipeline_config={
-            **_provider_config_fields(config),
+            **provider.report_metadata(config),
             "days_back": days_back,
             "dry_run": dry_run,
             "confidence_threshold": config.confidence_threshold,
         },
+        provider=provider,
     )
     data["search"] = {
         "pmids_found": total_pmids_found,
@@ -262,10 +207,11 @@ def _build_offline_run_data(
     extra_config: dict[str, Any],
 ) -> PipelineRunData:
     """Shared builder for local-PDF and PMID-list runs."""
+    provider = get_provider(config)
     failed_count = sum(1 for r in results if not r.succeeded)
     # Read skip_validation without mutating the caller's dict.
     pipeline_config = {
-        **_provider_config_fields(config),
+        **provider.report_metadata(config),
         "skip_validation": extra_config.get("skip_validation", False),
         "confidence_threshold": config.confidence_threshold,
         **{k: v for k, v in extra_config.items() if k != "skip_validation"},
@@ -277,6 +223,7 @@ def _build_offline_run_data(
         config,
         total_duration,
         pipeline_config=pipeline_config,
+        provider=provider,
     )
     data["papers"]["total"] = failed_count + metrics.papers_processed
     return data

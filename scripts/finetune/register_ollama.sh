@@ -21,4 +21,7 @@ EOF
 
 ollama create "$TAG" -f "$MODELFILE"
 echo "Registered: $TAG"
-ollama run "$TAG" "Hello, respond with OK" | head -1
+# `head -1` closes the pipe as soon as the first line arrives, and under
+# `set -euo pipefail` the resulting SIGPIPE (exit 141) would fail the script.
+# The `|| true` swallows that so the smoke-test output stays informational.
+ollama run "$TAG" "Hello, respond with OK" | head -1 || true

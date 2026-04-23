@@ -12,6 +12,7 @@ from typing import Literal
 
 from nicegui import context, ui
 
+from pipeline.config import OLLAMA_PROMPT_VERSIONS
 from pipeline_app.components.confirm_dialog import confirm
 from pipeline_app.components.log_viewer import (
     STDERR_CSS_CLASS,
@@ -21,6 +22,7 @@ from pipeline_app.components.log_viewer import (
 )
 from pipeline_app.components.path_picker import pick_path
 from pipeline_app.components.preset_dialog import prompt_preset_name
+from pipeline_app.components.provider_section import apply_provider_widget_state
 from pipeline_app.components.stage_tracker import StageTracker, create_stage_tracker
 from pipeline_app.config import (
     LLM_EFFORTS,
@@ -43,6 +45,7 @@ from pipeline_app.runner import (
     PipelineRunner,
     SubprocessLock,
     get_project_anchor,
+    list_ollama_models,
 )
 
 
@@ -285,42 +288,66 @@ def create_configure_run_page(
             # ---- LLM Settings ----
             ui.label("LLM Settings").classes("section-header")
 
-            provider_select = ui.select(
-                options=PROVIDER_LABELS,
-                label="Provider",
-                value=config.llm_provider,
-            ).classes("w-full").bind_value(config, "llm_provider")
+            provider_select = (
+                ui.select(
+                    options=PROVIDER_LABELS,
+                    label="Provider",
+                    value=config.llm_provider,
+                )
+                .classes("w-full")
+                .bind_value(config, "llm_provider")
+            )
 
-            claude_model_select = ui.select(
-                options=LLM_MODELS,
-                label="Model",
-                value=config.llm_model,
-            ).classes("w-full").bind_value(config, "llm_model")
-            claude_effort_select = ui.select(
-                options=LLM_EFFORTS,
-                label="Effort",
-                value=config.llm_effort,
-            ).classes("w-full").bind_value(config, "llm_effort")
-            claude_max_tokens = ui.number(
-                label="Max Tokens (0 = default)",
-                value=config.llm_max_tokens,
-                min=0,
-            ).classes("w-full").bind_value(config, "llm_max_tokens")
+            claude_model_select = (
+                ui.select(
+                    options=LLM_MODELS,
+                    label="Model",
+                    value=config.llm_model,
+                )
+                .classes("w-full")
+                .bind_value(config, "llm_model")
+            )
+            claude_effort_select = (
+                ui.select(
+                    options=LLM_EFFORTS,
+                    label="Effort",
+                    value=config.llm_effort,
+                )
+                .classes("w-full")
+                .bind_value(config, "llm_effort")
+            )
+            claude_max_tokens = (
+                ui.number(
+                    label="Max Tokens (0 = default)",
+                    value=config.llm_max_tokens,
+                    min=0,
+                )
+                .classes("w-full")
+                .bind_value(config, "llm_max_tokens")
+            )
 
-            prompt_select = ui.select(
-                options=PROMPT_VERSIONS,
-                label="Prompt Version",
-                value=config.prompt_version,
-            ).classes("w-full").bind_value(config, "prompt_version")
+            prompt_select = (
+                ui.select(
+                    options=PROMPT_VERSIONS,
+                    label="Prompt Version",
+                    value=config.prompt_version,
+                )
+                .classes("w-full")
+                .bind_value(config, "prompt_version")
+            )
 
             with ui.column().classes("w-full") as ollama_section:
-                ollama_model_select = ui.select(
-                    options=[config.ollama_model] if config.ollama_model else [],
-                    label="Ollama model",
-                    value=config.ollama_model,
-                    with_input=True,
-                    new_value_mode="add-unique",
-                ).classes("w-full").bind_value(config, "ollama_model")
+                ollama_model_select = (
+                    ui.select(
+                        options=[config.ollama_model] if config.ollama_model else [],
+                        label="Ollama model",
+                        value=config.ollama_model,
+                        with_input=True,
+                        new_value_mode="add-unique",
+                    )
+                    .classes("w-full")
+                    .bind_value(config, "ollama_model")
+                )
                 ui.number(
                     label="Context window (num_ctx)",
                     value=config.ollama_num_ctx,
@@ -330,20 +357,23 @@ def create_configure_run_page(
                 ).classes("w-full").bind_value(config, "ollama_num_ctx")
 
             async def _refresh_provider_ui() -> None:
-                from pipeline_app.runner import list_ollama_models
-
-                is_ollama = config.llm_provider == "ollama"
-                claude_model_select.set_enabled(not is_ollama)
-                claude_effort_select.set_enabled(not is_ollama)
-                claude_max_tokens.set_enabled(not is_ollama)
+                is_ollama = apply_provider_widget_state(
+                    config.llm_provider,
+                    claude_widgets=(
+                        claude_model_select,
+                        claude_effort_select,
+                        claude_max_tokens,
+                    ),
+                )
                 ollama_section.set_visibility(is_ollama)
 
-                # Swap between the two canonical per-provider defaults; other
-                # user-picked values are left alone.
-                if is_ollama and config.prompt_version == "v5":
+                # Swap between canonical per-provider defaults; user-picked
+                # values in the same family (e.g. an explicit "v4" on Anthropic
+                # or a future "ollama_v2") are left alone.
+                if is_ollama and config.prompt_version not in OLLAMA_PROMPT_VERSIONS:
                     config.prompt_version = "ollama_v1"
                     prompt_select.set_value("ollama_v1")
-                elif not is_ollama and config.prompt_version == "ollama_v1":
+                elif not is_ollama and config.prompt_version in OLLAMA_PROMPT_VERSIONS:
                     config.prompt_version = "v5"
                     prompt_select.set_value("v5")
 
@@ -353,9 +383,7 @@ def create_configure_run_page(
                 tags = await list_ollama_models(config.ollama_host)
                 if tags:
                     current = (
-                        config.ollama_model
-                        if config.ollama_model in tags
-                        else tags[0]
+                        config.ollama_model if config.ollama_model in tags else tags[0]
                     )
                     ollama_model_select.set_options(tags, value=current)
                     config.ollama_model = current
@@ -412,13 +440,6 @@ def create_configure_run_page(
                 value=config.max_retries,
                 min=0,
             ).classes("w-full").bind_value(config, "max_retries")
-            ui.number(
-                label="Retry Delay (s)",
-                value=config.retry_delay,
-                min=0.0,
-                step=0.5,
-                format="%.1f",
-            ).classes("w-full").bind_value(config, "retry_delay")
             ui.number(
                 label="Max Rate Limit Retries",
                 value=config.max_rate_limit_retries,

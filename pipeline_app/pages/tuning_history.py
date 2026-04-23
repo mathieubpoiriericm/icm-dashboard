@@ -162,7 +162,7 @@ def _diff_value(v1: object, v2: object, col: str) -> str:
         diff = float(v2) - float(v1)
         sign = "+" if diff > 0 else ""
         return f"{sign}{diff:.4f}"
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return ""
 
 

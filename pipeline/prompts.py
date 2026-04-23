@@ -26,6 +26,17 @@ class ExtractionPrompt:
     extraction_instructions: str
     user_text: str
 
+    @property
+    def combined_system_text(self) -> str:
+        """Single system string for providers that take one system message.
+
+        Ollama's chat API and MLX-LM's chat JSONL format pass a single system
+        message per turn, so the two halves the Anthropic path feeds as
+        separate cache-able blocks get concatenated here with a blank line
+        between them.
+        """
+        return f"{self.system_prompt}\n\n{self.extraction_instructions}"
+
 
 # ---------------------------------------------------------------------------
 # V1 prompts (original baseline)
