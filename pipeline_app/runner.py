@@ -175,6 +175,22 @@ def get_project_anchor(config: PipelineAppConfig) -> Path | None:
         return None
 
 
+async def list_ollama_models(host: str) -> list[str]:
+    """Return tags currently available on the Ollama server, or [] on failure.
+
+    Thin UI-layer wrapper so the Configure & Run page doesn't import the
+    provider module directly (and doesn't pull in the optional ``ollama``
+    dependency on pages that never toggle the provider to local).
+    """
+    try:
+        from pipeline.llm_providers.ollama_provider import (  # noqa: PLC0415
+            list_available_tags,
+        )
+    except ImportError:
+        return []
+    return await list_available_tags(host)
+
+
 def build_cli_args(config: PipelineAppConfig) -> list[str]:
     """Build CLI arguments for pipeline/main.py."""
     args = ["pipeline/main.py"]
@@ -246,9 +262,13 @@ def build_env_vars(
     if secrets.unpaywall_email:
         env["UNPAYWALL_EMAIL"] = secrets.unpaywall_email
 
+    env["PIPELINE_LLM_PROVIDER"] = config.llm_provider
     env["PIPELINE_LLM_MODEL"] = config.llm_model
     env["PIPELINE_LLM_EFFORT"] = config.llm_effort
     env["PIPELINE_LLM_MAX_TOKENS"] = _int_str(config.llm_max_tokens)
+    env["PIPELINE_OLLAMA_HOST"] = config.ollama_host
+    env["PIPELINE_OLLAMA_MODEL"] = config.ollama_model
+    env["PIPELINE_OLLAMA_NUM_CTX"] = _int_str(config.ollama_num_ctx)
     env["PIPELINE_PROMPT_VERSION"] = config.prompt_version
     env["PIPELINE_CONFIDENCE_THRESHOLD"] = str(config.confidence_threshold)
     env["PIPELINE_MAX_CONCURRENT_PAPERS"] = _int_str(config.max_concurrent_papers)
@@ -764,10 +784,14 @@ def build_extract_config(
             {
                 "python_path": tuning.python_path,
                 "project_root": tuning.project_root,
+                "llm_provider": tuning.llm_provider,
                 "llm_model": tuning.llm_model,
                 "llm_effort": tuning.llm_effort,
                 "llm_max_tokens": tuning.llm_max_tokens,
                 "prompt_version": tuning.prompt_version,
+                "ollama_model": tuning.ollama_model,
+                "ollama_host": tuning.ollama_host,
+                "ollama_num_ctx": tuning.ollama_num_ctx,
             }
         )
     return replace(main_config, **overrides)

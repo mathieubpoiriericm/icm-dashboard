@@ -548,6 +548,46 @@ class TestEnvSecretsCache:
         assert load_env_secrets(str(root_b)).anthropic_api_key == "bravo"
 
 
+class TestProviderFields:
+    def test_pipeline_app_config_defaults(self):
+        cfg = PipelineAppConfig()
+        assert cfg.llm_provider == "anthropic"
+        assert cfg.ollama_host == "http://localhost:11434"
+        assert cfg.ollama_model == "gemma4:e4b"
+        assert cfg.ollama_num_ctx == 65_536
+
+    def test_tuning_config_defaults(self):
+        cfg = TuningConfig()
+        assert cfg.llm_provider == "anthropic"
+        assert cfg.ollama_model == "gemma4:e4b"
+
+    def test_llm_providers_constant(self):
+        from pipeline_app.config import LLM_PROVIDERS
+        assert LLM_PROVIDERS == ["anthropic", "ollama"]
+
+    def test_prompt_versions_includes_ollama_v1(self):
+        from pipeline_app.config import PROMPT_VERSIONS
+        assert "ollama_v1" in PROMPT_VERSIONS
+
+    def test_pipeline_app_config_roundtrips_provider_fields(self, tmp_config_dir):
+        """Persistence round-trip for the new fields. Uses the shared
+        `tmp_config_dir` fixture which redirects CONFIG_PATH to a temp dir."""
+        from pipeline_app.config import load_config, save_config
+
+        cfg = PipelineAppConfig(
+            llm_provider="ollama",
+            ollama_host="http://gpu:11434",
+            ollama_model="svd-gemma:v1",
+            ollama_num_ctx=131_072,
+        )
+        save_config(cfg)
+        loaded = load_config()
+        assert loaded.llm_provider == "ollama"
+        assert loaded.ollama_host == "http://gpu:11434"
+        assert loaded.ollama_model == "svd-gemma:v1"
+        assert loaded.ollama_num_ctx == 131_072
+
+
 class TestFieldDropLogging:
     """Regression: schema-mismatch field drops must surface as warnings."""
 

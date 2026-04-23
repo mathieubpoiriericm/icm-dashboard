@@ -91,6 +91,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip NCBI gene validation (only valid with --local-pdfs or --pmids)",
     )
+    parser.add_argument(
+        "--llm-provider",
+        choices=["anthropic", "ollama"],
+        default=None,
+        help="Override PIPELINE_LLM_PROVIDER for this run.",
+    )
+    parser.add_argument(
+        "--ollama-model",
+        default=None,
+        help="Override PIPELINE_OLLAMA_MODEL for this run (e.g. svd-gemma:v1).",
+    )
     return parser
 
 
@@ -1595,6 +1606,11 @@ def main() -> None:
     # (preserves the original no-flag behavior).
     if not offline_selected and not online_selected:
         args.pubmed = True
+
+    if args.llm_provider is not None:
+        os.environ["PIPELINE_LLM_PROVIDER"] = args.llm_provider
+    if args.ollama_model is not None:
+        os.environ["PIPELINE_OLLAMA_MODEL"] = args.ollama_model
 
     config = PipelineConfig()
 

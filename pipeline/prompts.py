@@ -8,10 +8,23 @@ Supports versioned prompts (v1, v2, v3, v4, v5) for A/B testing during tuning.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Final
+from dataclasses import dataclass
+from typing import Final
+
+from pipeline.llm_providers.base import ExtractionResult
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, frozen=True)
+class ExtractionPrompt:
+    """Provider-agnostic prompt payload for gene extraction."""
+
+    system_prompt: str
+    extraction_instructions: str
+    user_text: str
 
 # ---------------------------------------------------------------------------
 # V1 prompts (original baseline)
@@ -778,6 +791,59 @@ Do NOT extract NOTCH3: This is a background citation of a known monogenic gene. 
 </instructions>"""
 
 # ---------------------------------------------------------------------------
+# Ollama v1 prompts (leaner; tuned for 4B Gemma)
+# ---------------------------------------------------------------------------
+
+_SYSTEM_PROMPT_OLLAMA_V1: Final[str] = (
+    "You extract genes with putative causal links to cerebral small vessel "
+    "disease (cSVD) from research papers.\n\n"
+    "Include a gene when the paper presents causal evidence: GWAS, MAGMA, "
+    "Mendelian randomization, colocalization, fine-mapping, TWAS/PWAS/EWAS, "
+    "pQTL-MR, WES/WGS burden tests, or functional studies.\n\n"
+    "Distinguish cSVD-specific evidence (WMH, lacunes, SVS, microbleeds, PVS, "
+    "ICH-lobar, ICH-non-lobar) from general stroke or neurodegeneration.\n\n"
+    "Confidence rubric:\n"
+    "  1.0  validated monogenic or multi-line replicated\n"
+    "  0.8  strong GWAS + functional or MR support\n"
+    "  0.6  moderate: single GWAS hit with plausible mechanism\n"
+    "  0.4  indirect: pathway-level or cross-trait evidence\n"
+    "  0.2  weak: hypothesis-generating only\n"
+    "  0.0  negative or exclusion\n\n"
+    "Return ONLY valid JSON matching this schema, no prose, no markdown:\n"
+    "{schema}"
+)
+
+_EXTRACTION_INSTRUCTIONS_OLLAMA_V1: Final[str] = """\
+Fields:
+- gene_symbol (required): HGNC symbol in uppercase (e.g. NOTCH3, COL4A1).
+- protein_name: UniProt recommended name, or null.
+- gwas_trait: list of canonical trait abbreviations from {WMH, DWMH, PVWMH, \
+SVS, BG-PVS, WM-PVS, HIP-PVS, PSMD, MD, extreme-cSVD, FA, lacunes, stroke, \
+cerebral-microbleeds, ICH-lobar, ICH-non-lobar, DTI-ALPS, ICVF, ISOVF, OD, \
+WMH-cortical-atrophy, WM-BAG, retinal-vessels}. Empty list if none.
+- mendelian_randomization: true if the paper reports an MR analysis for this \
+gene, else false.
+- omics_evidence: list from {TWAS, PWAS, EWAS, pQTL-MR, colocalization, \
+fine-mapping, burden-test, cell-type-enrichment}. Empty list if none.
+- confidence: float in [0.0, 1.0] per the rubric above.
+- causal_evidence_summary: 1-3 sentences summarizing the evidence, or null.
+
+Rules:
+- Exclude genes mentioned only as background or in unrelated diseases.
+- Include monogenic cSVD genes (NOTCH3, HTRA1, COL4A1/2, TREX1, CTSA, etc.) \
+only when the paper discusses them in a causal context, not merely as \
+comparators.
+- For multi-gene GWAS loci, include each credible causal candidate separately \
+with its own confidence.
+"""
+
+# `.replace()` rather than `.format()` so the JSON braces in `{schema}` need no escaping.
+_OLLAMA_V1_SYSTEM: Final[str] = _SYSTEM_PROMPT_OLLAMA_V1.replace(
+    "{schema}",
+    json.dumps(ExtractionResult.model_json_schema(), indent=2),
+)
+
+# ---------------------------------------------------------------------------
 # Version dispatch
 # ---------------------------------------------------------------------------
 
@@ -787,6 +853,7 @@ _PROMPTS: Final[dict[str, tuple[str, str]]] = {
     "v3": (_SYSTEM_PROMPT_V3, _EXTRACTION_INSTRUCTIONS_V3),
     "v4": (_SYSTEM_PROMPT_V4, _EXTRACTION_INSTRUCTIONS_V4),
     "v5": (_SYSTEM_PROMPT_V5, _EXTRACTION_INSTRUCTIONS_V5),
+    "ollama_v1": (_OLLAMA_V1_SYSTEM, _EXTRACTION_INSTRUCTIONS_OLLAMA_V1),
 }
 
 # Public aliases for backwards compatibility (point to current default)
@@ -794,25 +861,17 @@ SYSTEM_PROMPT: Final[str] = _SYSTEM_PROMPT_V5
 EXTRACTION_INSTRUCTIONS: Final[str] = _EXTRACTION_INSTRUCTIONS_V5
 
 
-def build_extraction_messages(
+def build_extraction_prompt(
     paper_text: str,
     pmid: str,
     max_chars: int,
     prompt_version: str = "v5",
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Build system blocks and messages with cache_control for prompt caching.
+) -> ExtractionPrompt:
+    """Build a provider-agnostic extraction prompt.
 
-    Args:
-        paper_text: Full text of the paper.
-        pmid: PubMed ID.
-        max_chars: Maximum chars for paper text.
-        prompt_version: Prompt version to use ("v1", "v2", "v3", "v4", or "v5").
-
-    Returns:
-        (system_blocks, messages) — ready to pass to ``client.messages.create()``.
-        The system prompt and extraction instructions are cached in the system
-        blocks (prefix match preserved across calls). The user message contains
-        only the paper document and a short extraction query.
+    Each provider wraps the returned parts in its own wire format
+    (Anthropic cache-controlled blocks, Ollama plain strings, MLX-LM
+    chat records for fine-tuning).
     """
     if prompt_version not in _PROMPTS:
         logger.warning(
@@ -822,20 +881,6 @@ def build_extraction_messages(
 
     system_prompt, extraction_instructions = _PROMPTS[prompt_version]
 
-    system_blocks: list[dict[str, Any]] = [
-        {
-            "type": "text",
-            "text": system_prompt,
-            "cache_control": {"type": "ephemeral", "ttl": "1h"},
-        },
-        {
-            "type": "text",
-            "text": extraction_instructions,
-            "cache_control": {"type": "ephemeral", "ttl": "1h"},
-        },
-    ]
-
-    # Truncate and log if paper text exceeds max_chars
     if len(paper_text) > max_chars:
         logger.info(
             f"PMID {pmid}: truncating paper text from "
@@ -847,18 +892,16 @@ def build_extraction_messages(
     # would prematurely close the document tag and corrupt the prompt.
     safe_text = paper_text.replace("</document>", "&lt;/document&gt;")
 
-    user_blocks: list[dict[str, Any]] = [
-        {
-            "type": "text",
-            "text": (
-                f'<document source="PubMed" pmid="{pmid}">\n'
-                f"{safe_text}\n"
-                f"</document>\n\n"
-                "Extract all genes with putative causal links to cSVD "
-                "from the document above."
-            ),
-        },
-    ]
+    user_text = (
+        f'<document source="PubMed" pmid="{pmid}">\n'
+        f"{safe_text}\n"
+        f"</document>\n\n"
+        "Extract all genes with putative causal links to cSVD from the "
+        "document above."
+    )
 
-    messages: list[dict[str, Any]] = [{"role": "user", "content": user_blocks}]
-    return system_blocks, messages
+    return ExtractionPrompt(
+        system_prompt=system_prompt,
+        extraction_instructions=extraction_instructions,
+        user_text=user_text,
+    )

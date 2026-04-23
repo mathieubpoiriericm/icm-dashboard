@@ -213,11 +213,11 @@ def _reset_validation_cache():
 
 @pytest.fixture(autouse=True)
 def _reset_llm_client():
-    """Clear the shared Anthropic client after each test."""
+    """Drop the shared provider singleton after each test."""
     yield
     import pipeline.llm_extraction as llm
 
-    llm._async_client = None
+    llm._provider = None
 
 
 @pytest.fixture(autouse=True)

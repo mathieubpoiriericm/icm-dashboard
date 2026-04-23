@@ -308,6 +308,31 @@ class TestCliParser:
         assert args.clinical_trials is False
         assert args.sync_external_data is False
 
+    def test_llm_provider_flag_ollama(self):
+        args = _build_parser().parse_args(["--llm-provider", "ollama"])
+        assert args.llm_provider == "ollama"
+
+    def test_llm_provider_flag_anthropic(self):
+        args = _build_parser().parse_args(["--llm-provider", "anthropic"])
+        assert args.llm_provider == "anthropic"
+
+    def test_llm_provider_default_none(self):
+        """Default None so we can distinguish 'unset' from 'explicitly anthropic'."""
+        args = _build_parser().parse_args([])
+        assert args.llm_provider is None
+
+    def test_llm_provider_rejects_invalid(self):
+        with pytest.raises(SystemExit):
+            _build_parser().parse_args(["--llm-provider", "bogus"])
+
+    def test_ollama_model_flag(self):
+        args = _build_parser().parse_args(["--ollama-model", "svd-gemma:v1"])
+        assert args.ollama_model == "svd-gemma:v1"
+
+    def test_ollama_model_default_none(self):
+        args = _build_parser().parse_args([])
+        assert args.ollama_model is None
+
 
 # ---------------------------------------------------------------------------
 # _run_selected_pipelines — multi-pipeline dispatcher

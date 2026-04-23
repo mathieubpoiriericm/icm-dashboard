@@ -26,6 +26,7 @@ from pipeline_app.config import (
     LLM_EFFORTS,
     LLM_MODELS,
     PROMPT_VERSIONS,
+    PROVIDER_LABELS,
     EnvSecrets,
     PipelineAppConfig,
     add_run_to_history,
@@ -283,26 +284,83 @@ def create_configure_run_page(
 
             # ---- LLM Settings ----
             ui.label("LLM Settings").classes("section-header")
-            ui.select(
+
+            provider_select = ui.select(
+                options=PROVIDER_LABELS,
+                label="Provider",
+                value=config.llm_provider,
+            ).classes("w-full").bind_value(config, "llm_provider")
+
+            claude_model_select = ui.select(
                 options=LLM_MODELS,
                 label="Model",
                 value=config.llm_model,
             ).classes("w-full").bind_value(config, "llm_model")
-            ui.select(
+            claude_effort_select = ui.select(
                 options=LLM_EFFORTS,
                 label="Effort",
                 value=config.llm_effort,
             ).classes("w-full").bind_value(config, "llm_effort")
-            ui.number(
+            claude_max_tokens = ui.number(
                 label="Max Tokens (0 = default)",
                 value=config.llm_max_tokens,
                 min=0,
             ).classes("w-full").bind_value(config, "llm_max_tokens")
-            ui.select(
+
+            prompt_select = ui.select(
                 options=PROMPT_VERSIONS,
                 label="Prompt Version",
                 value=config.prompt_version,
             ).classes("w-full").bind_value(config, "prompt_version")
+
+            with ui.column().classes("w-full") as ollama_section:
+                ollama_model_select = ui.select(
+                    options=[config.ollama_model] if config.ollama_model else [],
+                    label="Ollama model",
+                    value=config.ollama_model,
+                    with_input=True,
+                    new_value_mode="add-unique",
+                ).classes("w-full").bind_value(config, "ollama_model")
+                ui.number(
+                    label="Context window (num_ctx)",
+                    value=config.ollama_num_ctx,
+                    min=1024,
+                    max=131_072,
+                    step=1024,
+                ).classes("w-full").bind_value(config, "ollama_num_ctx")
+
+            async def _refresh_provider_ui() -> None:
+                from pipeline_app.runner import list_ollama_models
+
+                is_ollama = config.llm_provider == "ollama"
+                claude_model_select.set_enabled(not is_ollama)
+                claude_effort_select.set_enabled(not is_ollama)
+                claude_max_tokens.set_enabled(not is_ollama)
+                ollama_section.set_visibility(is_ollama)
+
+                # Swap between the two canonical per-provider defaults; other
+                # user-picked values are left alone.
+                if is_ollama and config.prompt_version == "v5":
+                    config.prompt_version = "ollama_v1"
+                    prompt_select.set_value("ollama_v1")
+                elif not is_ollama and config.prompt_version == "ollama_v1":
+                    config.prompt_version = "v5"
+                    prompt_select.set_value("v5")
+
+                if not is_ollama:
+                    return
+
+                tags = await list_ollama_models(config.ollama_host)
+                if tags:
+                    current = (
+                        config.ollama_model
+                        if config.ollama_model in tags
+                        else tags[0]
+                    )
+                    ollama_model_select.set_options(tags, value=current)
+                    config.ollama_model = current
+
+            provider_select.on_value_change(lambda _: _refresh_provider_ui())
             ui.number(
                 label="Confidence Threshold",
                 value=config.confidence_threshold,
@@ -316,6 +374,8 @@ def create_configure_run_page(
                 value=config.max_paper_text_chars,
                 min=1000,
             ).classes("w-full").bind_value(config, "max_paper_text_chars")
+
+            ui.timer(0, _refresh_provider_ui, once=True)
 
             ui.separator().classes("nav-separator")
 

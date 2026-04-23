@@ -7,6 +7,8 @@ lxml-stubs>=0.5.1
 
 # LLM API
 anthropic>=0.25.0
+ollama>=0.4.0
+mlx-lm[train]>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
 
 # Data validation
 pydantic>=2.0.0

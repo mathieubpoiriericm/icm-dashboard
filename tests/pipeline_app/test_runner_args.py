@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from pipeline_app.config import EnvSecrets, PipelineAppConfig
+from pipeline_app.config import EnvSecrets, PipelineAppConfig, TuningConfig
 from pipeline_app.runner import (
     _base_env,
     _int_str,
     build_cli_args,
     build_env_vars,
+    build_extract_config,
     parse_stage_marker,
 )
 
@@ -214,6 +215,29 @@ class TestBuildCliArgsFloat:
         assert args[args.index("--days-back") + 1] == "30"
 
 
+class TestProviderEnvVars:
+    def test_provider_env_vars_passed_to_subprocess(self):
+        cfg = PipelineAppConfig(
+            llm_provider="ollama",
+            ollama_host="http://gpu:11434",
+            ollama_model="svd-gemma:v1",
+            ollama_num_ctx=131_072,
+        )
+        env = build_env_vars(cfg, EnvSecrets())
+        assert env["PIPELINE_LLM_PROVIDER"] == "ollama"
+        assert env["PIPELINE_OLLAMA_HOST"] == "http://gpu:11434"
+        assert env["PIPELINE_OLLAMA_MODEL"] == "svd-gemma:v1"
+        assert env["PIPELINE_OLLAMA_NUM_CTX"] == "131072"
+
+    def test_anthropic_provider_env_vars_in_subprocess(self):
+        cfg = PipelineAppConfig()  # defaults
+        env = build_env_vars(cfg, EnvSecrets())
+        assert env["PIPELINE_LLM_PROVIDER"] == "anthropic"
+        assert env["PIPELINE_OLLAMA_HOST"] == "http://localhost:11434"
+        assert env["PIPELINE_OLLAMA_MODEL"] == "gemma4:e4b"
+        assert env["PIPELINE_OLLAMA_NUM_CTX"] == "65536"
+
+
 class TestBuildEnvVarsFloat:
     """Verify build_env_vars handles NiceGUI float values for int fields."""
 
@@ -252,6 +276,56 @@ class TestBuildCliArgsEdgeCases:
         assert "--sync-external-data" in args
         assert "--dry-run" not in args
         assert "--test-mode" not in args
+
+
+class TestBuildExtractConfigOllamaFields:
+    """Verify Ollama fields propagate from TuningConfig into build_extract_config."""
+
+    def test_ollama_fields_propagate_when_not_use_main_config(self):
+        main_config = PipelineAppConfig()
+        tuning = TuningConfig(
+            use_main_config=False,
+            llm_provider="ollama",
+            ollama_model="svd-gemma:v1",
+            ollama_host="http://gpu-server:11434",
+            ollama_num_ctx=131_072,
+            pdf_path="/data/pdfs",
+        )
+        result = build_extract_config(main_config, tuning)
+        assert result.llm_provider == "ollama"
+        assert result.ollama_model == "svd-gemma:v1"
+        assert result.ollama_host == "http://gpu-server:11434"
+        assert result.ollama_num_ctx == 131_072
+
+    def test_ollama_fields_not_overridden_when_use_main_config(self):
+        # When use_main_config=True, main_config's provider settings are kept.
+        main_config = PipelineAppConfig(
+            llm_provider="anthropic",
+            ollama_model="gemma4:e4b",
+        )
+        tuning = TuningConfig(
+            use_main_config=True,
+            llm_provider="ollama",
+            ollama_model="svd-gemma:v1",
+            pdf_path="/data/pdfs",
+        )
+        result = build_extract_config(main_config, tuning)
+        # main_config values survive because use_main_config=True skips the
+        # override block.
+        assert result.llm_provider == "anthropic"
+        assert result.ollama_model == "gemma4:e4b"
+
+    def test_anthropic_provider_propagates_when_not_use_main_config(self):
+        main_config = PipelineAppConfig(llm_provider="ollama")
+        tuning = TuningConfig(
+            use_main_config=False,
+            llm_provider="anthropic",
+            llm_model="claude-sonnet-4-6",
+            pdf_path="/data/pdfs",
+        )
+        result = build_extract_config(main_config, tuning)
+        assert result.llm_provider == "anthropic"
+        assert result.llm_model == "claude-sonnet-4-6"
 
 
 class TestBuildCliArgsDaysBackValidation:

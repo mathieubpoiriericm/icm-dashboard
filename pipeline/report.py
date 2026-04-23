@@ -68,6 +68,23 @@ class PipelineRunData(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 
 
+def _provider_config_fields(config: PipelineConfig) -> dict[str, Any]:
+    """Provider-specific pipeline_config fields.
+
+    Anthropic runs get the Claude model metadata; Ollama runs substitute
+    the local model tag and blank the Claude-only fields so reports never
+    show fabricated Claude metadata.
+    """
+    is_anthropic = config.llm_provider == "anthropic"
+    return {
+        "model": config.llm_model if is_anthropic else config.ollama_model,
+        "model_version": config.model_version if is_anthropic else "",
+        "thinking_mode": config.thinking_mode if is_anthropic else "none",
+        "effort": config.llm_effort if is_anthropic else None,
+        "prompt_version": config.prompt_version,
+    }
+
+
 def _estimate_cost(
     model: str,
     input_tokens: int,
@@ -146,12 +163,16 @@ def _build_common_run_data(
 ) -> PipelineRunData:
     """Assemble the fields shared by all three run-data builders."""
     tu = metrics.token_usage
-    cost = _estimate_cost(
-        config.llm_model,
-        tu.input_tokens,
-        tu.output_tokens,
-        tu.cache_creation_input_tokens,
-        tu.cache_read_input_tokens,
+    cost = (
+        None
+        if config.llm_provider == "ollama"
+        else _estimate_cost(
+            config.llm_model,
+            tu.input_tokens,
+            tu.output_tokens,
+            tu.cache_creation_input_tokens,
+            tu.cache_read_input_tokens,
+        )
     )
 
     failed_count = sum(1 for r in results if not r.succeeded)
@@ -211,14 +232,10 @@ def build_run_data(
         config,
         total_duration,
         pipeline_config={
-            "model": config.llm_model,
-            "model_version": config.model_version,
+            **_provider_config_fields(config),
             "days_back": days_back,
             "dry_run": dry_run,
             "confidence_threshold": config.confidence_threshold,
-            "thinking_mode": config.thinking_mode,
-            "effort": config.llm_effort,
-            "prompt_version": config.prompt_version,
         },
     )
     data["search"] = {
@@ -241,13 +258,9 @@ def _build_offline_run_data(
     """Shared builder for local-PDF and PMID-list runs."""
     failed_count = sum(1 for r in results if not r.succeeded)
     pipeline_config = {
-        "model": config.llm_model,
-        "model_version": config.model_version,
+        **_provider_config_fields(config),
         "skip_validation": extra_config.pop("skip_validation", False),
         "confidence_threshold": config.confidence_threshold,
-        "thinking_mode": config.thinking_mode,
-        "effort": config.llm_effort,
-        "prompt_version": config.prompt_version,
         **extra_config,
     }
     data = _build_common_run_data(

@@ -14,6 +14,8 @@ from typing import Any
 
 from dotenv import dotenv_values
 
+from pipeline.config import LLM_PROVIDERS as _PIPELINE_LLM_PROVIDERS
+
 logger = logging.getLogger(__name__)
 
 CONFIG_DIR = Path(__file__).parent
@@ -43,7 +45,12 @@ LLM_MODELS: list[str] = [
     "claude-haiku-4-5-20251001",
 ]
 LLM_EFFORTS: list[str] = ["low", "medium", "high", "max"]
-PROMPT_VERSIONS: list[str] = ["v2", "v3", "v4", "v5"]
+LLM_PROVIDERS: list[str] = list(_PIPELINE_LLM_PROVIDERS)
+PROVIDER_LABELS: dict[str, str] = {
+    "anthropic": "Anthropic (Claude)",
+    "ollama": "Ollama (local)",
+}
+PROMPT_VERSIONS: list[str] = ["v2", "v3", "v4", "v5", "ollama_v1"]
 
 
 # ---- Dataclasses ----
@@ -67,6 +74,10 @@ class PipelineAppConfig:
     llm_effort: str = "high"
     llm_max_tokens: int = 0
     prompt_version: str = "v5"
+    llm_provider: str = "anthropic"
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "gemma4:e4b"
+    ollama_num_ctx: int = 65_536
     confidence_threshold: float = 0.65
     max_concurrent_papers: int = 5
     rpm_limit: int = 50
@@ -103,6 +114,10 @@ class TuningConfig:
     llm_effort: str = "high"
     llm_max_tokens: int = 0
     prompt_version: str = "v5"
+    llm_provider: str = "anthropic"
+    ollama_model: str = "gemma4:e4b"
+    ollama_host: str = "http://localhost:11434"
+    ollama_num_ctx: int = 65_536
     python_path: str = "python3"
     project_root: str = ""
 

@@ -148,6 +148,10 @@ DEFAULT_CT_SEARCH_TERMS: Final[tuple[str, ...]] = (
     "cerebral amyloid angiopathy",
 )
 
+# Supported LLM providers. "anthropic" uses the Claude API; "ollama" uses a
+# local Ollama server (e.g. for Gemma-based fine-tuned models).
+LLM_PROVIDERS: Final[tuple[str, ...]] = ("anthropic", "ollama")
+
 
 def get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
     """Add NCBI API key to params if available."""
@@ -230,6 +234,22 @@ class PipelineConfig:
     # Prompt version for A/B testing during tuning ("v1", "v2", etc.)
     prompt_version: str = field(
         default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v5")
+    )
+    # Provider selection: "anthropic" (default) or "ollama" (local via Ollama).
+    llm_provider: str = field(
+        default_factory=lambda: _env_str("PIPELINE_LLM_PROVIDER", "anthropic")
+    )
+    # Ollama server URL (only used when llm_provider == "ollama").
+    ollama_host: str = field(
+        default_factory=lambda: _env_str("PIPELINE_OLLAMA_HOST", "http://localhost:11434")
+    )
+    # Ollama model tag (e.g. "gemma4:e4b" or "svd-gemma:v1").
+    ollama_model: str = field(
+        default_factory=lambda: _env_str("PIPELINE_OLLAMA_MODEL", "gemma4:e4b")
+    )
+    # Ollama context window. Gemma 4 E4B supports up to 131072.
+    ollama_num_ctx: int = field(
+        default_factory=lambda: _env_int("PIPELINE_OLLAMA_NUM_CTX", 65_536)
     )
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
@@ -363,6 +383,32 @@ class PipelineConfig:
     )
 
     def __post_init__(self) -> None:
+        if self.llm_provider not in LLM_PROVIDERS:
+            raise ValueError(
+                f"llm_provider must be one of {LLM_PROVIDERS}, "
+                f"got {self.llm_provider!r}"
+            )
+
+        # Auto-switch to the ollama_v1 prompt when the user picks the ollama
+        # provider but hasn't explicitly chosen a prompt version. Explicit
+        # overrides (PIPELINE_PROMPT_VERSION set in env) are preserved so the
+        # "same prompt on both providers" baseline comparison still works.
+        if (
+            self.llm_provider == "ollama"
+            and "PIPELINE_PROMPT_VERSION" not in os.environ
+            and self.prompt_version == "v5"
+        ):
+            self.prompt_version = "ollama_v1"
+
+        # A single local Ollama instance serializes requests in-engine, so
+        # concurrent calls just inflate tail latency. Respect an explicit
+        # PIPELINE_MAX_CONCURRENT_PAPERS override; otherwise clamp to 1.
+        if (
+            self.llm_provider == "ollama"
+            and "PIPELINE_MAX_CONCURRENT_PAPERS" not in os.environ
+        ):
+            self.max_concurrent_papers = 1
+
         if self.llm_max_tokens == 0:
             self.llm_max_tokens = MODEL_MAX_OUTPUT_TOKENS.get(self.llm_model, 64_000)
 

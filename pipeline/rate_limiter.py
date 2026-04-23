@@ -11,6 +11,36 @@ import asyncio
 import random
 from collections import deque
 
+# Cap applied to every exponential backoff + retry-after delay.
+BACKOFF_CAP_SECONDS: float = 64.0
+
+
+def compute_backoff(base_delay: float, attempt: int) -> float:
+    """Exponential backoff: ``base_delay * 2^(attempt-1)``, capped at the module cap.
+
+    ``attempt`` is 1-based (attempt 1 returns ``base_delay``).
+    """
+    return min(base_delay * (2 ** (attempt - 1)), BACKOFF_CAP_SECONDS)
+
+
+def resolve_retry_delay(
+    retry_after: str | None, backoff_delay: float
+) -> tuple[float, str]:
+    """Pick delay from a ``Retry-After`` header, falling back to ``backoff_delay``.
+
+    Returns ``(delay, source)`` where ``source`` is a short label for logging
+    ("retry-after=...s", "backoff (retry-after parse failed)", or "backoff").
+    """
+    if retry_after:
+        try:
+            return (
+                min(float(retry_after), BACKOFF_CAP_SECONDS),
+                f"retry-after={retry_after}s",
+            )
+        except ValueError:
+            return backoff_delay, "backoff (retry-after parse failed)"
+    return backoff_delay, "backoff"
+
 
 class AsyncRateLimiter:
     """Token-bucket rate limiter for async LLM API calls.

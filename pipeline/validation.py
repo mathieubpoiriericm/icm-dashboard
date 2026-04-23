@@ -27,6 +27,7 @@ from pipeline.config import (
 )
 from pipeline.http_client import AsyncHttpClientManager
 from pipeline.llm_extraction import GeneEntry
+from pipeline.rate_limiter import compute_backoff, resolve_retry_delay
 
 logger = logging.getLogger(__name__)
 
@@ -182,18 +183,10 @@ async def _ncbi_get_with_retry(
             )
             return None
 
-        backoff = min(config.rate_limit_retry_delay * (2 ** (attempt - 1)), 64.0)
-        retry_after = resp.headers.get("retry-after")
-        if retry_after:
-            try:
-                delay = min(float(retry_after), 64.0)
-                delay_source = f"retry-after={retry_after}s"
-            except ValueError:
-                delay = backoff
-                delay_source = "backoff (retry-after parse failed)"
-        else:
-            delay = backoff
-            delay_source = "backoff"
+        backoff = compute_backoff(config.rate_limit_retry_delay, attempt)
+        delay, delay_source = resolve_retry_delay(
+            resp.headers.get("retry-after"), backoff
+        )
 
         logger.warning(
             f"NCBI 429 ({context}). Waiting {delay:.1f}s ({delay_source}) "
