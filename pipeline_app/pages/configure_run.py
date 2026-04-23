@@ -177,15 +177,11 @@ def create_configure_run_page(
 
             # ---- Run Mode ----
             ui.label("Run Mode").classes("section-header")
-            run_mode_select = (
-                ui.select(
-                    options=RUN_MODES,
-                    label="Mode",
-                    value=config.run_mode,
-                )
-                .classes("w-full")
-                .bind_value(config, "run_mode")
-            )
+            ui.select(
+                options=RUN_MODES,
+                label="Mode",
+                value=config.run_mode,
+            ).classes("w-full").bind_value(config, "run_mode")
 
             with ui.column().classes("w-full") as standard_fields:
                 ui.number(
@@ -271,17 +267,23 @@ def create_configure_run_page(
                 if result is not None:
                     inp.value = result
 
-            def _update_run_mode_fields() -> None:
-                mode = config.run_mode
-                standard_fields.set_visibility(mode == "standard")
-                local_pdfs_fields.set_visibility(mode == "local_pdfs")
-                pmid_list_fields.set_visibility(mode == "pmid_list")
-                skip_validation_fields.set_visibility(
-                    mode in ("local_pdfs", "pmid_list")
-                )
-
-            run_mode_select.on_value_change(lambda _: _update_run_mode_fields())
-            _update_run_mode_fields()
+            # Declarative bindings so programmatic changes to config.run_mode
+            # (e.g. preset load) refresh visibility too — an on_value_change
+            # listener only fires on UI-originated changes.
+            standard_fields.bind_visibility_from(
+                config, "run_mode", backward=lambda v: v == "standard"
+            )
+            local_pdfs_fields.bind_visibility_from(
+                config, "run_mode", backward=lambda v: v == "local_pdfs"
+            )
+            pmid_list_fields.bind_visibility_from(
+                config, "run_mode", backward=lambda v: v == "pmid_list"
+            )
+            skip_validation_fields.bind_visibility_from(
+                config,
+                "run_mode",
+                backward=lambda v: v in ("local_pdfs", "pmid_list"),
+            )
 
             ui.separator().classes("nav-separator")
 
@@ -723,25 +725,23 @@ def create_configure_run_page(
                             config=config,
                             secrets=fresh_secrets,
                         )
-                    except ValueError as exc:
-                        with suppress(RuntimeError):
-                            ui.notify(str(exc), color="negative")
-                        _set_run_status(f"Failed: {exc}", "negative")
-                        _refresh_stage_tracker()
-                        return
-                    except RuntimeError as exc:
-                        # "already running" from the lock's race-close check
-                        # — keep separate from the catch-all so the notify
-                        # color stays warning rather than negative.
-                        with suppress(RuntimeError):
-                            ui.notify(str(exc), color="warning")
-                        _set_run_status(str(exc), "negative")
-                        _refresh_stage_tracker()
-                        return
                     except Exception as exc:
+                        # RuntimeError here is "already running" from the
+                        # lock's race-close check — warning color vs the
+                        # negative for the validation/unknown cases.
+                        if isinstance(exc, RuntimeError):
+                            notify_color, notify_msg = "warning", str(exc)
+                            status_text = str(exc)
+                        elif isinstance(exc, ValueError):
+                            notify_color, notify_msg = "negative", str(exc)
+                            status_text = f"Failed: {exc}"
+                        else:
+                            notify_color = "negative"
+                            notify_msg = f"Unexpected error: {exc}"
+                            status_text = f"Error: {exc}"
                         with suppress(RuntimeError):
-                            ui.notify(f"Unexpected error: {exc}", color="negative")
-                        _set_run_status(f"Error: {exc}", "negative")
+                            ui.notify(notify_msg, color=notify_color)
+                        _set_run_status(status_text, "negative")
                         _refresh_stage_tracker()
                         return
 

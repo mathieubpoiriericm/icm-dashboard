@@ -193,23 +193,19 @@ async def pick_path(
     with ui.dialog() as dialog, ui.card().classes("theme-card q-pa-md path-picker"):
         ui.label(title).classes("section-header")
 
-        breadcrumb_row: list[ui.element] = []
-        with ui.row().classes("items-center wrap path-picker-breadcrumbs") as bc_row:
-            breadcrumb_row.append(bc_row)
+        # Empty at creation; _refresh_breadcrumb / _refresh_entries populate
+        # them in place later. No `with` scope needed because nothing is
+        # added inline.
+        bc_row = ui.row().classes("items-center wrap path-picker-breadcrumbs")
+        entries_col = ui.column().classes("path-picker-entries")
 
-        entries_container: list[ui.element] = []
-        with ui.column().classes("path-picker-entries") as entries_col:
-            entries_container.append(entries_col)
-
-        filename_input_holder: list[ui.input] = []
+        filename_input: ui.input | None = None
         if save_as:
             with ui.row().classes("w-full q-mt-sm"):
-                filename_input_holder.append(
-                    ui.input(
-                        label="New file name",
-                        value=default_filename,
-                    ).classes("w-full path-picker-filename-input")
-                )
+                filename_input = ui.input(
+                    label="New file name",
+                    value=default_filename,
+                ).classes("w-full path-picker-filename-input")
 
         selected_label = ui.label("").classes("path-picker-caption")
 
@@ -230,16 +226,11 @@ async def pick_path(
                     return
                 dialog.submit(str(folder))
 
-            select_folder_btn_holder: list[ui.button] = []
             if mode == "file" and allow_directories_as_files:
-                select_folder_btn_holder.append(
-                    ui.button(
-                        "Select current folder",
-                        on_click=_on_select_folder_click,
-                    )
-                    .props("outline")
-                    .classes("btn-secondary")
-                )
+                ui.button(
+                    "Select current folder",
+                    on_click=_on_select_folder_click,
+                ).props("outline").classes("btn-secondary")
             select_btn = ui.button("Select").props("unelevated").classes("btn-primary")
 
         def _on_select_click() -> None:
@@ -249,9 +240,7 @@ async def pick_path(
                 selected_file=selected_file_holder[0],
                 anchor=resolved_anchor,
                 save_as=save_as,
-                filename=(
-                    filename_input_holder[0].value if filename_input_holder else ""
-                ),
+                filename=filename_input.value if filename_input is not None else "",
             )
             if result is None:
                 ui.notify("No valid selection", color="warning")
@@ -279,11 +268,10 @@ async def pick_path(
             _refresh_selected_label()
 
         def _refresh_breadcrumb() -> None:
-            row = breadcrumb_row[0]
-            row.clear()
+            bc_row.clear()
             segments = _breadcrumb_segments(current_dir_holder[0], resolved_anchor)
             last_idx = len(segments) - 1
-            with row:
+            with bc_row:
                 ui.icon("folder").classes("text-primary")
                 for idx, segment in enumerate(segments):
                     is_last = idx == last_idx
@@ -310,9 +298,8 @@ async def pick_path(
             # is visible at render time (sampling pre-await drops the
             # highlight on the just-selected file).
             selected = selected_file_holder[0]
-            container = entries_container[0]
-            container.clear()
-            with container:
+            entries_col.clear()
+            with entries_col:
                 if not items:
                     ui.label("(empty)").classes("path-picker-empty")
                     return

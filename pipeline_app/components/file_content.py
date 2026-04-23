@@ -239,65 +239,62 @@ def _render_image_viewer(container: Element, src: str) -> None:
     """
     from nicegui import ui
 
-    zoom = [1.0]
-    pct_label: list[ui.label] = []
-    viewport_ref: list[Element] = []
-    zoom_out_btn: list[ui.button] = []
-    zoom_in_btn: list[ui.button] = []
+    zoom: float = 1.0
     # Cached last-emitted enabled states; set_enabled still sends a prop
     # patch on same-value writes, and every click toggles only one button's
     # state at the extremes — the other stays enabled and would re-emit.
     last_enabled = {"out": True, "in": True}
 
     def _apply() -> None:
-        z = zoom[0]
-        pct = int(round(z * 100))
-        pct_label[0].set_text(f"{pct}%")
-        vp = viewport_ref[0]
-        if z == 1.0:
-            vp.classes(remove="zoomed")
-            vp.style(remove="--image-zoom")
+        pct = int(round(zoom * 100))
+        pct_label.set_text(f"{pct}%")
+        if zoom == 1.0:
+            viewport.classes(remove="zoomed")
+            viewport.style(remove="--image-zoom")
         else:
-            vp.classes(add="zoomed")
-            vp.style(replace=f"--image-zoom: {z}")
-        out_enabled = z > _IMAGE_ZOOM_MIN
-        in_enabled = z < _IMAGE_ZOOM_MAX
+            viewport.classes(add="zoomed")
+            viewport.style(replace=f"--image-zoom: {zoom}")
+        out_enabled = zoom > _IMAGE_ZOOM_MIN
+        in_enabled = zoom < _IMAGE_ZOOM_MAX
         if out_enabled != last_enabled["out"]:
-            zoom_out_btn[0].set_enabled(out_enabled)
+            zoom_out_btn.set_enabled(out_enabled)
             last_enabled["out"] = out_enabled
         if in_enabled != last_enabled["in"]:
-            zoom_in_btn[0].set_enabled(in_enabled)
+            zoom_in_btn.set_enabled(in_enabled)
             last_enabled["in"] = in_enabled
 
     def _zoom_in() -> None:
-        new_z = min(_IMAGE_ZOOM_MAX, round(zoom[0] + _IMAGE_ZOOM_STEP, 2))
-        if new_z == zoom[0]:
+        nonlocal zoom
+        new_z = min(_IMAGE_ZOOM_MAX, round(zoom + _IMAGE_ZOOM_STEP, 2))
+        if new_z == zoom:
             return
-        zoom[0] = new_z
+        zoom = new_z
         _apply()
 
     def _zoom_out() -> None:
-        new_z = max(_IMAGE_ZOOM_MIN, round(zoom[0] - _IMAGE_ZOOM_STEP, 2))
-        if new_z == zoom[0]:
+        nonlocal zoom
+        new_z = max(_IMAGE_ZOOM_MIN, round(zoom - _IMAGE_ZOOM_STEP, 2))
+        if new_z == zoom:
             return
-        zoom[0] = new_z
+        zoom = new_z
         _apply()
 
     def _zoom_reset() -> None:
-        if zoom[0] == 1.0:
+        nonlocal zoom
+        if zoom == 1.0:
             return
-        zoom[0] = 1.0
+        zoom = 1.0
         _apply()
 
     with container, ui.element("div").classes("image-viewer"):
         with ui.row().classes("image-viewer-controls items-center gap-xs no-wrap"):
-            zoom_out_btn.append(
+            zoom_out_btn = (
                 ui.button(icon="zoom_out", on_click=_zoom_out)
                 .props("flat round size=sm")
                 .classes("btn-icon")
             )
-            pct_label.append(ui.label("100%").classes("numeric image-viewer-pct"))
-            zoom_in_btn.append(
+            pct_label = ui.label("100%").classes("numeric image-viewer-pct")
+            zoom_in_btn = (
                 ui.button(icon="zoom_in", on_click=_zoom_in)
                 .props("flat round size=sm")
                 .classes("btn-icon")
@@ -305,8 +302,8 @@ def _render_image_viewer(container: Element, src: str) -> None:
             ui.button(icon="fit_screen", on_click=_zoom_reset).props(
                 "flat round size=sm"
             ).classes("btn-icon")
-        viewport_ref.append(ui.element("div").classes("image-viewer-viewport"))
-        with viewport_ref[0]:
+        viewport = ui.element("div").classes("image-viewer-viewport")
+        with viewport:
             img_el = ui.element("img").classes("file-preview-image")
             img_el.props["src"] = src
             img_el.props["alt"] = ""

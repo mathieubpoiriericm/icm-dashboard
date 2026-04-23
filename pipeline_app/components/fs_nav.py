@@ -133,6 +133,11 @@ def list_directory(
     according to ``extensions`` so the caller can visually distinguish
     them without hiding them outright.
 
+    Uses ``os.scandir`` so each entry's type checks read from the cached
+    dirent instead of issuing extra stat syscalls — ``is_dir``,
+    ``is_file``, and ``is_symlink`` on a ``DirEntry`` do not hit the
+    filesystem again after the initial directory scan.
+
     Args:
         base: The directory whose children to list.
         extensions: If set, files whose lowercased suffix is in this
@@ -147,24 +152,18 @@ def list_directory(
         Directories first (alphabetical), then files (alphabetical).
         Returns [] on PermissionError.
     """
-
-    def _is_dir_no_follow(p: Path) -> bool:
-        # Path.is_dir() follows symlinks and will raise OSError on a broken
-        # target or a stalled network mount; follow_symlinks=False uses the
-        # dirent type without a stat() syscall, so a dead symlink can't
-        # escape the PermissionError/OSError wrapper below.
-        try:
-            return p.is_dir(follow_symlinks=False)
-        except OSError:
-            return False
-
     try:
-        raw_entries = sorted(
-            base.iterdir(),
-            key=lambda p: (not _is_dir_no_follow(p), p.name.lower()),
-        )
-    except PermissionError, OSError:
+        with os.scandir(base) as it:
+            raw_entries = list(it)
+    except (PermissionError, FileNotFoundError, NotADirectoryError, OSError):
         return []
+
+    # follow_symlinks=False reads dirent type without a stat() — keeps a
+    # broken symlink or a stalled network mount from raising OSError
+    # past the scandir try/except wrapper.
+    raw_entries.sort(
+        key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()),
+    )
 
     result: list[DirEntry] = []
     for entry in raw_entries:
@@ -172,9 +171,15 @@ def list_directory(
             continue
 
         if entry.is_dir():
-            result.append(DirEntry(path=entry, is_dir=True, matches_filter=True))
+            result.append(
+                DirEntry(path=Path(entry.path), is_dir=True, matches_filter=True)
+            )
         elif entry.is_file():
-            matches = extensions is None or entry.suffix.lower() in extensions
-            result.append(DirEntry(path=entry, is_dir=False, matches_filter=matches))
+            matches = extensions is None or (
+                os.path.splitext(entry.name)[1].lower() in extensions
+            )
+            result.append(
+                DirEntry(path=Path(entry.path), is_dir=False, matches_filter=matches)
+            )
 
     return result
