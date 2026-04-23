@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -157,7 +158,11 @@ def create_run_history_page() -> None:
     async def _load_and_render() -> None:
         """Load history off-loop, then replace the placeholder with the table."""
         rows = await run.io_bound(_get_rows)
-        if table_container:
+        if not table_container:
+            return
+        # Disconnect mid-io_bound leaves the container attached to a
+        # disposed client — NiceGUI raises RuntimeError on clear/mount.
+        with suppress(RuntimeError):
             table_container[0].clear()
             with table_container[0]:
                 _build_table(rows)

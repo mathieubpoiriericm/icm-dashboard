@@ -185,9 +185,12 @@ def create_tuning_history_page(project_root: str) -> None:
         rows = await run.io_bound(_load_tuning_runs, project_root)
         for i, row in enumerate(rows):
             row["_row_id"] = str(i)
-        container.clear()
-        with container:
-            _render_body(rows, _refresh, refresh_btn_ref)
+        # Disconnect mid-io_bound leaves the container attached to a
+        # disposed client — NiceGUI raises RuntimeError on clear/mount.
+        with contextlib.suppress(RuntimeError):
+            container.clear()
+            with container:
+                _render_body(rows, _refresh, refresh_btn_ref)
 
     async def _refresh() -> None:
         # button_loading both disables the button and serves as the in-flight

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -193,7 +194,9 @@ def _read_report(
                 f"limit {_MAX_REPORT_SIZE / 1024 / 1024:.0f} MB).",
             )
         report = json.loads(report_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        # UnicodeDecodeError is a ValueError (not OSError), so an explicit
+        # entry is required to cover non-UTF-8 report files.
         return None, None, f"Error loading report: {e}"
     return report_path, report, None
 
@@ -317,17 +320,22 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
         report_path, report, error_msg, tables = await run.io_bound(
             _prepare_view_data, project_root, report_id
         )
-        container.clear()
-        with container:
-            if error_msg is not None or report is None or report_path is None:
-                ui.label(error_msg or "Unable to load report.").classes("text-negative")
-                ui.button(
-                    "Back to History",
-                    on_click=lambda: ui.navigate.to("/history"),
-                    icon="arrow_back",
-                ).props("flat").classes("btn-ghost")
-                return
-            _render_report_body(report_path, report, tables)
+        # Disconnect mid-io_bound leaves the container attached to a
+        # disposed client — NiceGUI raises RuntimeError on clear/mount.
+        with suppress(RuntimeError):
+            container.clear()
+            with container:
+                if error_msg is not None or report is None or report_path is None:
+                    ui.label(error_msg or "Unable to load report.").classes(
+                        "text-negative"
+                    )
+                    ui.button(
+                        "Back to History",
+                        on_click=lambda: ui.navigate.to("/history"),
+                        icon="arrow_back",
+                    ).props("flat").classes("btn-ghost")
+                    return
+                _render_report_body(report_path, report, tables)
 
     ui.timer(0.0, _load, once=True)
 

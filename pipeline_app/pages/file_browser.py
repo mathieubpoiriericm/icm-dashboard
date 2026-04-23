@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -106,7 +107,11 @@ def create_file_browser_page(project_root: str) -> None:
 
     async def _load_tree() -> None:
         nodes = await run.io_bound(_build_tree_nodes)
-        if tree_container:
+        if not tree_container:
+            return
+        # Disconnect mid-io_bound leaves the container attached to a
+        # disposed client — NiceGUI raises RuntimeError on clear/mount.
+        with suppress(RuntimeError):
             tree_container[0].clear()
             with tree_container[0]:
                 _render_tree(nodes)
