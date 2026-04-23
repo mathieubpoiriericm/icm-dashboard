@@ -39,6 +39,9 @@ class EventLog:
     def __init__(self, db_path: str) -> None:
         self._conn = sqlite3.connect(db_path)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        # Retry locked DB for 5s instead of failing immediately — concurrent
+        # pipeline invocations would otherwise silently drop events.
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute(_SCHEMA)
         self._conn.commit()
 
@@ -59,6 +62,8 @@ class EventLog:
             The auto-generated row ID.
         """
         now = datetime.now(UTC).isoformat()
+        # default=str is intentionally lossy — payloads are human-audit + dedup,
+        # not round-trip typed.
         payload_json = json.dumps(payload, default=str)
         cur = self._conn.execute(
             "INSERT INTO events (event_type, payload, created_at) VALUES (?, ?, ?)",

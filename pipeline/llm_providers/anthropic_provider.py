@@ -205,6 +205,7 @@ class AnthropicProvider:
                         f"Raise PIPELINE_LLM_MAX_TOKENS or "
                         f"reduce effort level."
                     )
+                    usage.truncated_responses = 1
                     return [], usage
 
                 # Extract text content and estimate thinking tokens from

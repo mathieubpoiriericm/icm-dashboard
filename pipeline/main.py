@@ -129,6 +129,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final, TypedDict
 
+import asyncpg
 import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
@@ -211,7 +212,12 @@ LOG_DIR = Path(os.getenv("PIPELINE_LOG_DIR", PROJECT_ROOT / "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 LOG_LOG_DIR = LOG_DIR / "log"
 LOG_LOG_DIR.mkdir(exist_ok=True)
-LOG_FILE = LOG_LOG_DIR / f"pipeline_{datetime.now().strftime('%Y-%m-%d_%Hh%Mm%Ss')}.log"
+# UTC matches every other timestamp in the pipeline; PID suffix survives
+# same-second invocations (e.g. scheduler overlap, manual re-runs).
+LOG_FILE = LOG_LOG_DIR / (
+    f"pipeline_{datetime.now(UTC).strftime('%Y-%m-%d_%Hh%Mm%Ss')}"
+    f"_{os.getpid()}.log"
+)
 
 from rich.logging import RichHandler
 
@@ -707,9 +713,12 @@ async def run_pipeline(
         else:
             try:
                 existing_pmids = await get_existing_pmids()
-            except Exception as e:
-                # Table might not exist yet, treat as empty
-                logger.warning(f"  Could not fetch existing PMIDs: {e}")
+            except asyncpg.UndefinedTableError:
+                # First run only. Other DB errors must propagate — swallowing
+                # them disables dedup and re-spends the LLM budget.
+                logger.warning(
+                    "  pubmed_refs table missing; treating as empty (first run?)"
+                )
                 existing_pmids = set()
 
         new_pmids = filter_new_pmids(all_pmids, existing_pmids)

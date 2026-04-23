@@ -210,6 +210,7 @@ def _build_common_run_data(
             "cache_read_input_tokens": tu.cache_read_input_tokens,
             "total_tokens": tu.total_tokens,
             "cache_hit_rate": round(tu.cache_hit_rate, 4),
+            "truncated_responses": tu.truncated_responses,
             "estimated_cost_usd": _round_cost(cost) if cost is not None else None,
         },
         "batch_validation_warnings": batch_warnings,
@@ -549,6 +550,12 @@ def print_rich_summary(data: PipelineRunData) -> None:
         f"[bold]Acceptance rate:[/bold] {genes_info.get('acceptance_rate', 0):.1%}",
         f"[bold]Fulltext rate:[/bold] {papers.get('fulltext_rate', 0):.1%}",
     ]
+    truncated = data.get("token_usage", {}).get("truncated_responses", 0)
+    if truncated:
+        validation_lines.append(
+            f"[bold red]Truncated responses:[/bold red] {truncated} "
+            f"(raise PIPELINE_LLM_MAX_TOKENS)"
+        )
     batch_warnings = data.get("batch_validation_warnings", [])
     if batch_warnings:
         validation_lines.append("")

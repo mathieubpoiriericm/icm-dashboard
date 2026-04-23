@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import random
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -24,6 +23,7 @@ import httpx
 from pipeline.cache_utils import SyncResult
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
+from pipeline.rate_limiter import compute_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,6 @@ CTG_STUDIES_URL: Final[str] = f"{CTG_BASE_URL}/studies"
 # CTG v2 intervention types. We only want drug trials — skip behavioral,
 # device, procedure, etc.
 DRUG_INTERVENTION_TYPES: Final[frozenset[str]] = frozenset({"DRUG"})
-
-# Exponential-backoff base: sleep `BASE ** attempt` seconds (1, 2, 4, ...)
-# between retries of a failed CTG request.
-_RETRY_BACKOFF_BASE: Final[float] = 2.0
 
 # Map CTG v2 raw phase enum values to the display labels the Shiny filter
 # expects ("Phase 2" not "PHASE2"). Unmapped values pass through verbatim.
@@ -297,9 +293,9 @@ async def _fetch_page_with_retry(
             last_error = e
 
         if attempt < max_retries:
-            # Jitter so multiple concurrent retries (all hit by the same 429)
-            # don't thunder back at the API at the same instant.
-            await asyncio.sleep(_RETRY_BACKOFF_BASE**attempt + random.uniform(0, 1))
+            # 1s, 2s, 4s, ... with ±25% jitter, capped at the shared module cap
+            # so raising max_retries can't stall fetches for minutes.
+            await asyncio.sleep(compute_backoff(1.0, attempt + 1))
 
     raise last_error or RuntimeError(
         f"CTG fetch exhausted {max_retries + 1} attempts with no error captured"

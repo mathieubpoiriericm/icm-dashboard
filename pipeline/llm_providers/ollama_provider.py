@@ -163,6 +163,7 @@ class OllamaProvider:
                     return [], TokenUsage(
                         input_tokens=response.prompt_eval_count or 0,
                         output_tokens=used,
+                        truncated_responses=1,
                     )
                 raw = response.message.content or ""
                 result = parse_extraction_response(raw)

@@ -6,6 +6,7 @@ supporting PubMed Central, Unpaywall, and abstract fallback.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -72,6 +73,19 @@ _client_manager = AsyncHttpClientManager(
 async def close_http_client() -> None:
     """Close shared HTTP client (call at shutdown)."""
     await _client_manager.close()
+
+
+def _unpaywall_oa_url(data: dict[str, Any]) -> str | None:
+    """Pick a best-available OA URL from an Unpaywall v2 payload, if any.
+
+    Falls back to the landing page ``url`` when ``url_for_pdf`` is null
+    (common for HTML-only OA locations); the PDF magic-byte check downstream
+    rejects non-PDF responses.
+    """
+    if not (data.get("is_oa") and data.get("best_oa_location")):
+        return None
+    loc = data["best_oa_location"]
+    return loc.get("url_for_pdf") or loc.get("url")
 
 
 def _validate_doi(doi: str) -> str:
@@ -153,18 +167,17 @@ async def check_unpaywall(doi: str) -> str | None:
 
         match resp.status_code:
             case 200:
-                data = resp.json()
-                if data.get("is_oa") and data.get("best_oa_location"):
-                    loc = data["best_oa_location"]
-                    # Prefer a direct PDF URL; fall back to the landing page
-                    # ``url`` when url_for_pdf is null (common for HTML-only OA
-                    # locations). download_and_parse_pdf verifies it's a real
-                    # PDF via content-type + magic-byte check.
-                    return loc.get("url_for_pdf") or loc.get("url")
+                return _unpaywall_oa_url(resp.json())
             case 404:
                 logger.debug(f"DOI not found in Unpaywall: {doi}")
             case 429:
-                logger.warning("Unpaywall rate limit exceeded")
+                # Single retry — Unpaywall isn't critical-path; one attempt
+                # is enough before falling back to abstract-only extraction.
+                logger.warning("Unpaywall rate limit exceeded, retrying once in 2s")
+                await asyncio.sleep(2.0)
+                resp = await client.get(url, params=params)
+                if resp.status_code == 200:
+                    return _unpaywall_oa_url(resp.json())
             case status:
                 logger.debug(f"Unpaywall returned status {status} for DOI {doi}")
 
@@ -279,8 +292,18 @@ async def download_and_parse_pdf(url: str) -> str | None:
                 logger.debug(f"PDF download failed: {resp.status_code} for {url}")
                 return None
 
-            # Check content-length header before downloading body
-            content_length = int(resp.headers.get("content-length", 0))
+            # Missing or non-numeric content-length is safe to ignore because
+            # the streaming guard below (MAX_PDF_BYTES) bounds memory anyway.
+            raw_cl = resp.headers.get("content-length", "0")
+            try:
+                content_length = int(raw_cl)
+            except ValueError:
+                logger.debug(
+                    "Non-numeric content-length %r for %s; relying on streaming guard",
+                    raw_cl,
+                    url,
+                )
+                content_length = 0
             if content_length > MAX_PDF_BYTES:
                 logger.warning(
                     f"PDF too large ({content_length} bytes), skipping: {url}"

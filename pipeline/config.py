@@ -236,8 +236,11 @@ class PipelineConfig:
         default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v5")
     )
     # Provider selection: "anthropic" (default) or "ollama" (local via Ollama).
+    # Normalized to lowercase so PIPELINE_LLM_PROVIDER=Anthropic / OLLAMA work.
     llm_provider: str = field(
-        default_factory=lambda: _env_str("PIPELINE_LLM_PROVIDER", "anthropic")
+        default_factory=lambda: _env_str(
+            "PIPELINE_LLM_PROVIDER", "anthropic"
+        ).strip().lower()
     )
     # Ollama server URL (only used when llm_provider == "ollama").
     ollama_host: str = field(

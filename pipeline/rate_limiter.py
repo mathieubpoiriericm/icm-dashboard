@@ -8,19 +8,26 @@ errors rather than reacting to them. Supports both requests-per-minute
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 from collections import deque
+
+logger = logging.getLogger(__name__)
 
 # Cap applied to every exponential backoff + retry-after delay.
 BACKOFF_CAP_SECONDS: float = 64.0
 
 
 def compute_backoff(base_delay: float, attempt: int) -> float:
-    """Exponential backoff: ``base_delay * 2^(attempt-1)``, capped at the module cap.
+    """Exponential backoff with +/-25% jitter, capped at the module cap.
 
-    ``attempt`` is 1-based (attempt 1 returns ``base_delay``).
+    ``attempt`` is 1-based (attempt 1 returns ~``base_delay``). Jitter spreads
+    concurrent retries so a fleet hitting the same 429 doesn't thunder back at
+    identical moments.
     """
-    return min(base_delay * (2 ** (attempt - 1)), BACKOFF_CAP_SECONDS)
+    raw = base_delay * (2 ** (attempt - 1))
+    jittered = raw * random.uniform(0.75, 1.25)
+    return min(jittered, BACKOFF_CAP_SECONDS)
 
 
 def resolve_retry_delay(
@@ -130,6 +137,11 @@ class AsyncRateLimiter:
                     self._token_log[i] = (ts, actual_tokens, rid)
                     self._token_total += actual_tokens - tokens
                     return
+            logger.debug(
+                "record_actual_usage: request_id %d not found "
+                "(likely pruned after 60s TTL)",
+                request_id,
+            )
 
     async def signal_rate_limit(self, backoff_seconds: float) -> None:
         """Signal that a 429 was received — all pending acquire() calls will pause.

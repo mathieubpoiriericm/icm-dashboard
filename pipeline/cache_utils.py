@@ -148,9 +148,9 @@ async def single_flight_get[T](
         finally:
             in_flight.pop(key, None)
 
-    if key in cache:
-        return cache[key]
-
+    # Always take the lock on reads too: the no-lock fast path skipped
+    # move_to_end, so hot entries were aged as if untouched and got evicted
+    # first — FIFO, not LRU.
     async with cache_lock:
         if key in cache:
             cache.move_to_end(key)
