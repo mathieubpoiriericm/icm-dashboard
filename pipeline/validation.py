@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from pipeline.cache_utils import DEFAULT_EVICT_FRACTION, DEFAULT_MAX_SIZE, evict_lru
+from pipeline.cache_utils import single_flight_get
 from pipeline.config import (
     NCBI_ESEARCH_URL,
     NCBI_ESUMMARY_URL,
@@ -92,6 +92,8 @@ async def close_validation_client() -> None:
 _gene_cache: OrderedDict[str, dict[str, Any] | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
+# Single-flight registry keyed by uppercase symbol; see ``single_flight_get``.
+_in_flight: dict[str, asyncio.Task[dict[str, Any] | None]] = {}
 
 
 def _get_cache_lock() -> asyncio.Lock:
@@ -112,9 +114,10 @@ def _get_ncbi_semaphore(config: PipelineConfig | None = None) -> asyncio.Semapho
 
 
 def clear_gene_cache() -> None:
-    """Clear the gene validation cache."""
+    """Clear the gene validation cache and any in-flight task references."""
     global _gene_cache
     _gene_cache = OrderedDict()
+    _in_flight.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -266,43 +269,18 @@ async def verify_ncbi_gene(
 ) -> dict[str, Any] | None:
     """Query NCBI Gene database to verify gene symbol.
 
-    Results are cached to avoid redundant API calls for repeated gene symbols.
-
-    Args:
-        symbol: Gene symbol to verify.
-        config: Pipeline configuration for retry settings.
-
-    Returns:
-        Gene info dict if found, None otherwise.
+    Results are cached; concurrent callers for the same symbol share one
+    in-flight fetch via ``single_flight_get``.
     """
-    symbol_upper = symbol.upper()
-
-    # Check cache (brief lock for dict access only)
-    async with _get_cache_lock():
-        if symbol_upper in _gene_cache:
-            _gene_cache.move_to_end(symbol_upper)
-            return _gene_cache[symbol_upper]
-
-    # Semaphore controls concurrent NCBI requests; throttle enforces inter-request delay
-    async with _get_ncbi_semaphore(config):
-        # Double-checked locking: another task may have filled the cache while
-        # we were queued on the semaphore — skip the redundant NCBI call.
-        async with _get_cache_lock():
-            if symbol_upper in _gene_cache:
-                _gene_cache.move_to_end(symbol_upper)
-                return _gene_cache[symbol_upper]
-        result = await _fetch_ncbi_gene_uncached(symbol, config=config)
-
-    async with _get_cache_lock():
-        evict_lru(
-            _gene_cache,
-            DEFAULT_MAX_SIZE,
-            DEFAULT_EVICT_FRACTION,
-            "gene validation cache",
-        )
-        _gene_cache[symbol_upper] = result
-
-    return result
+    return await single_flight_get(
+        symbol.upper(),
+        cache=_gene_cache,
+        cache_lock=_get_cache_lock(),
+        in_flight=_in_flight,
+        semaphore=_get_ncbi_semaphore(config),
+        fetch_fn=lambda: _fetch_ncbi_gene_uncached(symbol, config=config),
+        label="gene validation cache",
+    )
 
 
 async def _fetch_ncbi_gene_uncached(

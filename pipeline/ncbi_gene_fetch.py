@@ -17,12 +17,10 @@ import httpx
 
 from pipeline.cache_utils import (
     DB_CACHE_TTL_DAYS,
-    DEFAULT_EVICT_FRACTION,
-    DEFAULT_MAX_SIZE,
     SyncResult,
-    evict_lru,
     make_log_progress,
     run_batched_fetch,
+    single_flight_get,
 )
 from pipeline.config import (
     NCBI_ESEARCH_URL,
@@ -59,6 +57,8 @@ _gene_cache: OrderedDict[str, NCBIGeneInfo | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
 _ncbi_fetch_state_initialized: bool = False
+# Single-flight registry keyed by uppercase symbol; see ``single_flight_get``.
+_in_flight: dict[str, asyncio.Task[NCBIGeneInfo | None]] = {}
 
 
 def init_ncbi_fetch_state(config: PipelineConfig | None = None) -> None:
@@ -101,9 +101,10 @@ async def close_ncbi_client() -> None:
 
 
 def clear_ncbi_cache() -> None:
-    """Clear the gene info cache."""
+    """Clear the gene info cache and any in-flight task references."""
     global _gene_cache
     _gene_cache = OrderedDict()
+    _in_flight.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -114,37 +115,18 @@ def clear_ncbi_cache() -> None:
 async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
     """Fetch NCBI gene information for a single gene symbol.
 
-    Results are cached to avoid redundant API calls.
-
-    Args:
-        gene_symbol: Gene symbol to look up.
-
-    Returns:
-        NCBIGeneInfo if found, None otherwise.
+    Results are cached; concurrent callers for the same symbol share one
+    in-flight fetch via ``single_flight_get``.
     """
-    symbol_upper = gene_symbol.upper()
-
-    # Check cache first (without lock for read — LRU recency not updated,
-    # acceptable tradeoff to avoid lock contention on every read)
-    if symbol_upper in _gene_cache:
-        return _gene_cache[symbol_upper]
-
-    async with _get_cache_lock():
-        # Double-check after acquiring lock
-        if symbol_upper in _gene_cache:
-            _gene_cache.move_to_end(symbol_upper)
-            return _gene_cache[symbol_upper]
-
-    # Lock released before I/O
-    async with _get_ncbi_semaphore():
-        result = await _fetch_ncbi_gene_uncached(gene_symbol)
-
-    async with _get_cache_lock():
-        evict_lru(
-            _gene_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION, "NCBI gene cache"
-        )
-        _gene_cache[symbol_upper] = result
-    return result
+    return await single_flight_get(
+        gene_symbol.upper(),
+        cache=_gene_cache,
+        cache_lock=_get_cache_lock(),
+        in_flight=_in_flight,
+        semaphore=_get_ncbi_semaphore(),
+        fetch_fn=lambda: _fetch_ncbi_gene_uncached(gene_symbol),
+        label="NCBI gene cache",
+    )
 
 
 async def _fetch_ncbi_gene_uncached(gene_symbol: str) -> NCBIGeneInfo | None:

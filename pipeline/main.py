@@ -177,6 +177,7 @@ from pipeline.healthcheck import (
     ping_start,
     ping_success,
 )
+from pipeline.http_client import AsyncHttpClientManager
 from pipeline.llm_extraction import GeneEntry, close_async_client, extract_from_paper
 from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state
 from pipeline.notifications import send_pipeline_notification
@@ -361,26 +362,23 @@ async def _validate_genes(
 
 
 # --- Shared HTTP client for metadata ---
-_metadata_client: httpx.AsyncClient | None = None
+# AsyncHttpClientManager serialises lazy init under an asyncio.Lock so the
+# first wave of concurrent paper-processing tasks doesn't each build (and
+# leak) its own httpx.AsyncClient.
+_metadata_client_manager = AsyncHttpClientManager(
+    timeout=httpx.Timeout(30.0),
+    limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+)
 
 
 async def _get_metadata_client() -> httpx.AsyncClient:
     """Get or create shared HTTP client for metadata fetching."""
-    global _metadata_client
-    if _metadata_client is None:
-        _metadata_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        )
-    return _metadata_client
+    return await _metadata_client_manager.get()
 
 
 async def _close_metadata_client() -> None:
     """Close shared metadata HTTP client."""
-    global _metadata_client
-    if _metadata_client is not None:
-        await _metadata_client.aclose()
-        _metadata_client = None
+    await _metadata_client_manager.close()
 
 
 async def fetch_paper_metadata(pmid: str) -> MetadataResult:

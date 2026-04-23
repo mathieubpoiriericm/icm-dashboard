@@ -105,6 +105,43 @@ class TestFetchNCBIGeneInfo:
         assert "MISSING" in mod._gene_cache
         assert mod._gene_cache["MISSING"] is None
 
+    async def test_concurrent_calls_fetch_once(self, mocker):
+        """Concurrent callers for the same symbol must share one upstream call.
+
+        Regression guard for the thundering-herd race: before the fix, the
+        second cache double-check happened before acquiring the NCBI
+        semaphore, so N concurrent callers for one gene issued N NCBI
+        requests instead of 1.
+        """
+        import asyncio
+
+        import pipeline.ncbi_gene_fetch as mod
+
+        clear_ncbi_cache()
+        expected = NCBIGeneInfo("NOTCH3", "4854", "desc", None)
+        call_count = 0
+
+        async def slow_fetch(symbol: str) -> NCBIGeneInfo:
+            nonlocal call_count
+            call_count += 1
+            # Yield so the scheduler can actually race — without this, the
+            # first task would finish atomically and no race would be
+            # observable even against a buggy implementation.
+            await asyncio.sleep(0)
+            return expected
+
+        mocker.patch(
+            "pipeline.ncbi_gene_fetch._fetch_ncbi_gene_uncached",
+            side_effect=slow_fetch,
+        )
+
+        results = await asyncio.gather(
+            *(fetch_ncbi_gene_info("NOTCH3") for _ in range(10))
+        )
+        assert all(r is expected for r in results)
+        assert call_count == 1
+        assert mod._gene_cache["NOTCH3"] is expected
+
 
 # ---------------------------------------------------------------------------
 # _fetch_ncbi_gene_uncached

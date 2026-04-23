@@ -14,7 +14,10 @@ from pipeline.llm_providers.ollama_provider import OllamaProvider
 
 
 def _chat_response(
-    content: str, eval_count: int = 5, prompt_eval_count: int = 50
+    content: str,
+    eval_count: int = 5,
+    prompt_eval_count: int = 50,
+    done_reason: str = "stop",
 ) -> ollama.ChatResponse:
     """Build a realistic ChatResponse for use in mock return values."""
     return ollama.ChatResponse(
@@ -22,6 +25,7 @@ def _chat_response(
         message=ollama.Message(role="assistant", content=content),
         eval_count=eval_count,
         prompt_eval_count=prompt_eval_count,
+        done_reason=done_reason,
     )
 
 
@@ -216,3 +220,31 @@ async def test_extract_gives_up_on_repeated_connect_errors(provider_with_mock_cl
     with pytest.raises(httpx.ConnectError):
         await p.extract("t", "1", cfg, None)
     assert client.chat.await_count == 3  # initial + 2 retries
+
+
+@pytest.mark.asyncio
+async def test_extract_bails_on_truncated_response(provider_with_mock_client):
+    """Ollama done_reason='length' must short-circuit without parsing.
+
+    Parity with AnthropicProvider's stop_reason=='max_tokens' handling:
+    truncation is deterministic under a fixed num_predict, so burning
+    validation retries to re-truncate is waste, and a JSON-constrained
+    output can still pass `parse_extraction_response` on a truncated-
+    but-structurally-valid prefix.
+    """
+    p, client = provider_with_mock_client
+    client.chat.return_value = _chat_response(
+        '{"genes": [{"gene_symbol": "NOTCH3", "confidence": 0.9, '
+        '"gwas_trait": ["SVS"], "mendelian_randomization": false, '
+        '"omics_evidence": []}]}',
+        eval_count=64,
+        prompt_eval_count=2000,
+        done_reason="length",
+    )
+    cfg = PipelineConfig(llm_provider="ollama", prompt_version="ollama_v1")
+    genes, usage = await p.extract("t", "42", cfg, None)
+    assert genes == []
+    assert usage.input_tokens == 2000
+    assert usage.output_tokens == 64
+    # Exactly one call — no validation retries burned.
+    assert client.chat.await_count == 1

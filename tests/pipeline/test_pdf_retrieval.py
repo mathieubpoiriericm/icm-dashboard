@@ -12,6 +12,7 @@ from pipeline.pdf_retrieval import (
     DOI_PATTERN,
     _validate_doi,
     check_unpaywall,
+    fetch_abstract,
     get_fulltext,
 )
 
@@ -258,3 +259,66 @@ class TestExtractCleanPdfText:
         text = _extract_clean_pdf_text(mock_doc)
         assert "Text content" in text
         assert "Image placeholder" not in text
+
+
+# ---------------------------------------------------------------------------
+# fetch_abstract structured-section handling
+# ---------------------------------------------------------------------------
+
+
+def _abstract_response(xml: bytes) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.content = xml
+    return resp
+
+
+class TestFetchAbstractStructured:
+    """Guard the skip-empty-section behaviour in pdf_retrieval.fetch_abstract.
+
+    A structured abstract with a labelled-but-empty section would otherwise
+    emit "Label: " lines that eat LLM context budget without adding content.
+    """
+
+    async def test_skips_labeled_empty_section(self, mocker):
+        xml = (
+            b"<?xml version='1.0'?>"
+            b"<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
+            b"<Abstract>"
+            b'<AbstractText Label="BACKGROUND">Real background text.</AbstractText>'
+            b'<AbstractText Label="METHODS">   </AbstractText>'
+            b'<AbstractText Label="RESULTS">Significant results here.</AbstractText>'
+            b"</Abstract>"
+            b"</Article></MedlineCitation></PubmedArticle></PubmedArticleSet>"
+        )
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_abstract_response(xml))
+        mocker.patch(
+            "pipeline.pdf_retrieval._client_manager.get",
+            return_value=mock_client,
+        )
+        result = await fetch_abstract("12345678")
+        assert result is not None
+        assert "BACKGROUND: Real background text." in result
+        assert "RESULTS: Significant results here." in result
+        # The whitespace-only METHODS section must not leak through.
+        assert "METHODS:" not in result
+        assert "METHODS: " not in result
+
+    async def test_returns_none_when_all_sections_empty(self, mocker):
+        xml = (
+            b"<?xml version='1.0'?>"
+            b"<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
+            b"<Abstract>"
+            b'<AbstractText Label="BACKGROUND">   </AbstractText>'
+            b'<AbstractText Label="METHODS"></AbstractText>'
+            b"</Abstract>"
+            b"</Article></MedlineCitation></PubmedArticle></PubmedArticleSet>"
+        )
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_abstract_response(xml))
+        mocker.patch(
+            "pipeline.pdf_retrieval._client_manager.get",
+            return_value=mock_client,
+        )
+        assert await fetch_abstract("12345678") is None

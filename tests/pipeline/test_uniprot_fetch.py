@@ -301,6 +301,47 @@ class TestFetchUniProtInfo:
         assert result.url is None
         assert result.protein_name is None
 
+    async def test_concurrent_calls_fetch_once(self, mocker):
+        """Concurrent callers for the same symbol must share one upstream call.
+
+        Regression guard for the thundering-herd race: before the fix, the
+        second cache double-check happened before acquiring the UniProt
+        semaphore, so N concurrent callers for one gene issued N UniProt
+        requests instead of 1.
+        """
+        import asyncio
+
+        import pipeline.uniprot_fetch as mod
+
+        clear_uniprot_cache()
+        accession_calls = 0
+
+        async def slow_accession(symbol: str) -> tuple[str, str]:
+            nonlocal accession_calls
+            accession_calls += 1
+            await asyncio.sleep(0)
+            return "P12345", "Notch 3"
+
+        mocker.patch(
+            "pipeline.uniprot_fetch.fetch_uniprot_accession",
+            side_effect=slow_accession,
+        )
+        mocker.patch(
+            "pipeline.uniprot_fetch.fetch_uniprot_go_info",
+            return_value={
+                "biological_process": None,
+                "molecular_function": None,
+                "cellular_component": None,
+            },
+        )
+
+        results = await asyncio.gather(
+            *(fetch_uniprot_info("NOTCH3") for _ in range(10))
+        )
+        assert all(r is not None and r.accession == "P12345" for r in results)
+        assert accession_calls == 1
+        assert "NOTCH3" in mod._uniprot_cache
+
 
 # ---------------------------------------------------------------------------
 # fetch_uniprot_batch

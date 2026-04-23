@@ -17,12 +17,10 @@ import httpx
 from lxml import etree  # type: ignore[import-untyped]
 
 from pipeline.cache_utils import (
-    DEFAULT_EVICT_FRACTION,
-    DEFAULT_MAX_SIZE,
     SyncResult,
-    evict_lru,
     make_log_progress,
     run_batched_fetch,
+    single_flight_get,
 )
 from pipeline.config import (
     NCBI_EFETCH_URL,
@@ -168,46 +166,22 @@ def _format_citation(
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_and_store(pmid: str) -> PubMedCitation | None:
-    """Fetch a single PMID and install it into the cache. Runs as a Task."""
-    try:
-        async with _get_ncbi_semaphore():
-            result = await _fetch_pubmed_uncached(pmid)
-        async with _get_cache_lock():
-            evict_lru(
-                _citation_cache,
-                DEFAULT_MAX_SIZE,
-                DEFAULT_EVICT_FRACTION,
-                "PubMed citation cache",
-            )
-            _citation_cache[pmid] = result
-        return result
-    finally:
-        _in_flight.pop(pmid, None)
-
-
 async def fetch_pubmed_citation(pmid: str) -> PubMedCitation | None:
     """Fetch citation details for a single PMID.
 
-    Results are cached. Concurrent callers for the same PMID share one
-    in-flight task via ``asyncio.shield`` — cancellation of one caller
-    does not cancel the fetch for waiting peers.
+    Results are cached; concurrent callers for the same PMID share one
+    in-flight fetch via ``single_flight_get``.
     """
     pmid = pmid.strip()
-
-    if pmid in _citation_cache:
-        return _citation_cache[pmid]
-
-    async with _get_cache_lock():
-        if pmid in _citation_cache:
-            _citation_cache.move_to_end(pmid)
-            return _citation_cache[pmid]
-        task = _in_flight.get(pmid)
-        if task is None:
-            task = asyncio.create_task(_fetch_and_store(pmid))
-            _in_flight[pmid] = task
-
-    return await asyncio.shield(task)
+    return await single_flight_get(
+        pmid,
+        cache=_citation_cache,
+        cache_lock=_get_cache_lock(),
+        in_flight=_in_flight,
+        semaphore=_get_ncbi_semaphore(),
+        fetch_fn=lambda: _fetch_pubmed_uncached(pmid),
+        label="PubMed citation cache",
+    )
 
 
 async def _fetch_pubmed_uncached(pmid: str) -> PubMedCitation | None:

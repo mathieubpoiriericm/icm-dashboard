@@ -113,3 +113,51 @@ def evict_lru(
         cache.popitem(last=False)
     logger.debug(f"Evicted {evict_count} oldest entries from {label}")
     return evict_count
+
+
+async def single_flight_get[T](
+    key: str,
+    *,
+    cache: OrderedDict[str, T | None],
+    cache_lock: asyncio.Lock,
+    in_flight: dict[str, asyncio.Task[T | None]],
+    semaphore: asyncio.Semaphore,
+    fetch_fn: Callable[[], Awaitable[T | None]],
+    label: str,
+) -> T | None:
+    """Cache-backed fetch that deduplicates concurrent callers for the same key.
+
+    Warm-cache reads bypass the lock. On a miss, exactly one upstream request
+    fires per key regardless of how many tasks race in — peers share the
+    same in-flight ``asyncio.Task`` via ``asyncio.shield`` so one caller's
+    cancellation cannot cancel the fetch for others.
+
+    Callers are responsible for key normalisation (e.g. ``.upper()``) and for
+    initialising ``cache_lock`` / ``semaphore`` inside a running event loop
+    before the first call.
+    """
+
+    async def _fetch_and_store() -> T | None:
+        try:
+            async with semaphore:
+                result = await fetch_fn()
+            async with cache_lock:
+                evict_lru(cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION, label)
+                cache[key] = result
+            return result
+        finally:
+            in_flight.pop(key, None)
+
+    if key in cache:
+        return cache[key]
+
+    async with cache_lock:
+        if key in cache:
+            cache.move_to_end(key)
+            return cache[key]
+        task = in_flight.get(key)
+        if task is None:
+            task = asyncio.create_task(_fetch_and_store())
+            in_flight[key] = task
+
+    return await asyncio.shield(task)

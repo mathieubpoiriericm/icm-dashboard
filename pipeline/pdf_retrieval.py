@@ -487,11 +487,16 @@ async def fetch_abstract(pmid: str) -> str | None:
                     label = part.get("Label", "")
                     # itertext() is typed as str | None; filter to str.
                     text = "".join(t for t in part.itertext() if isinstance(t, str))
+                    stripped = text.strip()
+                    if not stripped:
+                        # Empty section would otherwise emit "Label: " or ""
+                        # and pollute the text handed to the LLM.
+                        continue
                     if label:
-                        sections.append(f"{label}: {text}")
+                        sections.append(f"{label}: {stripped}")
                     else:
-                        sections.append(text)
-                return "\n\n".join(sections)
+                        sections.append(stripped)
+                return "\n\n".join(sections) if sections else None
             else:
                 return "".join(
                     t for t in abstract_elem.itertext() if isinstance(t, str)

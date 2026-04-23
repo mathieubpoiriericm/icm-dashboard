@@ -145,6 +145,25 @@ class OllamaProvider:
                     keep_alive=self._keep_alive,
                     stream=False,
                 )
+                # Detect truncation: if num_predict is hit mid-emission the
+                # JSON-schema-constrained output may still be structurally
+                # valid (truncated on a closing brace), so parsing wouldn't
+                # catch it. Bail immediately — retrying with the same
+                # num_predict/num_ctx will truncate again.
+                if response.done_reason == "length":
+                    used = response.eval_count or 0
+                    logger.error(
+                        "Response truncated for PMID %s "
+                        "(done_reason=length, output_tokens=%s). "
+                        "Raise PIPELINE_LLM_MAX_TOKENS or "
+                        "PIPELINE_OLLAMA_NUM_CTX.",
+                        pmid,
+                        used,
+                    )
+                    return [], TokenUsage(
+                        input_tokens=response.prompt_eval_count or 0,
+                        output_tokens=used,
+                    )
                 raw = response.message.content or ""
                 result = parse_extraction_response(raw)
                 break

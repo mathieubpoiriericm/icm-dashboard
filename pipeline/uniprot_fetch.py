@@ -17,12 +17,10 @@ import httpx
 
 from pipeline.cache_utils import (
     DB_CACHE_TTL_DAYS,
-    DEFAULT_EVICT_FRACTION,
-    DEFAULT_MAX_SIZE,
     SyncResult,
-    evict_lru,
     make_log_progress,
     run_batched_fetch,
+    single_flight_get,
 )
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
@@ -58,6 +56,8 @@ _client_manager = AsyncHttpClientManager(timeout=30.0)
 _uniprot_cache: OrderedDict[str, UniProtInfo | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _uniprot_semaphore: asyncio.Semaphore | None = None
+# Single-flight registry keyed by uppercase symbol; see ``single_flight_get``.
+_in_flight: dict[str, asyncio.Task[UniProtInfo | None]] = {}
 
 
 def _get_cache_lock() -> asyncio.Lock:
@@ -85,9 +85,10 @@ async def close_uniprot_client() -> None:
 
 
 def clear_uniprot_cache() -> None:
-    """Clear the UniProt info cache."""
+    """Clear the UniProt info cache and any in-flight task references."""
     global _uniprot_cache
     _uniprot_cache = OrderedDict()
+    _in_flight.clear()
 
 
 def _clean_go_term(text: str | None) -> str | None:
@@ -257,37 +258,18 @@ async def fetch_uniprot_go_info(accession: str) -> dict[str, str | None]:
 async def fetch_uniprot_info(gene_symbol: str) -> UniProtInfo | None:
     """Fetch complete UniProt information for a gene symbol.
 
-    Results are cached to avoid redundant API calls.
-
-    Args:
-        gene_symbol: Gene symbol to look up.
-
-    Returns:
-        UniProtInfo if found, None otherwise.
+    Results are cached; concurrent callers for the same symbol share one
+    in-flight fetch via ``single_flight_get``.
     """
-    symbol_upper = gene_symbol.upper()
-
-    # Check cache first (without lock for read — LRU recency not updated,
-    # acceptable tradeoff to avoid lock contention on every read)
-    if symbol_upper in _uniprot_cache:
-        return _uniprot_cache[symbol_upper]
-
-    async with _get_cache_lock():
-        # Double-check after acquiring lock
-        if symbol_upper in _uniprot_cache:
-            _uniprot_cache.move_to_end(symbol_upper)
-            return _uniprot_cache[symbol_upper]
-
-    # Lock released before I/O
-    async with _get_uniprot_semaphore():
-        result = await _fetch_uniprot_uncached(gene_symbol)
-
-    async with _get_cache_lock():
-        evict_lru(
-            _uniprot_cache, DEFAULT_MAX_SIZE, DEFAULT_EVICT_FRACTION, "UniProt cache"
-        )
-        _uniprot_cache[symbol_upper] = result
-    return result
+    return await single_flight_get(
+        gene_symbol.upper(),
+        cache=_uniprot_cache,
+        cache_lock=_get_cache_lock(),
+        in_flight=_in_flight,
+        semaphore=_get_uniprot_semaphore(),
+        fetch_fn=lambda: _fetch_uniprot_uncached(gene_symbol),
+        label="UniProt cache",
+    )
 
 
 async def _fetch_uniprot_uncached(gene_symbol: str) -> UniProtInfo:

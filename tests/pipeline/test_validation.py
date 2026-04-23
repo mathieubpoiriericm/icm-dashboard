@@ -182,6 +182,42 @@ class TestVerifyNcbiGeneCache:
         clear_gene_cache()
         assert len(val._gene_cache) == 0
 
+    async def test_concurrent_calls_fetch_once(self, mocker):
+        """Concurrent callers for the same symbol must share one upstream call.
+
+        Regression guard for the thundering-herd race: before the fix, the
+        double-check-after-semaphore pattern still let up to
+        ``ncbi_rate_limit`` tasks race past the cache check in parallel
+        because the semaphore admitted them concurrently.
+        """
+        import asyncio
+
+        import pipeline.validation as val
+
+        clear_gene_cache()
+        call_count = 0
+
+        async def slow_fetch(symbol: str, *, config=None) -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            # Yield so the scheduler actually races — without this, the
+            # first task would finish atomically and any buggy
+            # implementation would still pass.
+            await asyncio.sleep(0)
+            return {"symbol": "NOTCH3", "gene_id": "4854"}
+
+        mocker.patch(
+            "pipeline.validation._fetch_ncbi_gene_uncached",
+            side_effect=slow_fetch,
+        )
+
+        results = await asyncio.gather(
+            *(verify_ncbi_gene("NOTCH3") for _ in range(10))
+        )
+        assert all(r is not None and r["gene_id"] == "4854" for r in results)
+        assert call_count == 1
+        assert val._gene_cache["NOTCH3"]["gene_id"] == "4854"
+
 
 # ---------------------------------------------------------------------------
 # _fetch_ncbi_gene_uncached — HTTP mocking
