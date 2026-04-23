@@ -241,7 +241,9 @@ class PipelineConfig:
     )
     # Ollama server URL (only used when llm_provider == "ollama").
     ollama_host: str = field(
-        default_factory=lambda: _env_str("PIPELINE_OLLAMA_HOST", "http://localhost:11434")
+        default_factory=lambda: _env_str(
+            "PIPELINE_OLLAMA_HOST", "http://localhost:11434"
+        )
     )
     # Ollama model tag (e.g. "gemma4:e4b" or "svd-gemma:v1").
     ollama_model: str = field(
@@ -250,6 +252,12 @@ class PipelineConfig:
     # Ollama context window. Gemma 4 E4B supports up to 131072.
     ollama_num_ctx: int = field(
         default_factory=lambda: _env_int("PIPELINE_OLLAMA_NUM_CTX", 65_536)
+    )
+    # How long Ollama keeps the model resident after each call (Ollama duration
+    # syntax: "30m", "1h", "0" to unload immediately). Set to "0" on a shared
+    # machine to free VRAM as soon as the pipeline finishes.
+    ollama_keep_alive: str = field(
+        default_factory=lambda: _env_str("PIPELINE_OLLAMA_KEEP_ALIVE", "30m")
     )
 
     # Maximum paper text chars sent to the LLM (context-window buffer).
@@ -425,6 +433,15 @@ class PipelineConfig:
             )
         if self.ct_max_retries < 0:
             raise ValueError(f"ct_max_retries must be >= 0, got {self.ct_max_retries}")
+
+        # Surface missing key at config-load instead of after minutes of
+        # fetching — the Anthropic SDK's AuthenticationError is otherwise
+        # opaque deep inside the provider.
+        if self.llm_provider == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
+            raise ValueError(
+                "ANTHROPIC_API_KEY is required when llm_provider='anthropic'. "
+                "Set it in .env or use --llm-provider ollama for local extraction."
+            )
 
     @property
     def model_version(self) -> str:

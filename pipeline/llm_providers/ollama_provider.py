@@ -63,10 +63,17 @@ class OllamaProvider:
 
     name = "ollama"
 
-    def __init__(self, host: str, model: str, num_ctx: int) -> None:
+    def __init__(
+        self,
+        host: str,
+        model: str,
+        num_ctx: int,
+        keep_alive: str = "30m",
+    ) -> None:
         self._host = host
         self._model = model
         self._num_ctx = num_ctx
+        self._keep_alive = keep_alive
         self._client = ollama.AsyncClient(host=host)
         self._health_checked = False
         self._health_lock = asyncio.Lock()
@@ -135,7 +142,7 @@ class OllamaProvider:
                         "temperature": 0.0,
                         "top_p": 1.0,
                     },
-                    keep_alive="30m",
+                    keep_alive=self._keep_alive,
                     stream=False,
                 )
                 raw = response.message.content or ""

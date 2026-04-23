@@ -192,15 +192,20 @@ class AnthropicProvider:
 
                 # Detect truncation: with adaptive thinking, max_tokens covers
                 # both thinking + text output. If thinking consumed most of the
-                # budget, the JSON output gets cut off mid-stream.
+                # budget, the JSON output gets cut off mid-stream. This is a
+                # deterministic config problem — retrying with identical
+                # max_tokens will always truncate again, so we bail immediately
+                # instead of consuming the validation retry budget.
                 if response.stop_reason == "max_tokens":
                     used = response.usage.output_tokens if response.usage else "?"
-                    raise ValueError(
-                        f"Response truncated (stop_reason=max_tokens, "
+                    logger.error(
+                        f"Response truncated for PMID {pmid} "
+                        f"(stop_reason=max_tokens, "
                         f"output_tokens={used}/{config.llm_max_tokens}). "
-                        f"Increase PIPELINE_LLM_MAX_TOKENS or "
+                        f"Raise PIPELINE_LLM_MAX_TOKENS or "
                         f"reduce effort level."
                     )
+                    return [], usage
 
                 # Extract text content and estimate thinking tokens from
                 # content blocks. The API lumps thinking + text into
@@ -238,6 +243,11 @@ class AnthropicProvider:
                     return [], usage
 
                 result = parse_extraction_response(text_content)
+                # The JSON schema exposes GeneEntry.pmid to the model, so it
+                # can emit a (possibly hallucinated) value. Overwrite with the
+                # caller's PMID unconditionally, matching OllamaProvider.
+                for g in result.genes:
+                    g.pmid = pmid
                 logger.info(f"Extracted {len(result.genes)} gene(s) from PMID {pmid}")
                 return result.genes, usage
 
@@ -268,7 +278,7 @@ class AnthropicProvider:
                     f"{rate_limit_retries}/{config.max_rate_limit_retries})..."
                 )
                 if rate_limiter is not None:
-                    rate_limiter.signal_rate_limit(delay)
+                    await rate_limiter.signal_rate_limit(delay)
                 await asyncio.sleep(delay)
 
             except (

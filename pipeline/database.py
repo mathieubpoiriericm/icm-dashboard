@@ -192,6 +192,11 @@ async def merge_genes_transactional(
     if not to_insert and not to_update:
         return 0, 0
 
+    # "references" dedup invariant: empty/NULL new input keeps the existing
+    # value; empty/NULL existing value is replaced; otherwise append with a
+    # "; " separator iff the new PMID isn't already present in the string.
+    # The COALESCEs guard against NULL || anything = NULL silently dropping
+    # the reference.
     async with Database.connection() as conn, conn.transaction():
         if to_insert:
             await conn.executemany(
@@ -207,6 +212,12 @@ async def merge_genes_transactional(
                         evidence_from_other_omics_studies =
                             EXCLUDED.evidence_from_other_omics_studies,
                         "references" = CASE
+                            WHEN EXCLUDED."references" IS NULL
+                              OR EXCLUDED."references" = ''
+                            THEN COALESCE(genes."references", '')
+                            WHEN genes."references" IS NULL
+                              OR genes."references" = ''
+                            THEN EXCLUDED."references"
                             WHEN genes."references" = EXCLUDED."references"
                               OR genes."references" LIKE EXCLUDED."references" || '; %'
                               OR genes."references" LIKE '%; ' || EXCLUDED."references"
@@ -240,6 +251,10 @@ async def merge_genes_transactional(
                         gwas_trait = $1,
                         evidence_from_other_omics_studies = $2,
                         "references" = CASE
+                            WHEN $3::text IS NULL OR $3::text = ''
+                            THEN COALESCE("references", '')
+                            WHEN "references" IS NULL OR "references" = ''
+                            THEN $3
                             WHEN "references" = $3
                               OR "references" LIKE $3 || '; %'
                               OR "references" LIKE '%; ' || $3
@@ -278,7 +293,7 @@ async def record_processed_pmids_batch(
     if not records:
         return 0
 
-    async with Database.connection() as conn:
+    async with Database.connection() as conn, conn.transaction():
         await conn.executemany(
             """
             INSERT INTO pubmed_refs (
@@ -346,11 +361,16 @@ async def record_pipeline_run(
 # =============================================================================
 
 
-async def get_cached_ncbi_genes(gene_symbols: list[str]) -> dict[str, dict[str, Any]]:
+async def get_cached_ncbi_genes(
+    gene_symbols: list[str],
+    max_age_days: int | None = None,
+) -> dict[str, dict[str, Any]]:
     """Get cached NCBI gene info for given symbols.
 
     Args:
         gene_symbols: List of gene symbols to look up.
+        max_age_days: If set, only return rows updated within this many days;
+            older rows are treated as stale and re-fetched by the caller.
 
     Returns:
         Dict mapping gene_symbol -> {ncbi_uid, description, aliases}.
@@ -363,9 +383,12 @@ async def get_cached_ncbi_genes(gene_symbols: list[str]) -> dict[str, dict[str, 
             """
             SELECT gene_symbol, ncbi_uid, description, aliases
             FROM ncbi_gene_info
-            WHERE gene_symbol = ANY($1)
+            WHERE gene_symbol = ANY($1::text[])
+              AND ($2::int IS NULL
+                   OR updated_at > NOW() - make_interval(days => $2::int))
             """,
             gene_symbols,
+            max_age_days,
         )
         return {
             row["gene_symbol"]: {
@@ -410,11 +433,16 @@ async def upsert_ncbi_genes_batch(genes: list[Any]) -> int:
 # =============================================================================
 
 
-async def get_cached_uniprot_info(gene_symbols: list[str]) -> dict[str, dict[str, Any]]:
+async def get_cached_uniprot_info(
+    gene_symbols: list[str],
+    max_age_days: int | None = None,
+) -> dict[str, dict[str, Any]]:
     """Get cached UniProt info for given gene symbols.
 
     Args:
         gene_symbols: List of gene symbols to look up.
+        max_age_days: If set, only return rows updated within this many days;
+            older rows are treated as stale and re-fetched by the caller.
 
     Returns:
         Dict mapping gene_symbol -> UniProt info dict.
@@ -428,9 +456,12 @@ async def get_cached_uniprot_info(gene_symbols: list[str]) -> dict[str, dict[str
             SELECT gene_symbol, accession, protein_name,
                    biological_process, molecular_function, cellular_component, url
             FROM uniprot_info
-            WHERE gene_symbol = ANY($1)
+            WHERE gene_symbol = ANY($1::text[])
+              AND ($2::int IS NULL
+                   OR updated_at > NOW() - make_interval(days => $2::int))
             """,
             gene_symbols,
+            max_age_days,
         )
         return {
             row["gene_symbol"]: {
@@ -511,7 +542,7 @@ async def get_cached_pubmed_citations(pmids: list[str]) -> dict[str, dict[str, A
             """
             SELECT pmid, authors, title, journal, publication_date, doi, formatted_ref
             FROM pubmed_citations
-            WHERE pmid = ANY($1)
+            WHERE pmid = ANY($1::text[])
             """,
             pmids,
         )
@@ -596,6 +627,20 @@ async def upsert_clinical_trials_batch(trials: list[Any]) -> int:
     if not trials:
         return 0
 
+    # Postgres treats NULLs as distinct in UNIQUE constraints, so rows with
+    # a NULL registry_id bypass ON CONFLICT and duplicate on every run.
+    # Skip (with a warning) rather than insert duplicates.
+    filtered = [t for t in trials if t.registry_id]
+    skipped = len(trials) - len(filtered)
+    if skipped:
+        logger.warning(
+            "Skipping %d clinical trial(s) with NULL/empty registry_id "
+            "(would bypass ON CONFLICT and duplicate)",
+            skipped,
+        )
+    if not filtered:
+        return 0
+
     async with Database.connection() as conn:
         await conn.executemany(
             """
@@ -624,7 +669,7 @@ async def upsert_clinical_trials_batch(trials: list[Any]) -> int:
                     t.primary_outcome,
                     t.sponsor_type,
                 )
-                for t in trials
+                for t in filtered
             ],
         )
-    return len(trials)
+    return len(filtered)

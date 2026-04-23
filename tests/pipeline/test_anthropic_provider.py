@@ -165,6 +165,7 @@ class TestAnthropicProviderExtract:
         # Return different request IDs for each acquire call
         rate_limiter.acquire = AsyncMock(side_effect=[0, 1])
         rate_limiter.record_actual_usage = AsyncMock()
+        rate_limiter.signal_rate_limit = AsyncMock()
 
         from pipeline.config import PipelineConfig
 

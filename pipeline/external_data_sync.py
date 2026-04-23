@@ -11,6 +11,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from pipeline.config import PipelineConfig
 from pipeline.database import Database
 from pipeline.ncbi_gene_fetch import (
     clear_ncbi_cache,
@@ -74,8 +75,10 @@ async def get_table1_gene_symbols() -> list[str]:
 _GENE_SKIP_TOKENS: frozenset[str] = frozenset(
     {"", "NA", "N/A", "NONE", "NULL", "-", "--", "UNKNOWN"}
 )
-# HGNC-style: leading letter, alphanumerics + hyphens, up to 30 chars.
-_GENE_SHAPE = re.compile(r"^[A-Za-z][A-Za-z0-9\-]{0,29}$")
+# HGNC-style: leading letter, alphanumerics + hyphens, between 2 and 30 chars.
+# Single letters ("A", "I") are prose artefacts from split tokens, not gene
+# symbols — letting them through pollutes the NCBI cache with spurious hits.
+_GENE_SHAPE = re.compile(r"^[A-Za-z][A-Za-z0-9\-]{1,29}$")
 
 
 async def get_table2_gene_symbols() -> list[str]:
@@ -139,7 +142,9 @@ def _append_errors_truncated(target: list[str], source: list[str], label: str) -
         target.append(f"... and {suppressed} more {label} errors suppressed")
 
 
-async def sync_all_external_data() -> ExternalDataSyncResult:
+async def sync_all_external_data(
+    config: PipelineConfig | None = None,
+) -> ExternalDataSyncResult:
     """Sync external metadata sources for dashboard refresh.
 
     This function:
@@ -152,6 +157,9 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
     Clinical trials discovery is handled by a separate pipeline
     (``run_clinical_trials_pipeline``); this function reads whatever rows
     the most recent CT sync wrote to the ``clinical_trials`` table.
+
+    Args:
+        config: Pipeline config (needed for rate-limit semaphore sizing).
 
     Returns:
         ExternalDataSyncResult with sync statistics.
@@ -193,7 +201,7 @@ async def sync_all_external_data() -> ExternalDataSyncResult:
             # Step 4: Sync PubMed citations
             if pmids:
                 logger.info("Syncing PubMed citations...")
-                pubmed_result = await sync_pubmed_citations(pmids)
+                pubmed_result = await sync_pubmed_citations(pmids, config=config)
                 result.pubmed_fetched = pubmed_result.fetched
                 result.pubmed_cached = pubmed_result.cached
                 result.pubmed_failed = pubmed_result.failed

@@ -155,7 +155,12 @@ async def check_unpaywall(doi: str) -> str | None:
             case 200:
                 data = resp.json()
                 if data.get("is_oa") and data.get("best_oa_location"):
-                    return data["best_oa_location"].get("url_for_pdf")
+                    loc = data["best_oa_location"]
+                    # Prefer a direct PDF URL; fall back to the landing page
+                    # ``url`` when url_for_pdf is null (common for HTML-only OA
+                    # locations). download_and_parse_pdf verifies it's a real
+                    # PDF via content-type + magic-byte check.
+                    return loc.get("url_for_pdf") or loc.get("url")
             case 404:
                 logger.debug(f"DOI not found in Unpaywall: {doi}")
             case 429:
@@ -185,7 +190,7 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
     """
     # Step 1: Convert PMID to PMCID
     convert_url = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
-    params = {"ids": pmid, "format": "json"}
+    params = get_ncbi_params({"ids": pmid, "format": "json"})
 
     try:
         client = await _client_manager.get()
@@ -304,6 +309,16 @@ async def download_and_parse_pdf(url: str) -> str | None:
 
             pdf_bytes = b"".join(chunks)
             del chunks
+
+        # Defense in depth: the content-type check upstream has a hole — URLs
+        # ending in ".pdf" pass even when the server returned HTML (paywall
+        # redirect, login page, captcha). Bail cleanly on non-PDF magic bytes.
+        if not pdf_bytes.startswith(b"%PDF-"):
+            logger.debug(
+                f"Response for {url} passed content-type check but is not a "
+                f"PDF (first bytes: {pdf_bytes[:16]!r})"
+            )
+            return None
 
         # Parse PDF from bytes — use try/finally to ensure C-level resources
         # held by PyMuPDF are released even if _extract_clean_pdf_text raises.

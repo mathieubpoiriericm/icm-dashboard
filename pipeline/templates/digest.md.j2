@@ -13,8 +13,8 @@ Model: {{ model }} | Effort: {{ effort }}
 {% if show_search %}
 Search: {{ search.pmids_found }} found, {{ search.pmids_new }} new
 {% endif %}
-Papers: {{ papers.processed }} processed ({{ "%.0f%%"|format(papers.fulltext_rate * 100) }} fulltext)
-Genes: {{ genes.validated }}/{{ genes.extracted }} validated ({{ "%.0f%%"|format(genes.acceptance_rate * 100) }})
+Papers: {{ papers.processed | default(0) }} processed ({{ "%.0f%%"|format((papers.fulltext_rate | default(0)) * 100) }} fulltext)
+Genes: {{ genes.validated | default(0) }}/{{ genes.extracted | default(0) }} validated ({{ "%.0f%%"|format((genes.acceptance_rate | default(0)) * 100) }})
 {% if show_database %}
 DB: {{ database.inserted }} inserted, {{ database.updated }} updated
 {% endif %}

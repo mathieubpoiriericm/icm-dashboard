@@ -16,11 +16,13 @@ from typing import Any, Final
 import httpx
 
 from pipeline.cache_utils import (
+    DB_CACHE_TTL_DAYS,
     DEFAULT_EVICT_FRACTION,
     DEFAULT_MAX_SIZE,
     SyncResult,
     evict_lru,
     make_log_progress,
+    run_batched_fetch,
 )
 from pipeline.config import PipelineConfig
 from pipeline.http_client import AsyncHttpClientManager
@@ -323,46 +325,25 @@ async def fetch_uniprot_batch(
 ) -> list[UniProtInfo]:
     """Fetch UniProt info for multiple genes concurrently.
 
-    Uses the module-level semaphore (via fetch_uniprot_info) to
-    rate-limit concurrent requests.
-
-    Args:
-        gene_symbols: List of gene symbols to fetch.
-        progress_callback: Optional callback(current, total) for progress updates.
-
-    Returns:
-        List of UniProtInfo objects.
+    Uses the module-level semaphore (via fetch_uniprot_info) to rate-limit
+    concurrent requests.
     """
-    total = len(gene_symbols)
-    completed = 0
-    completed_lock = asyncio.Lock()
 
     async def _fetch_one(symbol: str) -> UniProtInfo:
-        nonlocal completed
         info = await fetch_uniprot_info(symbol)
-        result = (
-            info
-            if info is not None
-            else UniProtInfo(
-                gene_symbol=symbol,
-                accession=None,
-                protein_name=None,
-                biological_process=None,
-                molecular_function=None,
-                cellular_component=None,
-                url=None,
-            )
+        return info or UniProtInfo(
+            gene_symbol=symbol,
+            accession=None,
+            protein_name=None,
+            biological_process=None,
+            molecular_function=None,
+            cellular_component=None,
+            url=None,
         )
-        async with completed_lock:
-            completed += 1
-            if progress_callback:
-                progress_callback(completed, total)
-        return result
 
-    async with asyncio.TaskGroup() as tg:
-        tasks = [tg.create_task(_fetch_one(s)) for s in gene_symbols]
-
-    return [t.result() for t in tasks]
+    return await run_batched_fetch(
+        gene_symbols, _fetch_one, progress_callback=progress_callback
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +362,10 @@ async def sync_uniprot_info(gene_symbols: list[str]) -> SyncResult:
     """
     from pipeline.database import get_cached_uniprot_info, upsert_uniprot_batch
 
-    # Check what's already cached in database
-    cached_genes = await get_cached_uniprot_info(gene_symbols)
+    # Fresh rows only — stale rows fall through to a re-fetch.
+    cached_genes = await get_cached_uniprot_info(
+        gene_symbols, max_age_days=DB_CACHE_TTL_DAYS
+    )
     symbols_to_fetch = [s for s in gene_symbols if s not in cached_genes]
 
     logger.info(

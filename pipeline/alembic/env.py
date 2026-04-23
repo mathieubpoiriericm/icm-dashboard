@@ -10,6 +10,7 @@ import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
+from urllib.parse import quote
 
 from alembic import context
 from sqlalchemy import create_engine
@@ -48,7 +49,13 @@ def _get_database_url() -> str:
             f"Set them in .env or as environment variables."
         )
 
-    return f"postgresql://{user}:{password}@{host}:{port}/{name}"
+    # Percent-encode user/password/name so URL-reserved characters
+    # (@, /, #, %, etc.) don't break SQLAlchemy's URL parser.
+    assert user is not None and password is not None and name is not None
+    safe_user = quote(user, safe="")
+    safe_password = quote(password, safe="")
+    safe_name = quote(name, safe="")
+    return f"postgresql://{safe_user}:{safe_password}@{host}:{port}/{safe_name}"
 
 
 def run_migrations_offline() -> None:

@@ -7,7 +7,7 @@ Jinja2-rendered Markdown body.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -181,7 +181,9 @@ def send_pipeline_notification(
         return
 
     mode_label = _mode_label(run_data.get("pipeline_config", {}))
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    # UTC matches the report body's `timestamp` field \u2014 otherwise the
+    # notification title can show a different date than the run's own log.
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     title = f"[SVD Pipeline] Run Summary \u2014 {mode_label} ({date_str})"
 
     body_md = _render_markdown(run_data)

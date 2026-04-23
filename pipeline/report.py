@@ -122,10 +122,15 @@ def _paper_results_to_summaries(
 ) -> list[PaperSummary]:
     """Convert PaperResult objects to serialisable dicts."""
     summaries: list[PaperSummary] = []
+    # mode='json' coerces non-JSON-safe Pydantic field types (datetime, Path,
+    # Decimal, Enum) into their JSON representations. Without it, Decimal
+    # leaks as a Python object into json.dumps(..., default=str) and gets
+    # serialised as the string "0.85" instead of a float, breaking
+    # scripts/validate_pipeline.py and the fine-tune dataset builder.
     for r in results:
-        genes_data = [g.model_dump() for g in r.genes] if r.genes else []
+        genes_data = [g.model_dump(mode="json") for g in r.genes] if r.genes else []
         rejected_data = [
-            {"gene": rg.gene.model_dump(), "reasons": rg.reasons}
+            {"gene": rg.gene.model_dump(mode="json"), "reasons": rg.reasons}
             for rg in getattr(r, "rejected_genes", [])
         ]
         summary: PaperSummary = {
@@ -257,11 +262,12 @@ def _build_offline_run_data(
 ) -> PipelineRunData:
     """Shared builder for local-PDF and PMID-list runs."""
     failed_count = sum(1 for r in results if not r.succeeded)
+    # Read skip_validation without mutating the caller's dict.
     pipeline_config = {
         **_provider_config_fields(config),
-        "skip_validation": extra_config.pop("skip_validation", False),
+        "skip_validation": extra_config.get("skip_validation", False),
         "confidence_threshold": config.confidence_threshold,
-        **extra_config,
+        **{k: v for k, v in extra_config.items() if k != "skip_validation"},
     }
     data = _build_common_run_data(
         metrics,
@@ -334,7 +340,10 @@ def write_comprehensive_report(data: PipelineRunData, log_dir: Path) -> Path:
         Path to the written JSON file.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+    # UTC so the filename stamp matches the body's `timestamp` field (also
+    # UTC) regardless of host timezone. Otherwise the dashboard's Run
+    # History shows two mismatched times for the same run.
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d_%Hh%Mm%Ss")
     path = log_dir / f"pipeline_report_{stamp}.json"
     path.write_text(json.dumps(data, indent=2, default=str) + "\n")
     return path

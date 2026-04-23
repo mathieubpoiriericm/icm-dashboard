@@ -26,6 +26,7 @@ class ExtractionPrompt:
     extraction_instructions: str
     user_text: str
 
+
 # ---------------------------------------------------------------------------
 # V1 prompts (original baseline)
 # ---------------------------------------------------------------------------

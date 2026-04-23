@@ -50,14 +50,14 @@ class TestFormatOmics:
         assert format_omics([]) == ""
 
     def test_single(self):
-        assert format_omics(["TWAS"]) == "TWAS*;"
+        assert format_omics(["TWAS"]) == "TWAS*"
 
     def test_multiple(self):
-        assert format_omics(["TWAS", "PWAS"]) == "TWAS*;PWAS*;"
+        assert format_omics(["TWAS", "PWAS"]) == "TWAS*;PWAS*"
 
     def test_three_types(self):
         result = format_omics(["TWAS", "PWAS", "EWAS"])
-        assert result == "TWAS*;PWAS*;EWAS*;"
+        assert result == "TWAS*;PWAS*;EWAS*"
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +96,7 @@ class TestBuildGeneData:
     def test_omics_evidence_formatted(self, make_gene_entry):
         entry = make_gene_entry(omics_evidence=["TWAS", "PWAS"])
         data = _build_gene_data(entry)
-        assert data["evidence_from_other_omics_studies"] == "TWAS*;PWAS*;"
+        assert data["evidence_from_other_omics_studies"] == "TWAS*;PWAS*"
 
     def test_empty_defaults(self, make_gene_entry):
         entry = make_gene_entry()

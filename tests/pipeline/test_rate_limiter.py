@@ -128,21 +128,21 @@ class TestRecordActualUsage:
 class TestSignalRateLimit:
     async def test_sets_backoff(self):
         rl = AsyncRateLimiter(rpm=10, tpm=100_000)
-        rl.signal_rate_limit(5.0)
+        await rl.signal_rate_limit(5.0)
         assert rl._global_backoff_until > 0
 
     async def test_extends_backoff(self):
         rl = AsyncRateLimiter(rpm=10, tpm=100_000)
-        rl.signal_rate_limit(5.0)
+        await rl.signal_rate_limit(5.0)
         first = rl._global_backoff_until
         # Extend with longer backoff
-        rl.signal_rate_limit(10.0)
+        await rl.signal_rate_limit(10.0)
         assert rl._global_backoff_until > first
 
     async def test_does_not_shorten_backoff(self):
         rl = AsyncRateLimiter(rpm=10, tpm=100_000)
-        rl.signal_rate_limit(10.0)
+        await rl.signal_rate_limit(10.0)
         long_deadline = rl._global_backoff_until
         # Try to shorten — should be ignored
-        rl.signal_rate_limit(1.0)
+        await rl.signal_rate_limit(1.0)
         assert rl._global_backoff_until == long_deadline

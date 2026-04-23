@@ -424,23 +424,22 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
         return {"pmid": pmid, "doi": None}
 
 
-def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
+async def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
     """Record pipeline run to event log and send a notification.
 
-    Healthcheck pings are handled separately by the caller so they don't
-    double-fire (success + failure) across multi-pipeline invocations.
-
-    Args:
-        config: Pipeline configuration with event_db_path.
-        run_data: Pipeline run data dict for logging and notification.
+    Offloads the blocking SQLite + Apprise work to a worker thread so the
+    asyncio event loop isn't stalled during the final flush. Healthcheck
+    pings are handled separately by the caller so they don't double-fire
+    across multi-pipeline invocations.
     """
-    event_log = EventLog(config.event_db_path)
-    try:
-        event_id = event_log.record("pipeline_completed", run_data)
-        send_pipeline_notification(run_data, config)
-        event_log.mark_notified([event_id])
-    finally:
-        event_log.close()
+
+    def _run() -> None:
+        with EventLog(config.event_db_path) as event_log:
+            event_id = event_log.record("pipeline_completed", run_data)
+            send_pipeline_notification(run_data, config)
+            event_log.mark_notified([event_id])
+
+    await asyncio.to_thread(_run)
 
 
 async def _finalize_run(
@@ -567,7 +566,7 @@ async def process_paper_safe(
                 processing_time=duration,
             )
         except Exception as e:
-            logger.error(f"Error processing PMID {pmid}: {e}")
+            logger.exception(f"Error processing PMID {pmid}")
             duration = time.monotonic() - start_time
             return PaperResult(pmid=pmid, error=str(e), processing_time=duration)
 
@@ -795,7 +794,7 @@ async def run_pipeline(
             print_rich_summary(run_data)
 
             if manage_lifecycle:
-                _record_and_notify(config, run_data)
+                await _record_and_notify(config, run_data)
                 await ping_success(config.healthcheck_url)
 
             return metrics, run_data
@@ -849,7 +848,7 @@ async def run_pipeline(
 
         await _finalize_run(metrics, run_data, "standard")
         if manage_lifecycle:
-            _record_and_notify(config, run_data)
+            await _record_and_notify(config, run_data)
             await ping_success(config.healthcheck_url)
 
         _write_progress(
@@ -1033,7 +1032,7 @@ async def run_local_pdf_pipeline(
                     )
 
                 except Exception as e:
-                    logger.error(f"Error processing {pdf_path.name}: {e}")
+                    logger.exception(f"Error processing {pdf_path.name}")
                     return PaperResult(
                         pmid=file_id,
                         error=str(e),
@@ -1071,7 +1070,7 @@ async def run_local_pdf_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        _record_and_notify(config, run_data)
+        await _record_and_notify(config, run_data)
         await ping_success(config.healthcheck_url)
 
     except Exception:
@@ -1238,7 +1237,7 @@ async def run_pmid_pipeline(
                         validation_time=validation_elapsed,
                     )
                 except Exception as e:
-                    logger.error(f"Error processing PMID {pmid}: {e}")
+                    logger.exception(f"Error processing PMID {pmid}")
                     return PaperResult(
                         pmid=pmid,
                         error=str(e),
@@ -1279,7 +1278,7 @@ async def run_pmid_pipeline(
         logger.info(f"JSON report written to: {report_path}")
         print_rich_summary(run_data)
 
-        _record_and_notify(config, run_data)
+        await _record_and_notify(config, run_data)
         await ping_success(config.healthcheck_url)
 
     except Exception:
@@ -1323,7 +1322,7 @@ async def run_external_data_sync(
         await ping_start(config.healthcheck_url)
     logger.info("Starting external data sync...")
     try:
-        result = await sync_all_external_data()
+        result = await sync_all_external_data(config=config)
         logger.info(LOG_SEPARATOR)
         logger.info("External Data Sync Summary:")
         logger.info(result.summary())
@@ -1536,7 +1535,7 @@ async def _run_selected_pipelines(
         # preview) leave pubmed_run_data=None. Preserve the pre-split behavior
         # of emitting no notification in that specific case.
         if pubmed_only and pubmed_run_data is not None:
-            _record_and_notify(config, pubmed_run_data)
+            await _record_and_notify(config, pubmed_run_data)
         elif summaries and not (pubmed_only and pubmed_run_data is None):
             combined: dict[str, Any] = {
                 "timestamp": datetime.now(tz=UTC).isoformat(),
@@ -1547,7 +1546,7 @@ async def _run_selected_pipelines(
                     "effort": config.llm_effort,
                 },
             }
-            _record_and_notify(config, combined)
+            await _record_and_notify(config, combined)
 
         if any_failed:
             await ping_failure(

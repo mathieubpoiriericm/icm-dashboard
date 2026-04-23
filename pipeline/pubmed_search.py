@@ -10,7 +10,7 @@ import asyncio
 import logging
 import os
 import warnings
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from http.client import HTTPException
 from typing import Final
@@ -127,7 +127,9 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
             f"got {days_back}"
         )
 
-    mindate = (datetime.now() - timedelta(days=days_back)).strftime("%Y/%m/%d")
+    # UTC so the window is stable regardless of host timezone and DST —
+    # PubMed's index timestamps are UTC-based.
+    mindate = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y/%m/%d")
 
     logger.info(f"PubMed query (last {days_back}d): {SVD_QUERY[:120]}...")
 

@@ -75,10 +75,13 @@ class AsyncRateLimiter:
             async with self._lock:
                 now = asyncio.get_running_loop().time()
 
-                # Respect global backoff from 429 signals
+                # Respect global backoff from 429 signals.
                 if now < self._global_backoff_until:
                     remaining = self._global_backoff_until - now
-                    sleep_time = min(remaining + random.uniform(0, 0.3), 2.0)
+                    sleep_time = min(
+                        remaining + random.uniform(0, 0.3),
+                        BACKOFF_CAP_SECONDS,
+                    )
                     # Release lock and sleep below
                 else:
                     cutoff = now - 60.0
@@ -128,14 +131,16 @@ class AsyncRateLimiter:
                     self._token_total += actual_tokens - tokens
                     return
 
-    def signal_rate_limit(self, backoff_seconds: float) -> None:
+    async def signal_rate_limit(self, backoff_seconds: float) -> None:
         """Signal that a 429 was received — all pending acquire() calls will pause.
 
         Sets a global backoff deadline so concurrent tasks stop sending requests
-        until the backoff expires, preventing a thundering herd.
+        until the backoff expires, preventing a thundering herd. Acquires the
+        shared lock so the deadline update is serialized with acquire()'s reads.
         """
-        now = asyncio.get_running_loop().time()
-        new_deadline = now + backoff_seconds
-        # Only extend, never shorten an existing backoff
-        if new_deadline > self._global_backoff_until:
-            self._global_backoff_until = new_deadline
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            new_deadline = now + backoff_seconds
+            # Only extend, never shorten an existing backoff
+            if new_deadline > self._global_backoff_until:
+                self._global_backoff_until = new_deadline

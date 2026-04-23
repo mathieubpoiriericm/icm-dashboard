@@ -22,8 +22,14 @@ from pipeline.cache_utils import (
     SyncResult,
     evict_lru,
     make_log_progress,
+    run_batched_fetch,
 )
-from pipeline.config import NCBI_EFETCH_URL, SAFE_XML_PARSER, PipelineConfig
+from pipeline.config import (
+    NCBI_EFETCH_URL,
+    SAFE_XML_PARSER,
+    PipelineConfig,
+    get_ncbi_params,
+)
 from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
@@ -60,6 +66,9 @@ _client_manager = AsyncHttpClientManager(timeout=30.0)
 _citation_cache: OrderedDict[str, PubMedCitation | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
+# Single-flight registry: concurrent callers for the same PMID await the
+# same task instead of issuing duplicate NCBI requests.
+_in_flight: dict[str, asyncio.Task[PubMedCitation | None]] = {}
 
 
 def _get_cache_lock() -> asyncio.Lock:
@@ -85,9 +94,10 @@ async def close_pubmed_client() -> None:
 
 
 def clear_pubmed_cache() -> None:
-    """Clear the citation cache."""
+    """Clear the citation cache and any stale in-flight task references."""
     global _citation_cache
     _citation_cache = OrderedDict()
+    _in_flight.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -158,52 +168,51 @@ def _format_citation(
 # ---------------------------------------------------------------------------
 
 
+async def _fetch_and_store(pmid: str) -> PubMedCitation | None:
+    """Fetch a single PMID and install it into the cache. Runs as a Task."""
+    try:
+        async with _get_ncbi_semaphore():
+            result = await _fetch_pubmed_uncached(pmid)
+        async with _get_cache_lock():
+            evict_lru(
+                _citation_cache,
+                DEFAULT_MAX_SIZE,
+                DEFAULT_EVICT_FRACTION,
+                "PubMed citation cache",
+            )
+            _citation_cache[pmid] = result
+        return result
+    finally:
+        _in_flight.pop(pmid, None)
+
+
 async def fetch_pubmed_citation(pmid: str) -> PubMedCitation | None:
     """Fetch citation details for a single PMID.
 
-    Results are cached to avoid redundant API calls.
-
-    Args:
-        pmid: PubMed ID to look up.
-
-    Returns:
-        PubMedCitation if found, None on error.
+    Results are cached. Concurrent callers for the same PMID share one
+    in-flight task via ``asyncio.shield`` — cancellation of one caller
+    does not cancel the fetch for waiting peers.
     """
     pmid = pmid.strip()
 
-    # Check cache first (without lock for read — LRU recency not updated,
-    # acceptable tradeoff to avoid lock contention on every read)
     if pmid in _citation_cache:
         return _citation_cache[pmid]
 
     async with _get_cache_lock():
-        # Double-check after acquiring lock
         if pmid in _citation_cache:
             _citation_cache.move_to_end(pmid)
             return _citation_cache[pmid]
+        task = _in_flight.get(pmid)
+        if task is None:
+            task = asyncio.create_task(_fetch_and_store(pmid))
+            _in_flight[pmid] = task
 
-    # Lock released before I/O
-    async with _get_ncbi_semaphore():
-        result = await _fetch_pubmed_uncached(pmid)
-
-    async with _get_cache_lock():
-        evict_lru(
-            _citation_cache,
-            DEFAULT_MAX_SIZE,
-            DEFAULT_EVICT_FRACTION,
-            "PubMed citation cache",
-        )
-        _citation_cache[pmid] = result
-    return result
+    return await asyncio.shield(task)
 
 
 async def _fetch_pubmed_uncached(pmid: str) -> PubMedCitation | None:
     """Internal: fetch PubMed citation without caching."""
-    params = {
-        "db": "pubmed",
-        "id": pmid,
-        "retmode": "xml",
-    }
+    params = get_ncbi_params({"db": "pubmed", "id": pmid, "retmode": "xml"})
 
     try:
         client = await _client_manager.get()
@@ -299,46 +308,25 @@ async def fetch_pubmed_citations_batch(
 ) -> list[PubMedCitation]:
     """Fetch citations for multiple PMIDs concurrently.
 
-    Uses the module-level semaphore (via fetch_pubmed_citation) to
-    rate-limit concurrent requests.
-
-    Args:
-        pmids: List of PubMed IDs to fetch.
-        progress_callback: Optional callback(current, total) for progress updates.
-
-    Returns:
-        List of PubMedCitation objects.
+    Uses the module-level semaphore (via fetch_pubmed_citation) to rate-limit
+    concurrent requests.
     """
-    total = len(pmids)
-    completed = 0
-    completed_lock = asyncio.Lock()
 
     async def _fetch_one(pmid: str) -> PubMedCitation:
-        nonlocal completed
         citation = await fetch_pubmed_citation(pmid)
-        result = (
-            citation
-            if citation is not None
-            else PubMedCitation(
-                pmid=pmid,
-                authors=None,
-                title=None,
-                journal=None,
-                publication_date=None,
-                doi=None,
-                formatted_ref=f"PMID: {pmid} (citation fetch failed)",
-            )
+        return citation or PubMedCitation(
+            pmid=pmid,
+            authors=None,
+            title=None,
+            journal=None,
+            publication_date=None,
+            doi=None,
+            formatted_ref=f"PMID: {pmid} (citation fetch failed)",
         )
-        async with completed_lock:
-            completed += 1
-            if progress_callback:
-                progress_callback(completed, total)
-        return result
 
-    async with asyncio.TaskGroup() as tg:
-        tasks = [tg.create_task(_fetch_one(p)) for p in pmids]
-
-    return [t.result() for t in tasks]
+    return await run_batched_fetch(
+        pmids, _fetch_one, progress_callback=progress_callback
+    )
 
 
 def extract_pmids_from_text(text: str | None) -> list[str]:
@@ -367,11 +355,15 @@ def extract_pmids_from_text(text: str | None) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-async def sync_pubmed_citations(pmids: list[str]) -> SyncResult:
+async def sync_pubmed_citations(
+    pmids: list[str],
+    config: PipelineConfig | None = None,
+) -> SyncResult:
     """Sync PubMed citations to database for given PMIDs.
 
     Args:
         pmids: List of PubMed IDs to sync.
+        config: Pipeline config (for ncbi_rate_limit semaphore sizing).
 
     Returns:
         SyncResult with counts of fetched, cached, and failed citations.
@@ -381,7 +373,10 @@ async def sync_pubmed_citations(pmids: list[str]) -> SyncResult:
         upsert_pubmed_citations_batch,
     )
 
-    # Deduplicate PMIDs
+    # Seed the module-level semaphore with the caller's rate limit before
+    # any concurrent access — otherwise the first task freezes in a default.
+    _get_ncbi_semaphore(config)
+
     unique_pmids = list(dict.fromkeys(pmids))
 
     # Check what's already cached in database

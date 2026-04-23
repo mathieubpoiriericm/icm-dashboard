@@ -44,12 +44,28 @@ CREATE TABLE IF NOT EXISTS pubmed_refs (
     genes_extracted INTEGER DEFAULT 0
 );
 
+-- Per-run statistics written by record_pipeline_run() at the end of each run.
+-- Mirrors alembic migration 003_add_pipeline_runs_table.py so a fresh Docker
+-- init (which runs these SQL files but does not run alembic) stands up a
+-- working database.
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id SERIAL PRIMARY KEY,
+    run_timestamp TIMESTAMPTZ NOT NULL,
+    papers_processed INTEGER NOT NULL DEFAULT 0,
+    fulltext_retrieved INTEGER NOT NULL DEFAULT 0,
+    genes_extracted INTEGER NOT NULL DEFAULT 0,
+    genes_validated INTEGER NOT NULL DEFAULT 0,
+    run_mode TEXT NOT NULL DEFAULT 'standard'
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_genes_gene ON genes(gene);
 CREATE INDEX IF NOT EXISTS idx_genes_gene_upper ON genes(UPPER(gene));
 CREATE INDEX IF NOT EXISTS idx_trials_registry ON clinical_trials(registry_id);
 CREATE INDEX IF NOT EXISTS idx_trials_drug ON clinical_trials(drug);
 CREATE INDEX IF NOT EXISTS idx_pubmed_refs_pmid ON pubmed_refs(pmid);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_timestamp
+    ON pipeline_runs(run_timestamp DESC);
 
 -- Update timestamp trigger function
 CREATE OR REPLACE FUNCTION update_timestamp()

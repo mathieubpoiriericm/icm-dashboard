@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -40,6 +41,17 @@ DRUG_INTERVENTION_TYPES: Final[frozenset[str]] = frozenset({"DRUG"})
 # Exponential-backoff base: sleep `BASE ** attempt` seconds (1, 2, 4, ...)
 # between retries of a failed CTG request.
 _RETRY_BACKOFF_BASE: Final[float] = 2.0
+
+# Map CTG v2 raw phase enum values to the display labels the Shiny filter
+# expects ("Phase 2" not "PHASE2"). Unmapped values pass through verbatim.
+_PHASE_DISPLAY_MAP: Final[dict[str, str]] = {
+    "EARLY_PHASE1": "Early Phase 1",
+    "PHASE1": "Phase 1",
+    "PHASE2": "Phase 2",
+    "PHASE3": "Phase 3",
+    "PHASE4": "Phase 4",
+    "NA": "N/A",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +153,14 @@ def _first_primary_outcome(study: dict[str, Any]) -> str | None:
 
 
 def _first_phase(study: dict[str, Any]) -> str | None:
-    """Extract the first phase label (e.g. ``PHASE2``), if any."""
+    """Extract the first phase label mapped to display form (``"Phase 2"``)."""
     phases = _get_path(study, "protocolSection", "designModule", "phases")
     if not isinstance(phases, list) or not phases:
         return None
     first = phases[0]
-    return first if isinstance(first, str) and first else None
+    if not isinstance(first, str) or not first:
+        return None
+    return _PHASE_DISPLAY_MAP.get(first, first)
 
 
 def _drug_interventions(study: dict[str, Any]) -> list[str]:
@@ -283,7 +297,9 @@ async def _fetch_page_with_retry(
             last_error = e
 
         if attempt < max_retries:
-            await asyncio.sleep(_RETRY_BACKOFF_BASE**attempt)
+            # Jitter so multiple concurrent retries (all hit by the same 429)
+            # don't thunder back at the API at the same instant.
+            await asyncio.sleep(_RETRY_BACKOFF_BASE**attempt + random.uniform(0, 1))
 
     raise last_error or RuntimeError(
         f"CTG fetch exhausted {max_retries + 1} attempts with no error captured"

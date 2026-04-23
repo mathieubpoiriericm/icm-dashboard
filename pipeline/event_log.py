@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS events (
 class EventLog:
     """Append-only event store backed by SQLite.
 
+    Supports ``with EventLog(path) as log:`` so a crash mid-run can't leave
+    the SQLite WAL/SHM files unclosed (which would block later readers).
+
     Args:
         db_path: Path to the SQLite database file.
     """
@@ -38,6 +41,12 @@ class EventLog:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(_SCHEMA)
         self._conn.commit()
+
+    def __enter__(self) -> EventLog:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.close()
 
     def record(self, event_type: str, payload: Any) -> int:
         """Insert an event and return its row ID.

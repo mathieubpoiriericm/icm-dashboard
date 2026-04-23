@@ -16,13 +16,20 @@ from typing import Any
 import httpx
 
 from pipeline.cache_utils import (
+    DB_CACHE_TTL_DAYS,
     DEFAULT_EVICT_FRACTION,
     DEFAULT_MAX_SIZE,
     SyncResult,
     evict_lru,
     make_log_progress,
+    run_batched_fetch,
 )
-from pipeline.config import NCBI_ESEARCH_URL, NCBI_ESUMMARY_URL, PipelineConfig
+from pipeline.config import (
+    NCBI_ESEARCH_URL,
+    NCBI_ESUMMARY_URL,
+    PipelineConfig,
+    get_ncbi_params,
+)
 from pipeline.http_client import AsyncHttpClientManager
 
 logger = logging.getLogger(__name__)
@@ -142,13 +149,16 @@ async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
 
 async def _fetch_ncbi_gene_uncached(gene_symbol: str) -> NCBIGeneInfo | None:
     """Internal: fetch gene from NCBI without caching."""
-    # Step 1: Search for gene ID
+    # [Sym] indexes both the official HGNC symbol and aliases, so papers
+    # that mention a gene by an alias still resolve.
     search_url = NCBI_ESEARCH_URL
-    search_params = {
-        "db": "gene",
-        "term": f"{gene_symbol}[Gene Name] AND Homo sapiens[Organism]",
-        "retmode": "json",
-    }
+    search_params = get_ncbi_params(
+        {
+            "db": "gene",
+            "term": f"{gene_symbol}[Sym] AND Homo sapiens[Organism]",
+            "retmode": "json",
+        }
+    )
 
     try:
         client = await _client_manager.get()
@@ -186,7 +196,7 @@ async def _fetch_ncbi_gene_uncached(gene_symbol: str) -> NCBIGeneInfo | None:
 async def _fetch_gene_summary(gene_symbol: str, gene_id: str) -> NCBIGeneInfo | None:
     """Fetch gene summary details from NCBI esummary."""
     url = NCBI_ESUMMARY_URL
-    params = {"db": "gene", "id": gene_id, "retmode": "json"}
+    params = get_ncbi_params({"db": "gene", "id": gene_id, "retmode": "json"})
 
     try:
         client = await _client_manager.get()
@@ -232,41 +242,20 @@ async def fetch_ncbi_genes_batch(
 
     Uses the module-level semaphore (via fetch_ncbi_gene_info) to
     rate-limit concurrent requests.
-
-    Args:
-        gene_symbols: List of gene symbols to fetch.
-        progress_callback: Optional callback(current, total) for progress updates.
-
-    Returns:
-        List of NCBIGeneInfo objects (some may have None fields if lookup failed).
     """
-    total = len(gene_symbols)
-    completed = 0
-    completed_lock = asyncio.Lock()
 
     async def _fetch_one(symbol: str) -> NCBIGeneInfo:
-        nonlocal completed
         info = await fetch_ncbi_gene_info(symbol)
-        result = (
-            info
-            if info is not None
-            else NCBIGeneInfo(
-                gene_symbol=symbol,
-                ncbi_uid=None,
-                description=None,
-                aliases=None,
-            )
+        return info or NCBIGeneInfo(
+            gene_symbol=symbol,
+            ncbi_uid=None,
+            description=None,
+            aliases=None,
         )
-        async with completed_lock:
-            completed += 1
-            if progress_callback:
-                progress_callback(completed, total)
-        return result
 
-    async with asyncio.TaskGroup() as tg:
-        tasks = [tg.create_task(_fetch_one(s)) for s in gene_symbols]
-
-    return [t.result() for t in tasks]
+    return await run_batched_fetch(
+        gene_symbols, _fetch_one, progress_callback=progress_callback
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -285,8 +274,10 @@ async def sync_ncbi_gene_info(gene_symbols: list[str]) -> SyncResult:
     """
     from pipeline.database import get_cached_ncbi_genes, upsert_ncbi_genes_batch
 
-    # Check what's already cached in database
-    cached_genes = await get_cached_ncbi_genes(gene_symbols)
+    # Fresh rows only — stale rows fall through to a re-fetch.
+    cached_genes = await get_cached_ncbi_genes(
+        gene_symbols, max_age_days=DB_CACHE_TTL_DAYS
+    )
     symbols_to_fetch = [s for s in gene_symbols if s not in cached_genes]
 
     logger.info(

@@ -144,9 +144,17 @@ class TestDrugInterventions:
 
 
 class TestFirstPhase:
-    def test_returns_first_phase(self):
+    def test_returns_first_phase_mapped_to_display_label(self):
         study = _make_study(phases=["PHASE2", "PHASE3"])
-        assert _first_phase(study) == "PHASE2"
+        assert _first_phase(study) == "Phase 2"
+
+    def test_maps_early_phase_1(self):
+        study = _make_study(phases=["EARLY_PHASE1"])
+        assert _first_phase(study) == "Early Phase 1"
+
+    def test_unmapped_phase_passes_through(self):
+        study = _make_study(phases=["UNKNOWN_PHASE"])
+        assert _first_phase(study) == "UNKNOWN_PHASE"
 
     def test_none_when_missing(self):
         study = _make_study(phases=None)
@@ -200,7 +208,7 @@ class TestMapStudyToRecords:
         assert r.registry_id == "NCT12345678"
         assert r.drug == "aspirin"
         assert r.trial_name == "Aspirin for lacunar stroke"
-        assert r.clinical_trial_phase == "PHASE3"
+        assert r.clinical_trial_phase == "Phase 3"
         assert r.target_sample_size == 500
         assert r.estimated_completion_date == "2027-06-30"
         assert r.primary_outcome == "Recurrent stroke rate"

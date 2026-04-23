@@ -13,7 +13,7 @@ import os
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any
 
 import httpx
 
@@ -34,10 +34,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-
-# With API key: 10 req/s → 0.1s minimum interval
-# Without API key: 3 req/s → 0.34s minimum interval
-_MIN_REQUEST_INTERVAL: Final[float] = 0.1 if os.getenv("NCBI_API_KEY") else 0.34
 
 _last_request_time: float = 0.0
 _throttle_lock: asyncio.Lock | None = None
@@ -127,13 +123,18 @@ def clear_gene_cache() -> None:
 
 
 async def _throttle() -> None:
-    """Enforce minimum interval between NCBI requests."""
+    """Enforce minimum interval between NCBI requests.
+
+    Sampled per call so python-dotenv can populate ``NCBI_API_KEY`` after
+    module import. 0.1 s = 10 req/s (authenticated); 0.34 s = 3 req/s.
+    """
     global _last_request_time
+    interval = 0.1 if os.getenv("NCBI_API_KEY") else 0.34
     async with _get_throttle_lock():
         now = time.monotonic()
         elapsed = now - _last_request_time
-        if elapsed < _MIN_REQUEST_INTERVAL:
-            await asyncio.sleep(_MIN_REQUEST_INTERVAL - elapsed)
+        if elapsed < interval:
+            await asyncio.sleep(interval - elapsed)
         _last_request_time = time.monotonic()
 
 
@@ -243,17 +244,21 @@ async def validate_gene_entry(
         errors.append(f"Gene '{entry.gene_symbol}' not found in NCBI Gene")
         return ValidationResult(False, errors, warnings, None)
 
-    # Normalize gene symbol to official NCBI symbol (handles aliases)
+    # Normalize gene symbol to official NCBI symbol (handles aliases). Use
+    # model_copy so we don't mutate the caller's GeneEntry — other observers
+    # (batch_validation, the report) may still be holding the original.
     if ncbi_info["symbol"] != entry.gene_symbol:
         warnings.append(f"Normalized '{entry.gene_symbol}' -> '{ncbi_info['symbol']}'")
-        entry.gene_symbol = ncbi_info["symbol"]
+        normalized = entry.model_copy(update={"gene_symbol": ncbi_info["symbol"]})
+    else:
+        normalized = entry
 
     # Stage 3: GWAS trait validation (warnings only - unknown traits allowed)
-    for trait in entry.gwas_trait:
+    for trait in normalized.gwas_trait:
         if trait not in VALID_GWAS_TRAITS:
             warnings.append(f"Unknown GWAS trait: {trait}")
 
-    return ValidationResult(True, errors, warnings, entry)
+    return ValidationResult(True, errors, warnings, normalized)
 
 
 async def verify_ncbi_gene(
@@ -280,6 +285,12 @@ async def verify_ncbi_gene(
 
     # Semaphore controls concurrent NCBI requests; throttle enforces inter-request delay
     async with _get_ncbi_semaphore(config):
+        # Double-checked locking: another task may have filled the cache while
+        # we were queued on the semaphore — skip the redundant NCBI call.
+        async with _get_cache_lock():
+            if symbol_upper in _gene_cache:
+                _gene_cache.move_to_end(symbol_upper)
+                return _gene_cache[symbol_upper]
         result = await _fetch_ncbi_gene_uncached(symbol, config=config)
 
     async with _get_cache_lock():
@@ -307,9 +318,13 @@ async def _fetch_ncbi_gene_uncached(
         Gene info dict if found, None otherwise.
     """
     url = NCBI_ESEARCH_URL
+    # [Sym] indexes both the official HGNC symbol and the aliases list, so a
+    # paper that mentions a gene by its alias (e.g. "MFS2" for TGFBR2) still
+    # resolves. [Gene Name] indexes the gene title only and silently misses
+    # those.
     params = {
         "db": "gene",
-        "term": f"{symbol}[Gene Name] AND Homo sapiens[Organism]",
+        "term": f"{symbol}[Sym] AND Homo sapiens[Organism]",
         "retmode": "json",
     }
 

@@ -28,6 +28,7 @@ def _build_ollama(config: PipelineConfig) -> LLMProvider:
         host=config.ollama_host,
         model=config.ollama_model,
         num_ctx=config.ollama_num_ctx,
+        keep_alive=config.ollama_keep_alive,
     )
 
 

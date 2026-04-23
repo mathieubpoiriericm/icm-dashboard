@@ -56,7 +56,7 @@ def format_omics(evidence: Sequence[str]) -> str:
     Returns:
         Formatted string for database storage.
     """
-    return ";".join(f"{e}*" for e in evidence) + ";" if evidence else ""
+    return ";".join(f"{e}*" for e in evidence) if evidence else ""
 
 
 def _build_combined_gene_data(entries: Sequence[GeneEntry]) -> dict[str, Any]:
