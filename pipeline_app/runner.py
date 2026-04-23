@@ -47,6 +47,10 @@ TUNING_STAGES: list[str] = [
 REPORT_DEPENDENT_STAGES: frozenset[str] = frozenset(
     {"validate", "error_analysis", "track"}
 )
+# Stages that consume the score distribution CSV written by error_analysis.
+# Symmetric with REPORT_DEPENDENT_STAGES: missing input → clean "skipped",
+# not a mid-command ValueError that surfaces as a confusing failure.
+SCORE_DIST_DEPENDENT_STAGES: frozenset[str] = frozenset({"calibrate"})
 RSCRIPT_EXE: str = "Rscript"
 
 # Upper bound on a single log line from the subprocess. Asyncio's default
@@ -62,13 +66,19 @@ _SUBPROCESS_STREAM_LIMIT: int = 10 * 1024 * 1024
 # ---- Pure functions ----
 
 
-def _int_str(value: int | float) -> str:
+def _int_str(value: int | float | None) -> str:
     """Convert a numeric value to integer string.
 
     NiceGUI's ui.number produces float values (e.g. 7.0) even for
     integer fields. Serializing directly with str() yields "7.0",
     which breaks argparse type=int and int() parsing downstream.
+
+    Raises ValueError (not TypeError) on None so callers can surface a
+    clean validation message; ui.number can momentarily hand back None
+    when the user clears a field before entering a new value.
     """
+    if value is None:
+        raise ValueError("numeric field is required")
     return str(int(value))
 
 
@@ -195,7 +205,7 @@ def build_cli_args(config: PipelineAppConfig) -> list[str]:
     """Build CLI arguments for pipeline/main.py."""
     args = ["pipeline/main.py"]
     if config.run_mode == "standard":
-        if int(config.days_back) < 1:
+        if config.days_back is None or int(config.days_back) < 1:
             raise ValueError(f"days_back must be >= 1, got {config.days_back}")
         # Explicit --pubmed so sync_external_data is additive, not a replacement.
         args.append("--pubmed")
@@ -218,6 +228,12 @@ def build_cli_args(config: PipelineAppConfig) -> list[str]:
         args.extend(["--pmids", config.pmids_path])
         if config.skip_validation:
             args.append("--skip-validation")
+    else:
+        # Bare args fall through to pipeline/main.py's argparse default, which
+        # would silently launch the full PubMed pipeline — refuse instead so
+        # a hand-edited config.json or a future value can't trigger a real
+        # production run unintentionally.
+        raise ValueError(f"Unknown run_mode: {config.run_mode!r}")
     return args
 
 
@@ -394,15 +410,21 @@ async def _run_process_streamed(
         )
         return await process.wait()
     except asyncio.CancelledError:
-        _signal_process_group(process, signal.SIGTERM)
+        # Only signal the child if it hasn't already exited. After exit, the
+        # PID is eligible for reuse — signalling it risks hitting an
+        # unrelated process. `cancel()` in SubprocessLock applies the same
+        # guard; the two cancel paths can race via concurrent callers.
+        if process.returncode is None:
+            _signal_process_group(process, signal.SIGTERM)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(_drain_streams(process), timeout=5.0)
         try:
             await asyncio.wait_for(process.wait(), timeout=5.0)
         except TimeoutError:
-            _signal_process_group(process, signal.SIGKILL)
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(process.wait(), timeout=5.0)
+            if process.returncode is None:
+                _signal_process_group(process, signal.SIGKILL)
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(process.wait(), timeout=5.0)
         raise
 
 
@@ -611,6 +633,30 @@ def _safe_call(cb: Callable[..., Any] | None, /, *args: Any) -> None:
         cb(*args)
 
 
+@dataclass(slots=True)
+class PipelineListeners:
+    """A single client's set of PipelineRunner callbacks.
+
+    Stored as one entry in PipelineRunner._listeners so multiple concurrent
+    browser clients each get their own log/tracker updates during a run.
+    """
+
+    on_stdout: Callable[[str], None]
+    on_stderr: Callable[[str], None]
+    on_stage: Callable[[str], None]
+
+
+@dataclass(slots=True)
+class TuningListeners:
+    """A single client's set of TuningRunner callbacks."""
+
+    on_stdout: Callable[[str], None]
+    on_stderr: Callable[[str], None]
+    on_stage_start: Callable[[str, int, int], None]
+    on_stage_complete: Callable[[str, list[Path]], None]
+    on_waiting: Callable[[], None]
+
+
 class PipelineRunner:
     """Spawns pipeline/main.py and streams output.
 
@@ -630,9 +676,12 @@ class PipelineRunner:
         self.stage_statuses: dict[str, str] = {s: "pending" for s in PIPELINE_STAGES}
         self._current_stage: str | None = None
         self.last_result: RunResult | None = None
-        self._on_stdout: Callable[[str], None] | None = None
-        self._on_stderr: Callable[[str], None] | None = None
-        self._on_stage: Callable[[str], None] | None = None
+        # Listener bundles keyed by an opaque token the disposer captures.
+        # Supports multiple concurrent browser clients: each page mount
+        # appends a bundle, each client-disconnect pops one. Without this,
+        # a second tab's set_callbacks call would overwrite the first
+        # tab's closures and freeze the first tab's log pane mid-run.
+        self._listeners: list[PipelineListeners] = []
 
     def set_callbacks(
         self,
@@ -640,16 +689,34 @@ class PipelineRunner:
         on_stderr: Callable[[str], None],
         on_stage: Callable[[str], None],
     ) -> None:
-        """Register or replace UI callbacks (called on each page render).
+        """Replace all listeners with a single bundle (single-client shim).
 
-        Callbacks are wrapped with suppress(RuntimeError) inside the emit
-        methods so a stale callback bound to a disconnected client doesn't
-        tear down the reader — lines still accumulate in log_lines and a
-        reconnect replays them.
+        Preserved for tests and single-user callers. Multi-client pages
+        should use ``add_listener`` and invoke its returned disposer on
+        client disconnect.
         """
-        self._on_stdout = on_stdout
-        self._on_stderr = on_stderr
-        self._on_stage = on_stage
+        self._listeners = [PipelineListeners(on_stdout, on_stderr, on_stage)]
+
+    def add_listener(
+        self,
+        on_stdout: Callable[[str], None],
+        on_stderr: Callable[[str], None],
+        on_stage: Callable[[str], None],
+    ) -> Callable[[], None]:
+        """Register a listener bundle; returns a disposer to remove it.
+
+        Pages should call this once per client mount and wire the disposer
+        to ``context.client.on_disconnect`` so callbacks bound to closed
+        sessions don't accumulate across a long-running server.
+        """
+        bundle = PipelineListeners(on_stdout, on_stderr, on_stage)
+        self._listeners.append(bundle)
+
+        def _dispose() -> None:
+            with suppress(ValueError):
+                self._listeners.remove(bundle)
+
+        return _dispose
 
     def reset_state(self) -> None:
         """Clear buffered run state so a fresh run renders from zero."""
@@ -660,11 +727,13 @@ class PipelineRunner:
 
     def _emit_stdout(self, line: str) -> None:
         self.log_lines.append(("out", line))
-        _safe_call(self._on_stdout, line)
+        for b in list(self._listeners):
+            _safe_call(b.on_stdout, line)
 
     def _emit_stderr(self, line: str) -> None:
         self.log_lines.append(("err", line))
-        _safe_call(self._on_stderr, line)
+        for b in list(self._listeners):
+            _safe_call(b.on_stderr, line)
 
     def _emit_stage(self, stage: str) -> None:
         # Close out the previous stage before marking the new one running,
@@ -675,7 +744,8 @@ class PipelineRunner:
             self.stage_statuses[prev] = "completed"
         self._current_stage = stage
         self.stage_statuses[stage] = "running"
-        _safe_call(self._on_stage, stage)
+        for b in list(self._listeners):
+            _safe_call(b.on_stage, stage)
 
     async def run(
         self,
@@ -739,9 +809,21 @@ class PipelineRunner:
                 return result
             self._lock.set_process(process)
 
-            exit_code = await _run_process_streamed(
-                process, _handle_stdout, self._emit_stderr
-            )
+            try:
+                exit_code = await _run_process_streamed(
+                    process, _handle_stdout, self._emit_stderr
+                )
+            except asyncio.CancelledError:
+                # A reconnecting page would otherwise see the last stage
+                # frozen on "running" forever; mark it failed and record a
+                # cancelled result before letting the cancellation propagate.
+                # Clear _current_stage so a UI refresh between cancel and
+                # the next run() call doesn't observe a stale stage name.
+                if self._current_stage is not None:
+                    self.stage_statuses[self._current_stage] = "failed"
+                    self._current_stage = None
+                self.last_result = RunResult(exit_code=-1, report_path=None)
+                raise
 
             # Terminal state for the last stage: if at least one stage ran,
             # finalize it; otherwise if we exited with a failure code,
@@ -893,11 +975,9 @@ class TuningRunner:
         self._stage_started_at: dict[str, float] = {}
         self.current_repeat: int = 0
         self.total_repeats: int = 0
-        self._on_stdout: Callable[[str], None] | None = None
-        self._on_stderr: Callable[[str], None] | None = None
-        self._on_stage_start: Callable[[str, int, int], None] | None = None
-        self._on_stage_complete: Callable[[str, list[Path]], None] | None = None
-        self._on_waiting: Callable[[], None] | None = None
+        # Listener bundles keyed by insertion order. See PipelineRunner for
+        # the multi-client rationale.
+        self._listeners: list[TuningListeners] = []
 
     @property
     def is_active(self) -> bool:
@@ -937,12 +1017,45 @@ class TuningRunner:
         on_stage_complete: Callable[[str, list[Path]], None],
         on_waiting: Callable[[], None],
     ) -> None:
-        """Register or replace UI callbacks (called on page render)."""
-        self._on_stdout = on_stdout
-        self._on_stderr = on_stderr
-        self._on_stage_start = on_stage_start
-        self._on_stage_complete = on_stage_complete
-        self._on_waiting = on_waiting
+        """Replace all listeners with a single bundle (single-client shim).
+
+        Preserved for tests and single-user callers. Multi-client pages
+        should use ``add_listener`` and invoke its returned disposer on
+        client disconnect.
+        """
+        self._listeners = [
+            TuningListeners(
+                on_stdout,
+                on_stderr,
+                on_stage_start,
+                on_stage_complete,
+                on_waiting,
+            )
+        ]
+
+    def add_listener(
+        self,
+        on_stdout: Callable[[str], None],
+        on_stderr: Callable[[str], None],
+        on_stage_start: Callable[[str, int, int], None],
+        on_stage_complete: Callable[[str, list[Path]], None],
+        on_waiting: Callable[[], None],
+    ) -> Callable[[], None]:
+        """Register a listener bundle; returns a disposer to remove it."""
+        bundle = TuningListeners(
+            on_stdout,
+            on_stderr,
+            on_stage_start,
+            on_stage_complete,
+            on_waiting,
+        )
+        self._listeners.append(bundle)
+
+        def _dispose() -> None:
+            with suppress(ValueError):
+                self._listeners.remove(bundle)
+
+        return _dispose
 
     def reset_state(self) -> None:
         """Clear buffered run state so the UI tracker renders fresh."""
@@ -958,11 +1071,13 @@ class TuningRunner:
 
     def _emit_stdout(self, line: str) -> None:
         self.log_lines.append(("out", line))
-        _safe_call(self._on_stdout, line)
+        for b in list(self._listeners):
+            _safe_call(b.on_stdout, line)
 
     def _emit_stderr(self, line: str) -> None:
         self.log_lines.append(("err", line))
-        _safe_call(self._on_stderr, line)
+        for b in list(self._listeners):
+            _safe_call(b.on_stderr, line)
 
     def _emit_stage_start(
         self,
@@ -974,7 +1089,8 @@ class TuningRunner:
         self._stage_started_at[stage] = time.monotonic()
         self.current_repeat = repeat
         self.total_repeats = total
-        _safe_call(self._on_stage_start, stage, repeat, total)
+        for b in list(self._listeners):
+            _safe_call(b.on_stage_start, stage, repeat, total)
 
     def _emit_stage_complete(
         self,
@@ -986,10 +1102,12 @@ class TuningRunner:
         started = self._stage_started_at.pop(stage, None)
         if started is not None:
             self.stage_durations[stage] = time.monotonic() - started
-        _safe_call(self._on_stage_complete, stage, files)
+        for b in list(self._listeners):
+            _safe_call(b.on_stage_complete, stage, files)
 
     def _emit_waiting(self) -> None:
-        _safe_call(self._on_waiting)
+        for b in list(self._listeners):
+            _safe_call(b.on_waiting)
 
     def advance(self) -> None:
         """User clicked Next Stage."""
@@ -1070,6 +1188,19 @@ class TuningRunner:
                     if needs_report and not report_path and not script_override:
                         self._emit_stderr(
                             f"Skipping {stage}: no report from extract stage"
+                        )
+                        self._emit_stage_complete(stage, [], status="skipped")
+                        continue
+
+                    needs_score_dist = stage in SCORE_DIST_DEPENDENT_STAGES
+                    if (
+                        needs_score_dist
+                        and not score_dist_path
+                        and not script_override
+                    ):
+                        self._emit_stderr(
+                            f"Skipping {stage}: "
+                            "no score distribution from error_analysis stage"
                         )
                         self._emit_stage_complete(stage, [], status="skipped")
                         continue

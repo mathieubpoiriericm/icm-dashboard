@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from nicegui import ui
+from nicegui import context, ui
 
 from pipeline_app.components.confirm_dialog import confirm
 from pipeline_app.components.log_viewer import (
@@ -609,11 +609,20 @@ def create_configure_run_page(
                 # the page just has to paint.
                 _refresh_stage_tracker()
 
-            runner.set_callbacks(
+            # add_listener (instead of set_callbacks) so a second browser tab
+            # opening mid-run doesn't overwrite the first tab's closures and
+            # freeze its log pane. Each client registers its own bundle and
+            # cleans up on disconnect.
+            dispose = runner.add_listener(
                 on_stdout=_on_stdout,
                 on_stderr=_on_stderr,
                 on_stage=_on_stage,
             )
+            # context.client raises when invoked outside a live request
+            # context (e.g. headless tests); suppress only the runtime
+            # lookup, not an ImportError.
+            with suppress(RuntimeError, AttributeError):
+                context.client.on_disconnect(dispose)
 
             # Reconnect path: page may be rendering mid-run (or after the run
             # already finished). Replay buffered lines via load_batch so the
@@ -652,6 +661,11 @@ def create_configure_run_page(
                 if run_btn_ref:
                     run_btn_ref[0].disable()
 
+                # Reset runner state before anything else so a validation-fail
+                # retry doesn't keep showing the prior run's stage statuses.
+                runner.reset_state()
+                _refresh_stage_tracker()
+
                 try:
                     if log_viewer_ref:
                         log_viewer_ref[0].clear()
@@ -662,9 +676,15 @@ def create_configure_run_page(
                     )
 
                     missing: list[str] = []
-                    if not fresh_secrets.anthropic_api_key:
+                    # Anthropic key only required when using the Anthropic
+                    # provider; Ollama runs locally and has no API key.
+                    if (
+                        config.llm_provider == "anthropic"
+                        and not fresh_secrets.anthropic_api_key
+                    ):
                         missing.append("ANTHROPIC_API_KEY")
-                    if not fresh_secrets.db_host:
+                    # DB_HOST not needed in dry-run mode (no database writes).
+                    if not config.dry_run and not fresh_secrets.db_host:
                         missing.append("DB_HOST")
                     if missing:
                         ui.notify(

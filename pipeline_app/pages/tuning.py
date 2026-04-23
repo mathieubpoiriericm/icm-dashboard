@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import suppress
 from pathlib import Path
 
-from nicegui import ui
+from nicegui import context, ui
 
 from pipeline_app.components.log_viewer import (
     STDERR_CSS_CLASS,
@@ -346,13 +346,21 @@ def create_tuning_page(
                     next_btn.set_visibility(True)
                     skip_btn.set_visibility(True)
 
-            runner.set_callbacks(
+            # add_listener (instead of set_callbacks) so a second browser tab
+            # opening mid-experiment doesn't overwrite the first tab's
+            # closures and freeze its log pane / stage tracker.
+            dispose = runner.add_listener(
                 on_stdout=_on_stdout,
                 on_stderr=_on_stderr,
                 on_stage_start=_on_stage_start,
                 on_stage_complete=_on_stage_complete,
                 on_waiting=_on_waiting,
             )
+            # context.client raises when invoked outside a live request
+            # context (e.g. headless tests); suppress only the runtime
+            # lookup, not an ImportError.
+            with suppress(RuntimeError, AttributeError):
+                context.client.on_disconnect(dispose)
 
             # Restore buffered state (previous or in-progress run). Replay
             # goes through load_batch so the DOM absorbs thousands of lines

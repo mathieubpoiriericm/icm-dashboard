@@ -6,6 +6,7 @@ import contextlib
 import csv
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 from nicegui import run, ui
 
@@ -51,6 +52,26 @@ NUMERIC_COLUMNS: frozenset[str] = frozenset(
     }
 )
 
+# Metrics where a *decrease* is an improvement (lower cost, fewer errors,
+# shorter runtime). The diff-coloring template inverts the sign→color
+# mapping for these so that green always means "better".
+LOWER_IS_BETTER: frozenset[str] = frozenset(
+    {
+        "fp",
+        "fn",
+        "false_positives",
+        "fn_threshold",
+        "fn_miss",
+        "total_rejected",
+        "estimated_cost_usd",
+        "input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "total_processing_time",
+        "llm_time",
+    }
+)
+
 
 def _load_tuning_runs(project_root: str) -> list[dict[str, object]]:
     """Load tuning runs from CSV file, newest first.
@@ -84,12 +105,34 @@ def _load_tuning_runs(project_root: str) -> list[dict[str, object]]:
     # Sort by timestamp when available so out-of-order writes still render
     # newest-first; fall back to file order when the column is missing.
     if coerced and any(r.get("timestamp") for r in coerced):
-        return sorted(
-            coerced,
-            key=lambda r: str(r.get("timestamp") or ""),
-            reverse=True,
-        )
+        return sorted(coerced, key=_timestamp_sort_key, reverse=True)
     return list(reversed(coerced))
+
+
+def _timestamp_sort_key(row: dict[str, object]) -> tuple[int, float, str]:
+    """Parse an ISO timestamp for ordering; fall back to the raw string.
+
+    Lexicographic string sort is only correct when the timestamp format is
+    uniform; parsed datetimes handle microsecond presence and UTC-suffix
+    vs offset variations correctly. The leading int keeps unparseable
+    rows (tier 0) together and below parsed rows (tier 1) so cross-tier
+    comparisons never touch the heterogeneous float/string tail.
+    """
+    raw = row.get("timestamp")
+    if not isinstance(raw, str) or not raw:
+        return (0, 0.0, "")
+    try:
+        # `datetime.fromisoformat` accepts naive and offset-qualified ISO;
+        # normalize a trailing "Z" to "+00:00" for older Python versions
+        # and then coerce any naive result to UTC so .timestamp() is
+        # deterministic across mixed-TZ rows.
+        iso = raw.replace("Z", "+00:00") if raw.endswith("Z") else raw
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return (1, dt.timestamp(), raw)
+    except ValueError:
+        return (0, 0.0, raw)
 
 
 def _compute_display_keys(
@@ -121,6 +164,11 @@ def _diff_value(v1: object, v2: object, col: str) -> str:
         return f"{sign}{diff:.4f}"
     except (ValueError, TypeError):
         return ""
+
+
+def _diff_direction(col: str) -> str:
+    """Return "lower" if a decrease is an improvement, else "higher"."""
+    return "lower" if col in LOWER_IS_BETTER else "higher"
 
 
 def create_tuning_history_page(project_root: str) -> None:
@@ -227,6 +275,9 @@ def _render_body(
                     "row1": v1,
                     "row2": v2,
                     "diff": diff,
+                    # "lower" → invert sign→color mapping so a *decrease* in
+                    # cost / latency / false positives shows green.
+                    "direction": _diff_direction(k),
                 }
             )
         comp_table = ui.table(
@@ -239,9 +290,14 @@ def _render_body(
             """
             <q-td :props="props">
                 <span
-                    :class="props.value.startsWith('+') ? 'diff-positive'
-                          : props.value.startsWith('-') ? 'diff-negative'
-                          : ''"
+                    :class="(() => {
+                        const v = props.value;
+                        if (!v.startsWith('+') && !v.startsWith('-')) return '';
+                        const isPlus = v.startsWith('+');
+                        const lower = props.row.direction === 'lower';
+                        const good = lower ? !isPlus : isPlus;
+                        return good ? 'diff-positive' : 'diff-negative';
+                    })()"
                 >
                     {{ props.value }}
                 </span>

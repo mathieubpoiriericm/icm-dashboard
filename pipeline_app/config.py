@@ -248,8 +248,20 @@ def _filter_dataclass_fields(data: Any, cls: type) -> dict[str, Any]:
                 k,
             )
             continue
+        # Resolve expected_type from the field's default, or from a sample
+        # produced by default_factory when present. Without the factory
+        # branch, list/dict fields would bypass the type-coercion block
+        # entirely — a future list field with a hand-edited `"tags": "x"`
+        # would reach the constructor as a string and crash at first iter.
+        expected_type: type | None = None
         if f.default is not MISSING:
             expected_type = type(f.default)
+        elif f.default_factory is not MISSING:
+            try:
+                expected_type = type(f.default_factory())
+            except TypeError:
+                expected_type = None
+        if expected_type is not None:
             # bool is a subclass of int, so isinstance(True, int) is True —
             # without this guard, JSON `true`/`false` silently lands in an
             # int field as a bool value and flows through downstream typed
@@ -380,31 +392,38 @@ def clear_history() -> None:
 
 @dataclass
 class Preset:
-    """A named configuration snapshot."""
+    """A named configuration snapshot.
+
+    ``config`` is typed Optional because a hand-edited presets.json can
+    omit the key entirely — we keep the preset so the name can still be
+    listed / deleted, but downstream consumers must guard against None
+    before treating it as a dict.
+    """
 
     id: str
     name: str
-    config: dict[str, Any]
+    config: dict[str, Any] | None = None
 
 
-# Keyed by (PRESETS_PATH, mtime): a single entry works even when tests
-# monkeypatch PRESETS_PATH because the key changes with the path. Cleared on
-# any write via _save_presets.
-_presets_cache: tuple[Path, float, list[Preset]] | None = None
+# Keyed by (PRESETS_PATH, mtime_ns): nanosecond resolution so two writes
+# inside the same wall-clock second can't collide on filesystems with
+# 1-second mtime resolution (HFS+, FAT32). Cleared on any write via
+# _save_presets so internal updates bust the cache regardless of timing.
+_presets_cache: tuple[Path, int, list[Preset]] | None = None
 
 
 def load_presets() -> list[Preset]:
     """Load all presets from JSON (mtime-cached)."""
     global _presets_cache
     try:
-        mtime = PRESETS_PATH.stat().st_mtime
+        mtime_ns = PRESETS_PATH.stat().st_mtime_ns
     except OSError:
         _presets_cache = None
         return []
 
     if _presets_cache is not None:
-        cached_path, cached_mtime, cached_presets = _presets_cache
-        if cached_path == PRESETS_PATH and cached_mtime == mtime:
+        cached_path, cached_mtime_ns, cached_presets = _presets_cache
+        if cached_path == PRESETS_PATH and cached_mtime_ns == mtime_ns:
             return _copy_presets(cached_presets)
 
     try:
@@ -417,7 +436,7 @@ def load_presets() -> list[Preset]:
         _presets_cache = None
         return []
     if not isinstance(data, list):
-        _presets_cache = (PRESETS_PATH, mtime, [])
+        _presets_cache = (PRESETS_PATH, mtime_ns, [])
         return []
     presets = []
     for p in data:
@@ -441,7 +460,7 @@ def load_presets() -> list[Preset]:
             )
         except (TypeError, ValueError):
             logger.warning("Skipping malformed preset entry: %s", p)
-    _presets_cache = (PRESETS_PATH, mtime, list(presets))
+    _presets_cache = (PRESETS_PATH, mtime_ns, list(presets))
     return _copy_presets(presets)
 
 

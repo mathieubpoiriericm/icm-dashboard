@@ -252,10 +252,13 @@ class TestBuildEnvVarsFloat:
 
 
 class TestBuildCliArgsEdgeCases:
-    def test_unknown_run_mode_returns_bare_args(self):
+    def test_unknown_run_mode_raises(self):
+        # Silently returning bare args would fall through to pipeline/main.py's
+        # argparse default and launch the full PubMed pipeline — a hand-edited
+        # or future run_mode value must not trigger a real production run.
         config = PipelineAppConfig(run_mode="unknown_mode")
-        args = build_cli_args(config)
-        assert args == ["pipeline/main.py"]
+        with pytest.raises(ValueError, match="Unknown run_mode"):
+            build_cli_args(config)
 
     def test_standard_only_dry_run(self):
         config = PipelineAppConfig(dry_run=True, test_mode=False)

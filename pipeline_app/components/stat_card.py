@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal, get_args
 
 from nicegui import ui
@@ -10,9 +11,23 @@ StatColor = Literal["primary", "secondary", "warning", "negative", "info"]
 
 _VALID_COLORS: frozenset[str] = frozenset(get_args(StatColor))
 
+# Em-dash placeholder for missing/NaN values. Rendering ``"None"`` or
+# ``"nan"`` verbatim as a prominent metric is a visible data-quality bug
+# — callers that genuinely want zero should pass ``0`` explicitly.
+_MISSING_DISPLAY: str = "—"
+
+
+def _format_value(value: str | int | float | None) -> str:
+    """Render a stat-card value, guarding against None and NaN."""
+    if value is None:
+        return _MISSING_DISPLAY
+    if isinstance(value, float) and math.isnan(value):
+        return _MISSING_DISPLAY
+    return str(value)
+
 
 def stat_card(
-    value: str | int | float,
+    value: str | int | float | None,
     label: str,
     *,
     icon: str | None = None,
@@ -49,7 +64,7 @@ def stat_card(
         if icon:
             ui.icon(icon).classes("stat-card-icon")
         ui.label(label).classes("eyebrow q-mb-xs")
-        ui.label(str(value)).classes("stat-card-value-display")
+        ui.label(_format_value(value)).classes("stat-card-value-display")
         if delta is not None:
             tone = (
                 "delta-positive"

@@ -178,10 +178,16 @@ async def pick_path(
     Returns:
         The absolute selected path as a string, or ``None`` if cancelled.
     """
-    resolved_anchor = anchor.resolve() if anchor is not None else None
-    current_dir_holder: list[Path] = [
-        resolve_start_dir(current_value, fallback_start, resolved_anchor)
-    ]
+    # Resolve synchronous filesystem calls in a worker thread so a stalled
+    # NFS/FUSE mount or a large symlink chain doesn't block the event loop
+    # (and every other connected client) while the picker is opening.
+    resolved_anchor = (
+        await asyncio.to_thread(anchor.resolve) if anchor is not None else None
+    )
+    start_dir = await asyncio.to_thread(
+        resolve_start_dir, current_value, fallback_start, resolved_anchor
+    )
+    current_dir_holder: list[Path] = [start_dir]
     selected_file_holder: list[Path | None] = [None]
 
     with ui.dialog() as dialog, ui.card().classes("theme-card q-pa-md path-picker"):

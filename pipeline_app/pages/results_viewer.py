@@ -173,6 +173,105 @@ def _read_report(
     return report_path, report, None
 
 
+def _build_papers_rows(
+    papers_detail: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i, p in enumerate(papers_detail):
+        pmid = p.get("pmid", "")
+        rows.append(
+            {
+                # Synthetic unique key — the same PMID can appear twice on a
+                # retry, which would collide under row_key="pmid".
+                "row_id": f"{pmid}_{i}",
+                "pmid": pmid,
+                "source": p.get("source", ""),
+                "gene_count": p.get("gene_count", 0),
+                # get() returns the default only for *missing* keys; an
+                # explicit JSON null returns None, which round() rejects.
+                "processing_time": round(p.get("processing_time") or 0, 2),
+                "errors": p.get("errors", ""),
+            }
+        )
+    return rows
+
+
+def _build_genes_rows(genes_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i, g in enumerate(genes_list):
+        symbol = _gene_symbol(g)
+        pmid = g.get("pmid", "")
+        rows.append(
+            {
+                "row_id": f"{symbol}_{pmid}_{i}",
+                "symbol": symbol,
+                "protein_name": g.get("protein_name", "") or "",
+                "gwas_trait": _join_field(g, "gwas_trait"),
+                "mendelian_randomization": (
+                    "Yes" if g.get("mendelian_randomization") else "No"
+                ),
+                "omics": _join_field(
+                    g,
+                    "omics_evidence",
+                    "evidence_from_other_omics_studies",
+                ),
+                "confidence": _gene_confidence(g),
+                "pmid": pmid,
+            }
+        )
+    return rows
+
+
+def _build_rejected_rows(
+    rejected_list: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i, g in enumerate(rejected_list):
+        symbol = _gene_symbol(g)
+        rows.append(
+            {
+                "row_id": f"{symbol}_{i}",
+                "symbol": symbol,
+                "confidence": _gene_confidence(g),
+                "reason": g.get("rejection_reason", g.get("reason", "")),
+            }
+        )
+    return rows
+
+
+def _prepare_view_data(
+    project_root: str,
+    report_id: str,
+) -> tuple[
+    Path | None,
+    dict[str, Any] | None,
+    str | None,
+    dict[str, list[dict[str, Any]]],
+]:
+    """Read report and precompute all table rows in a single worker-thread call.
+
+    Row construction on a 10k-gene report is hundreds of ms of pure CPU; if
+    done after io_bound returns it would freeze the asyncio event loop (and
+    every other connected client's UI) until it finishes. Precomputing here
+    keeps the subsequent render strictly DOM-building.
+    """
+    report_path, report, error_msg = _read_report(project_root, report_id)
+    if report is None:
+        return report_path, report, error_msg, {}
+    papers_detail = report.get("papers_detail", [])
+    genes_list, rejected_list = _flatten_papers(papers_detail)
+    tables = {
+        "papers": _build_papers_rows(papers_detail),
+        "genes": _build_genes_rows(genes_list),
+        "rejected": _build_rejected_rows(rejected_list),
+        # Pass the flattened lists too — the overview tab's stat-card
+        # fallback uses their lengths when the report summary is absent.
+        "genes_list": genes_list,
+        "rejected_list": rejected_list,
+    }
+    return report_path, report, error_msg, tables
+
+
 def create_results_viewer_page(report_id: str, project_root: str) -> None:
     """Render the Results Viewer page for a given report ID."""
     if not is_safe_report_id(report_id):
@@ -190,8 +289,8 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
         ui.spinner("dots").classes("q-pa-md")
 
     async def _load() -> None:
-        report_path, report, error_msg = await run.io_bound(
-            _read_report, project_root, report_id
+        report_path, report, error_msg, tables = await run.io_bound(
+            _prepare_view_data, project_root, report_id
         )
         container.clear()
         with container:
@@ -203,15 +302,20 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
                     icon="arrow_back",
                 ).props("flat").classes("btn-ghost")
                 return
-            _render_report_body(report_path, report)
+            _render_report_body(report_path, report, tables)
 
     ui.timer(0.0, _load, once=True)
 
 
-def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
+def _render_report_body(
+    report_path: Path,
+    report: dict[str, Any],
+    tables: dict[str, list[dict[str, Any]]],
+) -> None:
     """Render the full tabbed report UI. Caller guarantees ``report`` is valid."""
     papers_detail = report.get("papers_detail", [])
-    genes_list, rejected_list = _flatten_papers(papers_detail)
+    genes_list = tables.get("genes_list", [])
+    rejected_list = tables.get("rejected_list", [])
     token_usage = report.get("token_usage", {})
     raw_genes = report.get("genes", {})
     genes_summary = raw_genes if isinstance(raw_genes, dict) else {}
@@ -382,30 +486,9 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
                         "sortable": True,
                     },
                 ]
-                rows = []
-                for i, p in enumerate(papers_detail):
-                    pmid = p.get("pmid", "")
-                    rows.append(
-                        {
-                            # Synthetic unique key — the same PMID can appear
-                            # twice on a retry, which would collide under
-                            # row_key="pmid" and break Quasar selection.
-                            "row_id": f"{pmid}_{i}",
-                            "pmid": pmid,
-                            "source": p.get("source", ""),
-                            "gene_count": p.get("gene_count", 0),
-                            # get() returns the default only for *missing*
-                            # keys; an explicit JSON null returns None, which
-                            # round() can't accept — fall back via `or 0`.
-                            "processing_time": round(
-                                p.get("processing_time") or 0, 2
-                            ),
-                            "errors": p.get("errors", ""),
-                        }
-                    )
                 ui.table(
                     columns=columns,
-                    rows=rows,
+                    rows=tables.get("papers", []),
                     row_key="row_id",
                 ).classes("w-full")
 
@@ -463,31 +546,9 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
                         "sortable": True,
                     },
                 ]
-                rows = []
-                for i, g in enumerate(genes_list):
-                    symbol = _gene_symbol(g)
-                    pmid = g.get("pmid", "")
-                    rows.append(
-                        {
-                            "row_id": f"{symbol}_{pmid}_{i}",
-                            "symbol": symbol,
-                            "protein_name": g.get("protein_name", "") or "",
-                            "gwas_trait": _join_field(g, "gwas_trait"),
-                            "mendelian_randomization": (
-                                "Yes" if g.get("mendelian_randomization") else "No"
-                            ),
-                            "omics": _join_field(
-                                g,
-                                "omics_evidence",
-                                "evidence_from_other_omics_studies",
-                            ),
-                            "confidence": _gene_confidence(g),
-                            "pmid": pmid,
-                        }
-                    )
                 ui.table(
                     columns=columns,
-                    rows=rows,
+                    rows=tables.get("genes", []),
                     row_key="row_id",
                 ).classes("w-full")
 
@@ -521,20 +582,9 @@ def _render_report_body(report_path: Path, report: dict[str, Any]) -> None:
                         "sortable": True,
                     },
                 ]
-                rows = []
-                for i, g in enumerate(rejected_list):
-                    symbol = _gene_symbol(g)
-                    rows.append(
-                        {
-                            "row_id": f"{symbol}_{i}",
-                            "symbol": symbol,
-                            "confidence": _gene_confidence(g),
-                            "reason": g.get("rejection_reason", g.get("reason", "")),
-                        }
-                    )
                 ui.table(
                     columns=columns,
-                    rows=rows,
+                    rows=tables.get("rejected", []),
                     row_key="row_id",
                 ).classes("w-full")
 

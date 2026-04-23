@@ -35,6 +35,11 @@ def create_file_browser_page(project_root: str) -> None:
     content_container: list[ui.element] = []
     tree_container: list[ui.element] = []
     refresh_btn_ref: list[ui.button] = []
+    # Reentrancy guard: button_loading sets the loading prop server-side,
+    # but the browser only applies it after a WebSocket round-trip. A user
+    # with any latency can click twice before the disabled state lands on
+    # the client, re-entering _refresh_tree and racing the tree rebuild.
+    refresh_in_flight: list[bool] = [False]
 
     def _build_tree_nodes() -> list[dict[str, Any]]:
         if not logs_dir.exists():
@@ -109,8 +114,14 @@ def create_file_browser_page(project_root: str) -> None:
     async def _refresh_tree() -> None:
         if not refresh_btn_ref:
             return
-        async with button_loading(refresh_btn_ref[0]):
-            await _load_tree()
+        if refresh_in_flight[0]:
+            return
+        refresh_in_flight[0] = True
+        try:
+            async with button_loading(refresh_btn_ref[0]):
+                await _load_tree()
+        finally:
+            refresh_in_flight[0] = False
 
     def _open_in_system_app() -> None:
         if not selected_path:

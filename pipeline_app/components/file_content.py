@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import stat as _stat
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -107,11 +108,24 @@ async def render_file_content(
     # (file rotated or deleted by the pipeline mid-render) surfaces as a
     # readable label instead of an uncaught FileNotFoundError.
     try:
-        size = await asyncio.to_thread(lambda: file_path.stat().st_size)
+        st = await asyncio.to_thread(file_path.stat)
     except (FileNotFoundError, OSError) as e:
         with container:
             ui.label(f"File no longer accessible: {e}").classes("text-negative")
         return
+
+    # Reject FIFOs, sockets, block / character devices up front. `stat()`
+    # succeeds for these with st_size = 0, so the size check below would
+    # pass and the read would block the asyncio worker thread forever
+    # (e.g. /dev/urandom is an unbounded stream).
+    if not _stat.S_ISREG(st.st_mode):
+        with container:
+            ui.label(
+                f"Not a regular file: {file_path.name} (refusing to read)"
+            ).classes("text-negative")
+        return
+
+    size = st.st_size
 
     file_type = detect_file_type(file_path.name)
     is_binary = file_type in ("image", "pdf")

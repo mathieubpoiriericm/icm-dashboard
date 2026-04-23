@@ -467,6 +467,10 @@ class TestValidatePythonPath:
 class TestSubprocessLockCancelRace:
     """Regression tests for cancel arriving before set_process."""
 
+    # cancel() awaits _process_ready.wait() with a 10s fallback timeout when
+    # no process has been registered, so this test spends ~10s in wait_for.
+    # Marked `slow` so `pytest -m "not slow"` skips it in dev loops.
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_cancel_before_set_process_sets_flag(self):
         lock = SubprocessLock()

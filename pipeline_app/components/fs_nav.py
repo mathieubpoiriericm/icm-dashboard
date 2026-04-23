@@ -149,10 +149,20 @@ def list_directory(
         Directories first (alphabetical), then files (alphabetical).
         Returns [] on PermissionError.
     """
+    def _is_dir_no_follow(p: Path) -> bool:
+        # Path.is_dir() follows symlinks and will raise OSError on a broken
+        # target or a stalled network mount; follow_symlinks=False uses the
+        # dirent type without a stat() syscall, so a dead symlink can't
+        # escape the PermissionError/OSError wrapper below.
+        try:
+            return p.is_dir(follow_symlinks=False)
+        except OSError:
+            return False
+
     try:
         raw_entries = sorted(
             base.iterdir(),
-            key=lambda p: (not p.is_dir(), p.name.lower()),
+            key=lambda p: (not _is_dir_no_follow(p), p.name.lower()),
         )
     except (PermissionError, OSError):
         return []

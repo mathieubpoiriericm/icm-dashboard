@@ -15,6 +15,24 @@ Severity = Literal["info", "warn", "error", "stderr", "debug"]
 
 _VALID_SEVERITIES: frozenset[str] = frozenset(get_args(Severity))
 
+# ANSI CSI sequences used for color / cursor-position codes. Subprocesses
+# (tqdm, click, loggers with color=True) emit these even when writing to a
+# pipe; rendered as literal "ESC[32m..." garbage otherwise. We also strip
+# bare CR that isn't part of a CRLF so in-place progress bars don't show
+# their entire animation history as one long concatenated line.
+_ANSI_ESCAPE_RE: re.Pattern[str] = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+
+def _strip_ansi(line: str) -> str:
+    """Remove ANSI escape sequences and non-terminal CRs from a log line."""
+    line = _ANSI_ESCAPE_RE.sub("", line)
+    # Bare \r inside a line typically came from a tqdm-style progress
+    # overwrite; drop everything before the last \r so only the final
+    # frame survives (matches what a terminal would show).
+    if "\r" in line:
+        line = line.rsplit("\r", 1)[-1]
+    return line
+
 # Ordered: first match wins. Bracketed tokens are checked too because many
 # loggers emit lines like "[ERROR] something failed". The Traceback pattern
 # matches the literal Python stack-trace header so casual log lines that
@@ -107,12 +125,13 @@ class LogViewer:
             severity: Explicit severity. If None, inferred via
                 ``detect_severity``.
         """
+        line = _strip_ansi(line)
         sev = severity if severity in _VALID_SEVERITIES else detect_severity(line)
         self._buf.append((line, css_class_for(sev)))
 
     def append_stderr(self, line: str) -> None:
         """Queue a stderr line (prefixed with ``[stderr]``)."""
-        self._buf.append((f"[stderr] {line}", STDERR_CSS_CLASS))
+        self._buf.append((f"[stderr] {_strip_ansi(line)}", STDERR_CSS_CLASS))
 
     def load_batch(self, entries: list[tuple[str, str]]) -> None:
         """Bulk replay path for remount: extend + immediate flush.
