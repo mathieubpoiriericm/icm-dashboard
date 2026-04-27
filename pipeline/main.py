@@ -123,6 +123,7 @@ if __name__ == "__main__":
 # --- End fast path ---
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -130,7 +131,9 @@ import traceback
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Final, TypedDict
+from typing import Any, Final, Literal, TypedDict
+
+ProgressStatus = Literal["running", "completed", "error"]
 
 import asyncpg
 import httpx
@@ -146,6 +149,7 @@ from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT / ".env")
 
 import os
+import signal
 
 # macOS Python framework builds may lack a default CA bundle at the compiled-in
 # OpenSSL path.  When SSL_CERT_FILE is not already set, point it at the certifi
@@ -260,7 +264,7 @@ _TOTAL_STAGES: Final[int] = len(_STAGES)
 def _write_progress(
     config: PipelineConfig,
     *,
-    status: str,
+    status: ProgressStatus,
     stage: str,
     stage_label: str,
     stage_number: int,
@@ -681,6 +685,7 @@ async def run_pipeline(
 
     progress_started_at = datetime.now(tz=UTC).isoformat()
     stage_idx = 0
+    progress_finalized = False
     Path(config.progress_file).parent.mkdir(parents=True, exist_ok=True)
 
     def _report_stage(idx: int) -> None:
@@ -696,6 +701,50 @@ async def run_pipeline(
             started_at=progress_started_at,
         )
 
+    def _finalize_progress(
+        *,
+        status: ProgressStatus,
+        stage_label: str,
+        stage_number: int | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        nonlocal progress_finalized
+        sid, _slabel = _STAGES[stage_idx]
+        _write_progress(
+            config,
+            status=status,
+            stage=sid,
+            stage_label=stage_label,
+            stage_number=stage_number if stage_number is not None else stage_idx + 1,
+            started_at=progress_started_at,
+            error_message=error_message,
+        )
+        progress_finalized = True
+
+    # Convert SIGTERM/SIGHUP into task cancellation so the except/finally
+    # blocks below can write a terminal progress state. SIGINT is left to
+    # asyncio's default handling (which raises KeyboardInterrupt).
+    current_task = asyncio.current_task()
+    assert current_task is not None  # always set inside `async def`
+    loop = asyncio.get_running_loop()
+    signals_to_handle: tuple[int, ...] = (signal.SIGTERM,)
+    if hasattr(signal, "SIGHUP"):
+        signals_to_handle = (*signals_to_handle, signal.SIGHUP)
+
+    def _on_signal(sig: int) -> None:
+        logger.warning("Received signal %s; cancelling pipeline run", sig)
+        if not current_task.done():
+            current_task.cancel()
+
+    installed_signals: list[int] = []
+    for sig in signals_to_handle:
+        try:
+            loop.add_signal_handler(sig, _on_signal, sig)
+        except NotImplementedError, RuntimeError, ValueError:
+            # Platform (e.g. Windows) or loop policy doesn't support it.
+            continue
+        installed_signals.append(sig)
+
     try:
         # Step 1: Search PubMed for recent papers
         _report_stage(0)
@@ -706,6 +755,10 @@ async def run_pipeline(
 
         if not all_pmids:
             logger.info("No new papers found. Pipeline complete.")
+            _finalize_progress(
+                status="completed",
+                stage_label="No new papers found",
+            )
             return metrics, None
 
         # Step 2: Filter out already-processed papers
@@ -731,6 +784,10 @@ async def run_pipeline(
 
         if not new_pmids:
             logger.info("All papers already processed. Pipeline complete.")
+            _finalize_progress(
+                status="completed",
+                stage_label="All papers already processed",
+            )
             return metrics, None
 
         # Test mode: skip LLM extraction and database merge
@@ -747,6 +804,10 @@ async def run_pipeline(
                     f"{len(new_pmids) - config.test_mode_preview_count}"
                     f" more"
                 )
+            _finalize_progress(
+                status="completed",
+                stage_label="Test-mode preview complete",
+            )
             return metrics, None
 
         # Step 3: Process papers concurrently
@@ -779,13 +840,9 @@ async def run_pipeline(
 
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
-            _write_progress(
-                config,
+            _finalize_progress(
                 status="completed",
-                stage=_STAGES[stage_idx][0],
                 stage_label="Pipeline completed (dry run)",
-                stage_number=stage_idx + 1,
-                started_at=progress_started_at,
             )
 
             total_duration = time.monotonic() - pipeline_start_time
@@ -863,33 +920,51 @@ async def run_pipeline(
             await _record_and_notify(config, run_data)
             await ping_success(config.healthcheck_url)
 
-        _write_progress(
-            config,
+        _finalize_progress(
             status="completed",
-            stage=_STAGES[-1][0],
             stage_label="Pipeline completed successfully",
             stage_number=_TOTAL_STAGES,
-            started_at=progress_started_at,
         )
 
         return metrics, run_data
 
-    except Exception:
+    except BaseException as exc:
+        # BaseException (not Exception) so SIGTERM-driven CancelledError and
+        # Ctrl+C KeyboardInterrupt also write a terminal state before
+        # propagating. Awaiting more work after cancellation is unsafe, so the
+        # healthcheck ping is skipped on interrupt.
+        is_interrupt = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
         sid, slabel = _STAGES[stage_idx]
-        _write_progress(
-            config,
+        if is_interrupt:
+            stage_label = f"Interrupted at: {slabel}"
+            error_message = f"Run was interrupted ({type(exc).__name__})"
+        else:
+            stage_label = f"Failed at: {slabel}"
+            error_message = traceback.format_exc()[:500]
+        _finalize_progress(
             status="error",
-            stage=sid,
-            stage_label=f"Failed at: {slabel}",
-            stage_number=stage_idx + 1,
-            started_at=progress_started_at,
-            error_message=traceback.format_exc()[:500],
+            stage_label=stage_label,
+            error_message=error_message,
         )
-        if manage_lifecycle:
+        if manage_lifecycle and not is_interrupt:
             await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
 
     finally:
+        # Fallback for any future exit path that forgets to call
+        # _finalize_progress — keeps the dashboard from getting stuck on
+        # "running" again.
+        if not progress_finalized:
+            _finalize_progress(
+                status="error",
+                stage_label="Run ended without writing a terminal state",
+                error_message="Pipeline exited without finalizing progress",
+            )
+
+        for sig in installed_signals:
+            with contextlib.suppress(NotImplementedError, ValueError):
+                loop.remove_signal_handler(sig)
+
         # Cleanup shared resources used only by this pipeline. The DB pool
         # is kept open for subsequent pipelines when the dispatcher is
         # managing the lifecycle — it closes the pool itself after all

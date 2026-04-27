@@ -324,6 +324,17 @@ def _reset_clinical_trials_client():
     ctg._ctg_semaphore = None
 
 
+@pytest.fixture(autouse=True)
+def _isolate_pipeline_progress_file(tmp_path, monkeypatch):
+    """Redirect run_pipeline progress writes to a temp path so tests don't
+    clobber the real logs/json/pipeline_progress.json that the dashboard
+    polls.
+    """
+    monkeypatch.setenv(
+        "PIPELINE_PROGRESS_FILE", str(tmp_path / "pipeline_progress.json")
+    )
+
+
 @pytest.fixture
 def event_loop():
     """Provide a fresh event loop for each test."""
