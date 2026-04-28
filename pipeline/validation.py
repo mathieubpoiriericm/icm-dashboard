@@ -26,7 +26,7 @@ from pipeline.config import (
     get_ncbi_params,
 )
 from pipeline.http_client import AsyncHttpClientManager
-from pipeline.llm_extraction import GeneEntry
+from pipeline.llm_providers.base import GeneEntry
 from pipeline.rate_limiter import compute_backoff, resolve_retry_delay
 
 logger = logging.getLogger(__name__)

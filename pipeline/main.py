@@ -186,7 +186,8 @@ from pipeline.healthcheck import (
     ping_success,
 )
 from pipeline.http_client import AsyncHttpClientManager
-from pipeline.llm_extraction import GeneEntry, close_async_client, extract_from_paper
+from pipeline.llm_extraction import close_async_client, extract_from_paper
+from pipeline.llm_providers.base import GeneEntry
 from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state
 from pipeline.notifications import send_pipeline_notification
 from pipeline.pdf_retrieval import (

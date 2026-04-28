@@ -282,7 +282,7 @@ rshiny_dashboard/
 │   ├── plot_tuning_runs.R        # Tuning experiment visualization
 │   ├── python_plot.py            # Clinical trials visualization generator
 │   ├── run_pipeline.sh           # Weekly cron wrapper (pipeline + trigger + restart)
-│   ├── trigger_update.r          # Regenerate QS files from database
+│   ├── trigger_update.R          # Regenerate QS files from database
 │   ├── validate_pipeline.py      # Pipeline validation script
 │   └── tuning/                   # Threshold calibration experiments
 │       ├── analyze_errors.py     # Error analysis
@@ -623,7 +623,7 @@ Cloudflare Access.
   SSL/TLS → Origin Server → Create Certificate)
 - `.env` with `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST=postgres`,
   `ANTHROPIC_API_KEY`, `NCBI_API_KEY`, `ENTREZ_EMAIL`, `UNPAYWALL_EMAIL`
-- `.Renviron` with the same DB + NCBI vars (read by `trigger_update.r`)
+- `.Renviron` with the same DB + NCBI vars (read by `trigger_update.R`)
 
 **Steps:**
 
@@ -664,13 +664,11 @@ policies are unchanged from the previous deployment.
 | `./sql` (bind, RO) | Postgres | First-boot `docker-entrypoint-initdb.d` schema |
 | `./certs` (bind, RO) | Caddy | Cloudflare Origin CA cert + key |
 
-**Weekly schedule:** `scripts/run_pipeline.sh` chains four steps and
+**Weekly schedule:** `scripts/run_pipeline.sh` chains the scheduled refresh and
 writes a log per invocation at `logs/cron_<ts>.log`:
 
-1. `docker compose run --rm pipeline python pipeline/main.py --days-back 7`
-2. `docker compose run --rm pipeline python pipeline/main.py --sync-external-data`
-3. `docker compose run --rm pipeline Rscript scripts/trigger_update.r`
-4. `docker compose restart dashboard` (dashboard re-reads `qs_data`)
+1. `docker compose run --rm --entrypoint sh pipeline -c "python pipeline/main.py --pubmed --sync-external-data --days-back 7 && Rscript scripts/trigger_update.R"`
+2. `docker compose restart dashboard` (dashboard re-reads `qs_data`)
 
 **Notifications / observability:** disabled by design. The pipeline
 supports Apprise-based notifications and Healthchecks.io pings, but the
@@ -705,7 +703,7 @@ flowchart LR
 
     C --> D
 
-    E{{"Separate mode: Sync NCBI Gene,
+    E{{"Optional selector: Sync NCBI Gene,
     UniProt, and PubMed refs"}}
 ```
 
@@ -720,6 +718,9 @@ python pipeline/main.py
 # Sync external data (NCBI Gene, UniProt, PubMed citations)
 python pipeline/main.py --sync-external-data
 
+# Run PubMed extraction and external sync in one invocation
+python pipeline/main.py --pubmed --sync-external-data
+
 # Extended lookback (30 days)
 python pipeline/main.py --days-back 30
 ```
@@ -727,9 +728,11 @@ python pipeline/main.py --days-back 30
 | Argument | Default | Description |
 | ---------- | --------- | ------------- |
 | `--days-back` | 7 | Number of days to look back for new papers (1-3650) |
+| `--pubmed` | default when no selector is given | Run PubMed extraction explicitly; can be combined with online selectors |
+| `--clinical-trials` | - | Discover cSVD-relevant ClinicalTrials.gov drug trials |
 | `--dry-run` | - | Run pipeline without writing to database |
 | `--test-mode` | - | Skip LLM extraction (test search/retrieval only) |
-| `--sync-external-data` | - | Sync NCBI Gene, UniProt, and PubMed citation data |
+| `--sync-external-data` | - | Sync NCBI Gene, UniProt, and PubMed citation data; can be combined with `--pubmed` and/or `--clinical-trials` |
 | `--local-pdfs PATH` | - | Extract genes from local PDF file(s) without PubMed search |
 | `--pmids FILE` | - | Process specific PMIDs from text file (one per line, no database) |
 | `--skip-validation` | - | Skip NCBI Gene validation (only with `--local-pdfs` or `--pmids`) |

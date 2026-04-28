@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from pipeline.config import PipelineConfig
 from pipeline.external_data_sync import (
     ExternalDataSyncResult,
     get_all_pmids,
@@ -201,6 +202,7 @@ def _mock_cleanup(mocker):
 
 class TestSyncAllExternalData:
     async def test_orchestrates_all_syncs(self, mocker):
+        config = PipelineConfig(llm_provider="ollama")
         mocker.patch(
             "pipeline.external_data_sync.get_table1_gene_symbols",
             return_value=["NOTCH3"],
@@ -213,24 +215,27 @@ class TestSyncAllExternalData:
             "pipeline.external_data_sync.get_all_pmids",
             return_value=["12345678"],
         )
-        mocker.patch(
+        mock_ncbi = mocker.patch(
             "pipeline.external_data_sync.sync_ncbi_gene_info",
             return_value=NCBISyncResult(fetched=2, cached=0, failed=0, errors=[]),
         )
-        mocker.patch(
+        mock_uniprot = mocker.patch(
             "pipeline.external_data_sync.sync_uniprot_info",
             return_value=UniProtSyncResult(fetched=1, cached=0, failed=0, errors=[]),
         )
-        mocker.patch(
+        mock_pubmed = mocker.patch(
             "pipeline.external_data_sync.sync_pubmed_citations",
             return_value=PubMedSyncResult(fetched=1, cached=0, failed=0, errors=[]),
         )
         _mock_cleanup(mocker)
 
-        result = await sync_all_external_data()
+        result = await sync_all_external_data(config=config)
         assert result.ncbi_fetched == 2
         assert result.uniprot_fetched == 1
         assert result.pubmed_fetched == 1
+        mock_ncbi.assert_called_once_with(["NOTCH3", "HTRA1"], config=config)
+        mock_uniprot.assert_called_once_with(["NOTCH3"], config=config)
+        mock_pubmed.assert_called_once_with(["12345678"], config=config)
 
     async def test_deduplicates_genes(self, mocker):
         mocker.patch(

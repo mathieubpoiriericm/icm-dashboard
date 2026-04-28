@@ -112,7 +112,10 @@ def clear_ncbi_cache() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
+async def fetch_ncbi_gene_info(
+    gene_symbol: str,
+    config: PipelineConfig | None = None,
+) -> NCBIGeneInfo | None:
     """Fetch NCBI gene information for a single gene symbol.
 
     Results are cached; concurrent callers for the same symbol share one
@@ -123,7 +126,7 @@ async def fetch_ncbi_gene_info(gene_symbol: str) -> NCBIGeneInfo | None:
         cache=_gene_cache,
         cache_lock=_get_cache_lock(),
         in_flight=_in_flight,
-        semaphore=_get_ncbi_semaphore(),
+        semaphore=_get_ncbi_semaphore(config),
         fetch_fn=lambda: _fetch_ncbi_gene_uncached(gene_symbol),
         label="NCBI gene cache",
     )
@@ -219,6 +222,7 @@ async def _fetch_gene_summary(gene_symbol: str, gene_id: str) -> NCBIGeneInfo | 
 async def fetch_ncbi_genes_batch(
     gene_symbols: list[str],
     progress_callback: Any | None = None,
+    config: PipelineConfig | None = None,
 ) -> list[NCBIGeneInfo]:
     """Fetch NCBI gene info for multiple genes concurrently.
 
@@ -227,7 +231,7 @@ async def fetch_ncbi_genes_batch(
     """
 
     async def _fetch_one(symbol: str) -> NCBIGeneInfo:
-        info = await fetch_ncbi_gene_info(symbol)
+        info = await fetch_ncbi_gene_info(symbol, config=config)
         return info or NCBIGeneInfo(
             gene_symbol=symbol,
             ncbi_uid=None,
@@ -245,11 +249,15 @@ async def fetch_ncbi_genes_batch(
 # ---------------------------------------------------------------------------
 
 
-async def sync_ncbi_gene_info(gene_symbols: list[str]) -> SyncResult:
+async def sync_ncbi_gene_info(
+    gene_symbols: list[str],
+    config: PipelineConfig | None = None,
+) -> SyncResult:
     """Sync NCBI gene info to database for given gene symbols.
 
     Args:
         gene_symbols: List of gene symbols to sync.
+        config: Pipeline config for NCBI semaphore sizing.
 
     Returns:
         SyncResult with counts of fetched, cached, and failed genes.
@@ -276,7 +284,9 @@ async def sync_ncbi_gene_info(gene_symbols: list[str]) -> SyncResult:
 
     # Fetch missing genes
     fetched_genes = await fetch_ncbi_genes_batch(
-        symbols_to_fetch, make_log_progress("NCBI fetch")
+        symbols_to_fetch,
+        make_log_progress("NCBI fetch"),
+        config=config,
     )
 
     # Store in database

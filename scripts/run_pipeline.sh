@@ -17,6 +17,6 @@ LOG="logs/cron_${TS}.log"
 # same container so we pay one cold-start, not three.
 docker compose run --rm --entrypoint sh pipeline -c \
   "python pipeline/main.py --pubmed --sync-external-data --days-back 7 && \
-   Rscript scripts/trigger_update.r" 2>&1 | tee -a "$LOG"
+   Rscript scripts/trigger_update.R" 2>&1 | tee -a "$LOG"
 
 docker compose restart dashboard 2>&1 | tee -a "$LOG"

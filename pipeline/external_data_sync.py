@@ -184,7 +184,7 @@ async def sync_all_external_data(
 
             # Step 2: Sync NCBI gene info
             logger.info("Syncing NCBI gene info...")
-            ncbi_result = await sync_ncbi_gene_info(all_genes)
+            ncbi_result = await sync_ncbi_gene_info(all_genes, config=config)
             result.ncbi_fetched = ncbi_result.fetched
             result.ncbi_cached = ncbi_result.cached
             result.ncbi_failed = ncbi_result.failed
@@ -192,7 +192,7 @@ async def sync_all_external_data(
 
             # Step 3: Sync UniProt info (Table 1 genes only)
             logger.info("Syncing UniProt info...")
-            uniprot_result = await sync_uniprot_info(table1_genes)
+            uniprot_result = await sync_uniprot_info(table1_genes, config=config)
             result.uniprot_fetched = uniprot_result.fetched
             result.uniprot_cached = uniprot_result.cached
             result.uniprot_failed = uniprot_result.failed

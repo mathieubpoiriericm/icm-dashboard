@@ -13,7 +13,7 @@ from pipeline.database import (
     get_existing_genes,
     merge_genes_transactional,
 )
-from pipeline.llm_extraction import GeneEntry
+from pipeline.llm_providers.base import GeneEntry
 
 logger = logging.getLogger(__name__)
 

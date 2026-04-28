@@ -18,7 +18,7 @@ import logging
 import pandas as pd
 import pandera.pandas as pa
 
-from pipeline.llm_extraction import GeneEntry
+from pipeline.llm_providers.base import GeneEntry
 
 logger = logging.getLogger(__name__)
 

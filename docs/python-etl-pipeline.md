@@ -27,14 +27,16 @@ Each stage is a distinct Python module. A paper flows through all five stages in
 
 ## Execution Modes
 
-The pipeline supports four mutually exclusive modes, selected via CLI flags in `pipeline/main.py`:
+The pipeline has combinable online selectors plus two mutually exclusive
+offline modes, all selected via CLI flags in `pipeline/main.py`:
 
 | Mode | Flag | Database? | Description | Example |
 | ---- | ---- | --------- | ----------- | ------- |
-| **Standard** | *(none)* | Yes | Search PubMed, retrieve, extract, validate, merge into DB | `python pipeline/main.py --days-back 30` |
+| **PubMed extraction** | *(none)* or `--pubmed` | Yes | Search PubMed, retrieve, extract, validate, merge into DB | `python pipeline/main.py --pubmed --days-back 30` |
+| **ClinicalTrials.gov** | `--clinical-trials` | Yes | Discover cSVD-relevant drug trials and refresh `clinical_trials` | `python pipeline/main.py --clinical-trials` |
+| **External sync** | `--sync-external-data` | Yes | Refresh NCBI Gene, UniProt, and PubMed citation caches | `python pipeline/main.py --pubmed --sync-external-data` |
 | **Local PDF** | `--local-pdfs PATH` | No | Extract from local PDF files, write JSON report only | `python pipeline/main.py --local-pdfs papers/` |
 | **PMID file** | `--pmids FILE` | No | Process specific PMIDs from a text file, write JSON report only | `python pipeline/main.py --pmids pmids.txt` |
-| **External sync** | `--sync-external-data` | Yes | Refresh NCBI Gene, UniProt, and PubMed citation caches | `python pipeline/main.py --sync-external-data` |
 
 Additional flags:
 
@@ -42,7 +44,7 @@ Additional flags:
 - `--test-mode` — stop before LLM extraction (prints a preview of PMIDs that would be processed).
 - `--skip-validation` — skip the NCBI gene lookup stage; only valid with `--local-pdfs` or `--pmids`. The local confidence-threshold check still runs.
 
-`--local-pdfs`, `--pmids`, and `--sync-external-data` are mutually exclusive. `main()` enforces this with explicit `parser.error()` checks.
+`--pubmed`, `--clinical-trials`, and `--sync-external-data` can be combined and run in sequence with one healthcheck ping and notification. `--local-pdfs` and `--pmids` are offline modes; each is mutually exclusive with the other and with all online selectors. `main()` enforces this with explicit `parser.error()` checks.
 
 ## Extraction Pipeline
 
@@ -176,14 +178,13 @@ Merges validated genes into PostgreSQL and records processed PMIDs.
 
 ## External Data Sync
 
-The `--sync-external-data` mode (`external_data_sync.py`) populates cache tables consumed by the R transformation step. It runs independently of the main extraction pipeline and is wrapped in an `asyncio.timeout(3600)` — a 1-hour hard cap.
+The `--sync-external-data` mode (`external_data_sync.py`) populates cache tables consumed by the R transformation step. It runs independently of the PubMed extraction and ClinicalTrials.gov discovery pipelines and is wrapped in an `asyncio.timeout(3600)` — a 1-hour hard cap.
 
-1. **ClinicalTrials.gov sync** (`clinical_trials_fetch.py`): searches CTG v2 for cSVD-relevant NCT trials using a curated condition list, maps each DRUG-type intervention to a flat record, and upserts into `clinical_trials`. Runs first so newly discovered trials flow into the gene-symbol collection below. Gated on `PIPELINE_CT_ENABLED` (default on). See the **ClinicalTrials.gov Sync** subsection below.
-2. Collects distinct gene symbols from `genes` (Table 1) and `clinical_trials` (Table 2). Table 2's `genetic_target` column is split on `,`, `;`, and `/` to unpack multi-gene entries.
-3. Extracts all PMIDs from the `genes.references` column via `extract_pmids_from_text()` (a 7–9 digit regex to avoid year-like tokens).
-4. **NCBI Gene info** (`ncbi_gene_fetch.py`): fetches description, aliases, and NCBI UID. Upserts into `ncbi_gene_info`.
-5. **UniProt info** (`uniprot_fetch.py`): fetches protein name, GO annotations (biological process, molecular function, cellular component), and UniProt URL. Upserts into `uniprot_info`. Only Table 1 genes are synced to UniProt — Table 2 (clinical trials) does not display protein-level data.
-6. **PubMed citations** (`pubmed_citations.py`): fetches formatted bibliographic data (authors, title, journal, date, DOI). Upserts into `pubmed_citations`.
+1. Collects distinct gene symbols from `genes` (Table 1) and `clinical_trials` (Table 2). Table 2's `genetic_target` column is split on `,`, `;`, and `/` to unpack multi-gene entries. Run `--clinical-trials` first when newly discovered trials should feed this set.
+2. Extracts all PMIDs from the `genes.references` column via `extract_pmids_from_text()` (a 7–9 digit regex to avoid year-like tokens).
+3. **NCBI Gene info** (`ncbi_gene_fetch.py`): fetches description, aliases, and NCBI UID. Upserts into `ncbi_gene_info`.
+4. **UniProt info** (`uniprot_fetch.py`): fetches protein name, GO annotations (biological process, molecular function, cellular component), and UniProt URL. Upserts into `uniprot_info`. Only Table 1 genes are synced to UniProt — Table 2 (clinical trials) does not display protein-level data.
+5. **PubMed citations** (`pubmed_citations.py`): fetches formatted bibliographic data (authors, title, journal, date, DOI). Upserts into `pubmed_citations`.
 
 Per-source errors are truncated to `_MAX_ERRORS_PER_SOURCE=10` before being attached to the combined `ExternalDataSyncResult` so the report doesn't balloon on widespread outages. Each external API module maintains its own in-memory LRU (same `evict_lru()` helper used by `validation.py`) and HTTP client, cleaned up in the `finally` block regardless of success.
 
