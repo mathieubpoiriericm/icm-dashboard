@@ -244,74 +244,85 @@ def _filter_dataclass_fields(data: Any, cls: type) -> dict[str, Any]:
             # Debug-level: noisy on legitimate rename/upgrade paths.
             logger.debug("Ignoring unknown field %r for %s", k, cls.__name__)
             continue
-        f = valid_fields[k]
-        # Drop null JSON values; letting them through would overwrite the
-        # dataclass default with None and cause a TypeError downstream
-        # (e.g. int(None) on days_back).
-        if v is None:
-            logger.warning(
-                "Field %s.%s dropped: got None (non-nullable)",
-                cls.__name__,
-                k,
-            )
+        coerced = _coerce_dataclass_value(cls, k, v, valid_fields[k])
+        if coerced is _DROP_FIELD:
             continue
-        # Resolve expected_type from the field's default, or from a sample
-        # produced by default_factory when present. Without the factory
-        # branch, list/dict fields would bypass the type-coercion block
-        # entirely — a future list field with a hand-edited `"tags": "x"`
-        # would reach the constructor as a string and crash at first iter.
-        expected_type: type | None = None
-        if f.default is not MISSING:
-            expected_type = type(f.default)
-        elif f.default_factory is not MISSING:
-            try:
-                expected_type = type(f.default_factory())
-            except TypeError:
-                expected_type = None
-        if expected_type is not None:
-            # bool is a subclass of int, so isinstance(True, int) is True —
-            # without this guard, JSON `true`/`false` silently lands in an
-            # int field as a bool value and flows through downstream typed
-            # call sites unchanged.
-            if expected_type is not bool and isinstance(v, bool):
-                logger.warning(
-                    "Field %s.%s=%r dropped (%s expected, got bool)",
-                    cls.__name__,
-                    k,
-                    v,
-                    expected_type.__name__,
-                )
-                continue
-            if not isinstance(v, expected_type):
-                # bool coercion is limited to int (json true/false decode to bool
-                # already, so this only catches numeric 0/1). bool("False") is True
-                # — never coerce arbitrary types.
-                if expected_type is bool:
-                    if isinstance(v, int):
-                        v = bool(v)
-                    else:
-                        logger.warning(
-                            "Field %s.%s=%r dropped (bool expected, got %s)",
-                            cls.__name__,
-                            k,
-                            v,
-                            type(v).__name__,
-                        )
-                        continue
-                else:
-                    try:
-                        v = expected_type(v)
-                    except TypeError, ValueError:
-                        logger.warning(
-                            "Field %s.%s=%r dropped (could not coerce to %s)",
-                            cls.__name__,
-                            k,
-                            v,
-                            expected_type.__name__,
-                        )
-                        continue
-        result[k] = v
+        result[k] = coerced
     return result
+
+
+_DROP_FIELD = object()
+
+
+def _expected_field_type(field) -> type | None:
+    """Infer a runtime type from a dataclass field's default value."""
+    if field.default is not MISSING:
+        return type(field.default)
+    if field.default_factory is not MISSING:
+        try:
+            return type(field.default_factory())
+        except TypeError:
+            return None
+    return None
+
+
+def _coerce_dataclass_value(
+    cls: type,
+    key: str,
+    value: Any,
+    field,
+) -> Any:
+    """Coerce one JSON value to a dataclass field's default-derived type."""
+    if value is None:
+        logger.warning(
+            "Field %s.%s dropped: got None (non-nullable)",
+            cls.__name__,
+            key,
+        )
+        return _DROP_FIELD
+
+    expected_type = _expected_field_type(field)
+    if expected_type is None:
+        return value
+
+    # bool is a subclass of int, so isinstance(True, int) is True. Rejecting
+    # it for non-bool fields avoids silently accepting JSON true/false as 1/0.
+    if expected_type is not bool and isinstance(value, bool):
+        logger.warning(
+            "Field %s.%s=%r dropped (%s expected, got bool)",
+            cls.__name__,
+            key,
+            value,
+            expected_type.__name__,
+        )
+        return _DROP_FIELD
+
+    if isinstance(value, expected_type):
+        return value
+
+    if expected_type is bool:
+        if isinstance(value, int):
+            return bool(value)
+        logger.warning(
+            "Field %s.%s=%r dropped (bool expected, got %s)",
+            cls.__name__,
+            key,
+            value,
+            type(value).__name__,
+        )
+        return _DROP_FIELD
+
+    try:
+        return expected_type(value)
+    except TypeError, ValueError:
+        logger.warning(
+            "Field %s.%s=%r dropped (could not coerce to %s)",
+            cls.__name__,
+            key,
+            value,
+            expected_type.__name__,
+        )
+        return _DROP_FIELD
 
 
 def _load_dataclass[T](path: Path, cls: type[T]) -> T:
@@ -445,30 +456,26 @@ def load_presets() -> list[Preset]:
     if not isinstance(data, list):
         _presets_cache = (PRESETS_PATH, mtime_ns, [])
         return []
-    presets = []
-    for p in data:
-        if not isinstance(p, dict):
-            logger.warning("Skipping non-dict preset entry: %r", p)
-            continue
-        # Coerce id/name to str so a hand-edited "id": 42 doesn't become a
-        # ghost preset that load_preset's string equality never matches.
-        raw_id = p.get("id")
-        raw_name = p.get("name")
-        if raw_id is None or raw_name is None:
-            logger.warning("Skipping preset entry missing id/name: %s", p)
-            continue
-        try:
-            presets.append(
-                Preset(
-                    id=str(raw_id),
-                    name=str(raw_name),
-                    config=p.get("config"),
-                )
-            )
-        except TypeError, ValueError:
-            logger.warning("Skipping malformed preset entry: %s", p)
+    presets = [preset for p in data if (preset := _preset_from_json(p)) is not None]
     _presets_cache = (PRESETS_PATH, mtime_ns, list(presets))
     return _copy_presets(presets)
+
+
+def _preset_from_json(raw: Any) -> Preset | None:
+    """Parse one preset entry, returning None for malformed records."""
+    if not isinstance(raw, dict):
+        logger.warning("Skipping non-dict preset entry: %r", raw)
+        return None
+    raw_id = raw.get("id")
+    raw_name = raw.get("name")
+    if raw_id is None or raw_name is None:
+        logger.warning("Skipping preset entry missing id/name: %s", raw)
+        return None
+    try:
+        return Preset(id=str(raw_id), name=str(raw_name), config=raw.get("config"))
+    except TypeError, ValueError:
+        logger.warning("Skipping malformed preset entry: %s", raw)
+        return None
 
 
 def _copy_presets(presets: list[Preset]) -> list[Preset]:
@@ -501,7 +508,7 @@ def save_preset(name: str, config: PipelineAppConfig) -> list[Preset]:
         Preset(
             id=preset_id,
             name=name,
-            config=strip_secrets_from_config(asdict(config)),
+            config=_preset_config(config),
         )
     )
     _save_presets(presets)
@@ -515,7 +522,7 @@ def upsert_preset(name: str, config: PipelineAppConfig) -> list[Preset]:
     preset id stays valid after the overwrite.
     """
     presets = load_presets()
-    stripped = strip_secrets_from_config(asdict(config))
+    stripped = _preset_config(config)
     for i, p in enumerate(presets):
         if p.name == name:
             presets[i] = Preset(id=p.id, name=name, config=stripped)
@@ -524,6 +531,11 @@ def upsert_preset(name: str, config: PipelineAppConfig) -> list[Preset]:
     presets.append(Preset(id=str(uuid.uuid4()), name=name, config=stripped))
     _save_presets(presets)
     return presets
+
+
+def _preset_config(config: PipelineAppConfig) -> dict[str, Any]:
+    """Serialize a config snapshot for preset persistence."""
+    return strip_secrets_from_config(asdict(config))
 
 
 def load_preset(preset_id: str) -> PipelineAppConfig | None:

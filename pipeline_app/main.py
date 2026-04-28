@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -276,72 +277,74 @@ def setup_pages(
     pipeline subprocess at run time.
     """
 
+    def _render_page(
+        current_path: str,
+        body: Callable[[], None],
+        *,
+        trailing: str | None = None,
+    ) -> None:
+        drawer = create_sidebar(tuning_runner, current_path=current_path)
+        create_header(
+            drawer,
+            tuning_runner,
+            current_path=current_path,
+            trailing=trailing,
+        )
+        with wrap_page_root():
+            body()
+        create_footer()
+
     @ui.page("/")
     def configure_run_page() -> None:
         config = load_config()
         secrets = load_env_secrets(config.project_root)
-        drawer = create_sidebar(tuning_runner, current_path="/")
-        create_header(drawer, tuning_runner, current_path="/")
-        with wrap_page_root():
-            create_configure_run_page(lock, config, secrets, pipeline_runner)
-        create_footer()
+        _render_page(
+            "/",
+            lambda: create_configure_run_page(
+                lock,
+                config,
+                secrets,
+                pipeline_runner,
+            ),
+        )
 
     @ui.page("/history")
     def run_history_page() -> None:
-        drawer = create_sidebar(tuning_runner, current_path="/history")
-        create_header(drawer, tuning_runner, current_path="/history")
-        with wrap_page_root():
-            create_run_history_page()
-        create_footer()
+        _render_page("/history", create_run_history_page)
 
     @ui.page("/results/{report_id}")
     def results_viewer_page(report_id: str) -> None:
         config = load_config()
-        drawer = create_sidebar(tuning_runner, current_path="/results")
         # Short report id in the trailing crumb keeps the header from
         # overflowing when the id is a long timestamped filename.
         trailing = f"Report · {report_id[:20]}"
-        create_header(
-            drawer,
-            tuning_runner,
-            current_path="/results",
+        _render_page(
+            "/results",
+            lambda: create_results_viewer_page(report_id, config.project_root),
             trailing=trailing,
         )
-        with wrap_page_root():
-            create_results_viewer_page(report_id, config.project_root)
-        create_footer()
 
     @ui.page("/tuning")
     def tuning_page() -> None:
         config = load_config()
         tuning_config = load_tuning_config()
-        drawer = create_sidebar(tuning_runner, current_path="/tuning")
-        create_header(drawer, tuning_runner, current_path="/tuning")
-        with wrap_page_root():
-            create_tuning_page(lock, config, tuning_config, tuning_runner)
-        create_footer()
+        _render_page(
+            "/tuning",
+            lambda: create_tuning_page(lock, config, tuning_config, tuning_runner),
+        )
 
     @ui.page("/tuning/history")
     def tuning_history_page() -> None:
         config = load_config()
-        drawer = create_sidebar(tuning_runner, current_path="/tuning/history")
-        create_header(
-            drawer,
-            tuning_runner,
-            current_path="/tuning/history",
+        _render_page(
+            "/tuning/history",
+            lambda: create_tuning_history_page(config.project_root),
         )
-        with wrap_page_root():
-            create_tuning_history_page(config.project_root)
-        create_footer()
 
     @ui.page("/files")
     def file_browser_page() -> None:
         config = load_config()
-        drawer = create_sidebar(tuning_runner, current_path="/files")
-        create_header(drawer, tuning_runner, current_path="/files")
-        with wrap_page_root():
-            create_file_browser_page(config.project_root)
-        create_footer()
+        _render_page("/files", lambda: create_file_browser_page(config.project_root))
 
 
 def main() -> None:

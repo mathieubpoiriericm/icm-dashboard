@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from nicegui import run, ui
+from nicegui import ui
 
-from pipeline_app.components.button_loading import button_loading
+from pipeline_app.components.async_loader import (
+    load_io_bound_into,
+    refresh_with_button,
+)
 from pipeline_app.components.confirm_dialog import confirm
 from pipeline_app.components.empty_state import empty_state
+from pipeline_app.components.table_utils import table_columns
 from pipeline_app.config import clear_history, load_history
 from pipeline_app.pages.results_viewer import is_safe_report_id
 
@@ -41,37 +44,15 @@ def create_run_history_page() -> None:
             )
         return rows
 
-    columns = [
-        {
-            "name": "started_at",
-            "label": "Started At",
-            "field": "started_at",
-            "sortable": True,
-        },
-        {
-            "name": "run_mode",
-            "label": "Mode",
-            "field": "run_mode",
-            "sortable": True,
-        },
-        {
-            "name": "status",
-            "label": "Status",
-            "field": "status",
-            "sortable": True,
-        },
-        {
-            "name": "exit_code",
-            "label": "Exit Code",
-            "field": "exit_code",
-            "sortable": True,
-        },
-        {
-            "name": "actions",
-            "label": "Actions",
-            "field": "actions",
-        },
-    ]
+    columns = table_columns(
+        [
+            ("started_at", "Started At"),
+            ("run_mode", "Mode"),
+            ("status", "Status"),
+            ("exit_code", "Exit Code"),
+            ("actions", "Actions", False),
+        ]
+    )
 
     table_container: list[ui.element] = []
     refresh_btn_ref: list[ui.button] = []
@@ -157,22 +138,13 @@ def create_run_history_page() -> None:
 
     async def _load_and_render() -> None:
         """Load history off-loop, then replace the placeholder with the table."""
-        rows = await run.io_bound(_get_rows)
         if not table_container:
             return
-        # Disconnect mid-io_bound leaves the container attached to a
-        # disposed client — NiceGUI raises RuntimeError on clear/mount.
-        with suppress(RuntimeError):
-            table_container[0].clear()
-            with table_container[0]:
-                _build_table(rows)
+        await load_io_bound_into(table_container[0], _get_rows, _build_table)
 
     async def _refresh_table() -> None:
         """Clear and rebuild the table with a brief loading indicator."""
-        if not refresh_btn_ref:
-            return
-        async with button_loading(refresh_btn_ref[0]):
-            await _load_and_render()
+        await refresh_with_button(refresh_btn_ref, _load_and_render)
 
     async def _clear_all() -> None:
         confirmed = await confirm(

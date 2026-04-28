@@ -186,176 +186,231 @@ async def pick_path(
     Returns:
         The absolute selected path as a string, or ``None`` if cancelled.
     """
-    # Resolve synchronous filesystem calls in a worker thread so a stalled
-    # NFS/FUSE mount or a large symlink chain doesn't block the event loop
-    # (and every other connected client) while the picker is opening.
-    resolved_anchor = (
-        await asyncio.to_thread(anchor.resolve) if anchor is not None else None
+    picker = _PathPickerDialog(
+        mode=mode,
+        anchor=anchor,
+        current_value=current_value,
+        fallback_start=fallback_start,
+        extensions=extensions,
+        allow_directories_as_files=allow_directories_as_files,
+        symlinks=symlinks,
+        title=title,
+        save_as=save_as,
+        default_filename=default_filename,
     )
-    start_dir = await asyncio.to_thread(
-        resolve_start_dir, current_value, fallback_start, resolved_anchor
-    )
-    current_dir_holder: list[Path] = [start_dir]
-    selected_file_holder: list[Path | None] = [None]
+    return await picker.open()
 
-    with ui.dialog() as dialog, ui.card().classes("theme-card q-pa-md path-picker"):
-        ui.label(title).classes("section-header")
 
-        # Empty at creation; _refresh_breadcrumb / _refresh_entries populate
-        # them in place later. No `with` scope needed because nothing is
-        # added inline.
-        bc_row = ui.row().classes("items-center wrap path-picker-breadcrumbs")
-        entries_col = ui.column().classes("path-picker-entries")
+class _PathPickerDialog:
+    """Stateful implementation behind the public ``pick_path`` coroutine."""
 
-        filename_input: ui.input | None = None
-        if save_as:
+    def __init__(
+        self,
+        *,
+        mode: PickerMode,
+        anchor: Path | None,
+        current_value: str,
+        fallback_start: Path | None,
+        extensions: frozenset[str] | None,
+        allow_directories_as_files: bool,
+        symlinks: SymlinkPolicy,
+        title: str,
+        save_as: bool,
+        default_filename: str,
+    ) -> None:
+        self.mode = mode
+        self.anchor = anchor
+        self.current_value = current_value
+        self.fallback_start = fallback_start
+        self.extensions = extensions
+        self.allow_directories_as_files = allow_directories_as_files
+        self.symlinks = symlinks
+        self.title = title
+        self.save_as = save_as
+        self.default_filename = default_filename
+
+        self.resolved_anchor: Path | None = None
+        self.current_dir: Path = Path.home()
+        self.selected_file: Path | None = None
+        self.dialog: ui.dialog | None = None
+        self.bc_row: ui.row | None = None
+        self.entries_col: ui.column | None = None
+        self.filename_input: ui.input | None = None
+        self.selected_label: ui.label | None = None
+
+    async def open(self) -> str | None:
+        # Resolve synchronous filesystem calls in a worker thread so a stalled
+        # NFS/FUSE mount or a large symlink chain doesn't block the event loop.
+        self.resolved_anchor = (
+            await asyncio.to_thread(self.anchor.resolve)
+            if self.anchor is not None
+            else None
+        )
+        self.current_dir = await asyncio.to_thread(
+            resolve_start_dir,
+            self.current_value,
+            self.fallback_start,
+            self.resolved_anchor,
+        )
+
+        with ui.dialog() as dialog, ui.card().classes(
+            "theme-card q-pa-md path-picker"
+        ):
+            self.dialog = dialog
+            self._build_dialog()
+
+        await self._refresh_entries()
+        result = await dialog
+        with suppress(RuntimeError):
+            dialog.delete()
+        return result
+
+    def _build_dialog(self) -> None:
+        ui.label(self.title).classes("section-header")
+        self.bc_row = ui.row().classes("items-center wrap path-picker-breadcrumbs")
+        self.entries_col = ui.column().classes("path-picker-entries")
+
+        if self.save_as:
             with ui.row().classes("w-full q-mt-sm"):
-                filename_input = ui.input(
+                self.filename_input = ui.input(
                     label="New file name",
-                    value=default_filename,
+                    value=self.default_filename,
                 ).classes("w-full path-picker-filename-input")
 
-        selected_label = ui.label("").classes("path-picker-caption")
-
+        self.selected_label = ui.label("").classes("path-picker-caption")
         with ui.row().classes("w-full justify-end path-picker-actions"):
             ui.button(
                 "Cancel",
-                on_click=lambda: dialog.submit(None),
+                on_click=lambda: self._submit(None),
             ).props("flat").classes("btn-ghost")
-
-            def _on_select_folder_click() -> None:
-                # Re-check the anchor at submit time so this path matches
-                # the validation _on_select_click does for file selections.
-                folder = current_dir_holder[0]
-                if resolved_anchor is not None and not is_within(
-                    folder, resolved_anchor
-                ):
-                    ui.notify("Outside allowed folder", color="warning")
-                    return
-                dialog.submit(str(folder))
-
-            if mode == "file" and allow_directories_as_files:
+            if self.mode == "file" and self.allow_directories_as_files:
                 ui.button(
                     "Select current folder",
-                    on_click=_on_select_folder_click,
+                    on_click=self._select_current_folder,
                 ).props("outline").classes("btn-secondary")
             select_btn = ui.button("Select").props("unelevated").classes("btn-primary")
+        select_btn.on_click(self._select_current)
+        self._refresh_breadcrumb()
+        self._refresh_selected_label()
 
-        def _on_select_click() -> None:
-            result = _compute_selection(
-                mode=mode,
-                current_dir=current_dir_holder[0],
-                selected_file=selected_file_holder[0],
-                anchor=resolved_anchor,
-                save_as=save_as,
-                filename=filename_input.value if filename_input is not None else "",
-            )
-            if result is None:
-                ui.notify("No valid selection", color="warning")
+    def _submit(self, value: str | None) -> None:
+        assert self.dialog is not None
+        self.dialog.submit(value)
+
+    def _select_current_folder(self) -> None:
+        if self._outside_anchor(self.current_dir):
+            ui.notify("Outside allowed folder", color="warning")
+            return
+        self._submit(str(self.current_dir))
+
+    def _select_current(self) -> None:
+        result = _compute_selection(
+            mode=self.mode,
+            current_dir=self.current_dir,
+            selected_file=self.selected_file,
+            anchor=self.resolved_anchor,
+            save_as=self.save_as,
+            filename=(
+                self.filename_input.value if self.filename_input is not None else ""
+            ),
+        )
+        if result is None:
+            ui.notify("No valid selection", color="warning")
+            return
+        self._submit(str(result))
+
+    async def _navigate_to(self, new_dir: Path) -> None:
+        if self._outside_anchor(new_dir):
+            ui.notify("Outside allowed folder", color="warning")
+            return
+        self.current_dir = await asyncio.to_thread(new_dir.resolve)
+        self.selected_file = None
+        self._refresh_breadcrumb()
+        await self._refresh_entries()
+        self._refresh_selected_label()
+
+    async def _select_file(self, path: Path) -> None:
+        if self._outside_anchor(path):
+            ui.notify("Outside allowed folder", color="warning")
+            return
+        self.selected_file = path
+        await self._refresh_entries()
+        self._refresh_selected_label()
+
+    def _outside_anchor(self, path: Path) -> bool:
+        return self.resolved_anchor is not None and not is_within(
+            path,
+            self.resolved_anchor,
+        )
+
+    def _refresh_breadcrumb(self) -> None:
+        assert self.bc_row is not None
+        self.bc_row.clear()
+        segments = _breadcrumb_segments(self.current_dir, self.resolved_anchor)
+        last_idx = len(segments) - 1
+        with self.bc_row:
+            ui.icon("folder").classes("text-primary")
+            for idx, segment in enumerate(segments):
+                label = segment.name or str(segment)
+                if idx == last_idx:
+                    ui.label(label).classes("path-picker-breadcrumb-current")
+                else:
+                    ui.button(
+                        label,
+                        on_click=lambda _e=None, s=segment: asyncio.create_task(
+                            self._navigate_to(s)
+                        ),
+                    ).props("flat dense").classes("btn-ghost")
+                    ui.label("/").classes("path-picker-breadcrumb-sep")
+
+    async def _refresh_entries(self) -> None:
+        assert self.entries_col is not None
+        items = await asyncio.to_thread(
+            list_directory,
+            self.current_dir,
+            extensions=self.extensions,
+            symlinks=self.symlinks,
+        )
+        selected = self.selected_file
+        self.entries_col.clear()
+        with self.entries_col:
+            if not items:
+                ui.label("(empty)").classes("path-picker-empty")
                 return
-            dialog.submit(str(result))
+            for item in items:
+                self._render_entry(item, selected)
 
-        select_btn.on_click(_on_select_click)
+    def _render_entry(self, item, selected: Path | None) -> None:
+        is_selected_file = (
+            not item.is_dir and selected is not None and selected == item.path
+        )
+        icon = "folder" if item.is_dir else "description"
+        base_cls = "path-picker-row w-full rounded-borders"
+        if is_selected_file:
+            base_cls += " path-picker-row-selected"
+        elif not item.is_dir and not item.matches_filter:
+            base_cls += " text-muted"
 
-        async def _navigate_to(new_dir: Path) -> None:
-            if resolved_anchor is not None and not is_within(new_dir, resolved_anchor):
-                ui.notify("Outside allowed folder", color="warning")
-                return
-            current_dir_holder[0] = await asyncio.to_thread(new_dir.resolve)
-            selected_file_holder[0] = None
-            _refresh_breadcrumb()
-            await _refresh_entries()
-            _refresh_selected_label()
+        def _on_click(i=item) -> None:
+            if i.is_dir:
+                asyncio.create_task(self._navigate_to(i.path))
+            elif self.mode == "file" and i.matches_filter:
+                asyncio.create_task(self._select_file(i.path))
 
-        async def _select_file(path: Path) -> None:
-            if resolved_anchor is not None and not is_within(path, resolved_anchor):
-                ui.notify("Outside allowed folder", color="warning")
-                return
-            selected_file_holder[0] = path
-            await _refresh_entries()
-            _refresh_selected_label()
+        with ui.row().classes(base_cls).on("click", _on_click):
+            ui.icon(icon)
+            ui.label(item.path.name)
 
-        def _refresh_breadcrumb() -> None:
-            bc_row.clear()
-            segments = _breadcrumb_segments(current_dir_holder[0], resolved_anchor)
-            last_idx = len(segments) - 1
-            with bc_row:
-                ui.icon("folder").classes("text-primary")
-                for idx, segment in enumerate(segments):
-                    is_last = idx == last_idx
-                    label = segment.name or str(segment)
-                    if is_last:
-                        ui.label(label).classes("path-picker-breadcrumb-current")
-                    else:
-                        ui.button(
-                            label,
-                            on_click=lambda _e=None, s=segment: asyncio.create_task(
-                                _navigate_to(s)
-                            ),
-                        ).props("flat dense").classes("btn-ghost")
-                        ui.label("/").classes("path-picker-breadcrumb-sep")
-
-        async def _refresh_entries() -> None:
-            items = await asyncio.to_thread(
-                list_directory,
-                current_dir_holder[0],
-                extensions=extensions,
-                symlinks=symlinks,
-            )
-            # Snapshot after the await so a concurrent _select_file update
-            # is visible at render time (sampling pre-await drops the
-            # highlight on the just-selected file).
-            selected = selected_file_holder[0]
-            entries_col.clear()
-            with entries_col:
-                if not items:
-                    ui.label("(empty)").classes("path-picker-empty")
-                    return
-                for item in items:
-                    _render_entry(item, selected)
-
-        def _render_entry(item, selected: Path | None) -> None:
-            # list_directory's item.path shares current_dir's resolution,
-            # and _select_file stores paths drawn from the same listing —
-            # so pointer-style equality works without an extra resolve().
-            is_selected_file = (
-                not item.is_dir and selected is not None and selected == item.path
-            )
-            icon = "folder" if item.is_dir else "description"
-            base_cls = "path-picker-row w-full rounded-borders"
-            if is_selected_file:
-                base_cls += " path-picker-row-selected"
-            elif not item.is_dir and not item.matches_filter:
-                base_cls += " text-muted"
-
-            def _on_click(i=item) -> None:
-                if i.is_dir:
-                    asyncio.create_task(_navigate_to(i.path))
-                elif mode == "file" and i.matches_filter:
-                    asyncio.create_task(_select_file(i.path))
-
-            with ui.row().classes(base_cls).on("click", _on_click):
-                ui.icon(icon)
-                ui.label(item.path.name)
-
-        def _refresh_selected_label() -> None:
-            if save_as:
-                selected_label.text = f"Save in: {current_dir_holder[0]}"
-            elif mode == "directory":
-                selected_label.text = f"Selected folder: {current_dir_holder[0]}"
-            elif selected_file_holder[0] is not None:
-                selected_label.text = f"Selected: {selected_file_holder[0]}"
-            else:
-                selected_label.text = "(no file selected)"
-
-        _refresh_breadcrumb()
-        _refresh_selected_label()
-
-    await _refresh_entries()
-    result = await dialog
-    with suppress(RuntimeError):
-        dialog.delete()
-    return result
+    def _refresh_selected_label(self) -> None:
+        assert self.selected_label is not None
+        if self.save_as:
+            self.selected_label.text = f"Save in: {self.current_dir}"
+        elif self.mode == "directory":
+            self.selected_label.text = f"Selected folder: {self.current_dir}"
+        elif self.selected_file is not None:
+            self.selected_label.text = f"Selected: {self.selected_file}"
+        else:
+            self.selected_label.text = "(no file selected)"
 
 
 def _compute_selection(

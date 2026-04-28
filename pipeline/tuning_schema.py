@@ -1,0 +1,87 @@
+"""Shared tuning-run CSV schema metadata."""
+
+from __future__ import annotations
+
+TUNING_RUN_CSV_COLUMNS: list[str] = [
+    "run_id",
+    "timestamp",
+    "prompt_version",
+    "confidence_threshold",
+    "llm_model",
+    "model_version",
+    "llm_effort",
+    "test_pdf",
+    "total_extracted",
+    "total_validated",
+    "total_rejected",
+    "acceptance_rate",
+    "true_positives",
+    "false_positives",
+    "fn_threshold",
+    "fn_miss",
+    "precision",
+    "recall",
+    "f1",
+    "f2",
+    "composite_score",
+    "estimated_cost_usd",
+    "input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "total_processing_time",
+    "llm_time",
+    "run_group",
+    "notes",
+]
+
+# Numeric columns emitted by track_run.py plus legacy names that can still
+# appear in historical tuning_runs.csv files.
+TUNING_NUMERIC_COLUMNS: frozenset[str] = frozenset(
+    {
+        "precision",
+        "recall",
+        "f1",
+        "f2",
+        "threshold",
+        "tp",
+        "fp",
+        "fn",
+        "tn",
+        "true_positives",
+        "false_positives",
+        "fn_threshold",
+        "fn_miss",
+        "composite_score",
+        "confidence_threshold",
+        "f_beta_weight",
+        "total_extracted",
+        "total_validated",
+        "total_rejected",
+        "total_genes",
+        "total_papers",
+        "acceptance_rate",
+        "estimated_cost_usd",
+        "input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "total_processing_time",
+        "llm_time",
+    }
+)
+
+LOWER_IS_BETTER_COLUMNS: frozenset[str] = frozenset(
+    {
+        "fp",
+        "fn",
+        "false_positives",
+        "fn_threshold",
+        "fn_miss",
+        "total_rejected",
+        "estimated_cost_usd",
+        "input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "total_processing_time",
+        "llm_time",
+    }
+)

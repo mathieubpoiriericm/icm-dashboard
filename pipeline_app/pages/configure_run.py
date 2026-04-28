@@ -13,17 +13,15 @@ from typing import Literal
 from nicegui import context, ui
 
 from pipeline.config import OLLAMA_PROMPT_VERSIONS
-from pipeline_app.components.confirm_dialog import confirm
-from pipeline_app.components.log_viewer import (
-    STDERR_CSS_CLASS,
-    LogViewer,
-    css_class_for,
-    detect_severity,
+from pipeline_app.components.execution_panel import ExecutionPanel
+from pipeline_app.components.form_fields import (
+    bound_number,
+    bound_path_input,
+    bound_select,
 )
 from pipeline_app.components.path_picker import pick_path
-from pipeline_app.components.preset_dialog import prompt_preset_name
+from pipeline_app.components.preset_selector import create_preset_selector
 from pipeline_app.components.provider_section import apply_provider_widget_state
-from pipeline_app.components.stage_tracker import StageTracker, create_stage_tracker
 from pipeline_app.config import (
     LLM_EFFORTS,
     LLM_MODELS,
@@ -32,13 +30,9 @@ from pipeline_app.config import (
     EnvSecrets,
     PipelineAppConfig,
     add_run_to_history,
-    delete_preset,
     load_env_secrets,
-    load_preset,
-    load_presets,
     save_config,
     strip_secrets_from_config,
-    upsert_preset,
 )
 from pipeline_app.runner import (
     PIPELINE_STAGES,
@@ -74,164 +68,56 @@ def create_configure_run_page(
     ui.label("Configure & Run").classes("page-title")
 
     run_status_label: list[ui.label] = []
-    stage_tracker_ref: list[StageTracker] = []
-    log_viewer_ref: list[LogViewer] = []
+    panel_ref: list[ExecutionPanel] = []
     run_btn_ref: list[ui.button] = []
 
     def _refresh_stage_tracker() -> None:
-        # In-place update: tracker elements already exist in the DOM, just
-        # re-read runner.stage_statuses. No clear+rebuild, no visible flash.
-        with suppress(RuntimeError):
-            if stage_tracker_ref:
-                stage_tracker_ref[0].update(runner.stage_statuses)
+        if panel_ref:
+            panel_ref[0].refresh(runner.stage_statuses)
 
     with ui.splitter(value=40).classes("w-full") as splitter:
         with splitter.before, ui.card().classes("w-full q-pa-md theme-card"):
             # ---- Presets ----
-            ui.label("Presets").classes("section-header")
-            presets = load_presets()
-            preset_options = {p.id: p.name for p in presets}
-            preset_select = ui.select(
-                options=preset_options,
-                label="Preset",
-                value=None,
-            ).classes("w-full")
-
-            with ui.row().classes("q-mb-md gap-sm"):
-                ui.button(
-                    "Load",
-                    on_click=lambda: _load_preset(preset_select.value),
-                    icon="download",
-                ).props("flat").classes("btn-ghost")
-                ui.button(
-                    "Save",
-                    on_click=lambda: _save_current_preset(),
-                    icon="save",
-                ).props("flat").classes("btn-ghost")
-                ui.button(
-                    "Delete",
-                    on_click=lambda: _delete_preset(preset_select.value),
-                    icon="delete",
-                ).props("unelevated").classes("btn-destructive")
-
-            async def _load_preset(preset_id: str | None) -> None:
-                if not preset_id:
-                    ui.notify("No preset selected", color="warning")
-                    return
-                # Loading overwrites every field in the live config — confirm
-                # so a misclick doesn't silently discard unsaved form edits.
-                confirmed = await confirm(
-                    "Loading this preset will overwrite the current form "
-                    "settings. Continue?",
-                    title="Load Preset",
-                )
-                if not confirmed:
-                    return
-                loaded = load_preset(preset_id)
-                if loaded is None:
-                    ui.notify("Preset not found", color="negative")
-                    return
-                for field in dataclasses.fields(loaded):
-                    setattr(config, field.name, getattr(loaded, field.name))
-                ui.notify("Preset loaded", color="positive")
-
-            async def _save_current_preset() -> None:
-                result = await prompt_preset_name()
-                if not result:
-                    return
-                existing_names = {p.name for p in load_presets()}
-                if result in existing_names:
-                    confirmed = await confirm(
-                        f"A preset named '{result}' already exists. Overwrite it?",
-                        title="Overwrite Preset",
-                    )
-                    if not confirmed:
-                        return
-                updated = upsert_preset(result, config)
-                ui.notify(f"Saved preset: {result}", color="positive")
-                preset_select.options = {p.id: p.name for p in updated}
-                # Name-match (not "last") so the right id is selected whether
-                # we inserted or replaced.
-                preset_select.value = next(
-                    (p.id for p in updated if p.name == result), None
-                )
-                preset_select.update()
-
-            async def _delete_preset(preset_id: str | None) -> None:
-                if not preset_id:
-                    ui.notify("No preset selected", color="warning")
-                    return
-                confirmed = await confirm(
-                    "Are you sure you want to delete this preset?",
-                    title="Delete Preset",
-                )
-                if not confirmed:
-                    return
-                updated = delete_preset(preset_id)
-                ui.notify("Preset deleted", color="positive")
-                preset_select.options = {p.id: p.name for p in updated}
-                preset_select.value = None
-                preset_select.update()
+            create_preset_selector(config)
 
             ui.separator().classes("nav-separator")
 
             # ---- Run Mode ----
             ui.label("Run Mode").classes("section-header")
-            ui.select(
-                options=RUN_MODES,
-                label="Mode",
-                value=config.run_mode,
-            ).classes("w-full").bind_value(config, "run_mode")
+            bound_select(config, "run_mode", options=RUN_MODES, label="Mode")
 
             with ui.column().classes("w-full") as standard_fields:
-                ui.number(
+                bound_number(
+                    config,
+                    "days_back",
                     label="Days Back",
-                    value=config.days_back,
                     min=1,
                     max=365,
                     # precision=0 blocks decimals; without it 0.5 slips past
                     # min=1 because int(0.5) == 0.
                     precision=0,
-                ).classes("w-full").bind_value(config, "days_back")
+                )
                 ui.checkbox("Dry Run").bind_value(config, "dry_run")
                 ui.checkbox("Test Mode").bind_value(config, "test_mode")
                 ui.checkbox("Sync External Data").bind_value(
                     config, "sync_external_data"
                 )
 
-            with (
-                ui.column().classes("w-full") as local_pdfs_fields,
-                ui.row().classes("w-full items-center gap-xs no-wrap"),
-            ):
-                local_pdfs_inp = (
-                    ui.input(
-                        label="Local PDFs Path",
-                        value=config.local_pdfs_path,
-                    )
-                    .classes("flex-1")
-                    .bind_value(config, "local_pdfs_path")
+            with ui.column().classes("w-full") as local_pdfs_fields:
+                bound_path_input(
+                    config,
+                    "local_pdfs_path",
+                    label="Local PDFs Path",
+                    on_pick=lambda inp: _pick_local_pdfs(inp),
                 )
-                ui.button(
-                    icon="folder_open",
-                    on_click=lambda: _pick_local_pdfs(local_pdfs_inp),
-                ).props("flat dense").classes("btn-icon")
 
-            with (
-                ui.column().classes("w-full") as pmid_list_fields,
-                ui.row().classes("w-full items-center gap-xs no-wrap"),
-            ):
-                pmids_inp = (
-                    ui.input(
-                        label="PMIDs File Path",
-                        value=config.pmids_path,
-                    )
-                    .classes("flex-1")
-                    .bind_value(config, "pmids_path")
+            with ui.column().classes("w-full") as pmid_list_fields:
+                bound_path_input(
+                    config,
+                    "pmids_path",
+                    label="PMIDs File Path",
+                    on_pick=lambda inp: _pick_pmids(inp),
                 )
-                ui.button(
-                    icon="folder_open",
-                    on_click=lambda: _pick_pmids(pmids_inp),
-                ).props("flat dense").classes("btn-icon")
 
             with ui.column().classes("w-full") as skip_validation_fields:
                 ui.checkbox("Skip Validation").bind_value(config, "skip_validation")
@@ -291,51 +177,41 @@ def create_configure_run_page(
             ui.label("LLM Settings").classes("section-header")
 
             provider_select = (
-                ui.select(
+                bound_select(
+                    config,
+                    "llm_provider",
                     options=PROVIDER_LABELS,
                     label="Provider",
-                    value=config.llm_provider,
                 )
-                .classes("w-full")
-                .bind_value(config, "llm_provider")
             )
 
             claude_model_select = (
-                ui.select(
-                    options=LLM_MODELS,
-                    label="Model",
-                    value=config.llm_model,
-                )
-                .classes("w-full")
-                .bind_value(config, "llm_model")
+                bound_select(config, "llm_model", options=LLM_MODELS, label="Model")
             )
             claude_effort_select = (
-                ui.select(
+                bound_select(
+                    config,
+                    "llm_effort",
                     options=LLM_EFFORTS,
                     label="Effort",
-                    value=config.llm_effort,
                 )
-                .classes("w-full")
-                .bind_value(config, "llm_effort")
             )
             claude_max_tokens = (
-                ui.number(
+                bound_number(
+                    config,
+                    "llm_max_tokens",
                     label="Max Tokens (0 = default)",
-                    value=config.llm_max_tokens,
                     min=0,
                 )
-                .classes("w-full")
-                .bind_value(config, "llm_max_tokens")
             )
 
             prompt_select = (
-                ui.select(
+                bound_select(
+                    config,
+                    "prompt_version",
                     options=PROMPT_VERSIONS,
                     label="Prompt Version",
-                    value=config.prompt_version,
                 )
-                .classes("w-full")
-                .bind_value(config, "prompt_version")
             )
 
             with ui.column().classes("w-full") as ollama_section:
@@ -350,13 +226,14 @@ def create_configure_run_page(
                     .classes("w-full")
                     .bind_value(config, "ollama_model")
                 )
-                ui.number(
+                bound_number(
+                    config,
+                    "ollama_num_ctx",
                     label="Context window (num_ctx)",
-                    value=config.ollama_num_ctx,
                     min=1024,
                     max=131_072,
                     step=1024,
-                ).classes("w-full").bind_value(config, "ollama_num_ctx")
+                )
 
             async def _refresh_provider_ui() -> None:
                 is_ollama = apply_provider_widget_state(
@@ -391,19 +268,21 @@ def create_configure_run_page(
                     config.ollama_model = current
 
             provider_select.on_value_change(lambda _: _refresh_provider_ui())
-            ui.number(
+            bound_number(
+                config,
+                "confidence_threshold",
                 label="Confidence Threshold",
-                value=config.confidence_threshold,
                 min=0.0,
                 max=1.0,
                 step=0.01,
                 format="%.2f",
-            ).classes("w-full").bind_value(config, "confidence_threshold")
-            ui.number(
+            )
+            bound_number(
+                config,
+                "max_paper_text_chars",
                 label="Max Paper Text Chars",
-                value=config.max_paper_text_chars,
                 min=1000,
-            ).classes("w-full").bind_value(config, "max_paper_text_chars")
+            )
 
             ui.timer(0, _refresh_provider_ui, once=True)
 
@@ -411,93 +290,79 @@ def create_configure_run_page(
 
             # ---- Concurrency ----
             ui.label("Concurrency").classes("section-header")
-            ui.number(
+            bound_number(
+                config,
+                "max_concurrent_papers",
                 label="Max Concurrent Papers",
-                value=config.max_concurrent_papers,
                 min=1,
                 max=50,
-            ).classes("w-full").bind_value(config, "max_concurrent_papers")
-            ui.number(
+            )
+            bound_number(
+                config,
+                "rpm_limit",
                 label="RPM Limit",
-                value=config.rpm_limit,
                 min=1,
-            ).classes("w-full").bind_value(config, "rpm_limit")
-            ui.number(
+            )
+            bound_number(
+                config,
+                "tpm_limit",
                 label="TPM Limit",
-                value=config.tpm_limit,
                 min=1000,
-            ).classes("w-full").bind_value(config, "tpm_limit")
-            ui.number(
+            )
+            bound_number(
+                config,
+                "estimated_tokens_per_call",
                 label="Estimated Tokens Per Call",
-                value=config.estimated_tokens_per_call,
                 min=1000,
-            ).classes("w-full").bind_value(config, "estimated_tokens_per_call")
+            )
 
             ui.separator().classes("nav-separator")
 
             # ---- Retry Settings ----
             ui.label("Retry Settings").classes("section-header")
-            ui.number(
+            bound_number(
+                config,
+                "max_retries",
                 label="Max Retries",
-                value=config.max_retries,
                 min=0,
-            ).classes("w-full").bind_value(config, "max_retries")
-            ui.number(
+            )
+            bound_number(
+                config,
+                "max_rate_limit_retries",
                 label="Max Rate Limit Retries",
-                value=config.max_rate_limit_retries,
                 min=0,
-            ).classes("w-full").bind_value(config, "max_rate_limit_retries")
-            ui.number(
+            )
+            bound_number(
+                config,
+                "rate_limit_retry_delay",
                 label="Rate Limit Retry Delay (s)",
-                value=config.rate_limit_retry_delay,
                 min=0.0,
                 step=0.5,
                 format="%.1f",
-            ).classes("w-full").bind_value(config, "rate_limit_retry_delay")
+            )
 
             ui.separator().classes("nav-separator")
 
             # ---- Environment ----
             ui.label("Environment").classes("section-header")
-            with ui.row().classes("w-full items-center gap-xs no-wrap"):
-                python_inp = (
-                    ui.input(
-                        label="Python Path",
-                        value=config.python_path,
-                    )
-                    .classes("flex-1")
-                    .bind_value(config, "python_path")
-                )
-                ui.button(
-                    icon="folder_open",
-                    on_click=lambda: _pick_python_path(python_inp),
-                ).props("flat dense").classes("btn-icon")
-            with ui.row().classes("w-full items-center gap-xs no-wrap"):
-                project_inp = (
-                    ui.input(
-                        label="Project Root",
-                        value=config.project_root,
-                    )
-                    .classes("flex-1")
-                    .bind_value(config, "project_root")
-                )
-                ui.button(
-                    icon="folder_open",
-                    on_click=lambda: _pick_project_root(project_inp),
-                ).props("flat dense").classes("btn-icon")
-            with ui.row().classes("w-full items-center gap-xs no-wrap"):
-                progress_inp = (
-                    ui.input(
-                        label="Progress File (optional)",
-                        value=config.progress_file,
-                    )
-                    .classes("flex-1")
-                    .bind_value(config, "progress_file")
-                )
-                ui.button(
-                    icon="folder_open",
-                    on_click=lambda: _pick_progress_file(progress_inp),
-                ).props("flat dense").classes("btn-icon")
+            bound_path_input(
+                config,
+                "python_path",
+                label="Python Path",
+                on_pick=lambda inp: _pick_python_path(inp),
+            )
+            bound_path_input(
+                config,
+                "project_root",
+                label="Project Root",
+                on_pick=lambda inp: _pick_project_root(inp),
+            )
+            bound_path_input(
+                config,
+                "progress_file",
+                label="Progress File (optional)",
+                on_pick=lambda inp: _pick_progress_file(inp),
+            )
 
             async def _pick_python_path(inp: ui.input) -> None:
                 current = inp.value or "python3"
@@ -583,10 +448,8 @@ def create_configure_run_page(
         with splitter.after, ui.card().classes("w-full q-pa-md theme-card"):
             ui.label("Execution").classes("section-header q-mb-sm")
 
-            with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated"):
-                stage_tracker_ref.append(
-                    create_stage_tracker(PIPELINE_STAGES, runner.stage_statuses)
-                )
+            panel = ExecutionPanel(PIPELINE_STAGES, runner.stage_statuses)
+            panel_ref.append(panel)
 
             ui.button(
                 "Refresh",
@@ -616,16 +479,13 @@ def create_configure_run_page(
                         add=tone_class,
                     )
 
-            log_viewer = LogViewer()
-            log_viewer_ref.append(log_viewer)
-
             def _on_stdout(line: str) -> None:
-                if log_viewer_ref:
-                    log_viewer_ref[0].append(line)
+                if panel_ref:
+                    panel_ref[0].append_stdout(line)
 
             def _on_stderr(line: str) -> None:
-                if log_viewer_ref:
-                    log_viewer_ref[0].append_stderr(line)
+                if panel_ref:
+                    panel_ref[0].append_stderr(line)
 
             def _on_stage(_stage: str) -> None:
                 # Runner mutates stage_statuses before this callback fires;
@@ -652,13 +512,7 @@ def create_configure_run_page(
             # DOM paints in one cycle instead of N × 50 ms flush ticks, then
             # re-sync the tracker from runner.stage_statuses.
             if runner.log_lines:
-                replay: list[tuple[str, str]] = []
-                for type_, line in runner.log_lines:
-                    if type_ == "out":
-                        replay.append((line, css_class_for(detect_severity(line))))
-                    else:
-                        replay.append((f"[stderr] {line}", STDERR_CSS_CLASS))
-                log_viewer.load_batch(replay)
+                panel.replay(runner.log_lines)
             _refresh_stage_tracker()
             if lock.is_running:
                 _set_run_status("Running...", "neutral")
@@ -690,8 +544,8 @@ def create_configure_run_page(
                 _refresh_stage_tracker()
 
                 try:
-                    if log_viewer_ref:
-                        log_viewer_ref[0].clear()
+                    if panel_ref:
+                        panel_ref[0].clear_log()
 
                     started_at = datetime.now(UTC)
                     fresh_secrets = load_env_secrets(

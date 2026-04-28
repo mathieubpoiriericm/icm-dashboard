@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import stat as _stat
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -49,6 +50,8 @@ _TEXT_EXTS = frozenset({".md", ".txt", ".log"})
 _IMAGE_ZOOM_STEP: float = 0.25
 _IMAGE_ZOOM_MIN: float = 0.25
 _IMAGE_ZOOM_MAX: float = 4.0
+
+FileRenderer = Callable[[Path, "Element"], Awaitable[None]]
 
 
 def detect_file_type(filename: str) -> str | None:
@@ -140,93 +143,128 @@ async def render_file_content(
             ).classes("text-negative")
         return
 
-    if file_type == "json":
-        try:
-            content = await asyncio.to_thread(file_path.read_text, encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as e:
-            with container:
-                ui.label(f"Error reading file: {e}").classes("text-negative")
-            return
-        # json.dumps(indent=2) can balloon compact JSON 3-5× in memory; skip
-        # the round-trip when content is already over the display cap.
-        if _exceeds_display_cap(content):
-            formatted = content
-        else:
-            try:
-                formatted = json.dumps(json.loads(content), indent=2)
-            except json.JSONDecodeError:
-                formatted = content
-        with container:
-            ui.code(_truncate_for_display(formatted), language="json")
-
-    elif file_type == "csv":
-        try:
-            # Read one extra row so "exactly MAX_CSV_ROWS" can be distinguished
-            # from "truncated" — nrows=MAX_CSV_ROWS alone gives len == cap in
-            # both cases, causing a false "Showing first N rows" label on
-            # files that happen to have exactly the cap.
-            df = cast(
-                pd.DataFrame,
-                await asyncio.to_thread(
-                    pd.read_csv,
-                    file_path,
-                    encoding="utf-8",
-                    nrows=MAX_CSV_ROWS + 1,
-                ),
-            )
-        except (OSError, UnicodeDecodeError, pd.errors.ParserError) as e:
-            with container:
-                ui.label(f"Error reading CSV: {e}").classes("text-negative")
-            return
-        truncated = len(df) > MAX_CSV_ROWS
-        if truncated:
-            df = df.iloc[:MAX_CSV_ROWS]
-        with container:
-            if truncated:
-                ui.label(f"Showing first {MAX_CSV_ROWS} rows only.").classes(
-                    "text-muted"
-                )
-            ui.table.from_pandas(df).classes("w-full")
-
-    elif file_type == "image":
-        try:
-            raw = await asyncio.to_thread(file_path.read_bytes)
-        except OSError as e:
-            with container:
-                ui.label(f"Error reading file: {e}").classes("text-negative")
-            return
-        data = base64.b64encode(raw).decode()
-        ext = file_path.suffix.lower().lstrip(".")
-        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-        _render_image_viewer(container, f"data:{mime};base64,{data}")
-
-    elif file_type == "pdf":
-        try:
-            raw = await asyncio.to_thread(file_path.read_bytes)
-        except OSError as e:
-            with container:
-                ui.label(f"Error reading file: {e}").classes("text-negative")
-            return
-        data = base64.b64encode(raw).decode()
-        with container:
-            ui.html(
-                f'<iframe src="data:application/pdf;base64,{data}" '
-                f'class="file-preview-pdf"></iframe>'
-            )
-
-    elif file_type == "text":
-        try:
-            content = await asyncio.to_thread(file_path.read_text, encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as e:
-            with container:
-                ui.label(f"Error reading file: {e}").classes("text-negative")
-            return
-        with container:
-            ui.code(_truncate_for_display(content))
-
-    else:
+    renderer = _FILE_RENDERERS.get(file_type or "")
+    if renderer is None:
         with container:
             ui.label("Unsupported file type.")
+        return
+    await renderer(file_path, container)
+
+
+def _render_error(container: Element, message: str) -> None:
+    from nicegui import ui
+
+    with container:
+        ui.label(message).classes("text-negative")
+
+
+async def _read_text_or_error(
+    file_path: Path,
+    container: Element,
+) -> str | None:
+    try:
+        return await asyncio.to_thread(file_path.read_text, encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        _render_error(container, f"Error reading file: {e}")
+        return None
+
+
+async def _read_bytes_or_error(
+    file_path: Path,
+    container: Element,
+) -> bytes | None:
+    try:
+        return await asyncio.to_thread(file_path.read_bytes)
+    except OSError as e:
+        _render_error(container, f"Error reading file: {e}")
+        return None
+
+
+async def _render_json_file(file_path: Path, container: Element) -> None:
+    from nicegui import ui
+
+    content = await _read_text_or_error(file_path, container)
+    if content is None:
+        return
+    if _exceeds_display_cap(content):
+        formatted = content
+    else:
+        try:
+            formatted = json.dumps(json.loads(content), indent=2)
+        except json.JSONDecodeError:
+            formatted = content
+    with container:
+        ui.code(_truncate_for_display(formatted), language="json")
+
+
+async def _render_csv_file(file_path: Path, container: Element) -> None:
+    from nicegui import ui
+
+    try:
+        # Read one extra row so "exactly MAX_CSV_ROWS" can be distinguished
+        # from "truncated".
+        df = cast(
+            pd.DataFrame,
+            await asyncio.to_thread(
+                pd.read_csv,
+                file_path,
+                encoding="utf-8",
+                nrows=MAX_CSV_ROWS + 1,
+            ),
+        )
+    except (OSError, UnicodeDecodeError, pd.errors.ParserError) as e:
+        _render_error(container, f"Error reading CSV: {e}")
+        return
+    truncated = len(df) > MAX_CSV_ROWS
+    if truncated:
+        df = df.iloc[:MAX_CSV_ROWS]
+    with container:
+        if truncated:
+            ui.label(f"Showing first {MAX_CSV_ROWS} rows only.").classes("text-muted")
+        ui.table.from_pandas(df).classes("w-full")
+
+
+async def _render_image_file(file_path: Path, container: Element) -> None:
+    raw = await _read_bytes_or_error(file_path, container)
+    if raw is None:
+        return
+    data = base64.b64encode(raw).decode()
+    ext = file_path.suffix.lower().lstrip(".")
+    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+    _render_image_viewer(container, f"data:{mime};base64,{data}")
+
+
+async def _render_pdf_file(file_path: Path, container: Element) -> None:
+    from nicegui import ui
+
+    raw = await _read_bytes_or_error(file_path, container)
+    if raw is None:
+        return
+    data = base64.b64encode(raw).decode()
+    with container:
+        ui.html(
+            f'<iframe src="data:application/pdf;base64,{data}" '
+            f'class="file-preview-pdf"></iframe>'
+        )
+
+
+async def _render_text_file(file_path: Path, container: Element) -> None:
+    from nicegui import ui
+
+    content = await _read_text_or_error(file_path, container)
+    if content is None:
+        return
+    with container:
+        ui.code(_truncate_for_display(content))
+
+
+_FILE_RENDERERS: dict[str, FileRenderer] = {
+    "json": _render_json_file,
+    "csv": _render_csv_file,
+    "image": _render_image_file,
+    "pdf": _render_pdf_file,
+    "text": _render_text_file,
+}
 
 
 def _render_image_viewer(container: Element, src: str) -> None:

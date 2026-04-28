@@ -5,14 +5,15 @@ from __future__ import annotations
 import json
 import math
 import re
-from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from nicegui import run, ui
+from nicegui import ui
 
+from pipeline_app.components.async_loader import load_io_bound_into
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.components.stat_card import stat_card
+from pipeline_app.components.table_utils import table_columns
 from pipeline_app.theme import (
     CHART_ACCENT_COLORS,
     COLORS,
@@ -329,26 +330,33 @@ def create_results_viewer_page(report_id: str, project_root: str) -> None:
     with container:
         ui.spinner("dots").classes("q-pa-md")
 
+    def _render_loaded(
+        result: tuple[
+            Path | None,
+            dict[str, Any] | None,
+            str | None,
+            dict[str, list[dict[str, Any]]],
+        ],
+    ) -> None:
+        report_path, report, error_msg, tables = result
+        if error_msg is not None or report is None or report_path is None:
+            ui.label(error_msg or "Unable to load report.").classes("text-negative")
+            ui.button(
+                "Back to History",
+                on_click=lambda: ui.navigate.to("/history"),
+                icon="arrow_back",
+            ).props("flat").classes("btn-ghost")
+            return
+        _render_report_body(report_path, report, tables)
+
     async def _load() -> None:
-        report_path, report, error_msg, tables = await run.io_bound(
-            _prepare_view_data, project_root, report_id
+        await load_io_bound_into(
+            container,
+            _prepare_view_data,
+            _render_loaded,
+            project_root,
+            report_id,
         )
-        # Disconnect mid-io_bound leaves the container attached to a
-        # disposed client — NiceGUI raises RuntimeError on clear/mount.
-        with suppress(RuntimeError):
-            container.clear()
-            with container:
-                if error_msg is not None or report is None or report_path is None:
-                    ui.label(error_msg or "Unable to load report.").classes(
-                        "text-negative"
-                    )
-                    ui.button(
-                        "Back to History",
-                        on_click=lambda: ui.navigate.to("/history"),
-                        icon="arrow_back",
-                    ).props("flat").classes("btn-ghost")
-                    return
-                _render_report_body(report_path, report, tables)
 
     ui.timer(0.0, _load, once=True)
 
@@ -500,38 +508,15 @@ def _render_report_body(
                     "This pipeline run did not process any papers.",
                 )
             else:
-                columns = [
-                    {
-                        "name": "pmid",
-                        "label": "PMID",
-                        "field": "pmid",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "source",
-                        "label": "Source",
-                        "field": "source",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "gene_count",
-                        "label": "Genes",
-                        "field": "gene_count",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "processing_time",
-                        "label": "Time (s)",
-                        "field": "processing_time",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "errors",
-                        "label": "Errors",
-                        "field": "errors",
-                        "sortable": True,
-                    },
-                ]
+                columns = table_columns(
+                    [
+                        ("pmid", "PMID"),
+                        ("source", "Source"),
+                        ("gene_count", "Genes"),
+                        ("processing_time", "Time (s)"),
+                        ("errors", "Errors"),
+                    ]
+                )
                 ui.table(
                     columns=columns,
                     rows=tables.get("papers", []),
@@ -548,50 +533,17 @@ def _render_report_body(
                     "Nothing passed the confidence threshold for this run.",
                 )
             else:
-                columns = [
-                    {
-                        "name": "symbol",
-                        "label": "Symbol",
-                        "field": "symbol",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "protein_name",
-                        "label": "Protein",
-                        "field": "protein_name",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "gwas_trait",
-                        "label": "GWAS Trait",
-                        "field": "gwas_trait",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "mendelian_randomization",
-                        "label": "MR",
-                        "field": "mendelian_randomization",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "omics",
-                        "label": "Omics",
-                        "field": "omics",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "confidence",
-                        "label": "Confidence",
-                        "field": "confidence",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "pmid",
-                        "label": "PMID",
-                        "field": "pmid",
-                        "sortable": True,
-                    },
-                ]
+                columns = table_columns(
+                    [
+                        ("symbol", "Symbol"),
+                        ("protein_name", "Protein"),
+                        ("gwas_trait", "GWAS Trait"),
+                        ("mendelian_randomization", "MR"),
+                        ("omics", "Omics"),
+                        ("confidence", "Confidence"),
+                        ("pmid", "PMID"),
+                    ]
+                )
                 ui.table(
                     columns=columns,
                     rows=tables.get("genes", []),
@@ -608,26 +560,13 @@ def _render_report_body(
                     "Every extracted gene passed validation for this run.",
                 )
             else:
-                columns = [
-                    {
-                        "name": "symbol",
-                        "label": "Symbol",
-                        "field": "symbol",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "confidence",
-                        "label": "Confidence",
-                        "field": "confidence",
-                        "sortable": True,
-                    },
-                    {
-                        "name": "reason",
-                        "label": "Rejection Reason",
-                        "field": "reason",
-                        "sortable": True,
-                    },
-                ]
+                columns = table_columns(
+                    [
+                        ("symbol", "Symbol"),
+                        ("confidence", "Confidence"),
+                        ("reason", "Rejection Reason"),
+                    ]
+                )
                 ui.table(
                     columns=columns,
                     rows=tables.get("rejected", []),

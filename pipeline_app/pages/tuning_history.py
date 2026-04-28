@@ -2,75 +2,30 @@
 
 from __future__ import annotations
 
-import contextlib
 import csv
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 
-from nicegui import run, ui
+from nicegui import ui
 
-from pipeline_app.components.button_loading import button_loading
+from pipeline.tuning_schema import LOWER_IS_BETTER_COLUMNS, TUNING_NUMERIC_COLUMNS
+from pipeline_app.components.async_loader import (
+    load_io_bound_into,
+    refresh_with_button,
+)
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.runner import resolve_project_root
 
 logger = logging.getLogger(__name__)
 
-# Mirror of the numeric subset of CSV_COLUMNS in
-# scripts/tuning/track_run.py. Kept manually in sync because track_run.py is
-# a standalone CLI script, not importable from pipeline_app/.
-NUMERIC_COLUMNS: frozenset[str] = frozenset(
-    {
-        "precision",
-        "recall",
-        "f1",
-        "f2",
-        "threshold",
-        "tp",
-        "fp",
-        "fn",
-        "tn",
-        "true_positives",
-        "false_positives",
-        "fn_threshold",
-        "fn_miss",
-        "composite_score",
-        "confidence_threshold",
-        "f_beta_weight",
-        "total_extracted",
-        "total_validated",
-        "total_rejected",
-        "total_genes",
-        "total_papers",
-        "acceptance_rate",
-        "estimated_cost_usd",
-        "input_tokens",
-        "output_tokens",
-        "thinking_tokens",
-        "total_processing_time",
-        "llm_time",
-    }
-)
+NUMERIC_COLUMNS = TUNING_NUMERIC_COLUMNS
 
 # Metrics where a *decrease* is an improvement (lower cost, fewer errors,
 # shorter runtime). The diff-coloring template inverts the sign→color
 # mapping for these so that green always means "better".
-LOWER_IS_BETTER: frozenset[str] = frozenset(
-    {
-        "fp",
-        "fn",
-        "false_positives",
-        "fn_threshold",
-        "fn_miss",
-        "total_rejected",
-        "estimated_cost_usd",
-        "input_tokens",
-        "output_tokens",
-        "thinking_tokens",
-        "total_processing_time",
-        "llm_time",
-    }
-)
+LOWER_IS_BETTER = LOWER_IS_BETTER_COLUMNS
 
 
 def _load_tuning_runs(project_root: str) -> list[dict[str, object]]:
@@ -99,7 +54,7 @@ def _load_tuning_runs(project_root: str) -> list[dict[str, object]]:
             if isinstance(v, str) and v:
                 # Leave as string on parse failure so the cell still renders;
                 # this one malformed row loses numeric sort.
-                with contextlib.suppress(ValueError):
+                with suppress(ValueError):
                     row[k] = float(v)
         coerced.append(row)
     # Sort by timestamp when available so out-of-order writes still render
@@ -181,26 +136,24 @@ def create_tuning_history_page(project_root: str) -> None:
 
     refresh_btn_ref: list[ui.button] = []
 
-    async def _load() -> None:
-        rows = await run.io_bound(_load_tuning_runs, project_root)
+    def _render_loaded(rows: list[dict[str, object]]) -> None:
         for i, row in enumerate(rows):
             row["_row_id"] = str(i)
-        # Disconnect mid-io_bound leaves the container attached to a
-        # disposed client — NiceGUI raises RuntimeError on clear/mount.
-        with contextlib.suppress(RuntimeError):
-            container.clear()
-            with container:
-                _render_body(rows, _refresh, refresh_btn_ref)
+        _render_body(rows, _refresh, refresh_btn_ref)
+
+    async def _load() -> None:
+        await load_io_bound_into(
+            container,
+            _load_tuning_runs,
+            _render_loaded,
+            project_root,
+        )
 
     async def _refresh() -> None:
         # button_loading both disables the button and serves as the in-flight
         # guard: rapid re-clicks during the io_bound CSV read would otherwise
         # race multiple container.clear() + rebuild passes.
-        if not refresh_btn_ref:
-            await _load()
-            return
-        async with button_loading(refresh_btn_ref[0]):
-            await _load()
+        await refresh_with_button(refresh_btn_ref, _load)
 
     ui.timer(0.0, _load, once=True)
 
@@ -316,7 +269,7 @@ def _render_body(
         selected_rows.extend(getattr(e, "selection", []))
         # A deferred select event from a pre-refresh table targets an
         # orphaned _comparison_panel; .refresh() raises RuntimeError.
-        with contextlib.suppress(RuntimeError):
+        with suppress(RuntimeError):
             _comparison_panel.refresh()
 
     table = ui.table(

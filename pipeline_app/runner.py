@@ -249,6 +249,80 @@ def _base_env() -> dict[str, str]:
     return env
 
 
+@dataclass(slots=True, frozen=True)
+class _EnvVarSpec:
+    env_key: str
+    attr: str
+    formatter: Callable[[Any], str] = str
+    include_empty: bool = True
+
+
+_SECRET_ENV_SPECS: tuple[_EnvVarSpec, ...] = (
+    _EnvVarSpec("ANTHROPIC_API_KEY", "anthropic_api_key", include_empty=False),
+    _EnvVarSpec("DB_HOST", "db_host", include_empty=False),
+    _EnvVarSpec("DB_PORT", "db_port", include_empty=False),
+    _EnvVarSpec("DB_NAME", "db_name", include_empty=False),
+    _EnvVarSpec("DB_USER", "db_user", include_empty=False),
+    _EnvVarSpec("DB_PASSWORD", "db_password", include_empty=False),
+    _EnvVarSpec("NCBI_API_KEY", "ncbi_api_key", include_empty=False),
+    _EnvVarSpec("ENTREZ_EMAIL", "entrez_email", include_empty=False),
+    _EnvVarSpec("UNPAYWALL_EMAIL", "unpaywall_email", include_empty=False),
+)
+
+_CONFIG_ENV_SPECS: tuple[_EnvVarSpec, ...] = (
+    _EnvVarSpec("PIPELINE_LLM_PROVIDER", "llm_provider"),
+    _EnvVarSpec("PIPELINE_LLM_MODEL", "llm_model"),
+    _EnvVarSpec("PIPELINE_LLM_EFFORT", "llm_effort"),
+    _EnvVarSpec("PIPELINE_LLM_MAX_TOKENS", "llm_max_tokens", _int_str),
+    _EnvVarSpec("PIPELINE_OLLAMA_HOST", "ollama_host"),
+    _EnvVarSpec("PIPELINE_OLLAMA_MODEL", "ollama_model"),
+    _EnvVarSpec("PIPELINE_OLLAMA_NUM_CTX", "ollama_num_ctx", _int_str),
+    _EnvVarSpec("PIPELINE_PROMPT_VERSION", "prompt_version"),
+    _EnvVarSpec("PIPELINE_CONFIDENCE_THRESHOLD", "confidence_threshold"),
+    _EnvVarSpec("PIPELINE_MAX_CONCURRENT_PAPERS", "max_concurrent_papers", _int_str),
+    _EnvVarSpec("PIPELINE_RPM_LIMIT", "rpm_limit", _int_str),
+    _EnvVarSpec("PIPELINE_TPM_LIMIT", "tpm_limit", _int_str),
+    _EnvVarSpec(
+        "PIPELINE_ESTIMATED_TOKENS_PER_CALL",
+        "estimated_tokens_per_call",
+        _int_str,
+    ),
+    _EnvVarSpec("PIPELINE_NCBI_RATE_LIMIT", "ncbi_rate_limit", _int_str),
+    _EnvVarSpec("PIPELINE_UNIPROT_RATE_LIMIT", "uniprot_rate_limit", _int_str),
+    _EnvVarSpec("PIPELINE_MAX_PAPER_TEXT_CHARS", "max_paper_text_chars", _int_str),
+    _EnvVarSpec("PIPELINE_MAX_RETRIES", "max_retries", _int_str),
+    _EnvVarSpec(
+        "PIPELINE_MAX_RATE_LIMIT_RETRIES",
+        "max_rate_limit_retries",
+        _int_str,
+    ),
+    _EnvVarSpec("PIPELINE_RATE_LIMIT_RETRY_DELAY", "rate_limit_retry_delay"),
+    _EnvVarSpec(
+        "PIPELINE_MAX_CONNECTION_RETRIES",
+        "max_connection_retries",
+        _int_str,
+    ),
+    _EnvVarSpec("PIPELINE_CONNECTION_RETRY_DELAY", "connection_retry_delay"),
+    _EnvVarSpec("PIPELINE_DB_POOL_MIN", "db_pool_min_size", _int_str),
+    _EnvVarSpec("PIPELINE_DB_POOL_MAX", "db_pool_max_size", _int_str),
+    _EnvVarSpec("PIPELINE_DB_COMMAND_TIMEOUT", "db_command_timeout"),
+    _EnvVarSpec("PIPELINE_PROGRESS_FILE", "progress_file", include_empty=False),
+)
+
+
+def _apply_env_specs(
+    env: dict[str, str],
+    source: object,
+    specs: tuple[_EnvVarSpec, ...],
+) -> None:
+    """Copy object attributes into env according to spec metadata."""
+    for spec in specs:
+        value = getattr(source, spec.attr)
+        if not spec.include_empty and not value:
+            continue
+        env[spec.env_key] = spec.formatter(value)
+
+
 def build_env_vars(
     config: PipelineAppConfig,
     secrets: EnvSecrets,
@@ -259,55 +333,8 @@ def build_env_vars(
     # Skip empty-string secrets so the pipeline's os.environ.get()
     # fallbacks (and library-level "missing env var" errors) behave
     # normally instead of seeing "".
-    if secrets.anthropic_api_key:
-        env["ANTHROPIC_API_KEY"] = secrets.anthropic_api_key
-    if secrets.db_host:
-        env["DB_HOST"] = secrets.db_host
-    if secrets.db_port:
-        env["DB_PORT"] = secrets.db_port
-    if secrets.db_name:
-        env["DB_NAME"] = secrets.db_name
-    if secrets.db_user:
-        env["DB_USER"] = secrets.db_user
-    if secrets.db_password:
-        env["DB_PASSWORD"] = secrets.db_password
-    if secrets.ncbi_api_key:
-        env["NCBI_API_KEY"] = secrets.ncbi_api_key
-    if secrets.entrez_email:
-        env["ENTREZ_EMAIL"] = secrets.entrez_email
-    if secrets.unpaywall_email:
-        env["UNPAYWALL_EMAIL"] = secrets.unpaywall_email
-
-    env["PIPELINE_LLM_PROVIDER"] = config.llm_provider
-    env["PIPELINE_LLM_MODEL"] = config.llm_model
-    env["PIPELINE_LLM_EFFORT"] = config.llm_effort
-    env["PIPELINE_LLM_MAX_TOKENS"] = _int_str(config.llm_max_tokens)
-    env["PIPELINE_OLLAMA_HOST"] = config.ollama_host
-    env["PIPELINE_OLLAMA_MODEL"] = config.ollama_model
-    env["PIPELINE_OLLAMA_NUM_CTX"] = _int_str(config.ollama_num_ctx)
-    env["PIPELINE_PROMPT_VERSION"] = config.prompt_version
-    env["PIPELINE_CONFIDENCE_THRESHOLD"] = str(config.confidence_threshold)
-    env["PIPELINE_MAX_CONCURRENT_PAPERS"] = _int_str(config.max_concurrent_papers)
-    env["PIPELINE_RPM_LIMIT"] = _int_str(config.rpm_limit)
-    env["PIPELINE_TPM_LIMIT"] = _int_str(config.tpm_limit)
-    env["PIPELINE_ESTIMATED_TOKENS_PER_CALL"] = _int_str(
-        config.estimated_tokens_per_call
-    )
-    env["PIPELINE_NCBI_RATE_LIMIT"] = _int_str(config.ncbi_rate_limit)
-    env["PIPELINE_UNIPROT_RATE_LIMIT"] = _int_str(config.uniprot_rate_limit)
-    env["PIPELINE_MAX_PAPER_TEXT_CHARS"] = _int_str(config.max_paper_text_chars)
-    env["PIPELINE_MAX_RETRIES"] = _int_str(config.max_retries)
-    env["PIPELINE_MAX_RATE_LIMIT_RETRIES"] = _int_str(config.max_rate_limit_retries)
-    env["PIPELINE_RATE_LIMIT_RETRY_DELAY"] = str(config.rate_limit_retry_delay)
-    env["PIPELINE_MAX_CONNECTION_RETRIES"] = _int_str(config.max_connection_retries)
-    env["PIPELINE_CONNECTION_RETRY_DELAY"] = str(config.connection_retry_delay)
-    env["PIPELINE_DB_POOL_MIN"] = _int_str(config.db_pool_min_size)
-    env["PIPELINE_DB_POOL_MAX"] = _int_str(config.db_pool_max_size)
-    env["PIPELINE_DB_COMMAND_TIMEOUT"] = str(config.db_command_timeout)
-
-    if config.progress_file:
-        env["PIPELINE_PROGRESS_FILE"] = config.progress_file
-
+    _apply_env_specs(env, secrets, _SECRET_ENV_SPECS)
+    _apply_env_specs(env, config, _CONFIG_ENV_SPECS)
     return env
 
 
@@ -632,6 +659,29 @@ def _safe_call(cb: Callable[..., Any] | None, /, *args: Any) -> None:
         cb(*args)
 
 
+class _ListenerRegistry:
+    """Manage callback bundles for reconnect-safe runner fan-out."""
+
+    def __init__(self) -> None:
+        self._bundles: list[Any] = []
+
+    def set_one(self, bundle: Any) -> None:
+        self._bundles = [bundle]
+
+    def add(self, bundle: Any) -> Callable[[], None]:
+        self._bundles.append(bundle)
+
+        def _dispose() -> None:
+            with suppress(ValueError):
+                self._bundles.remove(bundle)
+
+        return _dispose
+
+    def emit(self, callback_name: str, *args: Any) -> None:
+        for bundle in list(self._bundles):
+            _safe_call(getattr(bundle, callback_name), *args)
+
+
 @dataclass(slots=True)
 class PipelineListeners:
     """A single client's set of PipelineRunner callbacks.
@@ -680,7 +730,7 @@ class PipelineRunner:
         # appends a bundle, each client-disconnect pops one. Without this,
         # a second tab's set_callbacks call would overwrite the first
         # tab's closures and freeze the first tab's log pane mid-run.
-        self._listeners: list[PipelineListeners] = []
+        self._listeners = _ListenerRegistry()
 
     def set_callbacks(
         self,
@@ -694,7 +744,7 @@ class PipelineRunner:
         should use ``add_listener`` and invoke its returned disposer on
         client disconnect.
         """
-        self._listeners = [PipelineListeners(on_stdout, on_stderr, on_stage)]
+        self._listeners.set_one(PipelineListeners(on_stdout, on_stderr, on_stage))
 
     def add_listener(
         self,
@@ -708,14 +758,7 @@ class PipelineRunner:
         to ``context.client.on_disconnect`` so callbacks bound to closed
         sessions don't accumulate across a long-running server.
         """
-        bundle = PipelineListeners(on_stdout, on_stderr, on_stage)
-        self._listeners.append(bundle)
-
-        def _dispose() -> None:
-            with suppress(ValueError):
-                self._listeners.remove(bundle)
-
-        return _dispose
+        return self._listeners.add(PipelineListeners(on_stdout, on_stderr, on_stage))
 
     def reset_state(self) -> None:
         """Clear buffered run state so a fresh run renders from zero."""
@@ -726,13 +769,11 @@ class PipelineRunner:
 
     def _emit_stdout(self, line: str) -> None:
         self.log_lines.append(("out", line))
-        for b in list(self._listeners):
-            _safe_call(b.on_stdout, line)
+        self._listeners.emit("on_stdout", line)
 
     def _emit_stderr(self, line: str) -> None:
         self.log_lines.append(("err", line))
-        for b in list(self._listeners):
-            _safe_call(b.on_stderr, line)
+        self._listeners.emit("on_stderr", line)
 
     def _emit_stage(self, stage: str) -> None:
         # Close out the previous stage before marking the new one running,
@@ -743,8 +784,7 @@ class PipelineRunner:
             self.stage_statuses[prev] = "completed"
         self._current_stage = stage
         self.stage_statuses[stage] = "running"
-        for b in list(self._listeners):
-            _safe_call(b.on_stage, stage)
+        self._listeners.emit("on_stage", stage)
 
     async def run(
         self,
@@ -904,6 +944,119 @@ def get_tuning_python_path(
     return main_config.python_path
 
 
+def _extract_stage_args(
+    tuning: TuningConfig,
+    _report_path: str | None,
+    _score_dist_path: str | None,
+    _run_group: str,
+) -> list[str]:
+    return [
+        "pipeline/main.py",
+        "--local-pdfs",
+        tuning.pdf_path,
+        "--skip-validation",
+        "--dry-run",
+    ]
+
+
+def _validate_stage_args(
+    tuning: TuningConfig,
+    report_path: str | None,
+    _score_dist_path: str | None,
+    _run_group: str,
+) -> list[str]:
+    if not report_path:
+        raise ValueError("validate stage requires report_path from extract")
+    return [
+        "scripts/validate_pipeline.py",
+        report_path,
+        "--reference",
+        tuning.gold_standard_path,
+        "--local-pdfs",
+    ]
+
+
+def _error_analysis_stage_args(
+    tuning: TuningConfig,
+    report_path: str | None,
+    _score_dist_path: str | None,
+    _run_group: str,
+) -> list[str]:
+    if not report_path:
+        raise ValueError("error_analysis stage requires report_path from extract")
+    return [
+        "scripts/tuning/analyze_errors.py",
+        report_path,
+        "--reference",
+        tuning.gold_standard_path,
+        "--local-pdfs",
+    ]
+
+
+def _calibrate_stage_args(
+    tuning: TuningConfig,
+    _report_path: str | None,
+    score_dist_path: str | None,
+    _run_group: str,
+) -> list[str]:
+    if not score_dist_path:
+        raise ValueError("calibrate stage requires score_dist_path from error_analysis")
+    return [
+        "scripts/tuning/calibrate_threshold.py",
+        score_dist_path,
+        "--beta",
+        str(tuning.f_beta_weight),
+    ]
+
+
+def _track_stage_args(
+    tuning: TuningConfig,
+    report_path: str | None,
+    _score_dist_path: str | None,
+    run_group: str,
+) -> list[str]:
+    if not report_path:
+        raise ValueError("track stage requires report_path from extract")
+    args = [
+        "scripts/tuning/track_run.py",
+        "--pipeline-report",
+        report_path,
+        "--reference",
+        tuning.gold_standard_path,
+        "--local-pdfs",
+    ]
+    if tuning.notes:
+        args.extend(["--notes", tuning.notes.replace("\r", " ").replace("\n", " ")])
+    if run_group:
+        args.extend(["--run-group", run_group])
+    return args
+
+
+def _plot_stage_args(
+    _tuning: TuningConfig,
+    _report_path: str | None,
+    _score_dist_path: str | None,
+    _run_group: str,
+) -> list[str]:
+    return ["scripts/plot_tuning_runs.R"]
+
+
+@dataclass(slots=True, frozen=True)
+class _TuningStageSpec:
+    executable: str
+    build_args: Callable[[TuningConfig, str | None, str | None, str], list[str]]
+
+
+_TUNING_STAGE_SPECS: dict[str, _TuningStageSpec] = {
+    "extract": _TuningStageSpec("python", _extract_stage_args),
+    "validate": _TuningStageSpec("python", _validate_stage_args),
+    "error_analysis": _TuningStageSpec("python", _error_analysis_stage_args),
+    "calibrate": _TuningStageSpec("python", _calibrate_stage_args),
+    "track": _TuningStageSpec("python", _track_stage_args),
+    "plot": _TuningStageSpec(RSCRIPT_EXE, _plot_stage_args),
+}
+
+
 def build_tuning_stage_command(
     stage: str,
     tuning: TuningConfig,
@@ -912,70 +1065,56 @@ def build_tuning_stage_command(
     run_group: str = "",
 ) -> tuple[str, list[str]]:
     """Return (executable, args) for a tuning stage subprocess."""
-    python = tuning.python_path or "python3"
-
-    if stage == "extract":
-        return python, [
-            "pipeline/main.py",
-            "--local-pdfs",
-            tuning.pdf_path,
-            "--skip-validation",
-            "--dry-run",
-        ]
-    elif stage == "validate":
-        if not report_path:
-            raise ValueError("validate stage requires report_path from extract")
-        return python, [
-            "scripts/validate_pipeline.py",
-            report_path,
-            "--reference",
-            tuning.gold_standard_path,
-            "--local-pdfs",
-        ]
-    elif stage == "error_analysis":
-        if not report_path:
-            raise ValueError("error_analysis stage requires report_path from extract")
-        return python, [
-            "scripts/tuning/analyze_errors.py",
-            report_path,
-            "--reference",
-            tuning.gold_standard_path,
-            "--local-pdfs",
-        ]
-    elif stage == "calibrate":
-        if not score_dist_path:
-            raise ValueError(
-                "calibrate stage requires score_dist_path from error_analysis"
-            )
-        return python, [
-            "scripts/tuning/calibrate_threshold.py",
-            score_dist_path,
-            "--beta",
-            str(tuning.f_beta_weight),
-        ]
-    elif stage == "track":
-        if not report_path:
-            raise ValueError("track stage requires report_path from extract")
-        args = [
-            "scripts/tuning/track_run.py",
-            "--pipeline-report",
-            report_path,
-            "--reference",
-            tuning.gold_standard_path,
-            "--local-pdfs",
-        ]
-        if tuning.notes:
-            # CSV-safe: strip newlines/carriage returns that would corrupt
-            # the tuning_runs.csv log when track_run.py writes the row.
-            sanitized_notes = tuning.notes.replace("\r", " ").replace("\n", " ")
-            args.extend(["--notes", sanitized_notes])
-        if run_group:
-            args.extend(["--run-group", run_group])
-        return python, args
-    elif stage == "plot":
-        return RSCRIPT_EXE, ["scripts/plot_tuning_runs.R"]
-    else:
+    spec = _TUNING_STAGE_SPECS.get(stage)
+    if spec is None:
         raise ValueError(f"Unknown stage: {stage}")
+    exe = (
+        (tuning.python_path or "python3")
+        if spec.executable == "python"
+        else RSCRIPT_EXE
+    )
+    return exe, spec.build_args(tuning, report_path, score_dist_path, run_group)
+
+
+def _collect_tuning_stage_outputs(
+    stage: str,
+    logs_dir: Path,
+    started_at: float,
+) -> tuple[list[Path], str | None, str | None]:
+    """Return output files plus newly discovered report/score paths."""
+    if stage == "extract":
+        report = find_newest_report(logs_dir, started_at)
+        return ([report] if report else []), str(report) if report else None, None
+
+    if stage == "error_analysis":
+        output_files: list[Path] = []
+        score_dist_path: str | None = None
+        score_dist = _find_newest_file(
+            logs_dir / "tuning" / "score_distributions",
+            "score_distribution_",
+            started_at,
+        )
+        if score_dist:
+            score_dist_path = str(score_dist)
+            output_files.append(score_dist)
+        error_analysis = _find_newest_file(
+            logs_dir / "tuning" / "error_analyses",
+            "error_analysis_",
+            started_at,
+        )
+        if error_analysis:
+            output_files.append(error_analysis)
+        return output_files, None, score_dist_path
+
+    if stage == "calibrate":
+        curve = _find_newest_file(
+            logs_dir / "png" / "pr_curves",
+            "pr_curve_",
+            started_at,
+        )
+        return ([curve] if curve else []), None, None
+
+    return [], None, None
 
 
 class TuningRunner:
@@ -1002,7 +1141,7 @@ class TuningRunner:
         self.total_repeats: int = 0
         # Listener bundles keyed by insertion order. See PipelineRunner for
         # the multi-client rationale.
-        self._listeners: list[TuningListeners] = []
+        self._listeners = _ListenerRegistry()
 
     @property
     def is_active(self) -> bool:
@@ -1048,7 +1187,7 @@ class TuningRunner:
         should use ``add_listener`` and invoke its returned disposer on
         client disconnect.
         """
-        self._listeners = [
+        self._listeners.set_one(
             TuningListeners(
                 on_stdout,
                 on_stderr,
@@ -1056,7 +1195,7 @@ class TuningRunner:
                 on_stage_complete,
                 on_waiting,
             )
-        ]
+        )
 
     def add_listener(
         self,
@@ -1067,20 +1206,15 @@ class TuningRunner:
         on_waiting: Callable[[], None],
     ) -> Callable[[], None]:
         """Register a listener bundle; returns a disposer to remove it."""
-        bundle = TuningListeners(
-            on_stdout,
-            on_stderr,
-            on_stage_start,
-            on_stage_complete,
-            on_waiting,
+        return self._listeners.add(
+            TuningListeners(
+                on_stdout,
+                on_stderr,
+                on_stage_start,
+                on_stage_complete,
+                on_waiting,
+            )
         )
-        self._listeners.append(bundle)
-
-        def _dispose() -> None:
-            with suppress(ValueError):
-                self._listeners.remove(bundle)
-
-        return _dispose
 
     def reset_state(self) -> None:
         """Clear buffered run state so the UI tracker renders fresh."""
@@ -1096,13 +1230,11 @@ class TuningRunner:
 
     def _emit_stdout(self, line: str) -> None:
         self.log_lines.append(("out", line))
-        for b in list(self._listeners):
-            _safe_call(b.on_stdout, line)
+        self._listeners.emit("on_stdout", line)
 
     def _emit_stderr(self, line: str) -> None:
         self.log_lines.append(("err", line))
-        for b in list(self._listeners):
-            _safe_call(b.on_stderr, line)
+        self._listeners.emit("on_stderr", line)
 
     def _emit_stage_start(
         self,
@@ -1114,8 +1246,7 @@ class TuningRunner:
         self._stage_started_at[stage] = time.monotonic()
         self.current_repeat = repeat
         self.total_repeats = total
-        for b in list(self._listeners):
-            _safe_call(b.on_stage_start, stage, repeat, total)
+        self._listeners.emit("on_stage_start", stage, repeat, total)
 
     def _emit_stage_complete(
         self,
@@ -1127,12 +1258,10 @@ class TuningRunner:
         started = self._stage_started_at.pop(stage, None)
         if started is not None:
             self.stage_durations[stage] = time.monotonic() - started
-        for b in list(self._listeners):
-            _safe_call(b.on_stage_complete, stage, files)
+        self._listeners.emit("on_stage_complete", stage, files)
 
     def _emit_waiting(self) -> None:
-        for b in list(self._listeners):
-            _safe_call(b.on_waiting)
+        self._listeners.emit("on_waiting")
 
     def advance(self) -> None:
         """User clicked Next Stage."""
@@ -1320,46 +1449,17 @@ class TuningRunner:
                             )
                             self._emit_stage_complete(stage, [], status="failed")
                         else:
-                            output_files: list[Path] = []
-
-                            if stage == "extract":
-                                found = find_newest_report(
-                                    logs_dir,
-                                    started_at,
-                                )
-                                if found:
-                                    report_path = str(found)
-                                    output_files.append(found)
-
-                            elif stage == "error_analysis":
-                                sd_dir = logs_dir / "tuning" / "score_distributions"
-                                found = _find_newest_file(
-                                    sd_dir,
-                                    "score_distribution_",
-                                    started_at,
-                                )
-                                if found:
-                                    score_dist_path = str(found)
-                                    output_files.append(found)
-                                ea_dir = logs_dir / "tuning" / "error_analyses"
-                                found = _find_newest_file(
-                                    ea_dir,
-                                    "error_analysis_",
-                                    started_at,
-                                )
-                                if found:
-                                    output_files.append(found)
-
-                            elif stage == "calibrate":
-                                pr_dir = logs_dir / "png" / "pr_curves"
-                                found = _find_newest_file(
-                                    pr_dir,
-                                    "pr_curve_",
-                                    started_at,
-                                )
-                                if found:
-                                    output_files.append(found)
-
+                            (
+                                output_files,
+                                new_report_path,
+                                new_score_dist_path,
+                            ) = _collect_tuning_stage_outputs(
+                                stage,
+                                logs_dir,
+                                started_at,
+                            )
+                            report_path = new_report_path or report_path
+                            score_dist_path = new_score_dist_path or score_dist_path
                             self._emit_stage_complete(stage, output_files)
 
                     # Wait for user between stages (unless last or auto)

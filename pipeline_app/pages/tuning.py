@@ -7,15 +7,18 @@ from pathlib import Path
 
 from nicegui import context, ui
 
-from pipeline_app.components.log_viewer import (
-    STDERR_CSS_CLASS,
-    LogViewer,
-    css_class_for,
-    detect_severity,
+from pipeline_app.components.execution_panel import (
+    ExecutionPanel,
+    render_output_links,
+)
+from pipeline_app.components.form_fields import (
+    bound_input,
+    bound_number,
+    bound_path_input,
+    bound_select,
 )
 from pipeline_app.components.path_picker import pick_path
 from pipeline_app.components.provider_section import apply_provider_widget_state
-from pipeline_app.components.stage_tracker import StageTracker, create_stage_tracker
 from pipeline_app.config import (
     LLM_EFFORTS,
     LLM_MODELS,
@@ -44,18 +47,15 @@ def create_tuning_page(
     """Render the Tuning Config & Run page."""
     ui.label("Tuning").classes("page-title")
 
-    stage_tracker_ref: list[StageTracker] = []
-    log_viewer_ref: list[LogViewer] = []
+    panel_ref: list[ExecutionPanel] = []
     output_links_container: list[ui.element] = []
 
     def _refresh_stage_tracker(
         repeat: int = 0,
         total: int = 0,
     ) -> None:
-        # In-place update: the tracker's DOM is built once at mount, this
-        # just mutates icon/label classes instead of clear+rebuild.
-        if stage_tracker_ref:
-            stage_tracker_ref[0].update(
+        if panel_ref:
+            panel_ref[0].refresh(
                 runner.stage_statuses,
                 repeat,
                 total,
@@ -66,33 +66,19 @@ def create_tuning_page(
         with splitter.before, ui.card().classes("w-full q-pa-md theme-card"):
             ui.label("Tuning Configuration").classes("section-header q-mb-sm")
 
-            with ui.row().classes("w-full items-center gap-xs no-wrap"):
-                pdf_inp = (
-                    ui.input(
-                        label="PDF Path",
-                        value=tuning.pdf_path,
-                    )
-                    .classes("flex-1")
-                    .bind_value(tuning, "pdf_path")
-                )
-                ui.button(
-                    icon="folder_open",
-                    on_click=lambda: _pick_pdf_path(pdf_inp),
-                ).props("flat dense").classes("btn-icon")
+            bound_path_input(
+                tuning,
+                "pdf_path",
+                label="PDF Path",
+                on_pick=lambda inp: _pick_pdf_path(inp),
+            )
 
-            with ui.row().classes("w-full items-center gap-xs no-wrap"):
-                gold_inp = (
-                    ui.input(
-                        label="Gold Standard Path",
-                        value=tuning.gold_standard_path,
-                    )
-                    .classes("flex-1")
-                    .bind_value(tuning, "gold_standard_path")
-                )
-                ui.button(
-                    icon="folder_open",
-                    on_click=lambda: _pick_gold_standard(gold_inp),
-                ).props("flat dense").classes("btn-icon")
+            bound_path_input(
+                tuning,
+                "gold_standard_path",
+                label="Gold Standard Path",
+                on_pick=lambda inp: _pick_gold_standard(inp),
+            )
 
             async def _pick_pdf_path(inp: ui.input) -> None:
                 anchor = get_project_anchor(config)
@@ -125,32 +111,35 @@ def create_tuning_page(
                 if result is not None:
                     inp.value = result
 
-            ui.number(
+            bound_number(
+                tuning,
+                "confidence_threshold",
                 label="Confidence Threshold",
-                value=tuning.confidence_threshold,
                 min=0.0,
                 max=1.0,
                 step=0.01,
                 format="%.2f",
-            ).classes("w-full").bind_value(tuning, "confidence_threshold")
+            )
 
-            ui.number(
+            bound_number(
+                tuning,
+                "repeats",
                 label="Repeats",
-                value=tuning.repeats,
                 min=1,
                 max=20,
-            ).classes("w-full").bind_value(tuning, "repeats")
+            )
 
             ui.checkbox("Auto-Advance Stages").bind_value(tuning, "auto_advance")
 
-            ui.number(
+            bound_number(
+                tuning,
+                "f_beta_weight",
                 label="F-Beta Weight",
-                value=tuning.f_beta_weight,
                 min=0.5,
                 max=5.0,
                 step=0.1,
                 format="%.1f",
-            ).classes("w-full").bind_value(tuning, "f_beta_weight")
+            )
             with ui.element("div").classes("theme-note theme-note-info q-mt-xs"):
                 f_beta_help = (
                     "Beta (β) is the weight parameter that controls how"
@@ -187,56 +176,52 @@ def create_tuning_page(
 
             with ui.column().classes("w-full") as llm_override_fields:
                 tuning_provider_select = (
-                    ui.select(
+                    bound_select(
+                        tuning,
+                        "llm_provider",
                         options=PROVIDER_LABELS,
                         label="Provider",
-                        value=tuning.llm_provider,
                     )
-                    .classes("w-full")
-                    .bind_value(tuning, "llm_provider")
                 )
 
                 tuning_claude_model = (
-                    ui.select(
+                    bound_select(
+                        tuning,
+                        "llm_model",
                         options=LLM_MODELS,
                         label="Model",
-                        value=tuning.llm_model,
                     )
-                    .classes("w-full")
-                    .bind_value(tuning, "llm_model")
                 )
                 tuning_claude_effort = (
-                    ui.select(
+                    bound_select(
+                        tuning,
+                        "llm_effort",
                         options=LLM_EFFORTS,
                         label="Effort",
-                        value=tuning.llm_effort,
                     )
-                    .classes("w-full")
-                    .bind_value(tuning, "llm_effort")
                 )
                 tuning_claude_max_tokens = (
-                    ui.number(
+                    bound_number(
+                        tuning,
+                        "llm_max_tokens",
                         label="Max Tokens (0 = default)",
-                        value=tuning.llm_max_tokens,
                         min=0,
                     )
-                    .classes("w-full")
-                    .bind_value(tuning, "llm_max_tokens")
                 )
                 tuning_ollama_model = (
-                    ui.input(
+                    bound_input(
+                        tuning,
+                        "ollama_model",
                         label="Ollama model tag",
-                        value=tuning.ollama_model,
                         placeholder="gemma4:e4b or svd-gemma:v1",
                     )
-                    .classes("w-full")
-                    .bind_value(tuning, "ollama_model")
                 )
-                ui.select(
+                bound_select(
+                    tuning,
+                    "prompt_version",
                     options=PROMPT_VERSIONS,
                     label="Prompt Version",
-                    value=tuning.prompt_version,
-                ).classes("w-full").bind_value(tuning, "prompt_version")
+                )
 
                 def _tuning_update_provider_controls() -> None:
                     is_ollama = apply_provider_widget_state(
@@ -272,16 +257,14 @@ def create_tuning_page(
         with splitter.after, ui.card().classes("w-full q-pa-md theme-card"):
             ui.label("Execution").classes("section-header q-mb-sm")
 
-            with ui.card().classes("w-full q-pa-sm q-mb-sm theme-card-elevated"):
-                stage_tracker_ref.append(
-                    create_stage_tracker(
-                        TUNING_STAGES,
-                        runner.stage_statuses,
-                        runner.current_repeat,
-                        runner.total_repeats,
-                        stage_durations=runner.stage_durations,
-                    )
-                )
+            panel = ExecutionPanel(
+                TUNING_STAGES,
+                runner.stage_statuses,
+                current_repeat=runner.current_repeat,
+                total_repeats=runner.total_repeats,
+                stage_durations=runner.stage_durations,
+            )
+            panel_ref.append(panel)
 
             ui.button(
                 "Refresh",
@@ -291,9 +274,6 @@ def create_tuning_page(
 
             with ui.column().classes("w-full q-mb-sm") as olc:
                 output_links_container.append(olc)
-
-            log_viewer = LogViewer()
-            log_viewer_ref.append(log_viewer)
 
             run_btn = (
                 ui.button(
@@ -327,14 +307,12 @@ def create_tuning_page(
 
             # UI callbacks — update elements only (state buffered by runner)
             def _on_stdout(line: str) -> None:
-                with suppress(RuntimeError):
-                    if log_viewer_ref:
-                        log_viewer_ref[0].append(line)
+                if panel_ref:
+                    panel_ref[0].append_stdout(line)
 
             def _on_stderr(line: str) -> None:
-                with suppress(RuntimeError):
-                    if log_viewer_ref:
-                        log_viewer_ref[0].append_stderr(line)
+                if panel_ref:
+                    panel_ref[0].append_stderr(line)
 
             def _on_stage_start(
                 _stage: str,
@@ -358,14 +336,12 @@ def create_tuning_page(
                         runner.current_repeat,
                         runner.total_repeats,
                     )
-                    if output_files and output_links_container:
-                        with output_links_container[0]:
-                            for f in output_files:
-                                # Stage prefix disambiguates outputs across
-                                # multiple stages within the same run.
-                                ui.label(f"[{stage}] {f.name}").style(
-                                    "color: var(--theme-secondary);"
-                                )
+                    if output_links_container:
+                        render_output_links(
+                            output_links_container[0],
+                            stage,
+                            output_files,
+                        )
 
             def _on_waiting() -> None:
                 with suppress(RuntimeError):
@@ -392,13 +368,7 @@ def create_tuning_page(
             # goes through load_batch so the DOM absorbs thousands of lines
             # in one paint cycle instead of N × 50 ms flush ticks.
             if runner.log_lines:
-                replay: list[tuple[str, str]] = []
-                for type_, line in runner.log_lines:
-                    if type_ == "out":
-                        replay.append((line, css_class_for(detect_severity(line))))
-                    else:
-                        replay.append((f"[stderr] {line}", STDERR_CSS_CLASS))
-                log_viewer_ref[0].load_batch(replay)
+                panel.replay(runner.log_lines)
                 _refresh_stage_tracker(
                     runner.current_repeat,
                     runner.total_repeats,
@@ -426,8 +396,8 @@ def create_tuning_page(
                     ui.notify("A process is already running", color="warning")
                     return
 
-                if log_viewer_ref:
-                    log_viewer_ref[0].clear()
+                if panel_ref:
+                    panel_ref[0].clear_log()
                 if output_links_container:
                     output_links_container[0].clear()
                 # Reset before refresh so the tracker doesn't flash the

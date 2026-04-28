@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from nicegui import run, ui
+from nicegui import ui
 
-from pipeline_app.components.button_loading import button_loading
+from pipeline_app.components.async_loader import (
+    load_io_bound_into,
+    refresh_with_button,
+)
 from pipeline_app.components.empty_state import empty_state
 from pipeline_app.components.file_content import render_file_content
 from pipeline_app.components.fs_nav import is_within, scan_directory
@@ -106,15 +108,9 @@ def create_file_browser_page(project_root: str) -> None:
             )
 
     async def _load_tree() -> None:
-        nodes = await run.io_bound(_build_tree_nodes)
         if not tree_container:
             return
-        # Disconnect mid-io_bound leaves the container attached to a
-        # disposed client — NiceGUI raises RuntimeError on clear/mount.
-        with suppress(RuntimeError):
-            tree_container[0].clear()
-            with tree_container[0]:
-                _render_tree(nodes)
+        await load_io_bound_into(tree_container[0], _build_tree_nodes, _render_tree)
 
     async def _refresh_tree() -> None:
         if not refresh_btn_ref:
@@ -123,8 +119,7 @@ def create_file_browser_page(project_root: str) -> None:
             return
         refresh_in_flight[0] = True
         try:
-            async with button_loading(refresh_btn_ref[0]):
-                await _load_tree()
+            await refresh_with_button(refresh_btn_ref, _load_tree)
         finally:
             refresh_in_flight[0] = False
 

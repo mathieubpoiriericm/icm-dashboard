@@ -34,42 +34,14 @@ from validate_pipeline import (  # noqa: E402
     parse_reference_csv,
 )
 
+from pipeline.tuning_schema import TUNING_RUN_CSV_COLUMNS  # noqa: E402
+
 DEFAULT_REFERENCE_PATH = (
     _PROJECT_ROOT / "data" / "test_data" / "gold_standard" / "gold_standard_v2.csv"
 )
 TRACKING_CSV = _PROJECT_ROOT / "logs" / "tuning" / "tuning_runs.csv"
 
-CSV_COLUMNS = [
-    "run_id",
-    "timestamp",
-    "prompt_version",
-    "confidence_threshold",
-    "llm_model",
-    "model_version",
-    "llm_effort",
-    "test_pdf",
-    "total_extracted",
-    "total_validated",
-    "total_rejected",
-    "acceptance_rate",
-    "true_positives",
-    "false_positives",
-    "fn_threshold",
-    "fn_miss",
-    "precision",
-    "recall",
-    "f1",
-    "f2",
-    "composite_score",
-    "estimated_cost_usd",
-    "input_tokens",
-    "output_tokens",
-    "thinking_tokens",
-    "total_processing_time",
-    "llm_time",
-    "run_group",
-    "notes",
-]
+CSV_COLUMNS = TUNING_RUN_CSV_COLUMNS
 
 
 _MODEL_VERSION_RE = re.compile(r"claude-(?:opus|sonnet|haiku)-(\d+)-(\d+)")
@@ -87,6 +59,11 @@ def _compute_f_beta(precision: float, recall: float, beta: float) -> float:
         return 0.0
     b2 = beta**2
     return (1 + b2) * precision * recall / (b2 * precision + recall)
+
+
+def _optional_str(value: object) -> str:
+    """Stringify optional report values for CSV cells."""
+    return str(value) if value is not None else ""
 
 
 def _next_run_id(csv_path: Path) -> int:
@@ -227,10 +204,10 @@ def track_run(
         "f1": f"{scores.f1:.4f}",
         "f2": f"{f2:.4f}",
         "composite_score": f"{scores.composite:.4f}",
-        "estimated_cost_usd": str(v) if (v := token_info.get("estimated_cost_usd")) is not None else "",
-        "input_tokens": str(v2) if (v2 := token_info.get("input_tokens")) is not None else "",
-        "output_tokens": str(v3) if (v3 := token_info.get("output_tokens")) is not None else "",
-        "thinking_tokens": str(v4) if (v4 := token_info.get("thinking_tokens")) is not None else "",
+        "estimated_cost_usd": _optional_str(token_info.get("estimated_cost_usd")),
+        "input_tokens": _optional_str(token_info.get("input_tokens")),
+        "output_tokens": _optional_str(token_info.get("output_tokens")),
+        "thinking_tokens": _optional_str(token_info.get("thinking_tokens")),
         "total_processing_time": f"{report.get('total_processing_time', 0):.1f}",
         "llm_time": f"{total_llm_time:.1f}",
         "run_group": run_group,
