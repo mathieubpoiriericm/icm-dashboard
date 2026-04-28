@@ -31,6 +31,10 @@ presets.json
 www/*min.css
 www/*min.js
 
+# Pipeline app settings
+config.json
+tuning_config.json
+
 # Python-related
 .venv
 
