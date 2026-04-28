@@ -31,6 +31,7 @@ from pipeline_app.runner import (
     SubprocessLock,
     TuningRunner,
     get_project_anchor,
+    get_tuning_project_root,
 )
 
 
@@ -438,7 +439,8 @@ def create_tuning_page(
                     run_btn.disable()
                 try:
                     fresh_secrets = load_env_secrets(
-                        config.project_root, use_cache=False
+                        get_tuning_project_root(config, tuning),
+                        use_cache=False,
                     )
                     await runner.run_experiment(
                         config=config,

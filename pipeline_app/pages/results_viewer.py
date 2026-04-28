@@ -151,18 +151,31 @@ def _find_report(project_root: str, report_id: str) -> Path | None:
         return None
 
     exact = logs_dir / f"{report_id}.json"
-    if exact.exists() and not exact.is_symlink():
+    if exact.is_file() and not exact.is_symlink():
         return exact
 
-    json_files = [
-        f for f in logs_dir.iterdir() if f.suffix == ".json" and not f.is_symlink()
+    json_files: list[tuple[Path, float]] = []
+    try:
+        candidates = list(logs_dir.iterdir())
+    except OSError:
+        return None
+    for f in candidates:
+        if f.suffix != ".json" or f.is_symlink():
+            continue
+        try:
+            stat_result = f.stat()
+        except OSError:
+            continue
+        if f.is_file():
+            json_files.append((f, stat_result.st_mtime))
+
+    prefix_hits = [
+        (f, mtime) for f, mtime in json_files if f.stem.startswith(report_id)
     ]
-
-    prefix_hits = [f for f in json_files if f.stem.startswith(report_id)]
     if prefix_hits:
-        return max(prefix_hits, key=lambda x: x.stat().st_mtime)
+        return max(prefix_hits, key=lambda x: x[1])[0]
 
-    substring_hits = [f for f in json_files if report_id in f.stem]
+    substring_hits = [f for f, _ in json_files if report_id in f.stem]
     if len(substring_hits) == 1:
         return substring_hits[0]
     return None

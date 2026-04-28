@@ -55,4 +55,4 @@ class TestStatusConfig:
 
     def test_only_expected_statuses_have_label_class(self):
         labelled = {s for s, cfg in _STATUS_CONFIG.items() if cfg.label_cls}
-        assert labelled == {"running", "completed", "failed"}
+        assert labelled == {"running", "completed", "failed", "cancelled"}

@@ -49,15 +49,23 @@ def resolve_start_dir(
     candidates: list[Path] = []
 
     if current_value:
-        try:
-            resolved = Path(current_value).expanduser().resolve()
-        except OSError, RuntimeError:
-            resolved = None
-        if resolved is not None:
+        raw_current = Path(current_value).expanduser()
+        current_candidates: list[Path] = []
+        if anchor is not None and not raw_current.is_absolute():
+            current_candidates.append(anchor / raw_current)
+        current_candidates.append(raw_current)
+
+        for candidate in current_candidates:
+            try:
+                resolved = candidate.resolve()
+            except OSError, RuntimeError:
+                continue
             if resolved.is_dir():
                 candidates.append(resolved)
-            elif resolved.is_file():
+                break
+            if resolved.is_file():
                 candidates.append(resolved.parent)
+                break
 
     if fallback_start is not None:
         candidates.append(fallback_start)

@@ -1163,6 +1163,9 @@ a:focus-visible {
     color: var(--theme-text-disabled);
     opacity: 0.55;
 }
+.stage-icon.icon-cancelled {
+    color: var(--theme-warning);
+}
 
 .stage-duration {
     font-family: var(--font-mono);

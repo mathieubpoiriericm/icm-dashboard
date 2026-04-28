@@ -185,6 +185,29 @@ class TestFindReportSymlinkSafety:
         result = _find_report(str(tmp_path), "pipeline_report")
         assert result == real
 
+    def test_skips_file_that_disappears_during_scan(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        logs_json = tmp_path / "logs" / "json"
+        logs_json.mkdir(parents=True)
+        good = logs_json / "pipeline_report_good.json"
+        good.write_text("{}")
+        rotated = logs_json / "pipeline_report_rotated.json"
+        rotated.write_text("{}")
+
+        real_stat = Path.stat
+
+        def flaky_stat(self: Path, *args, **kwargs):
+            if self == rotated:
+                raise FileNotFoundError(str(self))
+            return real_stat(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", flaky_stat)
+        result = _find_report(str(tmp_path), "pipeline_report")
+        assert result == good
+
 
 class TestMaxReportSize:
     """Regression: report-size cap exists to prevent OOM on huge JSONs."""

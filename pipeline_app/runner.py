@@ -878,6 +878,32 @@ def build_extract_config(
     return replace(main_config, **overrides)
 
 
+def get_tuning_project_root(
+    main_config: PipelineAppConfig,
+    tuning: TuningConfig,
+) -> str:
+    """Return the project root the tuning run should execute under.
+
+    ``use_main_config=False`` allows a tuning config to override the project
+    root, but an empty override is treated as "not configured" and falls back
+    to the main config. This matches the UI, which currently exposes LLM
+    overrides but not separate environment fields.
+    """
+    if not tuning.use_main_config and tuning.project_root:
+        return tuning.project_root
+    return main_config.project_root
+
+
+def get_tuning_python_path(
+    main_config: PipelineAppConfig,
+    tuning: TuningConfig,
+) -> str:
+    """Return the Python interpreter the tuning run should use."""
+    if not tuning.use_main_config and tuning.python_path:
+        return tuning.python_path
+    return main_config.python_path
+
+
 def build_tuning_stage_command(
     stage: str,
     tuning: TuningConfig,
@@ -1150,17 +1176,17 @@ class TuningRunner:
             if total_repeats < 1:
                 raise ValueError(f"tuning.repeats must be >= 1, got {total_repeats}")
             run_group = time.strftime("%Y%m%d_%H%M%S") if total_repeats > 1 else ""
-            project_root = validate_project_root(config.project_root)
+            project_root = validate_project_root(
+                get_tuning_project_root(config, tuning)
+            )
             logs_dir = Path(project_root) / "logs"
-            validated_config_python = validate_python_path(config.python_path)
-            # Skip tuning.python_path validation when use_main_config is True
-            # — the tuning path is never invoked in that mode, so validating
-            # it would produce spurious "executable not found" errors when
-            # the field is blank or stale.
-            validated_tuning_python = (
-                validated_config_python
+            validated_python = validate_python_path(
+                get_tuning_python_path(config, tuning)
+            )
+            stage_env_config = (
+                config
                 if tuning.use_main_config
-                else validate_python_path(tuning.python_path)
+                else build_extract_config(config, tuning)
             )
 
             self.reset_state()
@@ -1205,7 +1231,7 @@ class TuningRunner:
 
                     try:
                         if script_override:
-                            exe = validated_config_python
+                            exe = validated_python
                             args = [script_override]
                             env = _base_env()
                         else:
@@ -1214,11 +1240,7 @@ class TuningRunner:
                                     config,
                                     tuning,
                                 )
-                                exe = (
-                                    validated_config_python
-                                    if tuning.use_main_config
-                                    else validated_tuning_python
-                                )
+                                exe = validated_python
                                 args = build_cli_args(extract_cfg)
                                 env = build_env_vars(extract_cfg, secrets)
                             else:
@@ -1236,17 +1258,13 @@ class TuningRunner:
                                     # plot is pure-compute; no secrets needed.
                                     env = _base_env()
                                 else:
-                                    # Honor use_main_config for non-extract
-                                    # Python stages too, matching the extract
-                                    # branch above.
-                                    exe = (
-                                        validated_config_python
-                                        if tuning.use_main_config
-                                        else validated_tuning_python
-                                    )
+                                    # Honor tuning environment overrides for
+                                    # non-extract Python stages too, matching
+                                    # the extract branch above.
+                                    exe = validated_python
                                     # Non-extract Python stages need DB
                                     # creds, NCBI keys, and PIPELINE_* knobs.
-                                    env = build_env_vars(config, secrets)
+                                    env = build_env_vars(stage_env_config, secrets)
 
                         async with self._lock.run_guard():
                             process = await asyncio.create_subprocess_exec(

@@ -44,6 +44,21 @@ class TestResolveStartDir:
         bogus = tmp_path / "does-not-exist-here"
         assert resolve_start_dir(str(bogus), tmp_path, None) == tmp_path.resolve()
 
+    def test_relative_current_value_resolves_against_anchor(self, tmp_path: Path):
+        anchor = tmp_path / "project"
+        target_dir = anchor / "data" / "gold"
+        target_dir.mkdir(parents=True)
+        target_file = target_dir / "gold_standard.csv"
+        target_file.write_text("")
+
+        result = resolve_start_dir(
+            "data/gold/gold_standard.csv",
+            fallback_start=None,
+            anchor=anchor.resolve(),
+        )
+
+        assert result == target_dir.resolve()
+
 
 class TestIsValidSaveAsFilename:
     @pytest.mark.parametrize(

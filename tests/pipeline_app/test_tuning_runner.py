@@ -19,6 +19,7 @@ from pipeline_app.runner import (
     TuningRunner,
     build_extract_config,
     build_tuning_stage_command,
+    get_tuning_project_root,
 )
 
 
@@ -195,6 +196,23 @@ class TestBuildExtractConfig:
         assert result.llm_effort == "low"
 
 
+class TestGetTuningProjectRoot:
+    def test_uses_main_root_when_flagged(self):
+        main = PipelineAppConfig(project_root="/main")
+        tuning = TuningConfig(use_main_config=True, project_root="/tuning")
+        assert get_tuning_project_root(main, tuning) == "/main"
+
+    def test_uses_tuning_root_when_overridden(self):
+        main = PipelineAppConfig(project_root="/main")
+        tuning = TuningConfig(use_main_config=False, project_root="/tuning")
+        assert get_tuning_project_root(main, tuning) == "/tuning"
+
+    def test_empty_tuning_root_falls_back_to_main(self):
+        main = PipelineAppConfig(project_root="/main")
+        tuning = TuningConfig(use_main_config=False, project_root="")
+        assert get_tuning_project_root(main, tuning) == "/main"
+
+
 class TestTuningRunner:
     @pytest.mark.asyncio
     async def test_runs_all_stages_with_auto_advance(
@@ -247,6 +265,47 @@ class TestTuningRunner:
 
         assert stages_started == TUNING_STAGES
         assert stages_completed == TUNING_STAGES
+
+    @pytest.mark.asyncio
+    async def test_use_main_config_false_runs_from_tuning_project_root(
+        self,
+        project_dir: Path,
+        tmp_path: Path,
+    ):
+        script = project_dir / "noop.py"
+        script.write_text("print('done')\n")
+
+        config = PipelineAppConfig(
+            python_path="python3",
+            project_root=str(tmp_path / "not-a-project"),
+        )
+        tuning = TuningConfig(
+            auto_advance=True,
+            use_main_config=False,
+            project_root=str(project_dir),
+            python_path="python3",
+            pdf_path=str(project_dir),
+            gold_standard_path=str(project_dir / "gs.csv"),
+        )
+
+        stages_started: list[str] = []
+        runner = TuningRunner(SubprocessLock())
+        runner.set_callbacks(
+            on_stdout=lambda _: None,
+            on_stderr=lambda _: None,
+            on_stage_start=lambda s, *_: stages_started.append(s),
+            on_stage_complete=lambda *_: None,
+            on_waiting=lambda: None,
+        )
+
+        await runner.run_experiment(
+            config=config,
+            tuning=tuning,
+            secrets=EnvSecrets(),
+            script_override=str(script),
+        )
+
+        assert stages_started == TUNING_STAGES
 
 
 class TestTuningRunnerBuffering:

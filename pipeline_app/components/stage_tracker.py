@@ -7,7 +7,14 @@ from typing import Literal
 
 from nicegui import ui
 
-StageStatus = Literal["pending", "running", "completed", "failed", "skipped"]
+StageStatus = Literal[
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "skipped",
+    "cancelled",
+]
 
 
 @dataclass(slots=True, frozen=True)
@@ -27,6 +34,7 @@ _STATUS_CONFIG: dict[str, _StatusConfig] = {
     "completed": _StatusConfig("check_circle", "icon-completed", "label-completed"),
     "failed": _StatusConfig("cancel", "icon-failed", "label-failed"),
     "skipped": _StatusConfig("remove_circle_outline", "icon-skipped"),
+    "cancelled": _StatusConfig("block", "icon-cancelled", "label-cancelled"),
 }
 
 _FALLBACK = _STATUS_CONFIG["pending"]
@@ -115,7 +123,7 @@ class StageTracker:
             self._labels[stage].classes(replace=label_cls)
 
             dur_label = self._duration_labels[stage]
-            if duration is not None and status in ("completed", "failed"):
+            if duration is not None and status in ("completed", "failed", "cancelled"):
                 dur_label.text = format_duration(duration)
                 dur_label.set_visibility(True)
             else:
