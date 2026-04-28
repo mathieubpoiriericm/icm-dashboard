@@ -14,6 +14,9 @@ CLAUDE.md
 .lintr
 .markdownlint-cli2.yaml
 
+# Codex
+AGENTS.md
+
 # Files and directories
 data
 docs/other
