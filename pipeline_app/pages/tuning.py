@@ -348,9 +348,8 @@ def create_tuning_page(
                     next_btn.set_visibility(True)
                     skip_btn.set_visibility(True)
 
-            # add_listener (instead of set_callbacks) so a second browser tab
-            # opening mid-experiment doesn't overwrite the first tab's
-            # closures and freeze its log pane / stage tracker.
+            # Each client registers its own listener bundle so concurrent
+            # tabs keep receiving log and tracker updates.
             dispose = runner.add_listener(
                 on_stdout=_on_stdout,
                 on_stderr=_on_stderr,

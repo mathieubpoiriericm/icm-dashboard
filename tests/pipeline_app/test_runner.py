@@ -122,7 +122,7 @@ class TestPipelineRunner:
         stderr_lines: list[str] = []
         stages: list[str] = []
 
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=stdout_lines.append,
             on_stderr=stderr_lines.append,
             on_stage=stages.append,
@@ -154,7 +154,7 @@ class TestPipelineRunner:
         stdout_lines: list[str] = []
         stages: list[str] = []
 
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=stdout_lines.append,
             on_stderr=lambda _: None,
             on_stage=stages.append,
@@ -178,7 +178,7 @@ class TestPipelineRunner:
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
 
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage=lambda _: None,
@@ -207,7 +207,7 @@ class TestPipelineRunner:
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
 
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage=lambda _: None,
@@ -574,7 +574,7 @@ class TestPipelineRunnerReportPath:
         )
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage=lambda _: None,
@@ -598,7 +598,7 @@ class TestPipelineRunnerReportPath:
         )
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage=lambda _: None,
@@ -657,13 +657,13 @@ class TestPipelineRunnerBuffering:
         assert all(v == "pending" for v in runner.stage_statuses.values())
         assert runner.last_result is None
 
-    def test_set_callbacks_fires_on_emit(self):
+    def test_add_listener_fires_on_emit(self):
         lock = SubprocessLock()
         runner = PipelineRunner(lock)
         out: list[str] = []
         err: list[str] = []
         stages: list[str] = []
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=out.append,
             on_stderr=err.append,
             on_stage=stages.append,
@@ -685,7 +685,7 @@ class TestPipelineRunnerBuffering:
         def dead_stdout(_: str) -> None:
             raise RuntimeError("client gone")
 
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=dead_stdout,
             on_stderr=lambda _: None,
             on_stage=lambda _: None,

@@ -665,9 +665,6 @@ class _ListenerRegistry:
     def __init__(self) -> None:
         self._bundles: list[Any] = []
 
-    def set_one(self, bundle: Any) -> None:
-        self._bundles = [bundle]
-
     def add(self, bundle: Any) -> Callable[[], None]:
         self._bundles.append(bundle)
 
@@ -712,7 +709,7 @@ class PipelineRunner:
     Buffers log lines, stage status, and the last result so a UI page that
     reconnects after navigating away mid-run picks up the run in flight
     without losing the stream or the tracker state. Mirrors
-    ``TuningRunner``'s set_callbacks / buffered-state pattern so
+    ``TuningRunner``'s add_listener / buffered-state pattern so
     ``configure_run.py`` and ``tuning.py`` stay structurally symmetric.
     """
 
@@ -725,26 +722,9 @@ class PipelineRunner:
         self.stage_statuses: dict[str, str] = {s: "pending" for s in PIPELINE_STAGES}
         self._current_stage: str | None = None
         self.last_result: RunResult | None = None
-        # Listener bundles keyed by an opaque token the disposer captures.
         # Supports multiple concurrent browser clients: each page mount
-        # appends a bundle, each client-disconnect pops one. Without this,
-        # a second tab's set_callbacks call would overwrite the first
-        # tab's closures and freeze the first tab's log pane mid-run.
+        # appends a listener bundle, each client-disconnect pops one.
         self._listeners = _ListenerRegistry()
-
-    def set_callbacks(
-        self,
-        on_stdout: Callable[[str], None],
-        on_stderr: Callable[[str], None],
-        on_stage: Callable[[str], None],
-    ) -> None:
-        """Replace all listeners with a single bundle (single-client shim).
-
-        Preserved for tests and single-user callers. Multi-client pages
-        should use ``add_listener`` and invoke its returned disposer on
-        client disconnect.
-        """
-        self._listeners.set_one(PipelineListeners(on_stdout, on_stderr, on_stage))
 
     def add_listener(
         self,
@@ -794,7 +774,7 @@ class PipelineRunner:
     ) -> RunResult:
         """Run the pipeline subprocess and stream output into buffered state.
 
-        Callbacks are taken from ``set_callbacks``; pass them before ``run``.
+        Listener callbacks are registered with ``add_listener`` before ``run``.
         Lines are appended to ``log_lines`` first and forwarded to UI
         callbacks second, so a disconnected client can't drop buffered data.
 
@@ -1172,30 +1152,6 @@ class TuningRunner:
         momentarily released) as well as during plain pipeline runs.
         """
         return self.is_active or self._lock.is_running
-
-    def set_callbacks(
-        self,
-        on_stdout: Callable[[str], None],
-        on_stderr: Callable[[str], None],
-        on_stage_start: Callable[[str, int, int], None],
-        on_stage_complete: Callable[[str, list[Path]], None],
-        on_waiting: Callable[[], None],
-    ) -> None:
-        """Replace all listeners with a single bundle (single-client shim).
-
-        Preserved for tests and single-user callers. Multi-client pages
-        should use ``add_listener`` and invoke its returned disposer on
-        client disconnect.
-        """
-        self._listeners.set_one(
-            TuningListeners(
-                on_stdout,
-                on_stderr,
-                on_stage_start,
-                on_stage_complete,
-                on_waiting,
-            )
-        )
 
     def add_listener(
         self,

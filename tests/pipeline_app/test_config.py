@@ -23,7 +23,6 @@ from pipeline_app.config import (
     load_tuning_config,
     save_config,
     save_history,
-    save_preset,
     save_tuning_config,
     strip_secrets_from_config,
     upsert_preset,
@@ -223,9 +222,9 @@ class TestHistory:
 
 
 class TestPresets:
-    def test_save_and_load(self, tmp_config_dir):
+    def test_upsert_and_load(self, tmp_config_dir):
         config = PipelineAppConfig(llm_model="claude-sonnet-4-6")
-        presets = save_preset("My Preset", config)
+        presets = upsert_preset("My Preset", config)
         assert len(presets) == 1
         loaded = load_preset(presets[0].id)
         assert loaded is not None
@@ -236,14 +235,14 @@ class TestPresets:
 
     def test_delete(self, tmp_config_dir):
         config = PipelineAppConfig()
-        presets = save_preset("Delete Me", config)
+        presets = upsert_preset("Delete Me", config)
         preset_id = presets[0].id
         delete_preset(preset_id)
         assert load_preset(preset_id) is None
 
     def test_multiple_presets(self, tmp_config_dir):
-        presets1 = save_preset("A", PipelineAppConfig(days_back=1))
-        presets2 = save_preset("B", PipelineAppConfig(days_back=2))
+        presets1 = upsert_preset("A", PipelineAppConfig(days_back=1))
+        presets2 = upsert_preset("B", PipelineAppConfig(days_back=2))
         id1 = presets1[-1].id
         id2 = presets2[-1].id
         loaded1 = load_preset(id1)
@@ -285,7 +284,6 @@ class TestUpsertPreset:
         assert by_name["B"].config["days_back"] == 2
 
     def test_strips_secrets(self, tmp_config_dir):
-        # Confirm the same secret-scrubbing contract as save_preset.
         cfg = PipelineAppConfig()
         presets = upsert_preset("A", cfg)
         for field in ("anthropic_api_key", "db_password", "ncbi_api_key"):
@@ -493,7 +491,7 @@ class TestPresetCache:
 
     def test_cache_hit_avoids_disk_read(self, tmp_config_dir, monkeypatch):
         config = PipelineAppConfig()
-        save_preset("A", config)
+        upsert_preset("A", config)
         # Force the cache to be populated, then sabotage the file so any
         # subsequent read would crash. Cache hit means no re-read happens.
         load_presets()
@@ -503,21 +501,21 @@ class TestPresetCache:
         assert result == []
 
     def test_save_invalidates_cache(self, tmp_config_dir):
-        save_preset("A", PipelineAppConfig(days_back=1))
+        upsert_preset("A", PipelineAppConfig(days_back=1))
         first = load_presets()
         assert len(first) == 1
-        save_preset("B", PipelineAppConfig(days_back=2))
+        upsert_preset("B", PipelineAppConfig(days_back=2))
         second = load_presets()
         assert len(second) == 2
 
     def test_delete_invalidates_cache(self, tmp_config_dir):
-        presets = save_preset("A", PipelineAppConfig())
+        presets = upsert_preset("A", PipelineAppConfig())
         assert len(load_presets()) == 1
         delete_preset(presets[0].id)
         assert load_presets() == []
 
     def test_returns_copy_not_reference(self, tmp_config_dir):
-        save_preset("A", PipelineAppConfig())
+        upsert_preset("A", PipelineAppConfig())
         first = load_presets()
         first.clear()
         second = load_presets()

@@ -500,21 +500,6 @@ def _save_presets(presets: list[Preset]) -> None:
     _presets_cache = None
 
 
-def save_preset(name: str, config: PipelineAppConfig) -> list[Preset]:
-    """Save a new preset and return the updated presets list."""
-    presets = load_presets()
-    preset_id = str(uuid.uuid4())
-    presets.append(
-        Preset(
-            id=preset_id,
-            name=name,
-            config=_preset_config(config),
-        )
-    )
-    _save_presets(presets)
-    return presets
-
-
 def upsert_preset(name: str, config: PipelineAppConfig) -> list[Preset]:
     """Save a preset, replacing any existing one with the same name.
 

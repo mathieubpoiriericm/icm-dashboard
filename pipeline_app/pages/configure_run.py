@@ -492,10 +492,8 @@ def create_configure_run_page(
                 # the page just has to paint.
                 _refresh_stage_tracker()
 
-            # add_listener (instead of set_callbacks) so a second browser tab
-            # opening mid-run doesn't overwrite the first tab's closures and
-            # freeze its log pane. Each client registers its own bundle and
-            # cleans up on disconnect.
+            # Each client registers its own listener bundle and cleans up on
+            # disconnect so concurrent tabs keep receiving updates.
             dispose = runner.add_listener(
                 on_stdout=_on_stdout,
                 on_stderr=_on_stderr,

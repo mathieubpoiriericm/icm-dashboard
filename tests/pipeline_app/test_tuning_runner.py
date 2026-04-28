@@ -248,7 +248,7 @@ class TestTuningRunner:
         score_dist = logs_tuning / "score_distribution_test.csv"
         score_dist.write_text("gene,score\nA,0.5\n")
 
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda s, r, t: stages_started.append(s),
@@ -290,7 +290,7 @@ class TestTuningRunner:
 
         stages_started: list[str] = []
         runner = TuningRunner(SubprocessLock())
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda s, *_: stages_started.append(s),
@@ -389,11 +389,11 @@ class TestTuningRunnerStageStatuses:
 
 
 class TestTuningRunnerCallbacks:
-    def test_set_callbacks_replaces_existing(self):
+    def test_add_listener_fans_out_until_disposed(self):
         lock = SubprocessLock()
         runner = TuningRunner(lock)
         first: list[str] = []
-        runner.set_callbacks(
+        dispose_first = runner.add_listener(
             on_stdout=first.append,
             on_stderr=lambda _: None,
             on_stage_start=lambda *_: None,
@@ -402,7 +402,7 @@ class TestTuningRunnerCallbacks:
         )
         runner._emit_stdout("first")
         second: list[str] = []
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=second.append,
             on_stderr=lambda _: None,
             on_stage_start=lambda *_: None,
@@ -410,14 +410,18 @@ class TestTuningRunnerCallbacks:
             on_waiting=lambda: None,
         )
         runner._emit_stdout("second")
-        assert first == ["first"]
+        assert first == ["first", "second"]
         assert second == ["second"]
+        dispose_first()
+        runner._emit_stdout("third")
+        assert first == ["first", "second"]
+        assert second == ["second", "third"]
 
     def test_emit_stdout_calls_callback(self):
         lock = SubprocessLock()
         runner = TuningRunner(lock)
         lines: list[str] = []
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lines.append,
             on_stderr=lambda _: None,
             on_stage_start=lambda *_: None,
@@ -431,7 +435,7 @@ class TestTuningRunnerCallbacks:
         lock = SubprocessLock()
         runner = TuningRunner(lock)
         lines: list[str] = []
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lines.append,
             on_stage_start=lambda *_: None,
@@ -475,7 +479,7 @@ class TestTuningRunnerCancel:
 
         lock = SubprocessLock()
         runner = TuningRunner(lock)
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda *_: None,
@@ -520,7 +524,7 @@ class TestTuningRunnerAdvanceSkip:
 
         lock = SubprocessLock()
         runner = TuningRunner(lock)
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda s, r, t: stages_started.append(s),
@@ -572,7 +576,7 @@ class TestTuningRunnerAdvanceSkip:
 
         lock = SubprocessLock()
         runner = TuningRunner(lock)
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda s, r, t: stages_started.append(s),
@@ -628,7 +632,7 @@ class TestTuningRunnerMultiRepeat:
 
         lock = SubprocessLock()
         runner = TuningRunner(lock)
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda s, r, t: stage_starts.append((s, r, t)),
@@ -679,7 +683,7 @@ class TestTuningRunnerActivityState:
 
         waiting_event = asyncio.Event()
         runner = TuningRunner(SubprocessLock())
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda *_: None,
@@ -723,7 +727,7 @@ class TestTuningRunnerActivityState:
 
         waiting_event = asyncio.Event()
         runner = TuningRunner(SubprocessLock())
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda *_: None,
@@ -765,7 +769,7 @@ class TestTuningRunnerActivityState:
         )
 
         runner = TuningRunner(SubprocessLock())
-        runner.set_callbacks(
+        runner.add_listener(
             on_stdout=lambda _: None,
             on_stderr=lambda _: None,
             on_stage_start=lambda *_: None,

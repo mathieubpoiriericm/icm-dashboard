@@ -20,7 +20,7 @@ _GOOGLE_FONTS = (
     "&family=JetBrains+Mono:wght@400"
     # Bricolage Grotesque: variable display face used for titles and stat
     # values. opsz axis is referenced from theme.css; opsz range 12–96 covers
-    # everything from small labels up to the .display-xl size.
+    # small labels through page titles.
     "&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700"
     '&display=swap" rel="stylesheet">'
 )
