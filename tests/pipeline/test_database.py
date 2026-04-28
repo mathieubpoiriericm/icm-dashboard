@@ -196,33 +196,34 @@ class TestAllowedLists:
 
 
 class TestReferenceSqlPatterns:
-    """Verify the reference-matching SQL logic prevents substring false positives.
+    """Verify the reference merge SQL uses token-level union.
 
     These tests inspect the SQL strings in merge_genes_transactional to
-    confirm that exact token matching is used, not substring LIKE.
+    confirm that semicolon-delimited references are split and re-aggregated
+    instead of compared as one string.
     """
 
-    def test_update_uses_exact_token_matching(self):
-        """UPDATE query must NOT use substring LIKE for reference matching."""
+    def test_update_does_not_use_like_for_reference_matching(self):
         import inspect
 
         source = inspect.getsource(merge_genes_transactional)
-        # Old buggy pattern: LIKE '%' || $3 || '%'
-        assert "'%' || $3 || '%'" not in source, (
-            "UPDATE still uses substring LIKE — PMID '1234' would match '12345'"
-        )
+        assert " LIKE " not in source
 
-    def test_update_has_exact_match_clauses(self):
-        """UPDATE query should use exact semicolon-delimited token matching."""
+    def test_update_splits_and_reaggregates_references(self):
         import inspect
 
         source = inspect.getsource(merge_genes_transactional)
-        # Exact match: "references" = $3
-        assert '"references" = $3' in source
-        # Starts with: "references" LIKE $3 || '; %'
-        assert "$3 || '; %'" in source
-        # Ends with: "references" LIKE '%; ' || $3
-        assert "'%; ' || $3" in source
+        assert 'string_to_array(COALESCE("references", \'\'), \';\')' in source
+        assert "string_agg(val, '; ' ORDER BY first_ord)" in source
+        assert "GROUP BY val" in source
+
+    def test_update_preserves_and_unions_non_reference_evidence(self):
+        import inspect
+
+        source = inspect.getsource(merge_genes_transactional)
+        assert "mendelian_randomization = CASE" in source
+        assert "genes.protein IS NULL" in source
+        assert "COALESCE(gwas_trait, '')" in source
 
     def test_insert_has_on_conflict(self):
         """INSERT query must have ON CONFLICT for concurrent-run safety."""

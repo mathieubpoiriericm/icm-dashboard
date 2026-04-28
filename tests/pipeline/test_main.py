@@ -10,6 +10,7 @@ import pytest
 
 from pipeline.config import PipelineConfig
 from pipeline.main import (
+    ExtractionFailedError,
     PaperResult,
     _build_parser,
     _run_selected_pipelines,
@@ -246,6 +247,64 @@ class TestRunPipeline:
 
         await run_pipeline(days_back=7, test_mode=True)
         mock_extract.assert_not_called()
+
+    async def test_extraction_failure_not_recorded_as_processed(self, mocker):
+        mocker.patch("pipeline.main.search_recent_papers", return_value=["111"])
+        mocker.patch(
+            "pipeline.main.get_existing_pmids",
+            new_callable=AsyncMock,
+            return_value=set(),
+        )
+        mocker.patch(
+            "pipeline.main.fetch_paper_metadata",
+            new_callable=AsyncMock,
+            return_value={"pmid": "111", "doi": None},
+        )
+        mocker.patch(
+            "pipeline.main.get_fulltext",
+            new_callable=AsyncMock,
+            return_value={
+                "text": "paper text",
+                "source": "abstract",
+                "fulltext": False,
+            },
+        )
+        mocker.patch(
+            "pipeline.main.extract_from_paper",
+            new_callable=AsyncMock,
+            side_effect=ExtractionFailedError(
+                "provider failed",
+                TokenUsage(input_tokens=10, output_tokens=5),
+            ),
+        )
+        mocker.patch("pipeline.main.reset_sequence", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.merge_gene_entries", new_callable=AsyncMock)
+        mock_record_pmids = mocker.patch(
+            "pipeline.main.record_processed_pmids_batch",
+            new_callable=AsyncMock,
+            return_value=0,
+        )
+        mocker.patch("pipeline.main.record_pipeline_run", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.write_comprehensive_report")
+        mocker.patch("pipeline.main.print_rich_summary")
+        mocker.patch("pipeline.main._record_and_notify", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.ping_start", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.ping_success", new_callable=AsyncMock)
+        mocker.patch("pipeline.main._close_metadata_client", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.close_http_client", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.close_validation_client", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.close_async_client", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.close_healthcheck_client", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.clear_gene_cache")
+
+        metrics, run_data = await run_pipeline(days_back=7)
+
+        assert metrics.papers_processed == 0
+        assert metrics.token_usage.total_tokens == 15
+        assert run_data is not None
+        assert run_data["papers"]["failed"] == 1
+        mock_record_pmids.assert_awaited_once_with([])
 
     async def test_existing_pmids_error_treated_as_empty(self, mocker):
         mocker.patch(

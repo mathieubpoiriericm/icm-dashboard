@@ -1,27 +1,14 @@
-"""End-to-end test against a real local Ollama server.
-
-Skipped unless PIPELINE_TEST_OLLAMA=1. Requires:
-  - `ollama serve` running
-  - `ollama pull gemma4:e4b` completed
-"""
+"""End-to-end Ollama-provider dispatch test with the SDK boundary mocked."""
 
 from __future__ import annotations
 
-import os
+from unittest.mock import AsyncMock, MagicMock
 
+import ollama
 import pytest
 
 from pipeline.config import PipelineConfig
 from pipeline.llm_extraction import close_async_client, extract_from_paper
-
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        os.environ.get("PIPELINE_TEST_OLLAMA") != "1",
-        reason="set PIPELINE_TEST_OLLAMA=1 to run",
-    ),
-]
-
 
 SAMPLE_TEXT = (
     "Genome-wide association studies have identified NOTCH3 as a monogenic "
@@ -31,9 +18,51 @@ SAMPLE_TEXT = (
 )
 
 
+def _chat_response(content: str) -> ollama.ChatResponse:
+    """Build a realistic ChatResponse for the mocked Ollama SDK."""
+    return ollama.ChatResponse(
+        model="gemma4:e4b",
+        message=ollama.Message(role="assistant", content=content),
+        eval_count=75,
+        prompt_eval_count=250,
+        done_reason="stop",
+    )
+
+
 @pytest.mark.asyncio
 async def test_ollama_end_to_end(monkeypatch):
-    # Force the ollama provider for this test regardless of env defaults.
+    list_response = MagicMock()
+    list_response.models = [MagicMock(model="gemma4:e4b")]
+
+    mock_client = MagicMock()
+    mock_client.list = AsyncMock(return_value=list_response)
+    mock_client.chat = AsyncMock(
+        return_value=_chat_response(
+            """
+            {
+              "genes": [
+                {
+                  "gene_symbol": "NOTCH3",
+                  "confidence": 0.92,
+                  "protein_name": "Notch receptor 3",
+                  "gwas_trait": ["SVS"],
+                  "mendelian_randomization": false,
+                  "omics_evidence": []
+                },
+                {
+                  "gene_symbol": "HTRA1",
+                  "confidence": 0.88,
+                  "protein_name": "HtrA serine peptidase 1",
+                  "gwas_trait": ["WMH"],
+                  "mendelian_randomization": false,
+                  "omics_evidence": []
+                }
+              ]
+            }
+            """
+        )
+    )
+    monkeypatch.setattr(ollama, "AsyncClient", lambda host=None: mock_client)
     monkeypatch.setenv("PIPELINE_LLM_PROVIDER", "ollama")
     monkeypatch.delenv("PIPELINE_PROMPT_VERSION", raising=False)
     try:
@@ -53,5 +82,7 @@ async def test_ollama_end_to_end(monkeypatch):
             assert g.pmid == "99999999"
             assert 0.0 <= g.confidence <= 1.0
         assert usage.output_tokens > 0
+        mock_client.list.assert_awaited_once()
+        mock_client.chat.assert_awaited_once()
     finally:
         await close_async_client()

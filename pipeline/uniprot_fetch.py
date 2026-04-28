@@ -45,6 +45,7 @@ class UniProtInfo:
     molecular_function: str | None
     cellular_component: str | None
     url: str | None
+    cacheable_miss: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -112,14 +113,18 @@ def _clean_go_term(text: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | None]:
+async def _fetch_uniprot_accession_status(
+    gene_symbol: str,
+) -> tuple[str | None, str | None, bool]:
     """Fetch UniProt accession for a gene symbol.
 
     Args:
         gene_symbol: Gene symbol to look up.
 
     Returns:
-        Tuple of (accession, protein_name) or (None, None) if not found.
+        Tuple of (accession, protein_name, cacheable_miss). ``cacheable_miss``
+        is False for transient API/client failures that should not be stored
+        as durable negative cache rows.
     """
     # Try exact gene name match first
     params = {
@@ -137,7 +142,7 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
             logger.warning(
                 f"UniProt search failed for {gene_symbol}: {resp.status_code}"
             )
-            return None, None
+            return None, None, False
 
         lines = resp.text.strip().split("\n")
         if len(lines) < 2:
@@ -146,12 +151,12 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
             resp = await client.get(UNIPROT_BASE_URL, params=params)
 
             if resp.status_code != 200:
-                return None, None
+                return None, None, False
 
             lines = resp.text.strip().split("\n")
             if len(lines) < 2:
                 logger.debug(f"No UniProt entry found for {gene_symbol}")
-                return None, None
+                return None, None, True
 
         # Parse TSV response - first line is header
         # Prefer exact primary gene match, otherwise take first result
@@ -176,14 +181,14 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
 
                 # Prefer exact match on primary gene
                 if primary_gene.upper() == gene_symbol.upper():
-                    return accession, protein_name
+                    return accession, protein_name, True
 
                 # Store first result as fallback
                 if best_accession is None:
                     best_accession = accession
                     best_protein = protein_name
 
-        return best_accession, best_protein
+        return best_accession, best_protein, True
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout querying UniProt for {gene_symbol}")
@@ -192,7 +197,23 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
     except (ValueError, IndexError) as e:
         logger.warning(f"Failed to parse UniProt response for {gene_symbol}: {e}")
 
-    return None, None
+    return None, None, False
+
+
+async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | None]:
+    """Fetch UniProt accession for a gene symbol.
+
+    Args:
+        gene_symbol: Gene symbol to look up.
+
+    Returns:
+        Tuple of (accession, protein_name) or (None, None) if not found or if
+        UniProt is temporarily unavailable.
+    """
+    accession, protein_name, _cacheable_miss = await _fetch_uniprot_accession_status(
+        gene_symbol
+    )
+    return accession, protein_name
 
 
 async def fetch_uniprot_go_info(accession: str) -> dict[str, str | None]:
@@ -277,7 +298,9 @@ async def fetch_uniprot_info(
 
 async def _fetch_uniprot_uncached(gene_symbol: str) -> UniProtInfo:
     """Internal: fetch UniProt data without caching."""
-    accession, protein_name = await fetch_uniprot_accession(gene_symbol)
+    accession, protein_name, cacheable_miss = await _fetch_uniprot_accession_status(
+        gene_symbol
+    )
 
     if not accession:
         return UniProtInfo(
@@ -288,6 +311,7 @@ async def _fetch_uniprot_uncached(gene_symbol: str) -> UniProtInfo:
             molecular_function=None,
             cellular_component=None,
             url=None,
+            cacheable_miss=cacheable_miss,
         )
 
     # Fetch GO annotations
@@ -380,13 +404,15 @@ async def sync_uniprot_info(
     # Store in database
     successful = [g for g in fetched_genes if g.accession is not None]
     failed = [g for g in fetched_genes if g.accession is None]
+    cacheable_failed = [g for g in failed if g.cacheable_miss]
 
     if successful:
         await upsert_uniprot_batch(successful)
 
-    # Also store failed lookups so we don't retry them
-    if failed:
-        await upsert_uniprot_batch(failed)
+    # Store confirmed "not found" lookups, but do not persist transient API
+    # failures as 30-day negative cache rows.
+    if cacheable_failed:
+        await upsert_uniprot_batch(cacheable_failed)
 
     return SyncResult(
         fetched=len(successful),

@@ -399,3 +399,24 @@ class TestSyncNCBIGeneInfo:
         assert any("FAKE" in e for e in result.errors)
         # Failed lookups are also upserted
         mock_upsert.assert_called_once()
+
+    async def test_transient_failures_not_stored(self, mocker):
+        mocker.patch(
+            "pipeline.database.get_cached_ncbi_genes",
+            return_value={},
+        )
+        transient = NCBIGeneInfo(
+            "HTRA1", None, None, None, cacheable_miss=False
+        )
+        mocker.patch(
+            "pipeline.ncbi_gene_fetch.fetch_ncbi_genes_batch",
+            return_value=[transient],
+        )
+        mock_upsert = mocker.patch(
+            "pipeline.database.upsert_ncbi_genes_batch",
+            return_value=0,
+        )
+
+        result = await sync_ncbi_gene_info(["HTRA1"])
+        assert result.failed == 1
+        mock_upsert.assert_not_called()

@@ -268,8 +268,8 @@ class TestFetchUniProtInfo:
 
     async def test_cache_miss_fetches_and_caches(self, mocker):
         mocker.patch(
-            "pipeline.uniprot_fetch.fetch_uniprot_accession",
-            return_value=("P12345", "Notch 3"),
+            "pipeline.uniprot_fetch._fetch_uniprot_accession_status",
+            return_value=("P12345", "Notch 3", True),
         )
         mocker.patch(
             "pipeline.uniprot_fetch.fetch_uniprot_go_info",
@@ -291,8 +291,8 @@ class TestFetchUniProtInfo:
 
     async def test_no_accession_returns_empty_info(self, mocker):
         mocker.patch(
-            "pipeline.uniprot_fetch.fetch_uniprot_accession",
-            return_value=(None, None),
+            "pipeline.uniprot_fetch._fetch_uniprot_accession_status",
+            return_value=(None, None, True),
         )
 
         result = await fetch_uniprot_info("FAKE")
@@ -316,14 +316,14 @@ class TestFetchUniProtInfo:
         clear_uniprot_cache()
         accession_calls = 0
 
-        async def slow_accession(symbol: str) -> tuple[str, str]:
+        async def slow_accession(symbol: str) -> tuple[str, str, bool]:
             nonlocal accession_calls
             accession_calls += 1
             await asyncio.sleep(0)
-            return "P12345", "Notch 3"
+            return "P12345", "Notch 3", True
 
         mocker.patch(
-            "pipeline.uniprot_fetch.fetch_uniprot_accession",
+            "pipeline.uniprot_fetch._fetch_uniprot_accession_status",
             side_effect=slow_accession,
         )
         mocker.patch(
@@ -408,3 +408,24 @@ class TestSyncUniProtInfo:
         assert any("FAKE" in e for e in result.errors)
         # Both successful and failed are upserted
         assert mock_upsert.call_count == 2
+
+    async def test_transient_failures_not_stored(self, mocker):
+        mocker.patch(
+            "pipeline.database.get_cached_uniprot_info",
+            return_value={},
+        )
+        transient = UniProtInfo(
+            "HTRA1", None, None, None, None, None, None, cacheable_miss=False
+        )
+        mocker.patch(
+            "pipeline.uniprot_fetch.fetch_uniprot_batch",
+            return_value=[transient],
+        )
+        mock_upsert = mocker.patch(
+            "pipeline.database.upsert_uniprot_batch",
+            return_value=0,
+        )
+
+        result = await sync_uniprot_info(["HTRA1"])
+        assert result.failed == 1
+        mock_upsert.assert_not_called()

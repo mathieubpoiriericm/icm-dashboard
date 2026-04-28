@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import anthropic
 import httpx
+import pytest
 
 from pipeline.llm_providers.anthropic_provider import AnthropicProvider
+from pipeline.llm_providers.base import ExtractionFailedError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -78,10 +80,10 @@ class TestAnthropicProviderExtract:
         mocker.patch.object(provider, "_get_client", return_value=mock_client)
 
         from pipeline.config import PipelineConfig
-        genes, usage = await provider.extract(
-            "Some paper text", "12345678", PipelineConfig(), None
-        )
-        assert genes == []
+        with pytest.raises(ExtractionFailedError, match="Empty text response"):
+            await provider.extract(
+                "Some paper text", "12345678", PipelineConfig(), None
+            )
 
     async def test_thinking_blocks_skipped(self, mocker, mock_anthropic_response):
         response = mock_anthropic_response(text='{"genes": []}', include_thinking=True)
@@ -108,10 +110,8 @@ class TestAnthropicProviderExtract:
         mocker.patch.object(provider, "_get_client", return_value=mock_client)
 
         from pipeline.config import PipelineConfig
-        genes, usage = await provider.extract(
-            "Paper text", "12345678", PipelineConfig(), None
-        )
-        assert genes == []
+        with pytest.raises(ExtractionFailedError, match="Claude API error"):
+            await provider.extract("Paper text", "12345678", PipelineConfig(), None)
 
     async def test_rate_limiter_called(self, mocker, mock_anthropic_response, config):
         response = mock_anthropic_response(text='{"genes": []}')
@@ -290,8 +290,8 @@ class TestAnthropicProviderExtract:
         from pipeline.config import PipelineConfig
 
         cfg = PipelineConfig(max_connection_retries=3)
-        genes, _ = await provider.extract("Paper text", "12345678", cfg, None)
-        assert genes == []
+        with pytest.raises(ExtractionFailedError, match="Connection retries exhausted"):
+            await provider.extract("Paper text", "12345678", cfg, None)
         assert mock_client.messages.stream.call_count == cfg.max_connection_retries + 1
 
 
@@ -313,7 +313,8 @@ class TestAnthropicProviderLifecycle:
         provider = AnthropicProvider()
         assert provider.supports_prompt_caching() is True
 
-    def test_client_lazy_created(self, mocker):
+    def test_client_lazy_created(self, mocker, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         mock_cls = mocker.patch(
             "pipeline.llm_providers.anthropic_provider.anthropic.AsyncAnthropic"
         )
@@ -323,7 +324,14 @@ class TestAnthropicProviderLifecycle:
         mock_cls.assert_called_once()
         assert provider._client is not None
 
-    async def test_close_clears_client(self, mocker):
+    def test_client_requires_api_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        provider = AnthropicProvider()
+        with pytest.raises(ExtractionFailedError, match="ANTHROPIC_API_KEY"):
+            provider._get_client()
+
+    async def test_close_clears_client(self, mocker, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         mock_cls = mocker.patch(
             "pipeline.llm_providers.anthropic_provider.anthropic.AsyncAnthropic"
         )

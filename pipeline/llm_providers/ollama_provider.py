@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from pipeline.llm_providers.base import (
     EXTRACTION_JSON_SCHEMA,
+    ExtractionFailedError,
     GeneEntry,
     parse_extraction_response,
 )
@@ -173,10 +174,13 @@ class OllamaProvider:
                         pmid,
                         used,
                     )
-                    return [], TokenUsage(
-                        input_tokens=response.prompt_eval_count or 0,
-                        output_tokens=used,
-                        truncated_responses=1,
+                    raise ExtractionFailedError(
+                        f"Response truncated for PMID {pmid}",
+                        TokenUsage(
+                            input_tokens=response.prompt_eval_count or 0,
+                            output_tokens=used,
+                            truncated_responses=1,
+                        ),
                     )
                 raw = response.message.content or ""
                 result = parse_extraction_response(raw)
@@ -196,7 +200,9 @@ class OllamaProvider:
                     e,
                 )
                 if validation_attempt >= config.max_retries:
-                    raise
+                    raise ExtractionFailedError(
+                        f"Ollama validation retries exhausted for PMID {pmid}: {e}"
+                    ) from e
                 validation_attempt += 1
                 # No backoff — local server; nothing to wait on.
             except (
@@ -213,7 +219,9 @@ class OllamaProvider:
                         config.max_connection_retries,
                         e,
                     )
-                    raise
+                    raise ExtractionFailedError(
+                        f"Ollama connection retries exhausted for PMID {pmid}: {e}"
+                    ) from e
                 backoff = compute_backoff(
                     config.connection_retry_delay, connection_retries
                 )

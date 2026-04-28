@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from pipeline.llm_providers.base import (
+    ExtractionFailedError,
     ExtractionResult,
     GeneEntry,
     LLMProvider,
@@ -50,6 +51,7 @@ def get_provider(config: PipelineConfig) -> LLMProvider:
 
 
 __all__ = [
+    "ExtractionFailedError",
     "ExtractionResult",
     "GeneEntry",
     "LLMProvider",

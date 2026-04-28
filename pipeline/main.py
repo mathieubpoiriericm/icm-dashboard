@@ -186,7 +186,11 @@ from pipeline.healthcheck import (
     ping_success,
 )
 from pipeline.http_client import AsyncHttpClientManager
-from pipeline.llm_extraction import close_async_client, extract_from_paper
+from pipeline.llm_extraction import (
+    ExtractionFailedError,
+    close_async_client,
+    extract_from_paper,
+)
 from pipeline.llm_providers.base import GeneEntry
 from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state
 from pipeline.notifications import send_pipeline_notification
@@ -513,9 +517,14 @@ async def process_paper(
         logger.info("  Using abstract only")
 
     # Extract structured data using LLM (returns typed GeneEntry instances)
-    genes, token_usage = await extract_from_paper(
-        text, pmid, config=config, rate_limiter=rate_limiter
-    )
+    try:
+        genes, token_usage = await extract_from_paper(
+            text, pmid, config=config, rate_limiter=rate_limiter
+        )
+    except ExtractionFailedError as e:
+        if e.token_usage is not None:
+            metrics.token_usage += e.token_usage
+        raise
     metrics.genes_extracted += len(genes)
     metrics.token_usage += token_usage
 

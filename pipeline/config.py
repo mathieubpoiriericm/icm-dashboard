@@ -449,15 +449,6 @@ class PipelineConfig:
         if self.ct_max_retries < 0:
             raise ValueError(f"ct_max_retries must be >= 0, got {self.ct_max_retries}")
 
-        # Surface missing key at config-load instead of after minutes of
-        # fetching — the Anthropic SDK's AuthenticationError is otherwise
-        # opaque deep inside the provider.
-        if self.llm_provider == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
-            raise ValueError(
-                "ANTHROPIC_API_KEY is required when llm_provider='anthropic'. "
-                "Set it in .env or use --llm-provider ollama for local extraction."
-            )
-
     @property
     def model_version(self) -> str:
         """Extract short version from llm_model (e.g. 'claude-opus-4-7' -> '4.7')."""

@@ -218,6 +218,7 @@ def _reset_llm_client():
     import pipeline.llm_extraction as llm
 
     llm._provider = None
+    llm._provider_cache_key = None
 
 
 @pytest.fixture(autouse=True)
@@ -268,7 +269,7 @@ def _reset_main_client():
     yield
     import pipeline.main as m
 
-    m._metadata_client = None
+    m._metadata_client_manager.reset()
 
 
 @pytest.fixture(autouse=True)

@@ -45,6 +45,7 @@ class NCBIGeneInfo:
     ncbi_uid: str | None
     description: str | None
     aliases: str | None
+    cacheable_miss: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +238,7 @@ async def fetch_ncbi_genes_batch(
             ncbi_uid=None,
             description=None,
             aliases=None,
+            cacheable_miss=False,
         )
 
     return await run_batched_fetch(
@@ -292,13 +294,15 @@ async def sync_ncbi_gene_info(
     # Store in database
     successful = [g for g in fetched_genes if g.ncbi_uid is not None]
     failed = [g for g in fetched_genes if g.ncbi_uid is None]
+    cacheable_failed = [g for g in failed if g.cacheable_miss]
 
     if successful:
         await upsert_ncbi_genes_batch(successful)
 
-    # Also store failed lookups so we don't retry them
-    if failed:
-        await upsert_ncbi_genes_batch(failed)
+    # Store confirmed "not found" lookups, but do not persist transient API
+    # failures as 30-day negative cache rows.
+    if cacheable_failed:
+        await upsert_ncbi_genes_batch(cacheable_failed)
 
     return SyncResult(
         fetched=len(successful),

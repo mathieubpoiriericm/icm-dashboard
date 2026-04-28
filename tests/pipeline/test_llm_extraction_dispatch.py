@@ -78,3 +78,36 @@ async def test_dispatch_swaps_provider_when_name_changes():
         await le.extract_from_paper("t", "2", cfg_o, None)
 
     stub.extract.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_swaps_ollama_provider_when_model_changes():
+    class StubOllama:
+        name = "ollama"
+
+        def __init__(self, label):
+            self.label = label
+            self.extract = AsyncMock(return_value=([], MagicMock()))
+            self.close = AsyncMock()
+
+        def supports_thinking(self):
+            return False
+
+        def supports_prompt_caching(self):
+            return False
+
+    stubs: list[StubOllama] = []
+
+    def fake_factory(cfg):
+        stub = StubOllama(cfg.ollama_model)
+        stubs.append(stub)
+        return stub
+
+    with patch("pipeline.llm_extraction.get_provider", side_effect=fake_factory):
+        cfg_a = PipelineConfig(llm_provider="ollama", ollama_model="model-a")
+        cfg_b = PipelineConfig(llm_provider="ollama", ollama_model="model-b")
+        await le.extract_from_paper("t", "1", cfg_a, None)
+        await le.extract_from_paper("t", "2", cfg_b, None)
+
+    assert [s.label for s in stubs] == ["model-a", "model-b"]
+    stubs[0].close.assert_awaited_once()

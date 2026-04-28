@@ -116,7 +116,7 @@ class TestOllamaReportMetadata:
     """Verify reports produced for Ollama runs show correct model + zero cost."""
 
     def _build_ollama(self, **kwargs):
-        defaults = {
+        defaults: dict[str, Any] = {
             "metrics": PipelineMetrics(
                 papers_processed=2,
                 fulltext_retrieved=1,

@@ -197,3 +197,10 @@ class TestProviderFields:
         monkeypatch.delenv("PIPELINE_PROMPT_VERSION", raising=False)
         cfg = PipelineConfig()
         assert cfg.prompt_version == "v5"
+
+    def test_anthropic_config_does_not_require_api_key(self, monkeypatch):
+        """Non-LLM pipeline modes can still build config without Anthropic creds."""
+        monkeypatch.setenv("PIPELINE_LLM_PROVIDER", "anthropic")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        cfg = PipelineConfig()
+        assert cfg.llm_provider == "anthropic"

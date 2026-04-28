@@ -208,24 +208,105 @@ async def merge_genes_transactional(
                         affected_pathway, "references"
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     ON CONFLICT (gene) DO UPDATE SET
-                        gwas_trait = EXCLUDED.gwas_trait,
-                        evidence_from_other_omics_studies =
-                            EXCLUDED.evidence_from_other_omics_studies,
-                        "references" = CASE
-                            WHEN EXCLUDED."references" IS NULL
-                              OR EXCLUDED."references" = ''
-                            THEN COALESCE(genes."references", '')
-                            WHEN genes."references" IS NULL
-                              OR genes."references" = ''
-                            THEN EXCLUDED."references"
-                            WHEN genes."references" = EXCLUDED."references"
-                              OR genes."references" LIKE EXCLUDED."references" || '; %'
-                              OR genes."references" LIKE '%; ' || EXCLUDED."references"
-                              OR genes."references" LIKE
-                                  '%; ' || EXCLUDED."references" || '; %'
-                            THEN genes."references"
-                            ELSE genes."references" || '; ' || EXCLUDED."references"
+                        protein = CASE
+                            WHEN genes.protein IS NULL
+                              OR genes.protein = ''
+                              OR genes.protein = genes.gene
+                            THEN COALESCE(NULLIF(EXCLUDED.protein, ''), genes.protein)
+                            ELSE genes.protein
                         END,
+                        gwas_trait = (
+                            SELECT COALESCE(
+                                string_agg(val, ', ' ORDER BY first_ord), ''
+                            )
+                            FROM (
+                                SELECT val, MIN(ord) AS first_ord
+                                FROM (
+                                    SELECT btrim(value) AS val, ord
+                                    FROM unnest(
+                                        string_to_array(
+                                            COALESCE(genes.gwas_trait, ''),
+                                            ','
+                                        )
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                    UNION ALL
+                                    SELECT btrim(value) AS val, ord + 100000
+                                    FROM unnest(
+                                        string_to_array(
+                                            COALESCE(EXCLUDED.gwas_trait, ''), ','
+                                        )
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                ) raw
+                                WHERE val <> ''
+                                GROUP BY val
+                            ) dedup
+                        ),
+                        mendelian_randomization = CASE
+                            WHEN genes.mendelian_randomization = 'Y'
+                              OR EXCLUDED.mendelian_randomization = 'Y'
+                            THEN 'Y'
+                            ELSE COALESCE(genes.mendelian_randomization, '')
+                        END,
+                        evidence_from_other_omics_studies =
+                            (
+                                SELECT COALESCE(
+                                    string_agg(val, ';' ORDER BY first_ord), ''
+                                )
+                                FROM (
+                                    SELECT val, MIN(ord) AS first_ord
+                                    FROM (
+                                        SELECT btrim(value) AS val, ord
+                                        FROM unnest(
+                                            string_to_array(
+                                                COALESCE(
+                                                    genes.evidence_from_other_omics_studies,
+                                                    ''
+                                                ),
+                                                ';'
+                                            )
+                                        ) WITH ORDINALITY AS t(value, ord)
+                                        UNION ALL
+                                        SELECT btrim(value) AS val, ord + 100000
+                                        FROM unnest(
+                                            string_to_array(
+                                                COALESCE(
+                                                    EXCLUDED.evidence_from_other_omics_studies,
+                                                    ''
+                                                ),
+                                                ';'
+                                            )
+                                        ) WITH ORDINALITY AS t(value, ord)
+                                    ) raw
+                                    WHERE val <> ''
+                                    GROUP BY val
+                                ) dedup
+                        ),
+                        "references" = (
+                            SELECT COALESCE(
+                                string_agg(val, '; ' ORDER BY first_ord), ''
+                            )
+                            FROM (
+                                SELECT val, MIN(ord) AS first_ord
+                                FROM (
+                                    SELECT btrim(value) AS val, ord
+                                    FROM unnest(
+                                        string_to_array(
+                                            COALESCE(genes."references", ''),
+                                            ';'
+                                        )
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                    UNION ALL
+                                    SELECT btrim(value) AS val, ord + 100000
+                                    FROM unnest(
+                                        string_to_array(
+                                            COALESCE(EXCLUDED."references", ''), ';'
+                                        )
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                ) raw
+                                WHERE val <> ''
+                                GROUP BY val
+                            ) dedup
+                        ),
                         updated_at = CURRENT_TIMESTAMP
                     """,
                 [
@@ -248,26 +329,91 @@ async def merge_genes_transactional(
             await conn.executemany(
                 """
                     UPDATE genes SET
-                        gwas_trait = $1,
-                        evidence_from_other_omics_studies = $2,
-                        "references" = CASE
-                            WHEN $3::text IS NULL OR $3::text = ''
-                            THEN COALESCE("references", '')
-                            WHEN "references" IS NULL OR "references" = ''
-                            THEN $3
-                            WHEN "references" = $3
-                              OR "references" LIKE $3 || '; %'
-                              OR "references" LIKE '%; ' || $3
-                              OR "references" LIKE '%; ' || $3 || '; %'
-                            THEN "references"
-                            ELSE "references" || '; ' || $3
+                        protein = CASE
+                            WHEN protein IS NULL OR protein = '' OR protein = gene
+                            THEN COALESCE(NULLIF($1::text, ''), protein)
+                            ELSE protein
                         END,
+                        gwas_trait = (
+                            SELECT COALESCE(
+                                string_agg(val, ', ' ORDER BY first_ord), ''
+                            )
+                            FROM (
+                                SELECT val, MIN(ord) AS first_ord
+                                FROM (
+                                    SELECT btrim(value) AS val, ord
+                                    FROM unnest(
+                                        string_to_array(COALESCE(gwas_trait, ''), ',')
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                    UNION ALL
+                                    SELECT btrim(value) AS val, ord + 100000
+                                    FROM unnest(
+                                        string_to_array(COALESCE($2::text, ''), ',')
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                ) raw
+                                WHERE val <> ''
+                                GROUP BY val
+                            ) dedup
+                        ),
+                        mendelian_randomization = CASE
+                            WHEN mendelian_randomization = 'Y' OR $3::text = 'Y'
+                            THEN 'Y'
+                            ELSE COALESCE(mendelian_randomization, '')
+                        END,
+                        evidence_from_other_omics_studies = (
+                            SELECT COALESCE(string_agg(val, ';' ORDER BY first_ord), '')
+                            FROM (
+                                SELECT val, MIN(ord) AS first_ord
+                                FROM (
+                                    SELECT btrim(value) AS val, ord
+                                    FROM unnest(
+                                        string_to_array(
+                                            COALESCE(
+                                                evidence_from_other_omics_studies,
+                                                ''
+                                            ),
+                                            ';'
+                                        )
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                    UNION ALL
+                                    SELECT btrim(value) AS val, ord + 100000
+                                    FROM unnest(
+                                        string_to_array(COALESCE($4::text, ''), ';')
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                ) raw
+                                WHERE val <> ''
+                                GROUP BY val
+                            ) dedup
+                        ),
+                        "references" = (
+                            SELECT COALESCE(
+                                string_agg(val, '; ' ORDER BY first_ord), ''
+                            )
+                            FROM (
+                                SELECT val, MIN(ord) AS first_ord
+                                FROM (
+                                    SELECT btrim(value) AS val, ord
+                                    FROM unnest(
+                                        string_to_array(COALESCE("references", ''), ';')
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                    UNION ALL
+                                    SELECT btrim(value) AS val, ord + 100000
+                                    FROM unnest(
+                                        string_to_array(COALESCE($5::text, ''), ';')
+                                    ) WITH ORDINALITY AS t(value, ord)
+                                ) raw
+                                WHERE val <> ''
+                                GROUP BY val
+                            ) dedup
+                        ),
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE UPPER(gene) = UPPER($4)
+                    WHERE UPPER(gene) = UPPER($6)
                     """,
                 [
                     (
+                        g.get("protein"),
                         g.get("gwas_trait"),
+                        g.get("mendelian_randomization"),
                         g.get("evidence_from_other_omics_studies"),
                         g.get("references"),
                         g.get("gene"),

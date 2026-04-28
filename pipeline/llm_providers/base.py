@@ -41,6 +41,14 @@ class ExtractionResult(BaseModel):
     genes: list[GeneEntry] = Field(default_factory=list)
 
 
+class ExtractionFailedError(RuntimeError):
+    """Raised when an extraction attempt failed rather than found no genes."""
+
+    def __init__(self, message: str, token_usage: TokenUsage | None = None) -> None:
+        super().__init__(message)
+        self.token_usage = token_usage
+
+
 # Shared JSON schema: Anthropic feeds this through `transform_schema`, Ollama
 # passes it straight to `format=`, prompts.py embeds it as a grounding hint.
 EXTRACTION_JSON_SCHEMA: dict[str, Any] = ExtractionResult.model_json_schema()

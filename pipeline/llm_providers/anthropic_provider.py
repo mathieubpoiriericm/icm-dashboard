@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any
 
@@ -24,6 +25,7 @@ from pipeline.config import (
     PipelineConfig,
 )
 from pipeline.llm_providers.base import (
+    ExtractionFailedError,
     ExtractionResult,
     GeneEntry,
     parse_extraction_response,
@@ -82,6 +84,11 @@ class AnthropicProvider:
         which is required for adaptive-thinking requests that may exceed
         10 minutes of wall-clock time.
         """
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            raise ExtractionFailedError(
+                "ANTHROPIC_API_KEY is required when llm_provider='anthropic'. "
+                "Set it in .env or use --llm-provider ollama for local extraction."
+            )
         if self._client is None:
             self._client = anthropic.AsyncAnthropic()
         return self._client
@@ -245,7 +252,9 @@ class AnthropicProvider:
                         f"reduce effort level."
                     )
                     usage.truncated_responses = 1
-                    return [], usage
+                    raise ExtractionFailedError(
+                        f"Response truncated for PMID {pmid}", usage
+                    )
 
                 # Extract text content and estimate thinking tokens from
                 # content blocks. The API lumps thinking + text into
@@ -280,7 +289,9 @@ class AnthropicProvider:
 
                 if not text_content.strip():
                     logger.warning(f"Empty text response for PMID {pmid}")
-                    return [], usage
+                    raise ExtractionFailedError(
+                        f"Empty text response for PMID {pmid}", usage
+                    )
 
                 result = parse_extraction_response(text_content)
                 # The JSON schema exposes GeneEntry.pmid to the model, so it
@@ -302,7 +313,9 @@ class AnthropicProvider:
                         f"Rate limit retries exhausted for PMID {pmid} "
                         f"({rate_limit_retries}/{config.max_rate_limit_retries})"
                     )
-                    return [], usage
+                    raise ExtractionFailedError(
+                        f"Rate limit retries exhausted for PMID {pmid}", usage
+                    ) from e
 
                 backoff_delay = compute_backoff(
                     config.rate_limit_retry_delay, rate_limit_retries
@@ -337,7 +350,9 @@ class AnthropicProvider:
                         f"Connection retries exhausted for PMID {pmid} "
                         f"({connection_retries}/{config.max_connection_retries}): {e}"
                     )
-                    return [], usage
+                    raise ExtractionFailedError(
+                        f"Connection retries exhausted for PMID {pmid}: {e}", usage
+                    ) from e
                 backoff_delay = compute_backoff(
                     config.connection_retry_delay, connection_retries
                 )
@@ -356,7 +371,9 @@ class AnthropicProvider:
                         f"Validation retries exhausted for PMID {pmid} "
                         f"({validation_retries}/{config.max_retries}): {e}"
                     )
-                    return [], usage
+                    raise ExtractionFailedError(
+                        f"Validation retries exhausted for PMID {pmid}: {e}", usage
+                    ) from e
                 logger.warning(
                     f"Validation retry {validation_retries}/{config.max_retries} "
                     f"for PMID {pmid}: {e}"
@@ -364,8 +381,15 @@ class AnthropicProvider:
 
             except anthropic.APIError as e:
                 logger.error(f"Claude API error for PMID {pmid}: {e}")
-                return [], usage
+                raise ExtractionFailedError(
+                    f"Claude API error for PMID {pmid}: {e}", usage
+                ) from e
+
+            except ExtractionFailedError:
+                raise
 
             except Exception as e:
                 logger.error(f"Extraction failed for PMID {pmid}: {e}")
-                return [], usage
+                raise ExtractionFailedError(
+                    f"Extraction failed for PMID {pmid}: {e}", usage
+                ) from e

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 import ollama
 import pytest
 
 from pipeline.config import PipelineConfig
-from pipeline.llm_providers.base import ExtractionResult
+from pipeline.llm_providers.base import ExtractionFailedError, ExtractionResult
 from pipeline.llm_providers.ollama_provider import OllamaProvider
 
 
@@ -179,7 +178,7 @@ async def test_extract_gives_up_after_max_retries(provider_with_mock_client):
         prompt_version="ollama_v1",
         max_retries=1,
     )
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ExtractionFailedError, match="validation retries exhausted"):
         await p.extract("t", "1", cfg, None)
     # max_retries=1 → 1 initial + 1 retry = 2 calls total.
     assert client.chat.await_count == 2
@@ -217,7 +216,7 @@ async def test_extract_gives_up_on_repeated_connect_errors(provider_with_mock_cl
         max_connection_retries=2,
         connection_retry_delay=0.0,
     )
-    with pytest.raises(httpx.ConnectError):
+    with pytest.raises(ExtractionFailedError, match="connection retries exhausted"):
         await p.extract("t", "1", cfg, None)
     assert client.chat.await_count == 3  # initial + 2 retries
 
@@ -242,9 +241,10 @@ async def test_extract_bails_on_truncated_response(provider_with_mock_client):
         done_reason="length",
     )
     cfg = PipelineConfig(llm_provider="ollama", prompt_version="ollama_v1")
-    genes, usage = await p.extract("t", "42", cfg, None)
-    assert genes == []
-    assert usage.input_tokens == 2000
-    assert usage.output_tokens == 64
+    with pytest.raises(ExtractionFailedError) as exc_info:
+        await p.extract("t", "42", cfg, None)
+    assert exc_info.value.token_usage is not None
+    assert exc_info.value.token_usage.input_tokens == 2000
+    assert exc_info.value.token_usage.output_tokens == 64
     # Exactly one call — no validation retries burned.
     assert client.chat.await_count == 1
