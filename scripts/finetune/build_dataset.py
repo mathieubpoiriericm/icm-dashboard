@@ -21,12 +21,17 @@ import argparse
 import glob
 import json
 import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pipeline.pdf_retrieval import parse_local_pdf
-from pipeline.prompts import build_extraction_prompt
+_project_root = str(Path(__file__).resolve().parent.parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from pipeline.pdf_retrieval import parse_local_pdf  # noqa: E402
+from pipeline.prompts import build_extraction_prompt  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
