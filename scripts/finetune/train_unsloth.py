@@ -27,7 +27,13 @@ from pathlib import Path
 # unsloth must be imported BEFORE trl/transformers/peft so its monkey-patches
 # land on the originals rather than already-imported copies — otherwise the
 # kernel-fusion + 4-bit-aware optimizations are silently skipped.
-from unsloth import FastLanguageModel  # noqa: I001  (import-order intentional)
+#
+# FastModel (not FastLanguageModel) is the unified loader for multimodal
+# checkpoints — Gemma 4 31B is multimodal (text+vision+audio configs in its
+# config.json), so FastLanguageModel rejects it. FastModel handles both
+# language-only and multimodal models; for our text-only SFT it loads the
+# whole checkpoint but trains only the text adapter weights.
+from unsloth import FastModel  # noqa: I001  (import-order intentional)
 from unsloth.chat_templates import train_on_responses_only
 
 import torch
@@ -80,22 +86,25 @@ def _load_model(
     seed: int,
 ):
     """Load 4-bit base + wrap with LoRA on every linear projection."""
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    model, tokenizer = FastModel.from_pretrained(
         model_name=base_model,
         max_seq_length=max_seq_length,
         dtype=torch.bfloat16,
         load_in_4bit=True,
     )
-    model = FastLanguageModel.get_peft_model(
+    # For multimodal Gemma 4, freeze the vision/audio towers and adapt only
+    # the language model. With `finetune_language_layers=True`, unsloth picks
+    # the right `target_modules` (q/k/v/o, gate/up/down) automatically.
+    model = FastModel.get_peft_model(
         model,
         r=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=0,
         bias="none",
-        target_modules=[
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
-        ],
+        finetune_vision_layers=False,
+        finetune_language_layers=True,
+        finetune_attention_modules=True,
+        finetune_mlp_modules=True,
         use_gradient_checkpointing="unsloth",
         random_state=seed,
     )
@@ -189,12 +198,13 @@ def main() -> None:
 
     # Mask the prompt tokens so loss is computed only on the assistant turn —
     # equivalent to the old DataCollatorForCompletionOnlyLM but routed through
-    # unsloth so it survives TRL API churn. The instruction/response markers
-    # are Gemma's chat-template role tags.
+    # unsloth so it survives TRL API churn. The Gemma 4 chat template uses
+    # `<|turn>user\n` / `<|turn>model\n` for turn markers (different from
+    # Gemma 1-3 which use `<start_of_turn>...`). End-tag is `<turn|>`.
     trainer = train_on_responses_only(
         trainer,
-        instruction_part="<start_of_turn>user\n",
-        response_part="<start_of_turn>model\n",
+        instruction_part="<|turn>user\n",
+        response_part="<|turn>model\n",
     )
 
     _install_usr1_handler(trainer, args.output_dir)
