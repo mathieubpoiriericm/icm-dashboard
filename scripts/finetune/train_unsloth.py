@@ -28,17 +28,13 @@ from pathlib import Path
 # land on the originals rather than already-imported copies — otherwise the
 # kernel-fusion + 4-bit-aware optimizations are silently skipped.
 from unsloth import FastLanguageModel  # noqa: I001  (import-order intentional)
+from unsloth.chat_templates import train_on_responses_only
 
 import torch
 from datasets import load_dataset
-from trl import DataCollatorForCompletionOnlyLM, SFTConfig, SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
 logger = logging.getLogger(__name__)
-
-# Gemma chat template marker. Tokens BEFORE this in each tokenized example
-# get their loss masked; only the assistant turn contributes to gradients
-# (equivalent to MLX-LM's --mask-prompt).
-GEMMA_RESPONSE_TEMPLATE = "<start_of_turn>model\n"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -160,33 +156,6 @@ def main() -> None:
         args.train_jsonl, args.valid_jsonl, tokenizer,
     )
 
-    response_template_ids = tokenizer.encode(
-        GEMMA_RESPONSE_TEMPLATE, add_special_tokens=False,
-    )
-    # Guard against the standalone-vs-in-context tokenization mismatch:
-    # if the template's tokens don't appear verbatim inside a real example,
-    # DataCollatorForCompletionOnlyLM masks the entire sequence to -100 and
-    # training silently does nothing.
-    sample_ids = tokenizer(
-        train_ds[0]["text"], add_special_tokens=False,
-    )["input_ids"]
-    found = any(
-        sample_ids[i : i + len(response_template_ids)] == response_template_ids
-        for i in range(len(sample_ids) - len(response_template_ids) + 1)
-    )
-    if not found:
-        raise RuntimeError(
-            "Response template tokens not found in a real tokenized chat. "
-            "Loss masking would zero out every example. Re-encode the "
-            "template with a leading newline and slice, or pass an explicit "
-            "instruction_template to the collator."
-        )
-
-    collator = DataCollatorForCompletionOnlyLM(
-        response_template=response_template_ids,
-        tokenizer=tokenizer,
-    )
-
     config = SFTConfig(
         output_dir=str(args.output_dir),
         per_device_train_batch_size=args.per_device_batch,
@@ -215,8 +184,17 @@ def main() -> None:
         tokenizer=tokenizer,
         train_dataset=train_ds,
         eval_dataset=valid_ds,
-        data_collator=collator,
         args=config,
+    )
+
+    # Mask the prompt tokens so loss is computed only on the assistant turn —
+    # equivalent to the old DataCollatorForCompletionOnlyLM but routed through
+    # unsloth so it survives TRL API churn. The instruction/response markers
+    # are Gemma's chat-template role tags.
+    trainer = train_on_responses_only(
+        trainer,
+        instruction_part="<start_of_turn>user\n",
+        response_part="<start_of_turn>model\n",
     )
 
     _install_usr1_handler(trainer, args.output_dir)
