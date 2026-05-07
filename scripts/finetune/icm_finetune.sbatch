@@ -33,6 +33,13 @@ module purge
 module load CUDA/12.4 cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
 source /network/iss/debette/users/mathieu.poirier/venvs/gemma-finetune/bin/activate
 
+# torch 2.5.1+cu121 ships its CUDA libs (NCCL, cuBLAS, cuDNN, ...) inside the
+# venv at site-packages/nvidia/*/lib. `module purge` clears LD_LIBRARY_PATH and
+# `module load CUDA/12.4` doesn't add these, so torch fails to dlopen them.
+for lib_dir in "$VIRTUAL_ENV"/lib/python3.12/site-packages/nvidia/*/lib; do
+    [[ -d "$lib_dir" ]] && export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+done
+
 export HF_HOME=/network/iss/debette/users/mathieu.poirier/hf-cache/huggingface
 # Cluster has no outbound to huggingface.co — model is pre-staged on lab share.
 export HF_HUB_OFFLINE=1
