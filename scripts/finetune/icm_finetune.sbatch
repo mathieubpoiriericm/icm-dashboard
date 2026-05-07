@@ -31,7 +31,7 @@ mkdir -p logs
 # ---- env ----
 module purge
 module load CUDA/12.4 cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
-source ~/venvs/gemma-finetune/bin/activate
+source /network/iss/debette/users/mathieu.poirier/venvs/gemma-finetune/bin/activate
 
 export HF_HOME=/network/iss/debette/users/mathieu.poirier/hf-cache/huggingface
 # Cluster has no outbound to huggingface.co — model is pre-staged on lab share.
