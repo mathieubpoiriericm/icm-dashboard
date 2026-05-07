@@ -15,7 +15,7 @@
 #SBATCH --account=debette-chabriat
 #SBATCH --partition=gpu-ampere
 #SBATCH --qos=m120_c1
-#SBATCH --time=08:00:00
+#SBATCH --time=00:15:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:1
@@ -69,15 +69,16 @@ srun --cpu-bind=cores --mem-bind=local \
     --base-model "unsloth/gemma-4-31B-it-unsloth-bnb-4bit" \
     --train-jsonl  "$STAGE/train.jsonl" \
     --valid-jsonl  "$STAGE/valid.jsonl" \
-    --output-dir   "models/lora_adapters/svd_v1_31b/" \
+    --output-dir   "models/lora_adapters/smoke_test/" \
     --max-seq-length 8192 \
     --per-device-batch 2 \
     --grad-accum 4 \
     --learning-rate 1e-5 \
-    --max-steps 600 \
+    --max-steps 10 \
     --lora-rank 16 \
     --warmup-ratio 0.05 \
-    --eval-steps 100 --save-steps 200 \
+    --eval-steps 5 \
+    --save-steps 5
   &
 TRAIN_PID=$!
 wait "$TRAIN_PID"
