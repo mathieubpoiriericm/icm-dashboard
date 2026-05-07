@@ -24,10 +24,14 @@ import signal
 import sys
 from pathlib import Path
 
+# unsloth must be imported BEFORE trl/transformers/peft so its monkey-patches
+# land on the originals rather than already-imported copies — otherwise the
+# kernel-fusion + 4-bit-aware optimizations are silently skipped.
+from unsloth import FastLanguageModel  # noqa: I001  (import-order intentional)
+
 import torch
 from datasets import load_dataset
 from trl import DataCollatorForCompletionOnlyLM, SFTConfig, SFTTrainer
-from unsloth import FastLanguageModel
 
 logger = logging.getLogger(__name__)
 
