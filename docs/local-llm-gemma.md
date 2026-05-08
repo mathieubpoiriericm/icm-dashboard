@@ -270,6 +270,7 @@ fast.
 
 ## See also
 
+- `docs/icm-hpc-finetuning-stack.md` — the ICM HPC (NVIDIA A100) fine-tuning stack, which superseded the MLX path above for 31B-class training.
 - `docs/python-etl-pipeline.md` — overall pipeline architecture.
 - `CLAUDE.md` — project conventions and environment variables.
 - `docs/superpowers/specs/2026-04-22-gemma-local-llm-option-design.md` — design rationale.
