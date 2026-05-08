@@ -33,12 +33,13 @@ from pathlib import Path
 # config.json), so FastLanguageModel rejects it. FastModel handles both
 # language-only and multimodal models; for our text-only SFT it loads the
 # whole checkpoint but trains only the text adapter weights.
-from unsloth import FastModel  # noqa: I001  (import-order intentional)
-from unsloth.chat_templates import train_on_responses_only
+# HPC-only deps; not installed in the local Mac venv.
+from unsloth import FastModel  # ty: ignore[unresolved-import]
+from unsloth.chat_templates import train_on_responses_only  # ty: ignore[unresolved-import]
 
-import torch
+import torch  # ty: ignore[unresolved-import]
 from datasets import load_dataset
-from trl import SFTConfig, SFTTrainer
+from trl import SFTConfig, SFTTrainer  # ty: ignore[unresolved-import]
 
 logger = logging.getLogger(__name__)
 

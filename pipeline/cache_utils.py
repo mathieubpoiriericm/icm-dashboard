@@ -160,4 +160,5 @@ async def single_flight_get[T](
             task = asyncio.create_task(_fetch_and_store())
             in_flight[key] = task
 
-    return await asyncio.shield(task)
+    # ty 0.0.1a misinfers shield's _T as None for Task[T | None]; runtime is fine.
+    return await asyncio.shield(task)  # ty: ignore[invalid-argument-type]

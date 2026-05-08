@@ -31,6 +31,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pytest-mock>=3.15.1",
     "ruff>=0.9.0",
     "ty>=0.0.1a0",
 ]
@@ -54,6 +55,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Fast-path for shell tab-completion requires heavy imports to load lazily
 # after argparse parsing, so module-level imports appear mid-file by design.
 "pipeline/main.py" = ["E402"]
+# unsloth must import before trl/torch so its kernel-fusion monkey-patches
+# land on the originals rather than already-imported copies.
+"scripts/finetune/train_unsloth.py" = ["I001", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pipeline"]
@@ -69,6 +73,9 @@ markers = [
 
 [tool.ty.environment]
 python-version = "3.14"
+# scripts/tuning/* import validate_pipeline.py from scripts/ root via
+# sys.path.insert at runtime — surface the same path to the resolver.
+extra-paths = ["scripts"]
 
 [tool.ty.rules]
 # Third-party packages may not have type stubs available

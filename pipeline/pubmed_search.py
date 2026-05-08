@@ -167,6 +167,7 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
                         partial(
                             Entrez.esearch,
                             db="pubmed",
+                            term=SVD_QUERY,
                             retstart=fetched,
                             retmax=DEFAULT_RETMAX,
                             webenv=web_env,

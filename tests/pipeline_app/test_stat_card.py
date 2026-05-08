@@ -21,7 +21,7 @@ class TestStatCardRender:
         "color", ["primary", "secondary", "warning", "negative", "info"]
     )
     def test_accepts_each_valid_color(self, color: str):
-        card = stat_card(1, "Label", color=color)  # type: ignore[arg-type]
+        card = stat_card(1, "Label", color=color)  # ty: ignore[invalid-argument-type]
         assert f"accent-{color}" in card.classes
 
     def test_applies_stat_card_base_class(self):
@@ -34,7 +34,7 @@ class TestStatCardRender:
 
     def test_rejects_invalid_color(self):
         with pytest.raises(ValueError, match="Invalid stat_card color"):
-            stat_card(1, "Label", color="rainbow")  # type: ignore[arg-type]
+            stat_card(1, "Label", color="rainbow")  # ty: ignore[invalid-argument-type]
 
     def test_accepts_numeric_and_string_values(self):
         stat_card(42, "Int")

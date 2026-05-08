@@ -261,12 +261,14 @@ class TestUpsertPreset:
         presets = upsert_preset("A", PipelineAppConfig(days_back=1))
         assert len(presets) == 1
         assert presets[0].name == "A"
+        assert presets[0].config is not None
         assert presets[0].config["days_back"] == 1
 
     def test_replaces_existing_by_name(self, tmp_config_dir):
         upsert_preset("A", PipelineAppConfig(days_back=1))
         updated = upsert_preset("A", PipelineAppConfig(days_back=99))
         assert len(updated) == 1
+        assert updated[0].config is not None
         assert updated[0].config["days_back"] == 99
 
     def test_preserves_id_on_replace(self, tmp_config_dir):
@@ -280,12 +282,15 @@ class TestUpsertPreset:
         upsert_preset("B", PipelineAppConfig(days_back=2))
         updated = upsert_preset("A", PipelineAppConfig(days_back=99))
         by_name = {p.name: p for p in updated}
+        assert by_name["A"].config is not None
+        assert by_name["B"].config is not None
         assert by_name["A"].config["days_back"] == 99
         assert by_name["B"].config["days_back"] == 2
 
     def test_strips_secrets(self, tmp_config_dir):
         cfg = PipelineAppConfig()
         presets = upsert_preset("A", cfg)
+        assert presets[0].config is not None
         for field in ("anthropic_api_key", "db_password", "ncbi_api_key"):
             assert field not in presets[0].config
 
