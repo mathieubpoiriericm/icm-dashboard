@@ -1,9 +1,7 @@
 # ICM HPC Fine-Tuning Stack
 
 Software stack used to QLoRA fine-tune Gemma 4 31B on the Paris Brain
-Institute (ICM) high-performance computing cluster. This complements the
-Apple-Silicon path described in `local-llm-gemma.md` and is reported here
-for replication on a comparable single-A100 (80 GB) system.
+Institute (ICM) high-performance computing cluster on a comparable single-A100 (80 GB) system.
 
 ## Compute environment
 
@@ -119,9 +117,6 @@ Three properties of this stack affect replication on comparable clusters:
 
 Methods-section justification of the principal choices:
 
-- **HPC over Apple Silicon (MLX).** Gemma 4 31B does not fit on Mac
-  unified memory at any quantization preserving attention precision; an
-  A100 80 GB with QLoRA does.
 - **Single A100 over a 2-GPU split.** At QLoRA, the 31B base, adapter
   parameters, and activations fit in 80 GB with margin. The 2-GPU NV12
   pair yields ~1.85× wall-clock at 2× billing — single-GPU is preferred
@@ -134,9 +129,3 @@ Methods-section justification of the principal choices:
   on the base weights brings 31B into reach on a single 80 GB device.
 - **`uv` over `pip`.** Lockfile-pinned reproducibility (`uv.lock`) and
   faster resolution and install on the lab-share filesystem.
-
-## See also
-
-- `docs/local-llm-gemma.md` — Apple-Silicon (MLX) fine-tuning workflow.
-- `scripts/finetune/icm_finetune.sbatch` — production SLURM submission.
-- `scripts/finetune/train_unsloth.py` — training entry point.
