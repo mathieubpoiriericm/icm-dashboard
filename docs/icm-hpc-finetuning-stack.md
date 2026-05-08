@@ -1,7 +1,7 @@
 # ICM HPC Fine-Tuning Stack
 
 Software stack used to QLoRA fine-tune Gemma 4 31B on the Paris Brain
-Institute (ICM) high-performance computing cluster on a comparable single-A100 (80 GB) system.
+Institute (ICM) high-performance computing cluster on a single-A100 (80 GB) system.
 
 ## Compute environment
 
