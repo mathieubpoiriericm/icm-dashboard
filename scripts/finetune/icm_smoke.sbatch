@@ -4,7 +4,7 @@
 #
 # 2-GPU variant (NV12 pair, ~1.85x wall-clock speedup): switch to TRL+PEFT
 # and replace --gres=gpu:A100:1 with :2, --cpus-per-task=14 with 28,
-# --mem=200G with 400G, and the launch line with:
+# --mem=64G with 400G, and the launch line with:
 #   srun --cpu-bind=cores --mem-bind=local \
 #     torchrun --standalone --nproc_per_node=2 \
 #       scripts/finetune/train_trl.py <same args>
@@ -14,13 +14,13 @@
 #SBATCH --job-name=gemma31b-qlora
 #SBATCH --account=debette-chabriat
 #SBATCH --partition=gpu-ampere
-#SBATCH --qos=m120_c1
+#SBATCH --qos=qos6
 #SBATCH --time=00:15:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:1
 #SBATCH --cpus-per-task=14
-#SBATCH --mem=200G
+#SBATCH --mem=64G
 #SBATCH --signal=B:USR1@120
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
@@ -31,7 +31,12 @@ mkdir -p logs
 # ---- env ----
 module purge
 module load CUDA/12.4 cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
-source ~/venvs/gemma-finetune/bin/activate
+source /network/iss/debette/users/mathieu.poirier/.venv/bin/activate
+
+# torch ships CUDA libs inside the venv; module purge dropped them from LD path.
+for lib_dir in "$VIRTUAL_ENV"/lib/python3.12/site-packages/nvidia/*/lib; do
+    [[ -d "$lib_dir" ]] && export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+done
 
 export HF_HOME=/network/iss/debette/users/mathieu.poirier/hf-cache/huggingface
 # Cluster has no outbound to huggingface.co — model is pre-staged on lab share.
@@ -70,15 +75,14 @@ srun --cpu-bind=cores --mem-bind=local \
     --train-jsonl  "$STAGE/train.jsonl" \
     --valid-jsonl  "$STAGE/valid.jsonl" \
     --output-dir   "models/lora_adapters/smoke_test/" \
-    --max-seq-length 8192 \
+    --max-seq-length 16384 \
     --per-device-batch 2 \
     --grad-accum 4 \
     --learning-rate 1e-5 \
     --max-steps 10 \
     --lora-rank 16 \
     --warmup-ratio 0.05 \
-    --eval-steps 5 \
-    --save-steps 5
+    --eval-steps 5 --save-steps 5 \
   &
 TRAIN_PID=$!
 wait "$TRAIN_PID"

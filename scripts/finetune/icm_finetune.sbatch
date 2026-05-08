@@ -31,7 +31,7 @@ mkdir -p logs
 # ---- env ----
 module purge
 module load CUDA/12.4 cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
-source /network/iss/debette/users/mathieu.poirier/venvs/gemma-finetune/bin/activate
+source /network/iss/debette/users/mathieu.poirier/.venv/bin/activate
 
 # torch 2.5.1+cu121 ships its CUDA libs (NCCL, cuBLAS, cuDNN, ...) inside the
 # venv at site-packages/nvidia/*/lib. `module purge` clears LD_LIBRARY_PATH and
@@ -77,11 +77,11 @@ srun --cpu-bind=cores --mem-bind=local \
     --train-jsonl  "$STAGE/train.jsonl" \
     --valid-jsonl  "$STAGE/valid.jsonl" \
     --output-dir   "models/lora_adapters/svd_v1_31b/" \
-    --max-seq-length 8192 \
+    --max-seq-length 16384 \
     --per-device-batch 2 \
     --grad-accum 4 \
     --learning-rate 1e-5 \
-    --max-steps 600 \
+    --max-steps 380 \
     --lora-rank 16 \
     --warmup-ratio 0.05 \
     --eval-steps 100 --save-steps 200 \
