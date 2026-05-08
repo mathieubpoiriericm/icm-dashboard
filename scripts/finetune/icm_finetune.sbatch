@@ -4,7 +4,7 @@
 #
 # 2-GPU variant (NV12 pair, ~1.85x wall-clock speedup): switch to TRL+PEFT
 # and replace --gres=gpu:A100:1 with :2, --cpus-per-task=14 with 28,
-# --mem=200G with 400G, and the launch line with:
+# --mem=64G with 128G, and the launch line with:
 #   srun --cpu-bind=cores --mem-bind=local \
 #     torchrun --standalone --nproc_per_node=2 \
 #       scripts/finetune/train_trl.py <same args>
@@ -14,13 +14,13 @@
 #SBATCH --job-name=gemma31b-qlora
 #SBATCH --account=debette-chabriat
 #SBATCH --partition=gpu-ampere
-#SBATCH --qos=m120_c1
+#SBATCH --qos=qos6
 #SBATCH --time=08:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:1
 #SBATCH --cpus-per-task=14
-#SBATCH --mem=200G
+#SBATCH --mem=64G
 #SBATCH --signal=B:USR1@120
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
