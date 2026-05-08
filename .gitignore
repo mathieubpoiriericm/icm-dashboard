@@ -24,6 +24,7 @@ icm-hpc/
 logs
 history.json
 presets.json
+uv.lock
 
 # macOS-specific
 .DS_Store
