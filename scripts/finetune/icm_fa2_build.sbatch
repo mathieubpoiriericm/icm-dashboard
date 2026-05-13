@@ -71,14 +71,24 @@ fi
 # Spack-built module that sets CUDA_HOME directly via setenv() — do NOT
 # override it after the load.
 #
-# gcc/8.5.0 (NOT gcc/12.4.0): the cluster's gcc/12.4.0 install ships
-# without a discoverable libisl.so.15, so cc1plus dies on every build.
-# gcc/8.5.0 has full C++17 support, matches the auto-loaded
-# gcc-runtime/8.5.0 (avoiding Lmod family conflicts), and falls inside
-# CUDA 12.6's supported gcc range with explicit version bounds in
-# torch's cpp_extension.
+# gcc/12.4.0 (NOT the system gcc 8.5.0): torch 2.10's c10/util/C++17.h
+# has a preprocessor #error "We need GCC 9 or later" — there's no env-var
+# bypass, only an upgrade. Of the available gcc modules (8.5.0, 12.4.0,
+# 15.1.0), 12.4.0 is the only one in the supported range: 8.5 fails the
+# torch check, 15.1 fails nvcc 12.6's host-compiler whitelist (CUDA 12.6
+# tops out at gcc 13.x).
+#
+# Known risk with gcc/12.4.0 (verify on login node FIRST):
+#   The Spack-built install historically shipped without a discoverable
+#   libisl.so.15, causing cc1plus to die. If `g++ --version` works after
+#   `module load gcc/12.4.0`, the issue is fixed. Otherwise locate libisl
+#   (`find /network/iss/apps -name 'libisl.so*'` or `module spider isl`)
+#   and prepend its directory to LD_LIBRARY_PATH below.
+#
+# Module load order: gcc first so CUDA/cudnn link against the matching
+# gcc-runtime/12.4.0 instead of being forced into a Lmod family swap.
 module purge
-module load CUDA/12.6.3-nak2nbx cudnn/9.8.0.87-11-pewru6u python/3.12
+module load gcc/12.4.0 CUDA/12.6.3-nak2nbx cudnn/9.8.0.87-11-pewru6u python/3.12
 source "$PROJECT_DIR/.venv/bin/activate"
 
 # Verify the module actually set CUDA_HOME (defensive — Lmod errors are
