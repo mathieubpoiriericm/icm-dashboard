@@ -21,7 +21,7 @@
 # Optional: add SLURM mail directives below if your cluster has mail
 # relay configured:
 #   #SBATCH --mail-type=END,FAIL
-#   #SBATCH --mail-user=mathieubisnairepoirier@gmail.com
+#   #SBATCH --mail-user=mathieu.poirier@icm-institute.org
 
 #SBATCH --job-name=fa2-build
 #SBATCH --account=debette-chabriat
