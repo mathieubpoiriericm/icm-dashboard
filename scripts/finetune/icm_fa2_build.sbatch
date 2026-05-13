@@ -147,23 +147,86 @@ echo
 cp "$PROJECT_DIR/uv.lock" "$PROJECT_DIR/uv.lock.bak-pre-fa2"
 echo "==> Snapshotted uv.lock -> uv.lock.bak-pre-fa2"
 
+# ---- snapshot .so for change detection ----
+# Without this, a no-op uv sync (e.g., when flash-attn is already installed
+# at the locked version) silently leaves the existing .so in place and the
+# verification step below would falsely report success on an unchanged file.
+SITE_PACKAGES="$VIRTUAL_ENV/lib/python3.12/site-packages"
+fa2_so_stat() {
+    local so
+    so=$(find "$SITE_PACKAGES" -maxdepth 2 -name 'flash_attn_2_cuda*.so' 2>/dev/null | head -1)
+    if [[ -n "$so" ]]; then
+        stat -c '%Y %s %n' "$so"
+    else
+        echo "absent"
+    fi
+}
+PRE_BUILD_STAT=$(fa2_so_stat)
+echo "==> Pre-build flash-attn .so: $PRE_BUILD_STAT"
+
 # ---- build ----
 cd "$PROJECT_DIR"
+
+# Purge ALL cached entries (sdist, downloaded wheels, uv-built wheels) for
+# flash-attn. Without this, --reinstall-package + --refresh-package still
+# reuse a previously-built wheel from uv's content-addressed built-wheel
+# cache — that cache lives at $(uv cache dir) (NFS here, so it persists
+# across jobs and partitions, which is exactly how a wrong-glibc wheel
+# sticks around indefinitely). --refresh-package only invalidates the
+# registry/HTTP cache, NOT the built-wheel cache.
+echo "==> Purging uv cache for flash-attn"
+uv cache clean flash-attn
 
 echo "==> Running uv sync (FA2 source build)"
 echo "    Expected runtime: 15-30 min with TORCH_CUDA_ARCH_LIST=8.0"
 echo "    (default would compile ~6 archs and take 40-90 min)"
 echo
-time uv sync
+# --reinstall-package: without this, uv sync sees flash-attn already at the
+#   locked version and skips it entirely — FLASH_ATTENTION_FORCE_BUILD never
+#   fires and the build silently doesn't happen.
+# --refresh-package: invalidate uv's HTTP/registry cache for flash-attn so
+#   the metadata is re-fetched (separate from the built-wheel cache that
+#   `uv cache clean` above clears).
+build_start=$SECONDS
+time uv sync --reinstall-package flash-attn --refresh-package flash-attn
+build_elapsed=$((SECONDS - build_start))
 
 # ---- verify ----
 echo
 echo "==> Verifying flash-attn install"
 
+# Step 0a (mandatory): wall-time floor. A real FA2 source build (sm_80 only,
+# MAX_JOBS=4) takes 15-30 min — anything under 5 min means uv reused a
+# cached wheel and FLASH_ATTENTION_FORCE_BUILD never fired. This is a
+# stronger signal than the byte-comparison below, which can be fooled by
+# uv rewriting the same cached wheel into the venv (mtime changes, size
+# stays identical).
+echo "  build wall time : ${build_elapsed}s"
+if (( build_elapsed < 300 )); then
+    echo "ERROR: uv sync finished in ${build_elapsed}s — too fast for a source build" >&2
+    echo "       Likely cause: uv reused a cached wheel despite cache clean." >&2
+    echo "       Inspect: find \"\$(uv cache dir)\" -name '*flash*attn*' 2>/dev/null" >&2
+    echo "       Escalate: add to pyproject.toml [tool.uv]: no-binary-package = [\"flash-attn\"]" >&2
+    echo "       (forces source build even if PyPI publishes a matching wheel)." >&2
+    exit 1
+fi
+
+# Step 0b (mandatory): the .so must have changed. Catches the rarer case
+# where uv sync runs long but somehow doesn't replace the .so.
+POST_BUILD_STAT=$(fa2_so_stat)
+echo "  pre-build  : $PRE_BUILD_STAT"
+echo "  post-build : $POST_BUILD_STAT"
+if [[ "$PRE_BUILD_STAT" == "$POST_BUILD_STAT" ]]; then
+    echo "ERROR: flash_attn .so unchanged before/after uv sync — build did not run" >&2
+    echo "       The package may already be at the locked version; try:" >&2
+    echo "         rm -f $SITE_PACKAGES/flash_attn_2_cuda*.so" >&2
+    echo "       and re-submit, or check that --reinstall-package/--refresh-package are set." >&2
+    exit 1
+fi
+
 # Step 1 (mandatory): the build artifact must exist. FA2 installs its
 # compiled extension as a top-level module (flash_attn_2_cuda*.so) at
 # site-packages level, NOT inside the flash_attn/ package directory.
-SITE_PACKAGES="$VIRTUAL_ENV/lib/python3.12/site-packages"
 FA2_SO=$(find "$SITE_PACKAGES" -maxdepth 2 -name 'flash_attn*.so' 2>/dev/null | head -1)
 if [[ -z "$FA2_SO" ]]; then
     echo "ERROR: no flash_attn*.so found in $SITE_PACKAGES — build did not produce output" >&2
