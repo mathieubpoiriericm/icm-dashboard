@@ -162,7 +162,7 @@ preserve_wnt_capitalization <- function(pathway_string) {
 
 # Safely read a serialized R object with error handling
 #
-# Reads data files using qs format (default, 3-5x faster) with automatic
+# Reads data files using qs2 format (default, faster than RDS) with automatic
 # fallback to RDS format for backward compatibility.
 #
 # Args:
@@ -175,7 +175,7 @@ safe_read_data <- function(file_path) {
   if (grepl("\\.qs$", file_path, ignore.case = TRUE)) {
     if (file.exists(file_path)) {
       return(tryCatch(
-        qs::qread(file_path, nthreads = .N_THREADS),
+        qs2::qs_read(file_path, nthreads = .N_THREADS),
         error = function(e) {
           stop(
             sprintf("Failed to load qs file '%s': %s", file_path, e$message),
@@ -200,7 +200,7 @@ safe_read_data <- function(file_path) {
   if (grepl("\\.rds$", file_path, ignore.case = TRUE)) {
     qs_path <- sub("\\.rds$", ".qs", file_path, ignore.case = TRUE)
     if (file.exists(qs_path)) {
-      return(qs::qread(qs_path, nthreads = .N_THREADS))
+      return(qs2::qs_read(qs_path, nthreads = .N_THREADS))
     }
     # Fall back to .rds
     if (file.exists(file_path)) {
@@ -478,7 +478,7 @@ load_and_prepare_data <- function() {
   # safe_read_data() so "missing" is a silent NULL rather than an error.
   pipeline_status <- if (file.exists(PIPELINE_STATUS_PATH)) {
     tryCatch(
-      qs::qread(PIPELINE_STATUS_PATH, nthreads = .N_THREADS),
+      qs2::qs_read(PIPELINE_STATUS_PATH, nthreads = .N_THREADS),
       error = function(e) NULL
     )
   } else {

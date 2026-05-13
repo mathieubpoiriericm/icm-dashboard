@@ -24,6 +24,7 @@ message("Starting dashboard data update...")
 message(sprintf("Working directory: %s", getwd()))
 
 # Source required utility functions
+source("R/constants.R")
 source("R/utils.R")
 source("R/clean_table1.R")
 source("R/clean_table2.R")
@@ -42,7 +43,7 @@ if (!dir.exists("data/txt")) {
 # =============================================================================
 message("\n[1/8] Fetching and cleaning Table 1 (genes) from database...")
 table1_clean <- clean_table1()
-qs::qsave(table1_clean, "data/qs/table1_clean.qs")
+qs2::qs_save(table1_clean, "data/qs/table1_clean.qs")
 message("Saved: data/qs/table1_clean.qs")
 
 # Extract gene symbols from table1 for external data fetching
@@ -57,7 +58,7 @@ message(sprintf(
 # =============================================================================
 message("\n[2/8] Fetching and cleaning Table 2 (clinical trials)...")
 table2_clean <- clean_table2()
-qs::qsave(table2_clean, "data/qs/table2_clean.qs")
+qs2::qs_save(table2_clean, "data/qs/table2_clean.qs")
 message("Saved: data/qs/table2_clean.qs")
 
 # =============================================================================
@@ -65,7 +66,7 @@ message("Saved: data/qs/table2_clean.qs")
 # =============================================================================
 message("\n[3/8] Reading NCBI gene info for Table 1 genes from database...")
 gene_info_results_df <- read_ncbi_gene_info_from_db(gene_symbols_table1)
-qs::qsave(gene_info_results_df, "data/qs/gene_info_results_df.qs")
+qs2::qs_save(gene_info_results_df, "data/qs/gene_info_results_df.qs")
 message(sprintf(
   "Saved: data/qs/gene_info_results_df.qs (%d genes)",
   nrow(gene_info_results_df)
@@ -76,7 +77,7 @@ message(sprintf(
 # =============================================================================
 message("\n[4/8] Reading NCBI gene info for Table 2 genes from database...")
 gene_info_table2 <- read_table2_ncbi_info_db()
-qs::qsave(gene_info_table2, "data/qs/gene_info_table2.qs")
+qs2::qs_save(gene_info_table2, "data/qs/gene_info_table2.qs")
 message(sprintf(
   "Saved: data/qs/gene_info_table2.qs (%d genes)",
   nrow(gene_info_table2)
@@ -87,7 +88,7 @@ message(sprintf(
 # =============================================================================
 message("\n[5/8] Reading UniProt protein info from database...")
 prot_info_clean <- read_uniprot_data_from_db(gene_symbols_table1)
-qs::qsave(prot_info_clean, "data/qs/prot_info_clean.qs")
+qs2::qs_save(prot_info_clean, "data/qs/prot_info_clean.qs")
 message(sprintf(
   "Saved: data/qs/prot_info_clean.qs (%d proteins)",
   nrow(prot_info_clean)
@@ -98,15 +99,15 @@ message(sprintf(
 # =============================================================================
 message("\n[6/8] Reading PubMed references from database...")
 
-# Extract unique PMIDs from table1 References column
-# Helper function to extract PMIDs from text
+# Extract unique PMIDs from table1 References column.
+# clean_table1() leaves References as a list-column (one character vector per
+# row). Flatten first — calling regex helpers directly on a list silently
+# stringifies each element and pulls 4-8 digit substrings out of the deparsed
+# form, which turns "37063705" into "63705".
 extract_unique_pmids <- function(references_column) {
-  valid <- !is.na(references_column) & nchar(references_column) > 0L
-  all_pmids <- unlist(
-    regmatches(references_column[valid], gregexpr("\\b\\d{4,8}\\b", references_column[valid])),
-    use.names = FALSE
-  )
-  unique(all_pmids)
+  flat <- unlist(references_column, use.names = FALSE)
+  flat <- trimws(flat[!is.na(flat)])
+  unique(flat[grepl("^\\d{7,8}$", flat)])
 }
 
 pmids <- extract_unique_pmids(table1_clean$References)
@@ -114,7 +115,7 @@ message(sprintf("Found %d unique PMIDs", length(pmids)))
 
 if (length(pmids) > 0) {
   refs <- read_pubmed_refs_from_db(pmids)
-  qs::qsave(refs, "data/qs/refs.qs")
+  qs2::qs_save(refs, "data/qs/refs.qs")
   message(sprintf("Saved: data/qs/refs.qs (%d references)", nrow(refs)))
 } else {
   # Save empty data frame
@@ -123,7 +124,7 @@ if (length(pmids) > 0) {
     formatted_ref = character(0),
     stringsAsFactors = FALSE
   )
-  qs::qsave(refs, "data/qs/refs.qs")
+  qs2::qs_save(refs, "data/qs/refs.qs")
   message("No PMIDs found, saved empty refs.qs")
 }
 
@@ -144,7 +145,7 @@ gwas_trait_names <- data.frame(
   full_name = all_gwas_traits, # Default to same as abbrev if no mapping exists
   stringsAsFactors = FALSE
 )
-qs::qsave(gwas_trait_names, "data/qs/gwas_trait_names.qs")
+qs2::qs_save(gwas_trait_names, "data/qs/gwas_trait_names.qs")
 message(sprintf(
   "Saved: data/qs/gwas_trait_names.qs (%d traits)",
   nrow(gwas_trait_names)
@@ -175,7 +176,7 @@ pipeline_status <- tryCatch(
     NULL
   }
 )
-qs::qsave(pipeline_status, "data/qs/pipeline_status.qs")
+qs2::qs_save(pipeline_status, "data/qs/pipeline_status.qs")
 if (!is.null(pipeline_status)) {
   message(sprintf(
     "Saved: data/qs/pipeline_status.qs (last run: %s)",

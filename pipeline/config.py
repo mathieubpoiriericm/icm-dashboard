@@ -153,11 +153,18 @@ DEFAULT_CT_SEARCH_TERMS: Final[tuple[str, ...]] = (
 LLMProviderName = Literal["anthropic", "ollama"]
 LLM_PROVIDERS: Final[tuple[LLMProviderName, ...]] = get_args(LLMProviderName)
 
-# Prompt versions tuned for a local Gemma-sized model. Kept as a set so the
-# Ollama auto-switch stays robust when the Anthropic default (currently "v5")
-# is bumped — equality checks against the old default would silently skip the
-# swap, whereas membership tolerates any non-Ollama prompt.
-OLLAMA_PROMPT_VERSIONS: Final[frozenset[str]] = frozenset({"ollama_v1"})
+# Prompt versions tuned for a Gemma-class model (Ollama-served Gemma 4B or
+# vLLM-served Gemma 4 31B). Kept as a set so the Ollama auto-switch stays
+# robust when the Anthropic default (currently "v5") is bumped — equality
+# checks against the old default would silently skip the swap, whereas
+# membership tolerates any non-Gemma prompt. The `gemma_v4` / `gemma_v5`
+# entries are markdown-structured ports of v4/v5 designed for Gemma 4's
+# native system role and markdown training mix; including them here keeps
+# `--llm-provider ollama` from rewriting an explicit gemma_v* selection
+# back to ollama_v1.
+OLLAMA_PROMPT_VERSIONS: Final[frozenset[str]] = frozenset(
+    {"ollama_v1", "gemma_v4", "gemma_v5"}
+)
 
 # Ollama defaults shared between PipelineConfig (env-overridable) and the
 # pipeline_app dataclasses so a single edit bumps all three at once.

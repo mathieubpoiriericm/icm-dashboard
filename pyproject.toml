@@ -55,6 +55,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Fast-path for shell tab-completion requires heavy imports to load lazily
 # after argparse parsing, so module-level imports appear mid-file by design.
 "pipeline/main.py" = ["E402"]
+# NiceGUI entry point: sys.path modification before imports is intentional;
+# nicegui and pipeline_app_hpc are both third-party but ruff's isort wants
+# them in the same block (no blank line). Suppress the resulting I001.
+"pipeline_app_hpc/main.py" = ["E402", "I001"]
 # unsloth must import before trl/torch so its kernel-fusion monkey-patches
 # land on the originals rather than already-imported copies.
 "scripts/finetune/train_unsloth.py" = ["I001", "E402"]
@@ -63,7 +67,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 known-first-party = ["pipeline"]
 
 [tool.pytest]
-testpaths = ["tests/pipeline", "tests/pipeline_app"]
+testpaths = ["tests/pipeline", "tests/pipeline_app", "tests/pipeline_app_hpc"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 markers = [

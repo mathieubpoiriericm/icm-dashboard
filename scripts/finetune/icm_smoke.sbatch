@@ -15,7 +15,7 @@
 #SBATCH --account=debette-chabriat
 #SBATCH --partition=gpu-ampere
 #SBATCH --qos=qos6
-#SBATCH --time=00:15:00
+#SBATCH --time=00:25:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:1
@@ -30,7 +30,7 @@ mkdir -p logs
 
 # ---- env ----
 module purge
-module load CUDA/12.4 cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
+module load CUDA/12.6.3-nak2nbx cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
 source /network/iss/debette/users/mathieu.poirier/.venv/bin/activate
 
 # torch ships CUDA libs inside the venv; module purge dropped them from LD path.
@@ -71,7 +71,7 @@ trap checkpoint_handler USR1
 # ---- launch ----
 srun --cpu-bind=cores --mem-bind=local \
   python -u scripts/finetune/train_unsloth.py \
-    --base-model "unsloth/gemma-4-31B-it-unsloth-bnb-4bit" \
+    --base-model "unsloth/gemma-4-31b-it-unsloth-bnb-4bit" \
     --train-jsonl  "$STAGE/train.jsonl" \
     --valid-jsonl  "$STAGE/valid.jsonl" \
     --output-dir   "models/lora_adapters/smoke_test/" \

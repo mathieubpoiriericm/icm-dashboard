@@ -15,7 +15,7 @@
 #SBATCH --account=debette-chabriat
 #SBATCH --partition=gpu-ampere
 #SBATCH --qos=qos6
-#SBATCH --time=08:00:00
+#SBATCH --time=10:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:1
@@ -30,12 +30,12 @@ mkdir -p logs
 
 # ---- env ----
 module purge
-module load CUDA/12.4 cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
+module load CUDA/12.6.3-nak2nbx cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
 source /network/iss/debette/users/mathieu.poirier/.venv/bin/activate
 
-# torch 2.5.1+cu121 ships its CUDA libs (NCCL, cuBLAS, cuDNN, ...) inside the
-# venv at site-packages/nvidia/*/lib. `module purge` clears LD_LIBRARY_PATH and
-# `module load CUDA/12.4` doesn't add these, so torch fails to dlopen them.
+# Torch ships its CUDA libs (NCCL, cuBLAS, cuDNN, ...) inside the venv at
+# site-packages/nvidia/*/lib. `module purge` clears LD_LIBRARY_PATH and the
+# CUDA toolkit module does not add these, so torch fails to dlopen them.
 for lib_dir in "$VIRTUAL_ENV"/lib/python3.12/site-packages/nvidia/*/lib; do
     [[ -d "$lib_dir" ]] && export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
 done
@@ -73,7 +73,7 @@ trap checkpoint_handler USR1
 # ---- launch ----
 srun --cpu-bind=cores --mem-bind=local \
   python -u scripts/finetune/train_unsloth.py \
-    --base-model "unsloth/gemma-4-31B-it-unsloth-bnb-4bit" \
+    --base-model "unsloth/gemma-4-31b-it-unsloth-bnb-4bit" \
     --train-jsonl  "$STAGE/train.jsonl" \
     --valid-jsonl  "$STAGE/valid.jsonl" \
     --output-dir   "models/lora_adapters/svd_v1_31b/" \

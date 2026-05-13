@@ -57,7 +57,7 @@ clean_table2 <- function(
   table2$`SVD Population`[is.na(table2$`SVD Population`)] <- "(unknown)"
   table2$`Sponsor Type`[is.na(table2$`Sponsor Type`)] <- "(unknown)"
   table2$`Genetic Evidence`[is.na(table2$`Genetic Evidence`)] <- "(unknown)"
-  table2$`Mechanism Of Action`[is.na(table2$`Mechanism Of Action`)] <-
+  table2$`Mechanism of Action`[is.na(table2$`Mechanism of Action`)] <-
     "(unknown)"
 
   # Convert types

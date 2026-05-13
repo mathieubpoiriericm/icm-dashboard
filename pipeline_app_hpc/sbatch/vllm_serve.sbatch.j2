@@ -1,0 +1,80 @@
+#!/bin/bash
+#SBATCH --job-name=svd-vllm
+#SBATCH --account={{ account }}
+#SBATCH --partition={{ partition }}
+#SBATCH --qos={{ qos }}
+#SBATCH --time={{ time_limit }}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:A100:1
+#SBATCH --cpus-per-task={{ cpus_per_task }}
+#SBATCH --mem={{ mem }}
+#SBATCH --signal=B:TERM@30
+#SBATCH --output={{ log_dir }}/svd-vllm-%j.out
+#SBATCH --error={{ log_dir }}/svd-vllm-%j.err
+
+set -euo pipefail
+mkdir -p "{{ log_dir }}"
+
+module purge
+module load CUDA/12.4 cudnn/9.8.0.87-11-pewru6u gcc/12.4.0 python/3.12
+source "{{ venv_path }}/bin/activate"
+
+# Vendored CUDA libs (NCCL/cuBLAS/cuDNN) live in the venv after `uv sync`;
+# `module load CUDA/12.4` does not add them to LD_LIBRARY_PATH.
+for lib_dir in "$VIRTUAL_ENV"/lib/python3.12/site-packages/nvidia/*/lib; do
+    [[ -d "$lib_dir" ]] && export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+done
+
+export HF_HOME="{{ hf_home }}"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export TOKENIZERS_PARALLELISM=true
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export PYTHONUNBUFFERED=1
+
+ulimit -n 65536
+
+PORT=$(python -c 'import socket; s=socket.socket(); s.bind(("",0)); p=s.getsockname()[1]; s.close(); print(p)')
+echo "##VLLM_PORT=$PORT##" >&2
+
+trap 'kill -TERM "$VLLM_PID" 2>/dev/null || true; wait "$VLLM_PID" 2>/dev/null || true' TERM
+
+VLLM_ARGS=(
+    "$VLLM_BASE_MODEL"
+    --port "$PORT"
+    --host 0.0.0.0
+    --gpu-memory-utilization 0.95
+    --max-model-len "$VLLM_MAX_MODEL_LEN"
+    --max-num-batched-tokens 8192
+    --dtype auto
+    --disable-log-requests
+)
+
+# Quantization is configured per-run; empty string means "no quantization".
+# bitsandbytes additionally needs --load-format bitsandbytes.
+if [[ -n "${VLLM_QUANTIZATION:-}" ]]; then
+    VLLM_ARGS+=(--quantization "$VLLM_QUANTIZATION")
+    if [[ "$VLLM_QUANTIZATION" == "bitsandbytes" ]]; then
+        VLLM_ARGS+=(--load-format bitsandbytes)
+    fi
+fi
+
+if [[ -n "${VLLM_ADAPTER_PATH:-}" ]]; then
+    VLLM_ARGS+=(
+        --enable-lora
+        --max-lora-rank "${VLLM_MAX_LORA_RANK:-16}"
+        --lora-modules "${VLLM_ADAPTER_NAME:-svd}=$VLLM_ADAPTER_PATH"
+    )
+fi
+
+srun --cpu-bind=cores --mem-bind=local \
+    vllm serve "${VLLM_ARGS[@]}" &
+VLLM_PID=$!
+# `wait` inherits the SIGTERM/SIGKILL exit code (143/137) when the trap
+# fires for a clean time-limit shutdown; with `set -e` that propagates as
+# a non-zero exit and SLURM records the job as FAILED. Suppressing the
+# wait exit reflects the truth: a time-limit-driven stop is a user-
+# requested shutdown, not a job failure.
+wait "$VLLM_PID" || true

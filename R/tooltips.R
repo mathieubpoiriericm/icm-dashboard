@@ -170,60 +170,72 @@ get_ref_tooltip_info_memo <- memoise::memoise(
 # Returns:
 #   List with authors, pub_date, and modified_tooltip.
 parse_ref_tooltip <- function(pmid, ref_tooltip_text) {
-  authors <- ""
-  if (grepl("Authors:", ref_tooltip_text)) {
-    authors_match <- regmatches(
-      ref_tooltip_text,
-      regexpr("<strong>Authors:\\s*</strong>.*?<br>", ref_tooltip_text)
-    )
-    if (length(authors_match) > 0L) {
-      authors <- gsub("<strong>Authors:\\s*</strong>", "", authors_match)
-      authors <- gsub("<br>", "", authors, fixed = TRUE)
-      authors <- gsub("<[^>]+>", "", authors)
-      authors <- trimws(authors)
+  # Pipeline emits: <b>authors</b><br><i>title</i><br>journal (date)<br>DOI: ...
+  # Some fields may be missing (e.g., very old PMIDs lack authors). Rebuild as
+  # <strong>Label</strong> value<br> lines to match the visual style of the
+  # other tooltips (gene, protein, OMIM).
+  # Placeholders ("citation not available", "citation fetch failed") have no
+  # HTML tags — fall through to showing the raw placeholder text.
+  if (!grepl("<[bi]>", ref_tooltip_text)) {
+    return(list(
+      authors = "",
+      pub_date = "",
+      modified_tooltip = ref_tooltip_text
+    ))
+  }
+
+  extract_inner <- function(pattern, text) {
+    m <- regmatches(text, regexpr(pattern, text))
+    if (length(m) == 0L) return("")
+    trimws(gsub("<[^>]+>", "", m))
+  }
+
+  authors <- extract_inner("<b>[^<]*</b>", ref_tooltip_text)
+  title <- extract_inner("<i>[^<]*</i>", ref_tooltip_text)
+
+  # Walk the <br>-separated parts, picking up the journal+date line (the one
+  # that isn't authors, title, or DOI) and the DOI line.
+  parts <- strsplit(ref_tooltip_text, "<br>", fixed = TRUE)[[1L]]
+  journal_date <- ""
+  doi <- ""
+  for (part in parts) {
+    part <- trimws(part)
+    if (!nzchar(part)) next
+    if (startsWith(part, "<b>") || startsWith(part, "<i>")) next
+    if (startsWith(part, "DOI:")) {
+      doi <- trimws(sub("^DOI:\\s*", "", part))
+    } else {
+      journal_date <- part
     }
   }
 
+  # Date appears as "(Month YYYY)" or "(YYYY)" at the end of the journal line.
+  # Require a 4-digit year inside parens so DOIs like S1474-4422(21)00031-4
+  # don't get mistaken for a date.
   pub_date <- ""
-  if (grepl("Publication Date:", ref_tooltip_text)) {
-    pub_date_match <- regmatches(
-      ref_tooltip_text,
-      regexpr(
-        "<strong>Publication Date:\\s*</strong>.*?<br>",
-        ref_tooltip_text
-      )
-    )
-    if (length(pub_date_match) > 0L) {
-      pub_date_raw <- gsub(
-        "<strong>Publication Date:\\s*</strong>", "", pub_date_match
-      )
-      pub_date_raw <- gsub("<br>", "", pub_date_raw, fixed = TRUE)
-      pub_date_raw <- gsub("<[^>]+>", "", pub_date_raw)
-      pub_date_raw <- trimws(pub_date_raw)
-
-      if (grepl("\\d{4}-\\w+", pub_date_raw)) {
-        parts <- strsplit(pub_date_raw, "-")[[1L]]
-        if (length(parts) == 2L) {
-          pub_date <- paste0(" (", parts[2L], " ", parts[1L], ")")
-        }
-      }
-    }
+  journal <- journal_date
+  date_match <- regmatches(
+    journal_date,
+    regexpr(" *\\(([^)]*\\d{4}[^)]*)\\)\\s*$", journal_date)
+  )
+  if (length(date_match) > 0L) {
+    pub_date <- gsub("^ *\\(|\\)\\s*$", "", date_match)
+    journal <- trimws(sub(" *\\([^)]*\\d{4}[^)]*\\)\\s*$", "", journal_date))
   }
 
-  modified_tooltip <- sub(
-    "<strong>Authors:\\s*</strong>.*?<br>",
-    paste0("<strong>PMID</strong> ", pmid, "<br>"),
-    ref_tooltip_text
+  esc <- function(x) htmltools::htmlEscape(x)
+  tooltip_lines <- c(
+    sprintf("<strong>PMID</strong> %s", esc(pmid)),
+    if (nzchar(title)) sprintf("<strong>Title</strong> %s", esc(title)),
+    if (nzchar(journal)) sprintf("<strong>Journal</strong> %s", esc(journal)),
+    if (nzchar(pub_date)) sprintf("<strong>Date</strong> %s", esc(pub_date)),
+    if (nzchar(doi)) sprintf("<strong>DOI</strong> %s", esc(doi))
   )
-  modified_tooltip <- sub(
-    "<strong>Publication Date:\\s*</strong>.*?<br>",
-    "",
-    modified_tooltip
-  )
+  modified_tooltip <- paste(tooltip_lines, collapse = "<br>")
 
   list(
     authors = authors,
-    pub_date = pub_date,
+    pub_date = if (nzchar(pub_date)) paste0(" (", pub_date, ")") else "",
     modified_tooltip = modified_tooltip
   )
 }
@@ -282,6 +294,10 @@ add_ref_tooltip <- function(split_pmid, refs, tooltip_class) {
           "<i class='et-al'>et al.</i>",
           display_text
         )
+      } else if (pub_date != "") {
+        # Some PMIDs (e.g., old 1960s records) have no author field in PubMed;
+        # surface the date so the cell isn't a bare opaque number.
+        display_text <- paste0(pmid, pub_date)
       } else {
         display_text <- pmid
       }
@@ -705,9 +721,11 @@ prepare_table2_display <- function(
   if (length(genetic_target_col) > 0L) {
     genetic_target_values <- table2_display[[genetic_target_col]]
     # O(1) lookup from gene symbol → row index in gene_info_results_df, so the
-    # inner loop doesn't re-scan gene_symbols_lookup per gene.
+    # inner loop doesn't re-scan gene_symbols_lookup per gene. List (not named
+    # vector) so [[missing_key]] returns NULL instead of erroring — the inner
+    # loop relies on is.null() to fall through for genes lacking NCBI info.
     sym_to_idx <- stats::setNames(
-      seq_along(gene_symbols_lookup),
+      as.list(seq_along(gene_symbols_lookup)),
       gene_symbols_lookup
     )
     gene_col_names <- names(gene_info_results_df)[2L:4L]

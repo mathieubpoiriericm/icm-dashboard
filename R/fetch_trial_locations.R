@@ -337,7 +337,7 @@ geocode_locations <- function(locations_df) {
 #   Invisible NULL.
 save_cache_with_integrity <- function(data, cache_path) {
   # Save the data
-  qs::qsave(data, cache_path, nthreads = .N_THREADS)
+  qs2::qs_save(data, cache_path, nthreads = .N_THREADS)
 
   # Compute hash of the saved FILE (not the R object)
   hash <- digest::digest(file = cache_path, algo = "sha256")
@@ -377,7 +377,7 @@ load_cache_with_integrity <- function(cache_path) {
     }
 
     # Safe to deserialize after hash verification
-    qs::qread(cache_path, nthreads = .N_THREADS)
+    qs2::qs_read(cache_path, nthreads = .N_THREADS)
   }, error = function(e) {
     warning(sprintf("Cache load error: %s", conditionMessage(e)))
     NULL

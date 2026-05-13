@@ -37,7 +37,7 @@ if (FALSE) {
   library(cachem)
   library(digest)
   library(parallel)
-  library(qs)
+  library(qs2)
   library(jsonlite)
   library(shinyWidgets)
   library(leaflet)
@@ -61,7 +61,7 @@ required_packages <- c(
   "cachem",
   "digest",
   "parallel",
-  "qs",
+  "qs2",
   "jsonlite",
   "shinyWidgets",
   "leaflet",

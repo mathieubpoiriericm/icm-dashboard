@@ -130,11 +130,17 @@ clean_table1 <- function(
     fixed = TRUE
   )
 
-  # Clean up "References" column
+  # Clean up "References" column.
+  # Strip DOI URLs first — the LLM sometimes inlines preprint DOIs alongside
+  # PMIDs (e.g., "https://doi.org/10.21203/rs.3.rs-5926137/v1"), and the
+  # 7-digit fragment inside the DOI would otherwise be misread as a PMID.
   table1$References <- vapply(
     table1$References,
     function(x) {
-      pmid_match <- stringr::str_extract_all(x, "\\b\\d{7,8}\\b")[[1L]]
+      x_clean <- gsub("https?://\\S+", " ", x, perl = TRUE)
+      x_clean <- gsub("\\bdoi:\\s*\\S+", " ", x_clean, perl = TRUE, ignore.case = TRUE)
+      x_clean <- gsub("\\b10\\.\\d{4,9}/\\S+", " ", x_clean, perl = TRUE)
+      pmid_match <- stringr::str_extract_all(x_clean, "\\b\\d{7,8}\\b")[[1L]]
 
       if (length(pmid_match) == 0L) {
         NA_character_

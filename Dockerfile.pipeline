@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # R packages needed by trigger_update.R (same caching motivation)
-RUN R -e "install.packages(c('DBI', 'RPostgres', 'data.table', 'qs', 'jsonlite'))"
+RUN R -e "install.packages(c('DBI', 'RPostgres', 'data.table', 'qs2', 'jsonlite'))"
 
 # Pipeline source code
 COPY pipeline/ pipeline/

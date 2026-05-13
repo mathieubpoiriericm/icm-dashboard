@@ -41,6 +41,15 @@ logger = logging.getLogger(__name__)
 # 7-digit floor avoids catching year-like tokens; 9 is the current PMID upper bound.
 _PMID_EXTRACT_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b(\d{7,9})\b")
 
+# Strip DOI URLs and bare DOIs before PMID extraction — LLMs sometimes inline
+# preprint DOIs (e.g., "https://doi.org/10.21203/rs.3.rs-5926137/v1") whose
+# numeric fragment otherwise gets misread as a PMID.
+_DOI_STRIP_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"https?://\S+"),
+    re.compile(r"\bdoi:\s*\S+", re.IGNORECASE),
+    re.compile(r"\b10\.\d{4,9}/\S+"),
+)
+
 
 @dataclass(slots=True)
 class PubMedCitation:
@@ -320,6 +329,8 @@ def extract_pmids_from_text(text: str | None) -> list[str]:
     if not text:
         return []
 
+    for pattern in _DOI_STRIP_PATTERNS:
+        text = pattern.sub(" ", text)
     pmids = _PMID_EXTRACT_PATTERN.findall(text)
     return list(dict.fromkeys(pmids))
 

@@ -37,7 +37,7 @@ RUN R -e "\
   options(timeout = 60, download.file.method = 'libcurl'); \
   install.packages('renv'); \
   renv::restore(lockfile = '/tmp/renv.lock', prompt = FALSE)" \
-  && R -e "if (!requireNamespace('qs', quietly = TRUE)) stop('qs package failed to install')" \
+  && R -e "if (!requireNamespace('qs2', quietly = TRUE)) stop('qs2 package failed to install')" \
   && rm /tmp/renv.lock
 
 COPY app.R /srv/shiny-server
