@@ -263,6 +263,14 @@ class TestMeshParse:
         parsed = parse_pubmed_xml_for_mesh(xml)
         assert parsed["99999999"] == []
 
+    def test_malformed_xml_raises(self) -> None:
+        # Invariant: malformed XML must surface so fetch_mesh_terms skips
+        # the batch instead of caching empty descriptors for every PMID.
+        from lxml import etree
+
+        with pytest.raises(etree.XMLSyntaxError):
+            parse_pubmed_xml_for_mesh(b"<not-xml")
+
 
 # ---------------------------------------------------------------------------
 # MeSH aggregation (major topics get 2x weight)
@@ -516,6 +524,24 @@ class TestForegroundCounts:
         tf, df = _foreground_counts_for(pairs, n=2, filter_content=True)
         assert ("the", "gene") not in tf
         assert ("gene", "variant") in tf
+
+    def test_plural_section_label_filtered_after_stemming(self) -> None:
+        # Regression: "results"/"methods" stem to "result"/"method" which
+        # aren't in the stopword set on their own. The filter must also
+        # check the surface form so structured-abstract section labels
+        # don't leak through stemming.
+        pairs = [
+            [("result", "results"), ("gene", "gene")],
+            [("method", "methods"), ("gene", "gene")],
+            [("intervention", "interventions"), ("gene", "gene")],
+            [("measurement", "measurements"), ("gene", "gene")],
+        ]
+        tf, _ = _foreground_counts_for(pairs, n=1, filter_content=True)
+        assert ("result",) not in tf
+        assert ("method",) not in tf
+        assert ("intervention",) not in tf
+        assert ("measurement",) not in tf
+        assert ("gene",) in tf
 
     def test_acronym_detection(self) -> None:
         papers = [

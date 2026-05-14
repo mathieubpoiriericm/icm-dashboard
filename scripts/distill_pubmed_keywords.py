@@ -37,6 +37,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
 import gzip
 import json
@@ -113,6 +114,7 @@ _TOKEN_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*"
 )
 _NUMERIC_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[\d\-]+$")
+_PDAT_RANGE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{4}:\d{4}$")
 
 # Namespace wildcard — MODS files declare xmlns="http://www.loc.gov/mods/v3"
 # but {*} keeps the queries robust if a record is namespace-stripped.
@@ -523,9 +525,6 @@ def _stringify(key: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-_entrez_configured: bool = False
-
-
 def _configure_entrez(
     *, email: str | None = None, api_key: str | None = None
 ) -> str | None:
@@ -536,19 +535,17 @@ def _configure_entrez(
     caller's startup; we deliberately don't import it here to keep this
     function side-effect free for tests.
     """
-    global _entrez_configured
     from Bio import Entrez  # local import — only when networking is requested
 
     resolved_email = email or os.getenv("ENTREZ_EMAIL", "")
     resolved_key = api_key or os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY")
     if not resolved_email:
         raise RuntimeError(
-            "ENTREZ_EMAIL is required for NCBI Entrez. Set it in .env "
-            "or pass --email. NCBI's policy requires a valid contact."
+            "ENTREZ_EMAIL is required for NCBI Entrez. Set it in .env. "
+            "NCBI's policy requires a valid contact."
         )
     Entrez.email = resolved_email  # ty: ignore[invalid-assignment]
     Entrez.api_key = resolved_key  # ty: ignore[invalid-assignment]
-    _entrez_configured = True
     return resolved_key
 
 
@@ -642,9 +639,10 @@ def build_baseline_cache(
 
     resolved_key = _configure_entrez(email=email, api_key=api_key)
 
-    if ":" not in pdat_range:
+    if not _PDAT_RANGE_PATTERN.match(pdat_range):
         raise ValueError(
-            f"pdat_range must be 'YYYY:YYYY', got {pdat_range!r}"
+            f"pdat_range must be 'YYYY:YYYY' (e.g. '2020:2024'), "
+            f"got {pdat_range!r}"
         )
     pdat_from, pdat_to = pdat_range.split(":", 1)
     query = (
@@ -663,8 +661,10 @@ def build_baseline_cache(
         sort="date",
         usehistory="n",
     )
-    results = Entrez.read(handle)
-    handle.close()
+    try:
+        results = Entrez.read(handle)
+    finally:
+        handle.close()
     _ncbi_sleep(resolved_key)
 
     pmids = list(results.get("IdList", []))
@@ -688,8 +688,10 @@ def build_baseline_cache(
             rettype="abstract",
             retmode="xml",
         )
-        raw = handle.read()
-        handle.close()
+        try:
+            raw = handle.read()
+        finally:
+            handle.close()
         _ncbi_sleep(resolved_key)
 
         if isinstance(raw, str):
@@ -751,8 +753,17 @@ def build_baseline_cache(
         "acronyms": dict(acros),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(output_path, "wt", encoding="utf-8") as gz:
-        json.dump(payload, gz)
+    # Tmp+rename so an interrupted write can't leave a half-written gzip
+    # that subsequent loads would reject as corrupt.
+    tmp_path = output_path.with_name(output_path.name + ".tmp")
+    try:
+        with gzip.open(tmp_path, "wt", encoding="utf-8") as gz:
+            json.dump(payload, gz)
+        tmp_path.replace(output_path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
     logger.info(f"Wrote baseline cache to {output_path}")
     return output_path
 
@@ -818,14 +829,12 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
 def parse_pubmed_xml_for_mesh(xml_bytes: bytes) -> dict[str, list[MeshDescriptor]]:
     """Parse PubMed efetch XML, returning ``{pmid: [MeshDescriptor, ...]}``.
 
-    Used by ``fetch_mesh_terms`` and exposed directly for unit tests on
-    a committed fixture.
+    Raises ``etree.XMLSyntaxError`` on malformed XML so the caller can
+    distinguish a parse failure (skip cache + retry next run) from a
+    genuinely empty response. Used by ``fetch_mesh_terms`` and exposed
+    directly for unit tests on a committed fixture.
     """
-    try:
-        root = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
-    except etree.XMLSyntaxError as e:
-        logger.warning(f"MeSH XML parse error: {e}")
-        return {}
+    root = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
 
     out: dict[str, list[MeshDescriptor]] = {}
     for article in root.findall(".//PubmedArticle"):
@@ -935,7 +944,16 @@ def fetch_mesh_terms(
                 out[pmid] = _descriptors_from_jsonable(
                     cached.get("descriptors", [])
                 )
-            except (json.JSONDecodeError, OSError) as e:
+            except (
+                json.JSONDecodeError,
+                OSError,
+                AttributeError,
+                TypeError,
+                KeyError,
+            ) as e:
+                # AttributeError/TypeError catch JSON that parses but isn't
+                # a dict; KeyError catches descriptors missing the required
+                # ``term`` field.
                 logger.warning(
                     f"Corrupt MeSH cache for PMID {pmid}: {e}; will refetch"
                 )
@@ -976,7 +994,16 @@ def fetch_mesh_terms(
                 f"MeSH efetch batch {start}-{start + len(batch)} failed: {e}"
             )
             continue
-        parsed = parse_pubmed_xml_for_mesh(raw)
+        try:
+            parsed = parse_pubmed_xml_for_mesh(raw)
+        except etree.XMLSyntaxError as e:
+            # Don't cache anything for this batch — a poisoned cache of
+            # empty descriptors would suppress retries indefinitely.
+            logger.warning(
+                f"MeSH batch {start}-{start + len(batch)} XML parse error: "
+                f"{e}; skipping cache (will retry next run)"
+            )
+            continue
         for pmid in batch:
             descriptors = parsed.get(pmid, [])
             out[pmid] = descriptors
@@ -1065,6 +1092,10 @@ def _foreground_counts_for(
     If ``filter_content`` is set, an n-gram is dropped when any token
     fails the stopword/length/numeric filter — applied to foreground
     but never to the baseline (so LLR sees consistent denominators).
+    Both stem and surface form are checked against ``_STOPWORDS``:
+    stemming collapses plural-only section labels ("results"→"result")
+    to a stem that isn't a stopword, so checking the surface too is
+    what keeps the bare "Methods:"/"Results:" prefixes filtered.
     """
     tf: Counter[tuple[str, ...]] = Counter()
     df: Counter[tuple[str, ...]] = Counter()
@@ -1073,8 +1104,12 @@ def _foreground_counts_for(
             continue
         clean = []
         for i in range(len(tokens) - n + 1):
-            stems = tuple(s for s, _ in tokens[i : i + n])
-            if filter_content and not all(_is_content_token(s) for s in stems):
+            pair_slice = tokens[i : i + n]
+            stems = tuple(s for s, _ in pair_slice)
+            if filter_content and not all(
+                _is_content_token(s) and t not in _STOPWORDS
+                for s, t in pair_slice
+            ):
                 continue
             clean.append(stems)
         tf.update(clean)
