@@ -1,12 +1,12 @@
 """Distill PubMed-API-ready keywords from a curated MODS bibliography.
 
 Reads MODS XML files in the input directory (default
-``data/bibentry/xml/``), tokenises titles + abstracts, then ranks
-unigrams, bigrams, trigrams and ALL-CAPS acronyms by **Dunning's
-log-likelihood ratio** of foreground vs. a one-time PubMed baseline
-snapshot. LLR surfaces terms that are *distinctive* to the corpus
-rather than merely frequent — which is what makes them useful as
-PubMed search keywords.
+``data/bibentry/xml/``), tokenises titles + abstracts (and, when
+available, PMC full-text body sections), then ranks unigrams, bigrams,
+trigrams and ALL-CAPS acronyms by **Dunning's log-likelihood ratio** of
+foreground vs. a one-time PubMed baseline snapshot. LLR surfaces terms
+that are *distinctive* to the corpus rather than merely frequent —
+which is what makes them useful as PubMed search keywords.
 
 A light rule-based lemmatiser collapses singular/plural variants for
 aggregation while still displaying the most common surface form, so
@@ -19,6 +19,24 @@ combines MeSH and Title/Abstract clauses:
 
     (mesh1)[MeSH Terms] OR ... AND ("phrase1"[Title/Abstract] OR ...)
 
+**PMC full-text enrichment** (on by default, ``--no-fulltext`` to
+disable). For each seed PMID we resolve a PMCID via ``Entrez.elink``,
+fetch the JATS XML via ``Entrez.efetch(db="pmc")``, and extract the
+Introduction / Methods / Results / Discussion sections by ``sec-type``
+attribute (with ``<title>``-text synonyms as backup). The result is
+cached per-PMID under ``data/bibentry/fulltext/``; subsequent runs are
+offline for cached PMIDs. Papers without a PMC version contribute
+title+abstract only.
+
+*Methodological note*: the cached PubMed baseline still reflects
+title+abstract only of ~10k random PubMed records, so foreground
+papers now contribute strictly more tokens than baseline papers do.
+Rankings shift toward methods/results vocabulary that's
+underrepresented in abstracts (procedural verbs, imaging-modality
+names, assay terms). This is intentional for keyword distillation but
+makes LLR scores no longer apples-to-apples with the pre-fulltext
+version of this script.
+
 The baseline cache must be built once before first ranking run; runs
 are offline thereafter and the cache should be refreshed roughly
 yearly:
@@ -30,6 +48,7 @@ Usage:
     python scripts/distill_pubmed_keywords.py
     python scripts/distill_pubmed_keywords.py --xml-dir data/bibentry/xml
     python scripts/distill_pubmed_keywords.py --no-mesh
+    python scripts/distill_pubmed_keywords.py --no-fulltext
     python scripts/distill_pubmed_keywords.py --json --output keywords.json
     python scripts/distill_pubmed_keywords.py --query-format structured
 """
@@ -70,6 +89,9 @@ DEFAULT_BASELINE_CACHE: Final[Path] = (
     _PROJECT_ROOT / "data" / "bibentry" / "baseline" / "pubmed_baseline.json.gz"
 )
 DEFAULT_MESH_CACHE_DIR: Final[Path] = _PROJECT_ROOT / "data" / "bibentry" / "mesh"
+DEFAULT_FULLTEXT_CACHE_DIR: Final[Path] = (
+    _PROJECT_ROOT / "data" / "bibentry" / "fulltext"
+)
 
 DEFAULT_TOP_N: Final[int] = 30
 DEFAULT_MIN_DF: Final[int] = 2
@@ -81,6 +103,7 @@ DEFAULT_BASELINE_BATCH: Final[int] = 200
 DEFAULT_MESH_BATCH: Final[int] = 50
 BASELINE_STALE_DAYS: Final[int] = 365
 BASELINE_SCHEMA_VERSION: Final[int] = 1
+FULLTEXT_SCHEMA_VERSION: Final[int] = 1
 # Drop n-grams with baseline count < this from the cache file to keep
 # it under ~50MB. Side effect: LLR for cSVD n-grams that happen to occur
 # exactly once in baseline treats their baseline count as 0 (smoothed
@@ -192,6 +215,42 @@ _IRREGULAR_PLURALS: Final[dict[str, str]] = {
 # stem-stripped to garbage.
 _NO_STRIP_SUFFIXES: Final[tuple[str, ...]] = ("ous", "us", "is", "ss")
 
+# JATS <sec sec-type="..."> attribute values we treat as IMRaD. Keys are
+# lowercased sec-type strings; values are the canonical label used by
+# both the parser and the cache schema. JATS allows pipe-separated
+# compound types like "materials|methods", which is why those appear as
+# distinct keys rather than being computed.
+_JATS_IMRAD_SECTYPES: Final[dict[str, str]] = {
+    "intro": "introduction",
+    "introduction": "introduction",
+    "methods": "methods",
+    "materials|methods": "methods",
+    "subjects|methods": "methods",
+    "results": "results",
+    "discussion": "discussion",
+    "conclusions": "discussion",
+}
+
+# Fallback when <sec sec-type> is absent: classify by the section's
+# <title> text. Patterns are case-insensitive and anchored at the start
+# so "Methods" matches but "Statistical methods" doesn't accidentally
+# pull in something we shouldn't (statistical subsections live inside a
+# parent Methods section that already classified upstream).
+_JATS_TITLE_SYNONYMS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
+    (re.compile(r"^\s*introduction\b", re.I), "introduction"),
+    (re.compile(r"^\s*background\b", re.I), "introduction"),
+    (
+        re.compile(
+            r"^\s*(materials\s+and\s+methods|subjects\s+and\s+methods|"
+            r"experimental\s+procedures|methods)\b",
+            re.I,
+        ),
+        "methods",
+    ),
+    (re.compile(r"^\s*(results|findings)\b", re.I), "results"),
+    (re.compile(r"^\s*(discussion|conclusions?)\b", re.I), "discussion"),
+)
+
 
 # ---------------------------------------------------------------------------
 # DATACLASSES
@@ -200,15 +259,40 @@ _NO_STRIP_SUFFIXES: Final[tuple[str, ...]] = ("ous", "us", "is", "ss")
 
 @dataclass(slots=True)
 class PaperText:
-    """Title + abstract for one paper."""
+    """Title + abstract (+ optional PMC full-text) for one paper."""
 
     pmid: str | None
     title: str
     abstract: str
+    fulltext: str = ""
 
     @property
     def combined(self) -> str:
-        return f"{self.title} {self.abstract}".strip()
+        return f"{self.title} {self.abstract} {self.fulltext}".strip()
+
+
+@dataclass(slots=True, frozen=True)
+class FulltextRecord:
+    """PMC full-text harvest result for one PMID.
+
+    ``pmcid is None`` doubles as the "no PMC mirror" sentinel — those
+    records are cached on disk too, so we don't re-elink missing PMIDs
+    on subsequent runs. Section fields default to "" for that case.
+    """
+
+    pmid: str
+    pmcid: str | None
+    introduction: str = ""
+    methods: str = ""
+    results: str = ""
+    discussion: str = ""
+
+    def as_text(self) -> str:
+        return "\n\n".join(
+            s
+            for s in (self.introduction, self.methods, self.results, self.discussion)
+            if s
+        ).strip()
 
 
 @dataclass(slots=True)
@@ -1053,6 +1137,312 @@ def aggregate_mesh(
 
 
 # ---------------------------------------------------------------------------
+# PMC FULLTEXT RETRIEVAL
+# ---------------------------------------------------------------------------
+
+
+def _classify_jats_section(sec: etree._Element) -> str | None:
+    """Map one JATS ``<sec>`` element to an IMRaD label, or None.
+
+    Tries ``@sec-type`` first (the explicit JATS markup), then falls
+    back to ``<title>`` text matching against the synonym table. Returns
+    None when neither pathway matches — those sections (typically
+    Acknowledgments, Author Contributions, References, Supplementary)
+    are intentionally dropped from the foreground corpus.
+    """
+    sectype = (sec.get("sec-type") or "").lower()
+    if sectype and sectype in _JATS_IMRAD_SECTYPES:
+        return _JATS_IMRAD_SECTYPES[sectype]
+    title_el = sec.find(f"./{_NS}title")
+    if title_el is None:
+        return None
+    title_text = _element_text(title_el)
+    for pattern, label in _JATS_TITLE_SYNONYMS:
+        if pattern.search(title_text):
+            return label
+    return None
+
+
+def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
+    """Extract IMRaD section bodies from PMC JATS XML.
+
+    Walks top-level ``<body>/<sec>`` elements (descendant ``<p>`` text
+    is collected within each, so nested subsections are folded into
+    their parent's label). When the same label appears multiple times
+    in one article — e.g. two ``<sec sec-type="methods">`` blocks for
+    "Materials and Methods" and "Statistical Methods" — they're joined
+    with a blank line between.
+
+    Returns a 4-key dict (introduction/methods/results/discussion);
+    missing labels hold "". Raises ``etree.XMLSyntaxError`` on
+    malformed XML so the caller can distinguish parse failures (skip
+    cache + retry next run) from genuinely empty bodies.
+    """
+    root = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
+    body = root.find(f".//{_NS}body")
+    if body is None:
+        return {"introduction": "", "methods": "", "results": "", "discussion": ""}
+
+    parts_by_label: dict[str, list[str]] = {}
+    for sec in body.findall(f"./{_NS}sec"):
+        label = _classify_jats_section(sec)
+        if label is None:
+            continue
+        paragraphs: list[str] = []
+        for p in sec.findall(f".//{_NS}p"):
+            # Indentation in source JATS XML leaks newlines + spaces into
+            # paragraph text (e.g. "white matter\n      injury").
+            # Collapse runs of whitespace to single spaces inside each
+            # paragraph; paragraph boundaries are re-introduced by the
+            # "\n\n".join below.
+            text = re.sub(r"\s+", " ", _element_text(p))
+            if text:
+                paragraphs.append(text)
+        if paragraphs:
+            parts_by_label.setdefault(label, []).append("\n\n".join(paragraphs))
+
+    return {
+        "introduction": "\n\n".join(parts_by_label.get("introduction", [])),
+        "methods": "\n\n".join(parts_by_label.get("methods", [])),
+        "results": "\n\n".join(parts_by_label.get("results", [])),
+        "discussion": "\n\n".join(parts_by_label.get("discussion", [])),
+    }
+
+
+def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
+    """Return the cached record for ``pmid``, or None if absent/corrupt.
+
+    Schema-version mismatch and JSON-decode errors log a warning and
+    return None so the caller can refetch (same recovery semantics as
+    the MeSH cache).
+    """
+    cache_path = cache_dir / f"{pmid}.json"
+    if not cache_path.exists():
+        return None
+    try:
+        with cache_path.open(encoding="utf-8") as f:
+            payload = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Corrupt fulltext cache for PMID {pmid}: {e}; will refetch")
+        return None
+    if payload.get("schema_version") != FULLTEXT_SCHEMA_VERSION:
+        logger.warning(
+            f"Fulltext cache schema mismatch for PMID {pmid} "
+            f"({payload.get('schema_version')!r} != {FULLTEXT_SCHEMA_VERSION}); "
+            f"will refetch"
+        )
+        return None
+    try:
+        sections = payload.get("sections") or {}
+        return FulltextRecord(
+            pmid=str(payload["pmid"]),
+            pmcid=(str(payload["pmcid"]) if payload.get("pmcid") else None),
+            introduction=str(sections.get("introduction", "")),
+            methods=str(sections.get("methods", "")),
+            results=str(sections.get("results", "")),
+            discussion=str(sections.get("discussion", "")),
+        )
+    except (KeyError, TypeError, AttributeError) as e:
+        logger.warning(f"Malformed fulltext cache for PMID {pmid}: {e}; will refetch")
+        return None
+
+
+def _write_fulltext_cache(cache_dir: Path, record: FulltextRecord) -> None:
+    """Persist one ``FulltextRecord`` as JSON. Logs and continues on OSError."""
+    cache_path = cache_dir / f"{record.pmid}.json"
+    payload = {
+        "schema_version": FULLTEXT_SCHEMA_VERSION,
+        "pmid": record.pmid,
+        "pmcid": record.pmcid,
+        "sections": {
+            "introduction": record.introduction,
+            "methods": record.methods,
+            "results": record.results,
+            "discussion": record.discussion,
+        },
+        "fetched_at": _dt.datetime.now(_dt.UTC).isoformat(),
+    }
+    try:
+        with cache_path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+    except OSError as e:
+        logger.warning(
+            f"Could not write fulltext cache for PMID {record.pmid}: {e}"
+        )
+
+
+def _default_pmids_to_pmcids(
+    pmids: list[str], *, api_key: str | None
+) -> dict[str, str | None]:
+    """Resolve a batch of PMIDs to PMCIDs in one ``Entrez.elink`` round-trip.
+
+    NCBI's ``elink`` accepts a list of source ids; the response is a
+    list of LinkSets, each carrying its source PMID in ``IdList`` and
+    the linked PMC id (when one exists) in
+    ``LinkSetDb[].Link[].Id``. Batching collapses N round-trips +
+    N ``_ncbi_sleep`` pauses into one of each, which is the bulk of the
+    first-run wall time at corpus sizes above a handful.
+
+    Returns ``{pmid: pmcid_or_None}`` for every PMID in the input.
+    """
+    from Bio import Entrez
+
+    handle = _ncbi_retry(
+        Entrez.elink,
+        dbfrom="pubmed",
+        db="pmc",
+        id=pmids,
+        linkname="pubmed_pmc",
+    )
+    try:
+        records = Entrez.read(handle)
+    finally:
+        handle.close()
+    _ncbi_sleep(api_key)
+
+    out: dict[str, str | None] = dict.fromkeys(pmids)
+    for record in records or []:
+        id_list = record.get("IdList", []) or []
+        if not id_list:
+            continue
+        source_pmid = str(id_list[0])
+        for linkset in record.get("LinkSetDb", []) or []:
+            for link in linkset.get("Link", []) or []:
+                linked_id = link.get("Id", "")
+                if linked_id:
+                    out[source_pmid] = f"PMC{linked_id}"
+                    break
+            if out.get(source_pmid):
+                break
+    return out
+
+
+def _default_fetch_pmc_jats(pmcid: str, *, api_key: str | None) -> bytes | None:
+    """Fetch JATS XML for a PMCID via ``Bio.Entrez.efetch(db="pmc")``."""
+    from Bio import Entrez
+
+    # PMC efetch accepts either the bare numeric id or the PMC-prefixed
+    # form; strip the prefix for compatibility with older biopython.
+    numeric = pmcid.removeprefix("PMC") if pmcid.startswith("PMC") else pmcid
+
+    handle = _ncbi_retry(
+        Entrez.efetch,
+        db="pmc",
+        id=numeric,
+        rettype="xml",
+        retmode="xml",
+    )
+    try:
+        raw = handle.read()
+    finally:
+        handle.close()
+    _ncbi_sleep(api_key)
+
+    if isinstance(raw, str):
+        return raw.encode("utf-8")
+    return raw if raw else None
+
+
+def fetch_fulltext_batch(
+    pmids: Iterable[str],
+    cache_dir: Path,
+    *,
+    email: str | None = None,
+    api_key: str | None = None,
+    fetcher_elink: Any = None,
+    fetcher_efetch: Any = None,
+) -> dict[str, FulltextRecord]:
+    """Return ``{pmid: FulltextRecord}`` for the given PMIDs.
+
+    Reads from per-PMID JSON cache when present; for missing PMIDs,
+    resolves PMID->PMCID via a single batched elink, then fetches JATS
+    via efetch for each PMID with a PMC mirror, writing each result
+    back to the cache. Negative results (no PMC mirror) are cached too
+    so we don't re-elink them every run. Network failures log a warning
+    and skip that PMID (no cache entry, will retry next run).
+
+    ``fetcher_elink`` is a callable ``(list[str]) -> dict[str, str |
+    None]``; ``fetcher_efetch`` is ``(pmcid: str) -> bytes | None``.
+    Both are test-injection points; when None, Entrez is configured and
+    the matching ``_default_*`` helper is used.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    pmid_list = [str(p) for p in pmids if p]
+    out: dict[str, FulltextRecord] = {}
+    missing: list[str] = []
+
+    for pmid in pmid_list:
+        cached = _read_fulltext_cache(cache_dir, pmid)
+        if cached is not None:
+            out[pmid] = cached
+        else:
+            missing.append(pmid)
+
+    if not missing:
+        return out
+
+    resolved_key = api_key
+    if fetcher_elink is None or fetcher_efetch is None:
+        resolved_key = _configure_entrez(email=email, api_key=api_key)
+
+    if fetcher_elink is None:
+
+        def _default_elink(batch: list[str]) -> dict[str, str | None]:
+            return _default_pmids_to_pmcids(batch, api_key=resolved_key)
+
+        fetcher_elink = _default_elink
+
+    if fetcher_efetch is None:
+
+        def _default_efetch(pmcid: str) -> bytes | None:
+            return _default_fetch_pmc_jats(pmcid, api_key=resolved_key)
+
+        fetcher_efetch = _default_efetch
+
+    try:
+        pmid_to_pmcid = fetcher_elink(missing)
+    except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
+        logger.warning(f"elink batch failed for {len(missing)} PMIDs: {e}")
+        return out
+
+    for pmid in missing:
+        pmcid = pmid_to_pmcid.get(pmid)
+        if not pmcid:
+            record = FulltextRecord(pmid=pmid, pmcid=None)
+            _write_fulltext_cache(cache_dir, record)
+            out[pmid] = record
+            continue
+
+        try:
+            xml_bytes = fetcher_efetch(pmcid)
+        except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
+            logger.warning(f"efetch failed for PMID {pmid} (PMCID {pmcid}): {e}")
+            continue
+
+        if not xml_bytes:
+            logger.warning(f"Empty efetch response for PMID {pmid} (PMCID {pmcid})")
+            continue
+
+        try:
+            sections = parse_jats_for_sections(xml_bytes)
+        except etree.XMLSyntaxError as e:
+            # Don't cache: a poisoned cache of empty sections would
+            # suppress retries indefinitely (same reasoning as the MeSH
+            # batch's XML-error handling).
+            logger.warning(
+                f"JATS parse error for PMID {pmid} (PMCID {pmcid}): {e}; "
+                f"skipping cache (will retry next run)"
+            )
+            continue
+
+        record = FulltextRecord(pmid=pmid, pmcid=pmcid, **sections)
+        _write_fulltext_cache(cache_dir, record)
+        out[pmid] = record
+
+    return out
+
+
+# ---------------------------------------------------------------------------
 # DISTILLATION
 # ---------------------------------------------------------------------------
 
@@ -1471,6 +1861,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Skip MeSH harvest; emit only the Title/Abstract query variant.",
     )
     parser.add_argument(
+        "--no-fulltext",
+        action="store_true",
+        help="Skip PMC full-text harvest; use title+abstract only.",
+    )
+    parser.add_argument(
+        "--fulltext-cache",
+        type=Path,
+        default=DEFAULT_FULLTEXT_CACHE_DIR,
+        help=(
+            "Per-PMID PMC full-text cache dir "
+            f"(default: {DEFAULT_FULLTEXT_CACHE_DIR})"
+        ),
+    )
+    parser.add_argument(
         "--baseline-cache",
         type=Path,
         default=DEFAULT_BASELINE_CACHE,
@@ -1563,6 +1967,35 @@ def main(argv: list[str] | None = None) -> int:
     if not papers:
         logger.error("No parseable papers found.")
         return 1
+
+    if not args.no_fulltext:
+        pmids_for_fulltext = [p.pmid for p in papers if p.pmid]
+        if pmids_for_fulltext:
+            try:
+                fulltext_records = fetch_fulltext_batch(
+                    pmids_for_fulltext,
+                    args.fulltext_cache,
+                    email=os.getenv("ENTREZ_EMAIL"),
+                    api_key=os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY"),
+                )
+            except RuntimeError as e:
+                logger.warning(
+                    f"Full-text harvest disabled — {e}. "
+                    f"Run with --no-fulltext to silence."
+                )
+                fulltext_records = {}
+            for paper in papers:
+                if paper.pmid and (record := fulltext_records.get(paper.pmid)):
+                    paper.fulltext = record.as_text()
+            with_text = sum(
+                1 for r in fulltext_records.values() if r.pmcid is not None
+            )
+            logger.info(
+                f"Full-text enrichment: {with_text}/{len(pmids_for_fulltext)} "
+                f"papers have PMC versions; "
+                f"{len(pmids_for_fulltext) - with_text} contribute "
+                f"title+abstract only."
+            )
 
     try:
         baseline = load_baseline_cache(args.baseline_cache)

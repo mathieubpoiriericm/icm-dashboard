@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article xmlns:xlink="http://www.w3.org/1999/xlink" article-type="research-article">
+  <front>
+    <article-meta>
+      <article-id pub-id-type="pmid">15905468</article-id>
+      <article-id pub-id-type="pmcid">PMC1234567</article-id>
+      <title-group>
+        <article-title>Markers of endothelial activation and progression of white matter hyperintensities</article-title>
+      </title-group>
+    </article-meta>
+  </front>
+  <body>
+    <sec sec-type="intro">
+      <title>Introduction</title>
+      <p>Cerebral small vessel disease is poorly understood at the
+      molecular level. Endothelial activation may play a causal role
+      in white matter hyperintensities.</p>
+    </sec>
+    <sec sec-type="methods">
+      <title>Materials and Methods</title>
+      <p>We performed magnetic resonance imaging of 296 community
+      subjects at baseline and at three- and six-year follow-up. Plasma
+      intercellular adhesion molecule was quantified by ELISA.</p>
+      <p>Statistical analysis used logistic regression adjusted for age
+      and sex.</p>
+    </sec>
+    <sec sec-type="methods">
+      <title>Statistical Methods</title>
+      <p>Odds ratios were estimated with ninety-five percent confidence
+      intervals using Stata version fourteen.</p>
+    </sec>
+    <sec sec-type="results">
+      <title>Results</title>
+      <p>Intercellular adhesion molecule levels were associated with
+      white matter hyperintensity progression at three and six years.
+      The odds ratio at three years was 1.007 per nanogram per
+      millilitre.</p>
+    </sec>
+    <sec sec-type="discussion">
+      <title>Discussion</title>
+      <p>The prospective design supports a causal role for endothelial
+      activation in cerebral small vessel disease pathogenesis. Other
+      coagulation markers were not associated with progression.</p>
+    </sec>
+    <sec>
+      <title>Acknowledgments</title>
+      <p>We thank the Austrian Stroke Prevention Study participants.</p>
+    </sec>
+    <sec>
+      <title>References</title>
+      <p>This section should be dropped by the parser because it has
+      no sec-type and no IMRaD synonym match.</p>
+    </sec>
+  </body>
+</article>
