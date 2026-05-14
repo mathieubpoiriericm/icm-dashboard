@@ -49,8 +49,8 @@ class ExtractionFailedError(RuntimeError):
         self.token_usage = token_usage
 
 
-# Shared JSON schema: Anthropic feeds this through `transform_schema`, Ollama
-# passes it straight to `format=`, prompts.py embeds it as a grounding hint.
+# Shared JSON schema: Anthropic feeds this through `transform_schema`;
+# prompts.py embeds it as a grounding hint.
 EXTRACTION_JSON_SCHEMA: dict[str, Any] = ExtractionResult.model_json_schema()
 
 
@@ -62,10 +62,9 @@ EXTRACTION_JSON_SCHEMA: dict[str, Any] = ExtractionResult.model_json_schema()
 def parse_extraction_response(text: str) -> ExtractionResult:
     """Parse structured output JSON into ExtractionResult.
 
-    With providers that do JSON-schema-constrained decoding (Anthropic's
-    output_config, Ollama's `format=schema`), the response is guaranteed
-    valid JSON matching the schema — so in practice only Pydantic-level
-    validation (e.g. confidence bounds) can fail.
+    Anthropic's ``output_config`` constrains the response to valid JSON
+    matching the schema, so in practice only Pydantic-level validation
+    (e.g. confidence bounds) can fail.
 
     Raises:
         json.JSONDecodeError: If response is not valid JSON.
@@ -86,10 +85,9 @@ class LLMProvider(Protocol):
 
     Implementations:
         - pipeline.llm_providers.anthropic_provider.AnthropicProvider
-        - pipeline.llm_providers.ollama_provider.OllamaProvider
     """
 
-    name: str  # "anthropic" or "ollama"
+    name: str  # currently "anthropic"
 
     async def extract(
         self,

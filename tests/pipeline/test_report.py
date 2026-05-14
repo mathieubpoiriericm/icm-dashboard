@@ -92,74 +92,14 @@ class TestProviderConfigFields:
         assert fields["thinking_mode"] != "none"
         assert fields["effort"] is not None
 
-    def test_ollama_uses_ollama_model(self):
-        config = PipelineConfig(llm_provider="ollama", ollama_model="gemma4:e4b")
-        fields = get_provider(config).report_metadata(config)
-        assert fields["model"] == "gemma4:e4b"
-        assert fields["thinking_mode"] == "none"
-        assert fields["effort"] is None
-        assert fields["model_version"] == ""
-
-    def test_ollama_model_not_claude(self):
-        config = PipelineConfig(llm_provider="ollama", ollama_model="gemma4:e4b")
-        # Even though llm_model still has its default "claude-opus-4-7",
-        # the effective name for Ollama runs must never be that.
-        assert get_provider(config).report_metadata(config)["model"] != config.llm_model
-
 
 # ---------------------------------------------------------------------------
-# Ollama report metadata
+# Anthropic report metadata
 # ---------------------------------------------------------------------------
 
 
-class TestOllamaReportMetadata:
-    """Verify reports produced for Ollama runs show correct model + zero cost."""
-
-    def _build_ollama(self, **kwargs):
-        defaults: dict[str, Any] = {
-            "metrics": PipelineMetrics(
-                papers_processed=2,
-                fulltext_retrieved=1,
-                abstract_only=1,
-                genes_extracted=4,
-                genes_validated=3,
-                genes_rejected=1,
-                token_usage=TokenUsage(input_tokens=5000, output_tokens=1000),
-            ),
-            "results": [],
-            "gene_result": {"inserted": 1, "updated": 0},
-            "batch_warnings": [],
-            "config": PipelineConfig(
-                llm_provider="ollama",
-                ollama_model="gemma4:e4b",
-            ),
-            "days_back": 7,
-            "dry_run": False,
-            "total_pmids_found": 5,
-            "new_pmids_count": 2,
-        }
-        defaults.update(kwargs)
-        return build_run_data(**defaults)
-
-    def test_model_field_is_ollama_model(self):
-        data = self._build_ollama()
-        assert data["pipeline_config"]["model"] == "gemma4:e4b"
-
-    def test_model_field_is_not_claude_default(self):
-        data = self._build_ollama()
-        assert data["pipeline_config"]["model"] != "claude-opus-4-7"
-
-    def test_cost_is_none_for_ollama(self):
-        data = self._build_ollama()
-        assert data["token_usage"]["estimated_cost_usd"] is None
-
-    def test_model_version_is_empty_for_ollama(self):
-        data = self._build_ollama()
-        assert data["pipeline_config"]["model_version"] == ""
-
-    def test_thinking_mode_is_none_for_ollama(self):
-        data = self._build_ollama()
-        assert data["pipeline_config"]["thinking_mode"] == "none"
+class TestAnthropicReportMetadata:
+    """Verify reports produced for Anthropic runs show correct model + cost."""
 
     def test_anthropic_run_still_has_cost(self):
         config = PipelineConfig(llm_provider="anthropic", llm_model="claude-opus-4-7")

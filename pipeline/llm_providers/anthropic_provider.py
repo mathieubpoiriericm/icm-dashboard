@@ -34,9 +34,8 @@ from pipeline.prompts import build_extraction_prompt
 from pipeline.quality_metrics import TokenUsage, accumulate_usage
 from pipeline.rate_limiter import AsyncRateLimiter, compute_backoff, resolve_retry_delay
 
-# Pricing per 1M tokens (input, output) — bump when a new Claude model ships
-# or Anthropic changes published rates. Provider-private because Ollama runs
-# don't have a comparable notion of per-token billing.
+# Pricing per 1M tokens (input, output) — bump when a new Claude model
+# ships or Anthropic changes published rates.
 _MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-opus-4-7": (5.0, 25.0),
     "claude-sonnet-4-6": (3.0, 15.0),
@@ -86,8 +85,8 @@ class AnthropicProvider:
         """
         if not os.getenv("ANTHROPIC_API_KEY"):
             raise ExtractionFailedError(
-                "ANTHROPIC_API_KEY is required when llm_provider='anthropic'. "
-                "Set it in .env or use --llm-provider ollama for local extraction."
+                "ANTHROPIC_API_KEY is required for the Anthropic provider. "
+                "Set it in .env before running the pipeline."
             )
         if self._client is None:
             self._client = anthropic.AsyncAnthropic()
@@ -296,7 +295,7 @@ class AnthropicProvider:
                 result = parse_extraction_response(text_content)
                 # The JSON schema exposes GeneEntry.pmid to the model, so it
                 # can emit a (possibly hallucinated) value. Overwrite with the
-                # caller's PMID unconditionally, matching OllamaProvider.
+                # caller's PMID unconditionally.
                 for g in result.genes:
                     g.pmid = pmid
                 logger.info(f"Extracted {len(result.genes)} gene(s) from PMID {pmid}")

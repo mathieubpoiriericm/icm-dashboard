@@ -41,9 +41,8 @@ def build_pipeline_config():
     """Build a `pipeline.config.PipelineConfig`.
 
     All PIPELINE_* env vars are read directly by ``PipelineConfig``'s
-    ``field(default_factory=...)`` lambdas at construction; ``__post_init__``
-    then derives prompt_version / max_concurrent_papers for ollama. A separate
-    setattr override table here would clobber those derived values.
+    ``field(default_factory=...)`` lambdas at construction. A separate
+    setattr override table here would clobber the env-derived values.
     """
     from pipeline.config import PipelineConfig
 

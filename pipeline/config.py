@@ -148,30 +148,11 @@ DEFAULT_CT_SEARCH_TERMS: Final[tuple[str, ...]] = (
     "cerebral amyloid angiopathy",
 )
 
-# Supported LLM providers. "anthropic" uses the Claude API; "ollama" uses a
-# local Ollama server (e.g. for Gemma-based fine-tuned models).
-LLMProviderName = Literal["anthropic", "ollama"]
+# Supported LLM providers. Currently only the Claude API is wired in;
+# the abstraction is kept so additional providers (e.g. an HPC vLLM
+# endpoint) can be plugged in without touching the dispatch code.
+LLMProviderName = Literal["anthropic"]
 LLM_PROVIDERS: Final[tuple[LLMProviderName, ...]] = get_args(LLMProviderName)
-
-# Prompt versions tuned for a Gemma-class model (Ollama-served Gemma 4B or
-# vLLM-served Gemma 4 31B). Kept as a set so the Ollama auto-switch stays
-# robust when the Anthropic default (currently "v5") is bumped — equality
-# checks against the old default would silently skip the swap, whereas
-# membership tolerates any non-Gemma prompt. The `gemma_v4` / `gemma_v5`
-# entries are markdown-structured ports of v4/v5 designed for Gemma 4's
-# native system role and markdown training mix; including them here keeps
-# `--llm-provider ollama` from rewriting an explicit gemma_v* selection
-# back to ollama_v1.
-OLLAMA_PROMPT_VERSIONS: Final[frozenset[str]] = frozenset(
-    {"ollama_v1", "gemma_v4", "gemma_v5"}
-)
-
-# Ollama defaults shared between PipelineConfig (env-overridable) and the
-# pipeline_app dataclasses so a single edit bumps all three at once.
-OLLAMA_DEFAULT_HOST: Final[str] = "http://localhost:11434"
-OLLAMA_DEFAULT_MODEL: Final[str] = "gemma4:e4b"
-OLLAMA_DEFAULT_NUM_CTX: Final[int] = 65_536
-OLLAMA_DEFAULT_KEEP_ALIVE: Final[str] = "30m"
 
 
 def get_ncbi_params(base_params: dict[str, str]) -> dict[str, str]:
@@ -249,36 +230,13 @@ class PipelineConfig:
     prompt_version: str = field(
         default_factory=lambda: _env_str("PIPELINE_PROMPT_VERSION", "v5")
     )
-    # Provider selection: "anthropic" (default) or "ollama" (local via Ollama).
-    # Normalized to lowercase so PIPELINE_LLM_PROVIDER=Anthropic / OLLAMA work.
-    # Runtime validation lives in __post_init__; the cast is safe because any
-    # invalid value raises there before anyone reads the field.
+    # Provider selection. Currently always "anthropic"; the field is kept so
+    # the factory in pipeline.llm_providers can dispatch without branching.
+    # Normalized to lowercase; runtime validation lives in __post_init__.
     llm_provider: LLMProviderName = field(
         default_factory=lambda: cast(
             LLMProviderName,
             _env_str("PIPELINE_LLM_PROVIDER", "anthropic").strip().lower(),
-        )
-    )
-    # Ollama server URL (only used when llm_provider == "ollama").
-    ollama_host: str = field(
-        default_factory=lambda: _env_str("PIPELINE_OLLAMA_HOST", OLLAMA_DEFAULT_HOST)
-    )
-    # Ollama model tag (e.g. "gemma4:e4b" or "svd-gemma:v1").
-    ollama_model: str = field(
-        default_factory=lambda: _env_str("PIPELINE_OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL)
-    )
-    # Ollama context window. Gemma 4 E4B supports up to 131072.
-    ollama_num_ctx: int = field(
-        default_factory=lambda: _env_int(
-            "PIPELINE_OLLAMA_NUM_CTX", OLLAMA_DEFAULT_NUM_CTX
-        )
-    )
-    # How long Ollama keeps the model resident after each call (Ollama duration
-    # syntax: "30m", "1h", "0" to unload immediately). Set to "0" on a shared
-    # machine to free VRAM as soon as the pipeline finishes.
-    ollama_keep_alive: str = field(
-        default_factory=lambda: _env_str(
-            "PIPELINE_OLLAMA_KEEP_ALIVE", OLLAMA_DEFAULT_KEEP_ALIVE
         )
     )
 
@@ -418,26 +376,6 @@ class PipelineConfig:
                 f"llm_provider must be one of {LLM_PROVIDERS}, "
                 f"got {self.llm_provider!r}"
             )
-
-        # Auto-switch to an ollama-native prompt when the user picks the
-        # ollama provider but hasn't explicitly chosen one. Explicit overrides
-        # (PIPELINE_PROMPT_VERSION set in env) are preserved so the
-        # "same prompt on both providers" baseline comparison still works.
-        if (
-            self.llm_provider == "ollama"
-            and "PIPELINE_PROMPT_VERSION" not in os.environ
-            and self.prompt_version not in OLLAMA_PROMPT_VERSIONS
-        ):
-            self.prompt_version = "ollama_v1"
-
-        # A single local Ollama instance serializes requests in-engine, so
-        # concurrent calls just inflate tail latency. Respect an explicit
-        # PIPELINE_MAX_CONCURRENT_PAPERS override; otherwise clamp to 1.
-        if (
-            self.llm_provider == "ollama"
-            and "PIPELINE_MAX_CONCURRENT_PAPERS" not in os.environ
-        ):
-            self.max_concurrent_papers = 1
 
         if self.llm_max_tokens == 0:
             self.llm_max_tokens = MODEL_MAX_OUTPUT_TOKENS.get(self.llm_model, 64_000)

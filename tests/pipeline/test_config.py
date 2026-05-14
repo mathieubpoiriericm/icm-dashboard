@@ -149,50 +149,15 @@ class TestProviderFields:
         cfg = PipelineConfig()
         assert cfg.llm_provider == "anthropic"
 
-    def test_ollama_provider_env_override(self, monkeypatch):
-        monkeypatch.setenv("PIPELINE_LLM_PROVIDER", "ollama")
-        cfg = PipelineConfig()
-        assert cfg.llm_provider == "ollama"
-
-    def test_ollama_defaults(self, monkeypatch):
-        monkeypatch.delenv("PIPELINE_OLLAMA_HOST", raising=False)
-        monkeypatch.delenv("PIPELINE_OLLAMA_MODEL", raising=False)
-        monkeypatch.delenv("PIPELINE_OLLAMA_NUM_CTX", raising=False)
-        cfg = PipelineConfig()
-        assert cfg.ollama_host == "http://localhost:11434"
-        assert cfg.ollama_model == "gemma4:e4b"
-        assert cfg.ollama_num_ctx == 65536
-
-    def test_ollama_env_overrides(self, monkeypatch):
-        monkeypatch.setenv("PIPELINE_OLLAMA_HOST", "http://gpu-box:11434")
-        monkeypatch.setenv("PIPELINE_OLLAMA_MODEL", "svd-gemma:v1")
-        monkeypatch.setenv("PIPELINE_OLLAMA_NUM_CTX", "131072")
-        cfg = PipelineConfig()
-        assert cfg.ollama_host == "http://gpu-box:11434"
-        assert cfg.ollama_model == "svd-gemma:v1"
-        assert cfg.ollama_num_ctx == 131072
-
     def test_unknown_provider_rejected_in_post_init(self, monkeypatch):
         monkeypatch.setenv("PIPELINE_LLM_PROVIDER", "bogus")
         with pytest.raises(ValueError, match="llm_provider"):
             PipelineConfig()
 
     def test_llm_providers_constant(self):
-        assert set(LLM_PROVIDERS) == {"anthropic", "ollama"}
+        assert set(LLM_PROVIDERS) == {"anthropic"}
 
-    def test_ollama_auto_switches_prompt_version(self, monkeypatch):
-        monkeypatch.setenv("PIPELINE_LLM_PROVIDER", "ollama")
-        monkeypatch.delenv("PIPELINE_PROMPT_VERSION", raising=False)
-        cfg = PipelineConfig()
-        assert cfg.prompt_version == "ollama_v1"
-
-    def test_ollama_explicit_prompt_version_preserved(self, monkeypatch):
-        monkeypatch.setenv("PIPELINE_LLM_PROVIDER", "ollama")
-        monkeypatch.setenv("PIPELINE_PROMPT_VERSION", "v5")
-        cfg = PipelineConfig()
-        assert cfg.prompt_version == "v5"
-
-    def test_anthropic_does_not_touch_prompt_version(self, monkeypatch):
+    def test_default_prompt_version(self, monkeypatch):
         monkeypatch.delenv("PIPELINE_LLM_PROVIDER", raising=False)
         monkeypatch.delenv("PIPELINE_PROMPT_VERSION", raising=False)
         cfg = PipelineConfig()

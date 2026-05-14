@@ -31,14 +31,6 @@ _provider_cache_key: tuple[object, ...] | None = None
 
 def _provider_key(config: PipelineConfig) -> tuple[object, ...]:
     """Return config fields that affect provider construction."""
-    if config.llm_provider == "ollama":
-        return (
-            config.llm_provider,
-            config.ollama_host,
-            config.ollama_model,
-            config.ollama_num_ctx,
-            config.ollama_keep_alive,
-        )
     return (config.llm_provider,)
 
 

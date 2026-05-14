@@ -24,7 +24,7 @@ PRESETS_PATH = CONFIG_DIR / "presets.json"
 TUNING_CONFIG_PATH = CONFIG_DIR / "tuning_config.json"
 MAX_HISTORY: int = 100
 SENSITIVE_FIELDS: frozenset[str] = frozenset({"ncbi_api_key", "entrez_email"})
-PROMPT_VERSIONS: list[str] = ["gemma_v5", "gemma_v4", "ollama_v1"]
+PROMPT_VERSIONS: list[str] = ["gemma_v5", "gemma_v4", "gemma_v1"]
 
 
 # ---- Dataclasses ----
@@ -43,7 +43,7 @@ class HpcAppConfig:
     run_mode: str = "local_pdfs"
     local_pdfs_path: str = ""
     skip_validation: bool = False
-    prompt_version: str = "ollama_v1"
+    prompt_version: str = "gemma_v1"
     confidence_threshold: float = 0.65
     max_concurrent_papers: int = 5
     rpm_limit: int = 50
@@ -105,7 +105,7 @@ class TuningConfig:
     f_beta_weight: float = 2.0
     notes: str = ""
     use_main_config: bool = True
-    prompt_version: str = "ollama_v1"
+    prompt_version: str = "gemma_v1"
     vllm_base_model: str = "unsloth/gemma-4-31b-it-unsloth-bnb-4bit"
     vllm_adapter_path: str = ""
     vllm_adapter_name: str = "svd"

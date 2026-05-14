@@ -113,10 +113,10 @@ def attach_pdf_text(
     return out
 
 
-def paper_to_chat_record(p: Paper, prompt_version: str = "ollama_v1") -> dict:
+def paper_to_chat_record(p: Paper, prompt_version: str = "gemma_v1") -> dict:
     """Format a Paper as an MLX-LM chat JSONL record.
 
-    The system + user messages are assembled exactly like the Ollama serving
+    The system + user messages are assembled exactly like the vLLM serving
     path (system_prompt + extraction_instructions joined) so fine-tuning
     inputs match inference inputs. `pmid` is stripped from each gene dict
     because the serving path assigns pmid post-extraction.
@@ -159,8 +159,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--prompt-version",
-        default="ollama_v1",
-        help="Prompt version to embed in chat records (default: ollama_v1).",
+        default="gemma_v1",
+        help="Prompt version to embed in chat records (default: gemma_v1).",
     )
     return parser
 

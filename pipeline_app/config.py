@@ -17,12 +17,7 @@ from dotenv import dotenv_values
 from pipeline.config import (
     LLM_PROVIDERS as _PIPELINE_LLM_PROVIDERS,
 )
-from pipeline.config import (
-    OLLAMA_DEFAULT_HOST,
-    OLLAMA_DEFAULT_MODEL,
-    OLLAMA_DEFAULT_NUM_CTX,
-    LLMProviderName,
-)
+from pipeline.config import LLMProviderName
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +51,8 @@ LLM_EFFORTS: list[str] = ["low", "medium", "high", "max"]
 LLM_PROVIDERS: list[LLMProviderName] = list(_PIPELINE_LLM_PROVIDERS)
 PROVIDER_LABELS: dict[str, str] = {
     "anthropic": "Anthropic (Claude)",
-    "ollama": "Ollama (local)",
 }
-PROMPT_VERSIONS: list[str] = ["v2", "v3", "v4", "v5", "ollama_v1"]
+PROMPT_VERSIONS: list[str] = ["v2", "v3", "v4", "v5"]
 
 
 # ---- Dataclasses ----
@@ -83,9 +77,6 @@ class PipelineAppConfig:
     llm_max_tokens: int = 0
     prompt_version: str = "v5"
     llm_provider: LLMProviderName = "anthropic"
-    ollama_host: str = OLLAMA_DEFAULT_HOST
-    ollama_model: str = OLLAMA_DEFAULT_MODEL
-    ollama_num_ctx: int = OLLAMA_DEFAULT_NUM_CTX
     confidence_threshold: float = 0.65
     max_concurrent_papers: int = 5
     rpm_limit: int = 50
@@ -122,9 +113,6 @@ class TuningConfig:
     llm_max_tokens: int = 0
     prompt_version: str = "v5"
     llm_provider: LLMProviderName = "anthropic"
-    ollama_model: str = OLLAMA_DEFAULT_MODEL
-    ollama_host: str = OLLAMA_DEFAULT_HOST
-    ollama_num_ctx: int = OLLAMA_DEFAULT_NUM_CTX
     python_path: str = "python3"
     project_root: str = ""
 

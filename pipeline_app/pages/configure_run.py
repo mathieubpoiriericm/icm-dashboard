@@ -12,7 +12,6 @@ from typing import Literal
 
 from nicegui import context, ui
 
-from pipeline.config import OLLAMA_PROMPT_VERSIONS
 from pipeline_app.components.execution_panel import ExecutionPanel
 from pipeline_app.components.form_fields import (
     bound_number,
@@ -21,12 +20,10 @@ from pipeline_app.components.form_fields import (
 )
 from pipeline_app.components.path_picker import pick_path
 from pipeline_app.components.preset_selector import create_preset_selector
-from pipeline_app.components.provider_section import apply_provider_widget_state
 from pipeline_app.config import (
     LLM_EFFORTS,
     LLM_MODELS,
     PROMPT_VERSIONS,
-    PROVIDER_LABELS,
     EnvSecrets,
     PipelineAppConfig,
     add_run_to_history,
@@ -39,7 +36,6 @@ from pipeline_app.runner import (
     PipelineRunner,
     SubprocessLock,
     get_project_anchor,
-    list_ollama_models,
 )
 
 
@@ -176,98 +172,27 @@ def create_configure_run_page(
             # ---- LLM Settings ----
             ui.label("LLM Settings").classes("section-header")
 
-            provider_select = (
-                bound_select(
-                    config,
-                    "llm_provider",
-                    options=PROVIDER_LABELS,
-                    label="Provider",
-                )
+            bound_select(config, "llm_model", options=LLM_MODELS, label="Model")
+            bound_select(
+                config,
+                "llm_effort",
+                options=LLM_EFFORTS,
+                label="Effort",
+            )
+            bound_number(
+                config,
+                "llm_max_tokens",
+                label="Max Tokens (0 = default)",
+                min=0,
             )
 
-            claude_model_select = (
-                bound_select(config, "llm_model", options=LLM_MODELS, label="Model")
-            )
-            claude_effort_select = (
-                bound_select(
-                    config,
-                    "llm_effort",
-                    options=LLM_EFFORTS,
-                    label="Effort",
-                )
-            )
-            claude_max_tokens = (
-                bound_number(
-                    config,
-                    "llm_max_tokens",
-                    label="Max Tokens (0 = default)",
-                    min=0,
-                )
+            bound_select(
+                config,
+                "prompt_version",
+                options=PROMPT_VERSIONS,
+                label="Prompt Version",
             )
 
-            prompt_select = (
-                bound_select(
-                    config,
-                    "prompt_version",
-                    options=PROMPT_VERSIONS,
-                    label="Prompt Version",
-                )
-            )
-
-            with ui.column().classes("w-full") as ollama_section:
-                ollama_model_select = (
-                    ui.select(
-                        options=[config.ollama_model] if config.ollama_model else [],
-                        label="Ollama model",
-                        value=config.ollama_model,
-                        with_input=True,
-                        new_value_mode="add-unique",
-                    )
-                    .classes("w-full")
-                    .bind_value(config, "ollama_model")
-                )
-                bound_number(
-                    config,
-                    "ollama_num_ctx",
-                    label="Context window (num_ctx)",
-                    min=1024,
-                    max=131_072,
-                    step=1024,
-                )
-
-            async def _refresh_provider_ui() -> None:
-                is_ollama = apply_provider_widget_state(
-                    config.llm_provider,
-                    claude_widgets=(
-                        claude_model_select,
-                        claude_effort_select,
-                        claude_max_tokens,
-                    ),
-                )
-                ollama_section.set_visibility(is_ollama)
-
-                # Swap between canonical per-provider defaults; user-picked
-                # values in the same family (e.g. an explicit "v4" on Anthropic
-                # or a future "ollama_v2") are left alone.
-                if is_ollama and config.prompt_version not in OLLAMA_PROMPT_VERSIONS:
-                    config.prompt_version = "ollama_v1"
-                    prompt_select.set_value("ollama_v1")
-                elif not is_ollama and config.prompt_version in OLLAMA_PROMPT_VERSIONS:
-                    config.prompt_version = "v5"
-                    prompt_select.set_value("v5")
-
-                if not is_ollama:
-                    return
-
-                tags = await list_ollama_models(config.ollama_host)
-                if tags:
-                    current = (
-                        config.ollama_model if config.ollama_model in tags else tags[0]
-                    )
-                    ollama_model_select.set_options(tags, value=current)
-                    config.ollama_model = current
-
-            provider_select.on_value_change(lambda _: _refresh_provider_ui())
             bound_number(
                 config,
                 "confidence_threshold",
@@ -283,8 +208,6 @@ def create_configure_run_page(
                 label="Max Paper Text Chars",
                 min=1000,
             )
-
-            ui.timer(0, _refresh_provider_ui, once=True)
 
             ui.separator().classes("nav-separator")
 
@@ -551,12 +474,7 @@ def create_configure_run_page(
                     )
 
                     missing: list[str] = []
-                    # Anthropic key only required when using the Anthropic
-                    # provider; Ollama runs locally and has no API key.
-                    if (
-                        config.llm_provider == "anthropic"
-                        and not fresh_secrets.anthropic_api_key
-                    ):
+                    if not fresh_secrets.anthropic_api_key:
                         missing.append("ANTHROPIC_API_KEY")
                     # DB_HOST not needed in dry-run mode (no database writes).
                     if not config.dry_run and not fresh_secrets.db_host:

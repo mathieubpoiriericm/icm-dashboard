@@ -17,7 +17,7 @@ class TestTuningRunner:
             local_pdfs_path="/main/pdfs",
             skip_validation=False,
             confidence_threshold=0.5,
-            prompt_version="ollama_v1",
+            prompt_version="gemma_v1",
             vllm_base_model="main-model",
         )
         tuning = TuningConfig(

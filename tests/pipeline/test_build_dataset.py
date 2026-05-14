@@ -134,7 +134,7 @@ class TestPaperToChatRecord:
         roles = [m["role"] for m in record["messages"]]
         assert roles == ["system", "user", "assistant"]
 
-    def test_system_is_ollama_v1(self):
+    def test_system_is_gemma_v1(self):
         p = Paper(pmid="42", fulltext="sample", genes=[_gene("A", 0.9)])
         record = paper_to_chat_record(p)
         sys_content = record["messages"][0]["content"]

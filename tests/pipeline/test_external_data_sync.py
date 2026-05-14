@@ -202,7 +202,7 @@ def _mock_cleanup(mocker):
 
 class TestSyncAllExternalData:
     async def test_orchestrates_all_syncs(self, mocker):
-        config = PipelineConfig(llm_provider="ollama")
+        config = PipelineConfig(llm_provider="anthropic")
         mocker.patch(
             "pipeline.external_data_sync.get_table1_gene_symbols",
             return_value=["NOTCH3"],

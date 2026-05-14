@@ -22,9 +22,9 @@ class TokenUsage:
     # The API does not separate thinking from text in usage counts, so this
     # is set by the caller after inspecting response content blocks.
     thinking_tokens: int = 0
-    # Count of responses that hit the max_tokens ceiling (stop_reason=max_tokens
-    # for Anthropic, done_reason=length for Ollama). Providers set this to 1
-    # on truncation; __iadd__ sums it so the metrics total surfaces how many
+    # Count of responses that hit the max_tokens ceiling
+    # (stop_reason=max_tokens for Anthropic). Providers set this to 1 on
+    # truncation; __iadd__ sums it so the metrics total surfaces how many
     # extractions were silently cut short by an undersized token budget.
     truncated_responses: int = 0
 

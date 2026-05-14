@@ -19,7 +19,7 @@ class TestHpcAppConfigDefaults:
     def test_default_prompt_version(self):
         from pipeline_app_hpc.config import HpcAppConfig
 
-        assert HpcAppConfig().prompt_version == "ollama_v1"
+        assert HpcAppConfig().prompt_version == "gemma_v1"
 
     def test_default_vllm_local_port(self):
         from pipeline_app_hpc.config import HpcAppConfig

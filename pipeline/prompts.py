@@ -30,10 +30,11 @@ class ExtractionPrompt:
     def combined_system_text(self) -> str:
         """Single system string for providers that take one system message.
 
-        Ollama's chat API and MLX-LM's chat JSONL format pass a single system
-        message per turn, so the two halves the Anthropic path feeds as
-        separate cache-able blocks get concatenated here with a blank line
-        between them.
+        The OpenAI-compatible chat API exposed by vLLM (and the MLX-LM chat
+        JSONL format used for fine-tune dataset construction) pass a single
+        system message per turn, so the two halves the Anthropic path feeds
+        as separate cache-able blocks get concatenated here with a blank
+        line between them.
         """
         return f"{self.system_prompt}\n\n{self.extraction_instructions}"
 
@@ -803,10 +804,10 @@ Do NOT extract NOTCH3: This is a background citation of a known monogenic gene. 
 </instructions>"""
 
 # ---------------------------------------------------------------------------
-# Ollama v1 prompts (leaner; tuned for 4B Gemma)
+# Gemma v1 prompts (leaner; tuned for small Gemma-class models)
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT_OLLAMA_V1: Final[str] = (
+_SYSTEM_PROMPT_GEMMA_V1: Final[str] = (
     "You extract genes with putative causal links to cerebral small vessel "
     "disease (cSVD) from research papers.\n\n"
     "Include a gene when the paper presents causal evidence: GWAS, MAGMA, "
@@ -825,7 +826,7 @@ _SYSTEM_PROMPT_OLLAMA_V1: Final[str] = (
     "{schema}"
 )
 
-_EXTRACTION_INSTRUCTIONS_OLLAMA_V1: Final[str] = """\
+_EXTRACTION_INSTRUCTIONS_GEMMA_V1: Final[str] = """\
 Fields:
 - gene_symbol (required): HGNC symbol in uppercase (e.g. NOTCH3, COL4A1).
 - protein_name: UniProt recommended name, or null.
@@ -850,7 +851,7 @@ with its own confidence.
 """
 
 # `.replace()` rather than `.format()` so the JSON braces in `{schema}` need no escaping.
-_OLLAMA_V1_SYSTEM: Final[str] = _SYSTEM_PROMPT_OLLAMA_V1.replace(
+_GEMMA_V1_SYSTEM: Final[str] = _SYSTEM_PROMPT_GEMMA_V1.replace(
     "{schema}",
     json.dumps(ExtractionResult.model_json_schema(), indent=2),
 )
@@ -1286,7 +1287,7 @@ _PROMPTS: Final[dict[str, tuple[str, str]]] = {
     "v5": (_SYSTEM_PROMPT_V5, _EXTRACTION_INSTRUCTIONS_V5),
     "gemma_v4": (_SYSTEM_PROMPT_GEMMA_V4, _EXTRACTION_INSTRUCTIONS_GEMMA_V4),
     "gemma_v5": (_SYSTEM_PROMPT_GEMMA_V5, _EXTRACTION_INSTRUCTIONS_GEMMA_V5),
-    "ollama_v1": (_OLLAMA_V1_SYSTEM, _EXTRACTION_INSTRUCTIONS_OLLAMA_V1),
+    "gemma_v1": (_GEMMA_V1_SYSTEM, _EXTRACTION_INSTRUCTIONS_GEMMA_V1),
 }
 
 # Public aliases for backwards compatibility (point to current default)
@@ -1303,8 +1304,8 @@ def build_extraction_prompt(
     """Build a provider-agnostic extraction prompt.
 
     Each provider wraps the returned parts in its own wire format
-    (Anthropic cache-controlled blocks, Ollama plain strings, MLX-LM
-    chat records for fine-tuning).
+    (Anthropic cache-controlled blocks, vLLM OpenAI chat completions,
+    MLX-LM chat records for fine-tuning).
     """
     if prompt_version not in _PROMPTS:
         logger.warning(

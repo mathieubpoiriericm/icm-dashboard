@@ -185,22 +185,6 @@ def get_project_anchor(config: PipelineAppConfig) -> Path | None:
         return None
 
 
-async def list_ollama_models(host: str) -> list[str]:
-    """Return tags currently available on the Ollama server, or [] on failure.
-
-    Thin UI-layer wrapper so the Configure & Run page doesn't import the
-    provider module directly (and doesn't pull in the optional ``ollama``
-    dependency on pages that never toggle the provider to local).
-    """
-    try:
-        from pipeline.llm_providers.ollama_provider import (  # noqa: PLC0415
-            list_available_tags,
-        )
-    except ImportError:
-        return []
-    return await list_available_tags(host)
-
-
 def build_cli_args(config: PipelineAppConfig) -> list[str]:
     """Build CLI arguments for pipeline/main.py."""
     args = ["pipeline/main.py"]
@@ -274,9 +258,6 @@ _CONFIG_ENV_SPECS: tuple[_EnvVarSpec, ...] = (
     _EnvVarSpec("PIPELINE_LLM_MODEL", "llm_model"),
     _EnvVarSpec("PIPELINE_LLM_EFFORT", "llm_effort"),
     _EnvVarSpec("PIPELINE_LLM_MAX_TOKENS", "llm_max_tokens", _int_str),
-    _EnvVarSpec("PIPELINE_OLLAMA_HOST", "ollama_host"),
-    _EnvVarSpec("PIPELINE_OLLAMA_MODEL", "ollama_model"),
-    _EnvVarSpec("PIPELINE_OLLAMA_NUM_CTX", "ollama_num_ctx", _int_str),
     _EnvVarSpec("PIPELINE_PROMPT_VERSION", "prompt_version"),
     _EnvVarSpec("PIPELINE_CONFIDENCE_THRESHOLD", "confidence_threshold"),
     _EnvVarSpec("PIPELINE_MAX_CONCURRENT_PAPERS", "max_concurrent_papers", _int_str),
@@ -890,9 +871,6 @@ def build_extract_config(
                 "llm_effort": tuning.llm_effort,
                 "llm_max_tokens": tuning.llm_max_tokens,
                 "prompt_version": tuning.prompt_version,
-                "ollama_model": tuning.ollama_model,
-                "ollama_host": tuning.ollama_host,
-                "ollama_num_ctx": tuning.ollama_num_ctx,
             }
         )
     return replace(main_config, **overrides)

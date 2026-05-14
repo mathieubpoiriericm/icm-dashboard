@@ -173,12 +173,12 @@ class TestBuildExtractionPrompt:
         assert 'type="include_twas_causal_gene"' in instructions
 
 
-class TestOllamaV1Prompt:
-    """Tests for the ollama_v1 prompt family."""
+class TestGemmaV1Prompt:
+    """Tests for the gemma_v1 prompt family."""
 
-    def test_ollama_v1_prompt_registered(self):
-        assert "ollama_v1" in _PROMPTS
-        system, instructions = _PROMPTS["ollama_v1"]
+    def test_gemma_v1_prompt_registered(self):
+        assert "gemma_v1" in _PROMPTS
+        system, instructions = _PROMPTS["gemma_v1"]
         assert "cerebral small vessel disease" in system.lower()
         # Gemma prompt should be noticeably shorter than v5.
         v5_system, v5_instructions = _PROMPTS["v5"]
@@ -186,23 +186,23 @@ class TestOllamaV1Prompt:
             len(v5_system) + len(v5_instructions)
         )
 
-    def test_ollama_v1_embeds_json_schema_hint(self):
-        system, instructions = _PROMPTS["ollama_v1"]
+    def test_gemma_v1_embeds_json_schema_hint(self):
+        system, instructions = _PROMPTS["gemma_v1"]
         combined = system + instructions
         # The schema (or at least its root keys) should be embedded to ground the model.
         schema_hint = json.dumps(ExtractionResult.model_json_schema())
         assert "genes" in schema_hint  # sanity on the schema itself
         assert "JSON" in combined and "gene_symbol" in combined, (
-            "ollama_v1 should reference the JSON schema explicitly"
+            "gemma_v1 should reference the JSON schema explicitly"
         )
 
-    def test_builder_returns_ollama_v1_parts(self):
+    def test_builder_returns_gemma_v1_parts(self):
         prompt = build_extraction_prompt(
             paper_text="hello",
             pmid="1",
             max_chars=10_000,
-            prompt_version="ollama_v1",
+            prompt_version="gemma_v1",
         )
-        system, instructions = _PROMPTS["ollama_v1"]
+        system, instructions = _PROMPTS["gemma_v1"]
         assert prompt.system_prompt == system
         assert prompt.extraction_instructions == instructions

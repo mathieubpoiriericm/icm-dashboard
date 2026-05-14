@@ -22,22 +22,10 @@ def _build_anthropic(config: PipelineConfig) -> LLMProvider:
     return AnthropicProvider()
 
 
-def _build_ollama(config: PipelineConfig) -> LLMProvider:
-    from pipeline.llm_providers.ollama_provider import OllamaProvider
-
-    return OllamaProvider(
-        host=config.ollama_host,
-        model=config.ollama_model,
-        num_ctx=config.ollama_num_ctx,
-        keep_alive=config.ollama_keep_alive,
-    )
-
-
 # Provider modules are imported lazily so pulling GeneEntry from this
-# package does not load the Anthropic or Ollama SDKs unnecessarily.
+# package does not load the Anthropic SDK unnecessarily.
 _PROVIDER_BUILDERS: dict[str, Callable[[PipelineConfig], LLMProvider]] = {
     "anthropic": _build_anthropic,
-    "ollama": _build_ollama,
 }
 
 

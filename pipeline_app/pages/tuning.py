@@ -12,18 +12,15 @@ from pipeline_app.components.execution_panel import (
     render_output_links,
 )
 from pipeline_app.components.form_fields import (
-    bound_input,
     bound_number,
     bound_path_input,
     bound_select,
 )
 from pipeline_app.components.path_picker import pick_path
-from pipeline_app.components.provider_section import apply_provider_widget_state
 from pipeline_app.config import (
     LLM_EFFORTS,
     LLM_MODELS,
     PROMPT_VERSIONS,
-    PROVIDER_LABELS,
     PipelineAppConfig,
     TuningConfig,
     load_env_secrets,
@@ -175,46 +172,23 @@ def create_tuning_page(
             )
 
             with ui.column().classes("w-full") as llm_override_fields:
-                tuning_provider_select = (
-                    bound_select(
-                        tuning,
-                        "llm_provider",
-                        options=PROVIDER_LABELS,
-                        label="Provider",
-                    )
+                bound_select(
+                    tuning,
+                    "llm_model",
+                    options=LLM_MODELS,
+                    label="Model",
                 )
-
-                tuning_claude_model = (
-                    bound_select(
-                        tuning,
-                        "llm_model",
-                        options=LLM_MODELS,
-                        label="Model",
-                    )
+                bound_select(
+                    tuning,
+                    "llm_effort",
+                    options=LLM_EFFORTS,
+                    label="Effort",
                 )
-                tuning_claude_effort = (
-                    bound_select(
-                        tuning,
-                        "llm_effort",
-                        options=LLM_EFFORTS,
-                        label="Effort",
-                    )
-                )
-                tuning_claude_max_tokens = (
-                    bound_number(
-                        tuning,
-                        "llm_max_tokens",
-                        label="Max Tokens (0 = default)",
-                        min=0,
-                    )
-                )
-                tuning_ollama_model = (
-                    bound_input(
-                        tuning,
-                        "ollama_model",
-                        label="Ollama model tag",
-                        placeholder="gemma4:e4b or svd-gemma:v1",
-                    )
+                bound_number(
+                    tuning,
+                    "llm_max_tokens",
+                    label="Max Tokens (0 = default)",
+                    min=0,
                 )
                 bound_select(
                     tuning,
@@ -222,22 +196,6 @@ def create_tuning_page(
                     options=PROMPT_VERSIONS,
                     label="Prompt Version",
                 )
-
-                def _tuning_update_provider_controls() -> None:
-                    is_ollama = apply_provider_widget_state(
-                        tuning.llm_provider,
-                        claude_widgets=(
-                            tuning_claude_model,
-                            tuning_claude_effort,
-                            tuning_claude_max_tokens,
-                        ),
-                    )
-                    tuning_ollama_model.set_enabled(is_ollama)
-
-                tuning_provider_select.on_value_change(
-                    lambda _: _tuning_update_provider_controls()
-                )
-                _tuning_update_provider_controls()
 
             llm_override_fields.bind_visibility_from(
                 tuning, "use_main_config", backward=lambda v: not v

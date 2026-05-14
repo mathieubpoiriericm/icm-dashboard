@@ -91,20 +91,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip NCBI gene validation (only valid with --local-pdfs or --pmids)",
     )
-    parser.add_argument(
-        "--llm-provider",
-        # Kept in sync with pipeline.config.LLMProviderName manually — importing
-        # LLM_PROVIDERS here would pull in lxml via pipeline.config and break
-        # the stdlib-only fast path used for argcomplete below.
-        choices=["anthropic", "ollama"],
-        default=None,
-        help="Override PIPELINE_LLM_PROVIDER for this run.",
-    )
-    parser.add_argument(
-        "--ollama-model",
-        default=None,
-        help="Override PIPELINE_OLLAMA_MODEL for this run (e.g. svd-gemma:v1).",
-    )
     return parser
 
 
@@ -684,11 +670,8 @@ async def run_pipeline(
         await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
-    model_display = (
-        config.ollama_model if config.llm_provider == "ollama" else config.llm_model
-    )
     logger.info(
-        f"Config: model={model_display}, provider={config.llm_provider}, "
+        f"Config: model={config.llm_model}, "
         f"concurrency={config.max_concurrent_papers}, "
         f"RPM={config.rpm_limit}, TPM={config.tpm_limit}"
     )
@@ -1032,11 +1015,8 @@ async def run_local_pdf_pipeline(
     await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
-    model_display = (
-        config.ollama_model if config.llm_provider == "ollama" else config.llm_model
-    )
     logger.info(
-        f"Config: model={model_display}, provider={config.llm_provider}, "
+        f"Config: model={config.llm_model}, "
         f"validation={'disabled' if skip_validation else 'enabled'}"
     )
 
@@ -1242,11 +1222,8 @@ async def run_pmid_pipeline(
     await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")
-    model_display = (
-        config.ollama_model if config.llm_provider == "ollama" else config.llm_model
-    )
     logger.info(
-        f"Config: model={model_display}, provider={config.llm_provider}, "
+        f"Config: model={config.llm_model}, "
         f"validation={'disabled' if skip_validation else 'enabled'}"
     )
 
@@ -1708,11 +1685,6 @@ def main() -> None:
     # (preserves the original no-flag behavior).
     if not offline_selected and not online_selected:
         args.pubmed = True
-
-    if args.llm_provider is not None:
-        os.environ["PIPELINE_LLM_PROVIDER"] = args.llm_provider
-    if args.ollama_model is not None:
-        os.environ["PIPELINE_OLLAMA_MODEL"] = args.ollama_model
 
     config = PipelineConfig()
 
