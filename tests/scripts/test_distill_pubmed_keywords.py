@@ -30,6 +30,7 @@ from scripts.distill_pubmed_keywords import (
     _llr_score,
     _ncbi_retry,
     _rank_terms,
+    _render_query,
     aggregate_mesh,
     distill_keywords,
     fetch_fulltext_batch,
@@ -38,6 +39,7 @@ from scripts.distill_pubmed_keywords import (
     format_structured_query,
     format_titleabstract_query,
     load_baseline_cache,
+    load_corpus,
     main,
     parse_jats_for_sections,
     parse_pubmed_xml_for_mesh,
@@ -1325,3 +1327,229 @@ def test_main_default_invokes_fulltext_fetch(
     )
     assert rc == 0
     assert received_pmids == [["12345"]]
+
+
+# ---------------------------------------------------------------------------
+# Rich rendering — _render_query token styling
+# ---------------------------------------------------------------------------
+
+
+class TestRenderQuery:
+    def test_styles_operators_tags_phrases_parens_and_bare(self) -> None:
+        # Covers every token class the regex distinguishes:
+        # paren, op (AND/OR/NOT), tag (two variants), phrase, bare.
+        q = (
+            '("vSMC migration"[Title/Abstract] OR Notch3[Title/Abstract] '
+            "AND CADASIL[MeSH Terms] NOT mouse)"
+        )
+        text = _render_query(q)
+        # The plain-text projection of the styled Text must equal the
+        # input — styling adds visual metadata but never changes bytes.
+        assert str(text) == q
+
+        # Bucket the styled spans by style so we can assert each token
+        # class landed on the right color.
+        spanned: dict[str, set[str]] = {}
+        for span in text.spans:
+            spanned.setdefault(str(span.style), set()).add(
+                q[span.start : span.end]
+            )
+
+        ops = spanned.get("bold magenta", set())
+        assert {"AND", "OR", "NOT"}.issubset(ops)
+
+        tags = spanned.get("cyan", set())
+        assert {"[Title/Abstract]", "[MeSH Terms]"}.issubset(tags)
+
+        phrases = spanned.get("bold yellow", set())
+        assert '"vSMC migration"' in phrases
+
+        parens = spanned.get("dim", set())
+        assert {"(", ")"}.issubset(parens)
+
+        # "Bare" tokens are appended with an empty style — rich elides
+        # those from Text.spans entirely. Confirm none of them leaked
+        # into a styled span (that would mean the regex misclassified
+        # them) while still being present in the plain-text projection.
+        all_styled = {v for vals in spanned.values() for v in vals}
+        for bare_token in ("Notch3", "CADASIL", "mouse"):
+            assert bare_token in str(text)
+            assert bare_token not in all_styled
+
+
+# ---------------------------------------------------------------------------
+# Rich rendering — progress_callback wired into load_corpus
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_mesh_terms_invokes_progress_callback(tmp_path: Path) -> None:
+    """fetch_mesh_terms should fire the callback both for the cache-hit
+    pre-pass and after each subsequent network batch."""
+    # Seed one PMID in cache so the pre-pass reports a non-zero
+    # ``completed`` before any fetch runs.
+    cached_pmid_path = tmp_path / "111.json"
+    cached_pmid_path.write_text(
+        json.dumps(
+            {
+                "pmid": "111",
+                "descriptors": [
+                    {"term": "Brain", "ui": "D001921", "major": True}
+                ],
+                "fetched_at": "2025-01-01T00:00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+
+    def stub_fetcher(_batch: list[str]) -> bytes:
+        return fixture
+
+    calls: list[tuple[int, int]] = []
+    fetch_mesh_terms(
+        ["111", "15905468", "23649698"],
+        cache_dir=tmp_path,
+        fetcher=stub_fetcher,
+        batch_size=2,
+        progress_callback=lambda c, t: calls.append((c, t)),
+    )
+
+    # First call reports the cache pre-pass (1 of 3 already done).
+    assert calls[0] == (1, 3)
+    # Final reported completion must be 3/3 (full coverage).
+    assert calls[-1] == (3, 3)
+    # Monotonic non-decreasing across the run.
+    assert all(
+        calls[i][0] <= calls[i + 1][0] for i in range(len(calls) - 1)
+    )
+    # Total is constant across the run.
+    assert {t for _, t in calls} == {3}
+
+
+def test_fetch_fulltext_batch_invokes_progress_callback(tmp_path: Path) -> None:
+    """fetch_fulltext_batch should fire the callback once per PMID
+    iteration plus once for the cache-hit pre-pass."""
+    jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+
+    def stub_elink(batch: list[str]) -> dict[str, str | None]:
+        # First PMID resolves to a PMC mirror; second has no mirror;
+        # third missing from response — exercise all three code paths.
+        return {"15905468": "PMC1234567", "23649698": None}
+
+    def stub_efetch(_pmcid: str) -> bytes | None:
+        return jats_bytes
+
+    calls: list[tuple[int, int]] = []
+    fetch_fulltext_batch(
+        ["15905468", "23649698", "99999999"],
+        tmp_path,
+        fetcher_elink=stub_elink,
+        fetcher_efetch=stub_efetch,
+        progress_callback=lambda c, t: calls.append((c, t)),
+    )
+
+    # Pre-pass: nothing cached yet, so the cache-hit count is 0.
+    assert calls[0] == (0, 3)
+    # Final completion must equal total — the try/finally ensures the
+    # callback ticks even when the PMID is dropped from elink.
+    assert calls[-1] == (3, 3)
+    assert all(
+        calls[i][0] <= calls[i + 1][0] for i in range(len(calls) - 1)
+    )
+    assert {t for _, t in calls} == {3}
+
+
+def test_load_corpus_invokes_progress_callback_monotonically(
+    tmp_path: Path,
+) -> None:
+    xml_dir = tmp_path / "xml"
+    xml_dir.mkdir()
+    # Three minimal MODS files. The middle one has no title/abstract so
+    # parse_mods_file returns None, but the progress callback should
+    # still fire (attempted, not just parsed).
+    for i, body in enumerate(
+        (
+            "<titleInfo><title>One</title></titleInfo>"
+            "<abstract>A1.</abstract>",
+            "",  # empty mods body — skipped
+            "<titleInfo><title>Three</title></titleInfo>"
+            "<abstract>A3.</abstract>",
+        ),
+        start=1,
+    ):
+        (xml_dir / f"{i}.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
+            f"  <mods>{body}</mods>\n"
+            "</modsCollection>\n",
+            encoding="utf-8",
+        )
+
+    calls: list[tuple[int, int]] = []
+    papers = load_corpus(xml_dir, progress_callback=lambda c, t: calls.append((c, t)))
+
+    assert [c[0] for c in calls] == [1, 2, 3]
+    assert all(t == 3 for _, t in calls)
+    # 2 of 3 files yielded papers (middle one had no title/abstract).
+    assert len(papers) == 2
+
+
+# ---------------------------------------------------------------------------
+# Rich rendering — file outputs stay plain ASCII (no ANSI)
+# ---------------------------------------------------------------------------
+
+
+def test_output_file_contains_no_ansi_escapes(
+    _stub_corpus: Path,
+    tmp_path: Path,
+) -> None:
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_minimal_baseline(baseline_path)
+    out_path = tmp_path / "report.txt"
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--no-fulltext",
+            "--no-mesh",
+            "--output",
+            str(out_path),
+        ]
+    )
+    assert rc == 0
+    content = out_path.read_bytes()
+    assert b"\x1b[" not in content, "file output must be ANSI-free"
+
+
+def test_json_output_file_contains_no_ansi_escapes(
+    _stub_corpus: Path,
+    tmp_path: Path,
+) -> None:
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_minimal_baseline(baseline_path)
+    out_path = tmp_path / "out.json"
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--no-fulltext",
+            "--no-mesh",
+            "--json",
+            "--output",
+            str(out_path),
+        ]
+    )
+    assert rc == 0
+    content = out_path.read_bytes()
+    assert b"\x1b[" not in content, "JSON output must be ANSI-free"
+    # Sanity check: the file actually parses as JSON with the expected
+    # top-level keys, so the byte-stability guarantee is meaningful.
+    parsed = json.loads(content.decode("utf-8"))
+    assert {"papers", "unigrams", "query_variants"} <= parsed.keys()

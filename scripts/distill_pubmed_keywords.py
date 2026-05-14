@@ -79,8 +79,36 @@ from pathlib import Path
 from typing import Any, Final, TextIO
 
 from lxml import etree  # type: ignore[import-untyped]
+from rich import box
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Table
+from rich.text import Text
 
 logger = logging.getLogger(__name__)
+
+# Stdout console for the human-readable report. Rich auto-detects
+# non-TTY streams and emits plain ASCII (no ANSI), so shell redirects
+# like ``script.py > out.txt`` still produce clean text. ``highlight``
+# is off so numbers/strings in our table cells aren't auto-restyled —
+# we control all cell styling explicitly.
+_console: Final[Console] = Console(stderr=False, highlight=False)
+
+# Shared stderr console for both RichHandler and rich.Progress. Both
+# must write through the *same* Console instance so the Live renderer
+# can suspend the progress bar before a log line lands — otherwise
+# warnings emitted during fetch loops stomp the active bar.
+_stderr_console: Final[Console] = Console(stderr=True)
 
 # ---------------------------------------------------------------------------
 # CONSTANTS
@@ -129,6 +157,30 @@ _QUERY_FORMATS: Final[tuple[str, ...]] = (
     "all", "structured", "mesh", "titleabstract",
 )
 _QUERY_FORMAT_VARIANTS: Final[tuple[str, ...]] = _QUERY_FORMATS[1:]
+
+# Project palette (matches www/custom.css). Used for title accents in
+# the rich report so the CLI feels visually paired with the dashboard.
+_PRIMARY_COLOR: Final[str] = "#281E78"
+_ACCENT_COLOR: Final[str] = "#FA4616"
+
+# Single-pass tokenizer for the PubMed Boolean query renderer. Order of
+# alternation matters: paren > op > tag > phrase > bare. The bare class
+# is the fallback for anything that isn't whitespace, paren, bracket,
+# or quote.
+_QUERY_TOKEN_RE: Final[re.Pattern[str]] = re.compile(
+    r'(?P<paren>[()])'
+    r'|(?P<op>\bAND\b|\bOR\b|\bNOT\b)'
+    r'|(?P<tag>\[[^\]]+\])'
+    r'|(?P<phrase>"[^"]*")'
+    r'|(?P<bare>[^\s()\[\]"]+)'
+)
+_QUERY_TOKEN_STYLES: Final[dict[str, str]] = {
+    "paren": "dim",
+    "op": "bold magenta",
+    "tag": "cyan",
+    "phrase": "bold yellow",
+    "bare": "",
+}
 
 MIN_TOKEN_LENGTH: Final[int] = 3
 MIN_ACRONYM_LENGTH: Final[int] = 2
@@ -444,15 +496,31 @@ def parse_mods_file(path: Path) -> PaperText | None:
     )
 
 
-def load_corpus(xml_dir: Path) -> list[PaperText]:
-    """Parse every ``*.xml`` file in the directory into PaperText records."""
+def load_corpus(
+    xml_dir: Path,
+    *,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> list[PaperText]:
+    """Parse every ``*.xml`` file in the directory into PaperText records.
+
+    ``progress_callback`` is invoked once after each XML file is
+    attempted (parsed or skipped) with ``(completed, total)``, so a
+    rich.Progress task driven from the caller can advance in real time.
+    """
     if not xml_dir.exists() or not xml_dir.is_dir():
         raise FileNotFoundError(f"XML directory not found: {xml_dir}")
 
     files = sorted(xml_dir.glob("*.xml"))
-    papers = [p for p in (parse_mods_file(f) for f in files) if p is not None]
+    total = len(files)
+    papers: list[PaperText] = []
+    for i, f in enumerate(files, start=1):
+        parsed = parse_mods_file(f)
+        if parsed is not None:
+            papers.append(parsed)
+        if progress_callback is not None:
+            progress_callback(i, total)
     logger.info(
-        f"Parsed {len(papers)} paper(s) from {len(files)} XML file(s) in {xml_dir}"
+        f"Parsed {len(papers)} paper(s) from {total} XML file(s) in {xml_dir}"
     )
     return papers
 
@@ -760,6 +828,7 @@ def build_baseline_cache(
     email: str | None = None,
     api_key: str | None = None,
     batch_size: int = DEFAULT_BASELINE_BATCH,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> Path:
     """Fetch a random-ish PubMed sample and write the frequency cache.
 
@@ -844,11 +913,14 @@ def build_baseline_cache(
                 acros=acros,
             )
 
-        if (start // batch_size) % 5 == 4:
-            logger.info(
-                f"  baseline progress: {min(start + batch_size, len(pmids))}"
-                f"/{len(pmids)} PMIDs"
-            )
+        completed = min(start + batch_size, len(pmids))
+        if progress_callback is not None:
+            progress_callback(completed, len(pmids))
+        elif (start // batch_size) % 5 == 4:
+            # Fallback when no live progress is wired up — keep the
+            # legacy info-log cadence so headless runs still surface
+            # heartbeat output.
+            logger.info(f"  baseline progress: {completed}/{len(pmids)} PMIDs")
 
     logger.info(f"Baseline assembled from {total_docs} parseable abstract(s).")
 
@@ -1047,6 +1119,7 @@ def fetch_mesh_terms(
     api_key: str | None = None,
     batch_size: int = DEFAULT_MESH_BATCH,
     fetcher: Any = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> dict[str, list[MeshDescriptor]]:
     """Return ``{pmid: [MeshDescriptor, ...]}`` for the given PMIDs.
 
@@ -1064,6 +1137,7 @@ def fetch_mesh_terms(
     out: dict[str, list[MeshDescriptor]] = {}
     missing: list[str] = []
 
+    total = len(pmid_list)
     for pmid in pmid_list:
         cache_path = cache_dir / f"{pmid}.json"
         if cache_path.exists():
@@ -1089,6 +1163,11 @@ def fetch_mesh_terms(
                 missing.append(pmid)
         else:
             missing.append(pmid)
+
+    if progress_callback is not None:
+        # Report cache-hit count up front so the bar jumps to the
+        # already-resolved fraction before any network work begins.
+        progress_callback(total - len(missing), total)
 
     if not missing:
         return out
@@ -1145,6 +1224,8 @@ def fetch_mesh_terms(
                 )
             except OSError as e:
                 logger.warning(f"Could not write MeSH cache for PMID {pmid}: {e}")
+        if progress_callback is not None:
+            progress_callback(min(len(out), total), total)
 
     return out
 
@@ -1414,6 +1495,7 @@ def fetch_fulltext_batch(
     api_key: str | None = None,
     fetcher_elink: Any = None,
     fetcher_efetch: Any = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> dict[str, FulltextRecord]:
     """Return ``{pmid: FulltextRecord}`` for the given PMIDs.
 
@@ -1440,6 +1522,10 @@ def fetch_fulltext_batch(
             out[pmid] = cached
         else:
             missing.append(pmid)
+
+    total = len(pmid_list)
+    if progress_callback is not None:
+        progress_callback(total - len(missing), total)
 
     if not missing:
         return out
@@ -1468,49 +1554,58 @@ def fetch_fulltext_batch(
         logger.warning(f"elink batch failed for {len(missing)} PMIDs: {e}")
         return out
 
-    for pmid in missing:
-        if pmid not in pmid_to_pmcid:
-            # NCBI omitted this PMID from the elink response (truncation,
-            # partial response, ...). Don't cache anything — retry next run.
-            logger.warning(
-                f"elink response did not include PMID {pmid}; "
-                f"will retry next run"
-            )
-            continue
-        pmcid = pmid_to_pmcid[pmid]
-        if pmcid is None:
-            # NCBI confirmed this PMID has no PMC mirror. Safe to cache
-            # the negative result so we don't re-elink it every run.
-            record = FulltextRecord(pmid=pmid, pmcid=None)
+    cached_count = total - len(missing)
+    for i, pmid in enumerate(missing, start=1):
+        try:
+            if pmid not in pmid_to_pmcid:
+                # NCBI omitted this PMID from the elink response (truncation,
+                # partial response, ...). Don't cache anything — retry next run.
+                logger.warning(
+                    f"elink response did not include PMID {pmid}; "
+                    f"will retry next run"
+                )
+                continue
+            pmcid = pmid_to_pmcid[pmid]
+            if pmcid is None:
+                # NCBI confirmed this PMID has no PMC mirror. Safe to cache
+                # the negative result so we don't re-elink it every run.
+                record = FulltextRecord(pmid=pmid, pmcid=None)
+                _write_fulltext_cache(cache_dir, record)
+                out[pmid] = record
+                continue
+
+            try:
+                xml_bytes = fetcher_efetch(pmcid)
+            except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
+                logger.warning(
+                    f"efetch failed for PMID {pmid} (PMCID {pmcid}): {e}"
+                )
+                continue
+
+            if not xml_bytes:
+                logger.warning(
+                    f"Empty efetch response for PMID {pmid} (PMCID {pmcid})"
+                )
+                continue
+
+            try:
+                sections = parse_jats_for_sections(xml_bytes)
+            except etree.XMLSyntaxError as e:
+                # Don't cache: a poisoned cache of empty sections would
+                # suppress retries indefinitely (same reasoning as the MeSH
+                # batch's XML-error handling).
+                logger.warning(
+                    f"JATS parse error for PMID {pmid} (PMCID {pmcid}): {e}; "
+                    f"skipping cache (will retry next run)"
+                )
+                continue
+
+            record = FulltextRecord(pmid=pmid, pmcid=pmcid, **sections)
             _write_fulltext_cache(cache_dir, record)
             out[pmid] = record
-            continue
-
-        try:
-            xml_bytes = fetcher_efetch(pmcid)
-        except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
-            logger.warning(f"efetch failed for PMID {pmid} (PMCID {pmcid}): {e}")
-            continue
-
-        if not xml_bytes:
-            logger.warning(f"Empty efetch response for PMID {pmid} (PMCID {pmcid})")
-            continue
-
-        try:
-            sections = parse_jats_for_sections(xml_bytes)
-        except etree.XMLSyntaxError as e:
-            # Don't cache: a poisoned cache of empty sections would
-            # suppress retries indefinitely (same reasoning as the MeSH
-            # batch's XML-error handling).
-            logger.warning(
-                f"JATS parse error for PMID {pmid} (PMCID {pmcid}): {e}; "
-                f"skipping cache (will retry next run)"
-            )
-            continue
-
-        record = FulltextRecord(pmid=pmid, pmcid=pmcid, **sections)
-        _write_fulltext_cache(cache_dir, record)
-        out[pmid] = record
+        finally:
+            if progress_callback is not None:
+                progress_callback(cached_count + i, total)
 
     return out
 
@@ -1827,6 +1922,142 @@ def to_json(
 
 
 # ---------------------------------------------------------------------------
+# RICH RENDERING (TTY stdout path)
+# ---------------------------------------------------------------------------
+
+
+def _render_score_table(
+    title: str,
+    scores: list[KeywordScore],
+    *,
+    show_llr: bool = True,
+) -> Table:
+    """Build a rich Table for one keyword section."""
+    table = Table(
+        title=f"[bold {_PRIMARY_COLOR}]{title}[/] — showing {len(scores)}",
+        box=box.HEAVY_HEAD,
+        title_justify="center",
+        header_style="bold",
+        show_edge=True,
+        expand=False,
+    )
+    table.add_column("Term", style="white", overflow="fold")
+    table.add_column("DF", justify="right", style="dim")
+    table.add_column("TF", justify="right", style="dim")
+    if show_llr:
+        table.add_column("LLR", justify="right", style=f"bold {_ACCENT_COLOR}")
+
+    for s in scores:
+        row = [s.term, str(s.document_frequency), str(s.total_count)]
+        if show_llr:
+            row.append(f"{s.llr:.2f}")
+        table.add_row(*row)
+    return table
+
+
+def _render_query(query: str) -> Text:
+    """Style a PubMed Boolean query string for terminal display."""
+    text = Text()
+    last = 0
+    for m in _QUERY_TOKEN_RE.finditer(query):
+        if m.start() > last:
+            text.append(query[last : m.start()])
+        group = m.lastgroup or "bare"
+        text.append(m.group(), style=_QUERY_TOKEN_STYLES.get(group, ""))
+        last = m.end()
+    if last < len(query):
+        text.append(query[last:])
+    return text
+
+
+def _render_config_panel(
+    args: argparse.Namespace, *, phrase_top: int
+) -> Panel:
+    """Compact key-value panel summarising the resolved CLI args."""
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(justify="right", style="dim")
+    grid.add_column(style="bold")
+
+    grid.add_row("xml-dir", str(args.xml_dir))
+    grid.add_row(
+        "top-n / min-df / min-llr",
+        f"{args.top_n}  /  {args.min_df}  /  {args.min_llr:.2f}",
+    )
+    grid.add_row(
+        "mesh-top / phrase-top",
+        f"{args.mesh_top}  /  {phrase_top}",
+    )
+    grid.add_row(
+        "mesh / fulltext",
+        f"{'on' if not args.no_mesh else 'off'}  /  "
+        f"{'on' if not args.no_fulltext else 'off'}",
+    )
+    grid.add_row("baseline-cache", str(args.baseline_cache))
+    grid.add_row("query-format", args.query_format)
+
+    return Panel(
+        grid,
+        title=f"[bold {_PRIMARY_COLOR}]distill_pubmed_keywords[/] — run config",
+        border_style=_PRIMARY_COLOR,
+        expand=False,
+    )
+
+
+def _render_rich_report(
+    result: DistillationResult,
+    *,
+    query_format: str,
+    console: Console,
+) -> None:
+    """Render the full keyword report to ``console`` with rich styling."""
+    console.print()
+    console.print(
+        f"Distilled keywords from [bold]{result.papers}[/] paper(s)."
+    )
+
+    sections: list[tuple[str, list[KeywordScore], bool]] = []
+    if result.mesh_terms:
+        sections.append(("Top MeSH headings", result.mesh_terms, False))
+    sections.extend(
+        [
+            ("Top distinctive phrases (bigrams)", result.bigrams, True),
+            ("Top distinctive phrases (trigrams)", result.trigrams, True),
+            ("Top distinctive unigrams", result.unigrams, True),
+            ("Acronyms", result.acronyms, True),
+        ]
+    )
+    for title, scores, show_llr in sections:
+        console.print()
+        if not scores:
+            console.print(
+                f"[bold {_PRIMARY_COLOR}]{title}[/] — [dim](none)[/]"
+            )
+            continue
+        console.print(_render_score_table(title, scores, show_llr=show_llr))
+
+    variants = result.query_variants
+    formats = (
+        list(_QUERY_FORMAT_VARIANTS) if query_format == "all" else [query_format]
+    )
+    console.print()
+    console.print(
+        f"[bold {_PRIMARY_COLOR}]Suggested PubMed query[/]"
+    )
+    for fmt in formats:
+        q = variants.get(fmt, "")
+        if not q:
+            continue
+        console.print(
+            Panel(
+                _render_query(q),
+                title=f"format: [bold]{fmt}[/]",
+                border_style=_ACCENT_COLOR,
+                expand=False,
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -2007,90 +2238,171 @@ def _resolve_phrase_top(args: argparse.Namespace) -> int:
     return int(args.phrase_top)
 
 
+def _build_progress() -> Progress:
+    """Construct the rich.Progress used for slow network/IO stages.
+
+    Shares ``_stderr_console`` with RichHandler so log lines emitted
+    inside the progress context (warnings from fetch loops, etc.) are
+    coordinated with the Live renderer — without this, warnings would
+    paint raw bytes through the active bar.
+    """
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=_stderr_console,
+        transient=False,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%H:%M:%S",
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[
+            RichHandler(
+                console=_stderr_console,
+                rich_tracebacks=True,
+                # Off because our log payloads interpolate user-controlled
+                # values (file names, PMIDs, error messages from Entrez).
+                markup=False,
+                show_path=False,
+                omit_repeated_times=False,
+            )
+        ],
     )
     args = _parse_args(argv)
     from dotenv import load_dotenv  # python-dotenv pinned in requirements.txt
 
     load_dotenv()
 
+    # Resolved once here so the deprecation warning for --query-top
+    # fires at most once per invocation (the panel and the distill call
+    # both need this value).
+    phrase_top = _resolve_phrase_top(args)
+
+    # The config panel is only useful for interactive runs. Suppress it
+    # for --build-baseline, file output, and any non-TTY stdout (pipes,
+    # redirects) so machine consumers see clean output.
+    show_panel = (
+        _console.is_terminal
+        and not args.build_baseline
+        and args.output is None
+        and not args.json
+    )
+    if show_panel:
+        _console.print(_render_config_panel(args, phrase_top=phrase_top))
+
     if args.build_baseline:
         pdat_range = args.baseline_pdat_range or f"2020:{_dt.date.today().year}"
         try:
-            build_baseline_cache(
-                size=args.baseline_size,
-                output_path=args.baseline_cache,
-                pdat_range=pdat_range,
-            )
+            with _build_progress() as progress:
+                task = progress.add_task(
+                    "Building PubMed baseline", total=args.baseline_size
+                )
+                build_baseline_cache(
+                    size=args.baseline_size,
+                    output_path=args.baseline_cache,
+                    pdat_range=pdat_range,
+                    progress_callback=lambda c, t: progress.update(
+                        task, completed=c, total=t
+                    ),
+                )
         except (RuntimeError, ValueError) as e:
             logger.error(str(e))
             return 1
         return 0
 
-    try:
-        papers = load_corpus(args.xml_dir)
-    except FileNotFoundError as e:
-        logger.error(str(e))
-        return 1
-
-    if not papers:
-        logger.error("No parseable papers found.")
-        return 1
-
-    if not args.no_fulltext:
-        pmids_for_fulltext = [p.pmid for p in papers if p.pmid]
-        if pmids_for_fulltext:
-            try:
-                fulltext_records = fetch_fulltext_batch(
-                    pmids_for_fulltext,
-                    args.fulltext_cache,
-                    email=os.getenv("ENTREZ_EMAIL"),
-                    api_key=os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY"),
-                )
-            except RuntimeError as e:
-                logger.warning(
-                    f"Full-text harvest disabled — {e}. "
-                    f"Run with --no-fulltext to silence."
-                )
-                fulltext_records = {}
-            for paper in papers:
-                if paper.pmid and (record := fulltext_records.get(paper.pmid)):
-                    paper.fulltext = record.as_text()
-            with_text = sum(
-                1 for r in fulltext_records.values() if r.pmcid is not None
+    with _build_progress() as progress:
+        load_task = progress.add_task("Loading corpus", total=None)
+        try:
+            papers = load_corpus(
+                args.xml_dir,
+                progress_callback=lambda c, t: progress.update(
+                    load_task, completed=c, total=t
+                ),
             )
-            logger.info(
-                f"Full-text enrichment: {with_text}/{len(pmids_for_fulltext)} "
-                f"papers have PMC versions; "
-                f"{len(pmids_for_fulltext) - with_text} contribute "
-                f"title+abstract only."
-            )
+        except FileNotFoundError as e:
+            logger.error(str(e))
+            return 1
 
-    try:
-        baseline = load_baseline_cache(args.baseline_cache)
-    except FileNotFoundError as e:
-        logger.error(str(e))
-        return 1
-    except RuntimeError as e:
-        logger.error(str(e))
-        return 1
+        if not papers:
+            logger.error("No parseable papers found.")
+            return 1
 
-    mesh_map: dict[str, list[MeshDescriptor]] | None = None
-    if not args.no_mesh:
-        pmids = [p.pmid for p in papers if p.pmid]
-        if pmids:
-            try:
-                mesh_map = fetch_mesh_terms(pmids, args.mesh_cache)
-            except RuntimeError as e:
-                logger.warning(
-                    f"MeSH harvest disabled — {e}. Run with --no-mesh to silence."
+        if not args.no_fulltext:
+            pmids_for_fulltext = [p.pmid for p in papers if p.pmid]
+            if pmids_for_fulltext:
+                ft_task = progress.add_task(
+                    "Fetching PMC fulltext", total=len(pmids_for_fulltext)
+                )
+                try:
+                    fulltext_records = fetch_fulltext_batch(
+                        pmids_for_fulltext,
+                        args.fulltext_cache,
+                        email=os.getenv("ENTREZ_EMAIL"),
+                        api_key=(
+                            os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY")
+                        ),
+                        progress_callback=lambda c, t: progress.update(
+                            ft_task, completed=c, total=t
+                        ),
+                    )
+                except RuntimeError as e:
+                    logger.warning(
+                        f"Full-text harvest disabled — {e}. "
+                        f"Run with --no-fulltext to silence."
+                    )
+                    fulltext_records = {}
+                for paper in papers:
+                    if paper.pmid and (
+                        record := fulltext_records.get(paper.pmid)
+                    ):
+                        paper.fulltext = record.as_text()
+                with_text = sum(
+                    1 for r in fulltext_records.values() if r.pmcid is not None
+                )
+                logger.info(
+                    f"Full-text enrichment: "
+                    f"{with_text}/{len(pmids_for_fulltext)} "
+                    f"papers have PMC versions; "
+                    f"{len(pmids_for_fulltext) - with_text} contribute "
+                    f"title+abstract only."
                 )
 
-    phrase_top = _resolve_phrase_top(args)
+        try:
+            baseline = load_baseline_cache(args.baseline_cache)
+        except FileNotFoundError as e:
+            logger.error(str(e))
+            return 1
+        except RuntimeError as e:
+            logger.error(str(e))
+            return 1
+
+        mesh_map: dict[str, list[MeshDescriptor]] | None = None
+        if not args.no_mesh:
+            pmids = [p.pmid for p in papers if p.pmid]
+            if pmids:
+                mesh_task = progress.add_task(
+                    "Fetching MeSH terms", total=len(pmids)
+                )
+                try:
+                    mesh_map = fetch_mesh_terms(
+                        pmids,
+                        args.mesh_cache,
+                        progress_callback=lambda c, t: progress.update(
+                            mesh_task, completed=c, total=t
+                        ),
+                    )
+                except RuntimeError as e:
+                    logger.warning(
+                        f"MeSH harvest disabled — {e}. "
+                        f"Run with --no-mesh to silence."
+                    )
 
     result = distill_keywords(
         papers,
@@ -2131,12 +2443,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         logger.info(f"Wrote text report to {args.output}")
     else:
-        write_text_report(
+        _render_rich_report(
             result,
-            mesh_top=args.mesh_top,
-            phrase_top=phrase_top,
             query_format=args.query_format,
-            stream=sys.stdout,
+            console=_console,
         )
     return 0
 
