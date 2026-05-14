@@ -43,7 +43,7 @@ Opens at <http://127.0.0.1:8081>.
 2. In the **vLLM on HPC** card, click **Start vLLM**. Wait until the chip
    turns green ("Ready"). First load takes 2–4 minutes (cold NFS read).
 3. Click **Run Pipeline**. Stage tracker shows progress.
-4. When done, **Stop vLLM** to release the A100.
+4. When done, **Stop vLLM** to release the V100.
 
 ## Tests
 

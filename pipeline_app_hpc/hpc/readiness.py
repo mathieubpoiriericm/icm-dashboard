@@ -19,7 +19,7 @@ async def wait_until_ready(
     """Poll <base_url>/v1/models until it returns 200, or raise TimeoutError.
 
     The default 900s ceiling reflects the cold-load time of Gemma 4 31B at
-    4-bit over NFSv3 (~17 GB read into A100 VRAM, typically 2-4 minutes).
+    4-bit over NFSv3 (~17 GB read into V100 VRAM, typically 2-6 minutes).
     """
     deadline = time.monotonic() + timeout
     last_error: BaseException | None = None

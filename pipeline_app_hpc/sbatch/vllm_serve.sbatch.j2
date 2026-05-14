@@ -6,7 +6,7 @@
 #SBATCH --time={{ time_limit }}
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:A100:1
+#SBATCH --gres=gpu:V100:1
 #SBATCH --cpus-per-task={{ cpus_per_task }}
 #SBATCH --mem={{ mem }}
 #SBATCH --signal=B:TERM@30
@@ -49,7 +49,6 @@ VLLM_ARGS=(
     --max-model-len "$VLLM_MAX_MODEL_LEN"
     --max-num-batched-tokens 8192
     --dtype auto
-    --disable-log-requests
 )
 
 # Quantization is configured per-run; empty string means "no quantization".
