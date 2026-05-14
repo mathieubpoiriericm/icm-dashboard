@@ -67,7 +67,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 known-first-party = ["pipeline"]
 
 [tool.pytest]
-testpaths = ["tests/pipeline", "tests/pipeline_app", "tests/pipeline_app_hpc"]
+testpaths = ["tests/pipeline", "tests/pipeline_app", "tests/pipeline_app_hpc", "tests/scripts"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 markers = [

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2024//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_240101.dtd">
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">15905468</PMID>
+      <Article PubModel="Print-Electronic">
+        <ArticleTitle>Markers of endothelial and hemostatic activation and progression of cerebral white matter hyperintensities.</ArticleTitle>
+        <Abstract>
+          <AbstractText>ICAM was associated with WMH progression.</AbstractText>
+        </Abstract>
+      </Article>
+      <MeshHeadingList>
+        <MeshHeading>
+          <DescriptorName UI="D002561" MajorTopicYN="N">Cerebrovascular Disorders</DescriptorName>
+          <QualifierName UI="Q000453" MajorTopicYN="Y">etiology</QualifierName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName UI="D059345" MajorTopicYN="Y">Cerebral Small Vessel Diseases</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName UI="D008279" MajorTopicYN="N">Magnetic Resonance Imaging</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName UI="D019054" MajorTopicYN="N">Intercellular Adhesion Molecule-1</DescriptorName>
+          <QualifierName UI="Q000097" MajorTopicYN="Y">blood</QualifierName>
+        </MeshHeading>
+      </MeshHeadingList>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">23649698</PMID>
+      <Article PubModel="Print-Electronic">
+        <ArticleTitle>Test article without MeSH list.</ArticleTitle>
+      </Article>
+      <MeshHeadingList>
+        <MeshHeading>
+          <DescriptorName UI="D059345" MajorTopicYN="N">Cerebral Small Vessel Diseases</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName UI="D008279" MajorTopicYN="Y">Magnetic Resonance Imaging</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName UI="D000368" MajorTopicYN="N">Aged</DescriptorName>
+        </MeshHeading>
+      </MeshHeadingList>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">99999999</PMID>
+      <Article PubModel="Print-Electronic">
+        <ArticleTitle>Article with no MeSH headings at all.</ArticleTitle>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>
