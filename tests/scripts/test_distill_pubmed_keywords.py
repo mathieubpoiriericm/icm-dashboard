@@ -533,6 +533,98 @@ class TestMeshCache:
         )
         assert second_calls == []
 
+    def test_pmid_absent_from_response_is_not_cached(
+        self, tmp_path: Path
+    ) -> None:
+        # If NCBI's efetch response omits a PMID (truncation, partial
+        # response), the function must not write a permanent empty
+        # descriptors cache entry for it — that would silently drop the
+        # paper's MeSH contribution on every future run with no recovery.
+        # Mirrors test_pmid_absent_from_elink_response_is_not_cached for
+        # the fulltext path.
+        fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+
+        def stub_fetcher(batch: list[str]) -> bytes:
+            return fixture
+
+        # PMID "12345678" is not in the fixture's PubmedArticleSet.
+        result = fetch_mesh_terms(
+            ["15905468", "12345678"],
+            cache_dir=tmp_path,
+            fetcher=stub_fetcher,
+        )
+
+        # PMID present in the response is cached and returned.
+        assert "15905468" in result
+        assert (tmp_path / "15905468.json").exists()
+
+        # PMID absent from the response is NOT cached and NOT in output —
+        # the caller can retry it next run.
+        assert "12345678" not in result
+        assert not (tmp_path / "12345678.json").exists()
+
+    def test_refuses_non_numeric_pmid_at_cache_write(
+        self, tmp_path: Path
+    ) -> None:
+        # Defense in depth: even if a non-numeric PMID slips past
+        # parse_mods_file (e.g., a direct caller bypasses the corpus
+        # loader), the cache write must refuse to use it as a filename
+        # so a path-traversal value can't escape cache_dir.
+        fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+
+        def stub_fetcher(batch: list[str]) -> bytes:
+            return fixture
+
+        result = fetch_mesh_terms(
+            ["../escape"],
+            cache_dir=tmp_path,
+            fetcher=stub_fetcher,
+        )
+
+        assert "../escape" not in result
+        # The traversal would have landed in tmp_path.parent if unguarded.
+        assert not (tmp_path.parent / "escape.json").exists()
+
+
+def _write_mods(path: Path, *, pmid: str) -> None:
+    """Write a minimal MODS XML record with the given PMID."""
+    path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
+        "  <mods>\n"
+        "    <titleInfo><title>T</title></titleInfo>\n"
+        "    <abstract>A.</abstract>\n"
+        f'    <identifier type="pubmed">{pmid}</identifier>\n'
+        "  </mods>\n"
+        "</modsCollection>\n",
+        encoding="utf-8",
+    )
+
+
+class TestParseMods:
+    def test_non_numeric_pmid_is_dropped(self, tmp_path: Path) -> None:
+        # A tampered MODS record with a path-traversal PMID must not
+        # propagate the value — downstream code interpolates it into
+        # a cache filename.
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "bad.xml"
+        _write_mods(path, pmid="../etc/passwd")
+        paper = parse_mods_file(path)
+        assert paper is not None
+        assert paper.pmid is None
+        assert paper.title == "T"
+        assert paper.abstract == "A."
+
+    def test_numeric_pmid_is_preserved(self, tmp_path: Path) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "ok.xml"
+        _write_mods(path, pmid="15905468")
+        paper = parse_mods_file(path)
+        assert paper is not None
+        assert paper.pmid == "15905468"
+
 
 # ---------------------------------------------------------------------------
 # Foreground counting helpers

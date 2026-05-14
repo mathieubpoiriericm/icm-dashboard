@@ -203,6 +203,11 @@ _TOKEN_PATTERN: Final[re.Pattern[str]] = re.compile(
 )
 _NUMERIC_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[\d\-]+$")
 _PDAT_RANGE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{4}:\d{4}$")
+# PubMed IDs are numeric. We enforce this at cache-write sites because
+# the PMID is interpolated into a filename — an untrusted value with
+# slashes or "../" segments would let a tampered MODS record write
+# outside the cache directory.
+_PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,12}$")
 
 # Namespace wildcard — MODS files declare xmlns="http://www.loc.gov/mods/v3"
 # but {*} keeps the queries robust if a record is namespace-stripped.
@@ -427,6 +432,17 @@ class DistillationResult:
 # ---------------------------------------------------------------------------
 
 
+def _is_valid_pmid(pmid: str | None) -> bool:
+    """Return True iff ``pmid`` is a numeric string safe to use as a filename.
+
+    PMIDs reach the cache layer from MODS XML and from NCBI responses;
+    only the former is potentially attacker-controlled. Rejecting anything
+    that doesn't match ``\\d{1,12}`` prevents a tampered MODS record from
+    writing outside the cache directory via ``../`` segments.
+    """
+    return pmid is not None and _PMID_PATTERN.fullmatch(pmid) is not None
+
+
 def _atomic_write_json(path: Path, payload: Any) -> None:
     """Write JSON to ``path`` via tmp+rename so an interrupted write can't
     leave a half-written file the next read would reject as corrupt.
@@ -489,8 +505,19 @@ def parse_mods_file(path: Path) -> PaperText | None:
         logger.debug(f"No title or abstract in {path.name}")
         return None
 
+    pmid_text = _element_text(pmid_el) or None
+    if pmid_text is not None and not _is_valid_pmid(pmid_text):
+        # Reject malformed PMIDs at the corpus boundary — they would
+        # later be interpolated into cache filenames. The paper still
+        # loads (title+abstract are usable), just without MeSH/full-text
+        # enrichment which require a valid PMID.
+        logger.warning(
+            f"Ignoring non-numeric PMID {pmid_text!r} in {path.name}"
+        )
+        pmid_text = None
+
     return PaperText(
-        pmid=_element_text(pmid_el) or None,
+        pmid=pmid_text,
         title=title,
         abstract=abstract,
     )
@@ -880,47 +907,52 @@ def build_baseline_cache(
 
     for start in range(0, len(pmids), batch_size):
         batch = pmids[start : start + batch_size]
-        raw = _ncbi_retry(
-            Entrez.efetch,
-            db="pubmed",
-            id=",".join(batch),
-            rettype="abstract",
-            retmode="xml",
-            _reader=lambda h: h.read(),
-        )
-        _ncbi_sleep(resolved_key)
-
-        if isinstance(raw, str):
-            raw = raw.encode("utf-8")
-        try:
-            root = etree.fromstring(raw, parser=_SAFE_PARSER)
-        except etree.XMLSyntaxError as e:
-            logger.warning(
-                f"Baseline batch {start}-{start + len(batch)} parse error: {e}"
-            )
-            continue
-
-        for article_el in root.findall(".//PubmedArticle"):
-            title, abstract = _extract_text_from_pubmed_record(article_el)
-            if not title and not abstract:
-                continue
-            total_docs += 1
-            _accumulate_paper_counts(
-                f"{title} {abstract}",
-                uni=uni,
-                bi=bi,
-                tri=tri,
-                acros=acros,
-            )
-
         completed = min(start + batch_size, len(pmids))
-        if progress_callback is not None:
-            progress_callback(completed, len(pmids))
-        elif (start // batch_size) % 5 == 4:
-            # Fallback when no live progress is wired up — keep the
-            # legacy info-log cadence so headless runs still surface
-            # heartbeat output.
-            logger.info(f"  baseline progress: {completed}/{len(pmids)} PMIDs")
+        try:
+            raw = _ncbi_retry(
+                Entrez.efetch,
+                db="pubmed",
+                id=",".join(batch),
+                rettype="abstract",
+                retmode="xml",
+                _reader=lambda h: h.read(),
+            )
+            _ncbi_sleep(resolved_key)
+
+            if isinstance(raw, str):
+                raw = raw.encode("utf-8")
+            try:
+                root = etree.fromstring(raw, parser=_SAFE_PARSER)
+            except etree.XMLSyntaxError as e:
+                logger.warning(
+                    f"Baseline batch {start}-{start + len(batch)} parse error: {e}"
+                )
+                continue
+
+            for article_el in root.findall(".//PubmedArticle"):
+                title, abstract = _extract_text_from_pubmed_record(article_el)
+                if not title and not abstract:
+                    continue
+                total_docs += 1
+                _accumulate_paper_counts(
+                    f"{title} {abstract}",
+                    uni=uni,
+                    bi=bi,
+                    tri=tri,
+                    acros=acros,
+                )
+        finally:
+            # Tick progress even on parse failure so the bar doesn't
+            # appear stuck for the duration of a malformed batch.
+            if progress_callback is not None:
+                progress_callback(completed, len(pmids))
+            elif (start // batch_size) % 5 == 4:
+                # Fallback when no live progress is wired up — keep the
+                # legacy info-log cadence so headless runs still surface
+                # heartbeat output.
+                logger.info(
+                    f"  baseline progress: {completed}/{len(pmids)} PMIDs"
+                )
 
     logger.info(f"Baseline assembled from {total_docs} parseable abstract(s).")
 
@@ -1139,6 +1171,11 @@ def fetch_mesh_terms(
 
     total = len(pmid_list)
     for pmid in pmid_list:
+        if not _is_valid_pmid(pmid):
+            logger.warning(
+                f"Refusing to read MeSH cache for non-numeric PMID {pmid!r}"
+            )
+            continue
         cache_path = cache_dir / f"{pmid}.json"
         if cache_path.exists():
             try:
@@ -1193,39 +1230,66 @@ def fetch_mesh_terms(
     for start in range(0, len(missing), batch_size):
         batch = missing[start : start + batch_size]
         try:
-            raw = fetcher(batch)
-        except Exception as e:  # noqa: BLE001 — surface any fetch failure
-            logger.warning(
-                f"MeSH efetch batch {start}-{start + len(batch)} failed: {e}"
-            )
-            continue
-        try:
-            parsed = parse_pubmed_xml_for_mesh(raw)
-        except etree.XMLSyntaxError as e:
-            # Don't cache anything for this batch — a poisoned cache of
-            # empty descriptors would suppress retries indefinitely.
-            logger.warning(
-                f"MeSH batch {start}-{start + len(batch)} XML parse error: "
-                f"{e}; skipping cache (will retry next run)"
-            )
-            continue
-        for pmid in batch:
-            descriptors = parsed.get(pmid, [])
-            out[pmid] = descriptors
-            cache_path = cache_dir / f"{pmid}.json"
             try:
-                _atomic_write_json(
-                    cache_path,
-                    {
-                        "pmid": pmid,
-                        "descriptors": _descriptors_to_jsonable(descriptors),
-                        "fetched_at": _dt.datetime.now(_dt.UTC).isoformat(),
-                    },
+                raw = fetcher(batch)
+            except Exception as e:  # noqa: BLE001 — surface any fetch failure
+                logger.warning(
+                    f"MeSH efetch batch {start}-{start + len(batch)} failed: {e}"
                 )
-            except OSError as e:
-                logger.warning(f"Could not write MeSH cache for PMID {pmid}: {e}")
-        if progress_callback is not None:
-            progress_callback(min(len(out), total), total)
+                continue
+            try:
+                parsed = parse_pubmed_xml_for_mesh(raw)
+            except etree.XMLSyntaxError as e:
+                # Don't cache anything for this batch — a poisoned cache of
+                # empty descriptors would suppress retries indefinitely.
+                logger.warning(
+                    f"MeSH batch {start}-{start + len(batch)} XML parse error: "
+                    f"{e}; skipping cache (will retry next run)"
+                )
+                continue
+            for pmid in batch:
+                if pmid not in parsed:
+                    # NCBI omitted this PMID from the response (truncation,
+                    # partial response, ...). Don't cache anything — a cached
+                    # empty would suppress retries indefinitely. Same recovery
+                    # semantics as fetch_fulltext_batch's elink-absent handler.
+                    logger.warning(
+                        f"PubMed response did not include PMID {pmid}; "
+                        f"will retry next run"
+                    )
+                    continue
+                descriptors = parsed[pmid]
+                out[pmid] = descriptors
+                # Defense in depth: the PMID came from the request batch,
+                # which originated in MODS XML. parse_mods_file already
+                # rejects non-numeric PMIDs, but the cache layer must not
+                # rely on that one upstream check.
+                if not _is_valid_pmid(pmid):
+                    logger.warning(
+                        f"Refusing to write MeSH cache for non-numeric "
+                        f"PMID {pmid!r}"
+                    )
+                    continue
+                cache_path = cache_dir / f"{pmid}.json"
+                try:
+                    _atomic_write_json(
+                        cache_path,
+                        {
+                            "pmid": pmid,
+                            "descriptors": _descriptors_to_jsonable(descriptors),
+                            "fetched_at": _dt.datetime.now(_dt.UTC).isoformat(),
+                        },
+                    )
+                except OSError as e:
+                    logger.warning(
+                        f"Could not write MeSH cache for PMID {pmid}: {e}"
+                    )
+        finally:
+            # Tick progress even when a batch fails wholesale (fetcher
+            # exception, parse error) — otherwise the bar appears stuck
+            # for the duration of every failed batch.
+            if progress_callback is not None:
+                progress_callback(min(len(out), total), total)
 
     return out
 
@@ -1360,6 +1424,8 @@ def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
     return None so the caller can refetch (same recovery semantics as
     the MeSH cache).
     """
+    if not _is_valid_pmid(pmid):
+        return None
     cache_path = cache_dir / f"{pmid}.json"
     if not cache_path.exists():
         return None
@@ -1393,6 +1459,12 @@ def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
 
 def _write_fulltext_cache(cache_dir: Path, record: FulltextRecord) -> None:
     """Persist one ``FulltextRecord`` as JSON. Logs and continues on OSError."""
+    if not _is_valid_pmid(record.pmid):
+        logger.warning(
+            f"Refusing to write fulltext cache for non-numeric "
+            f"PMID {record.pmid!r}"
+        )
+        return
     cache_path = cache_dir / f"{record.pmid}.json"
     payload = {
         "schema_version": FULLTEXT_SCHEMA_VERSION,
