@@ -33,9 +33,14 @@ title+abstract only of ~10k random PubMed records, so foreground
 papers now contribute strictly more tokens than baseline papers do.
 Rankings shift toward methods/results vocabulary that's
 underrepresented in abstracts (procedural verbs, imaging-modality
-names, assay terms). This is intentional for keyword distillation but
-makes LLR scores no longer apples-to-apples with the pre-fulltext
-version of this script.
+names, assay terms). Additionally, the foreground applies stopword
+and content filtering at counting time while the baseline does not,
+so the LLR contingency-table denominators are not strictly
+commensurable. Both biases inflate LLR scores in the foreground's
+favor — fine for ranking purposes (terms still sort by
+distinctiveness) but the chi-square p-value interpretation of any
+absolute LLR threshold no longer strictly holds. Treat
+``DEFAULT_MIN_LLR`` as a heuristic cutoff, not a significance test.
 
 The baseline cache must be built once before first ranking run; runs
 are offline thereafter and the cache should be refreshed roughly
@@ -68,7 +73,7 @@ import sys
 import time
 import warnings
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, TextIO
@@ -111,7 +116,13 @@ FULLTEXT_SCHEMA_VERSION: Final[int] = 1
 # Unigrams and acronyms are stored without filtering.
 BASELINE_NGRAM_MIN_COUNT: Final[int] = 2
 
-DEFAULT_MIN_LLR: Final[float] = 6.63  # chi-square p<0.01 at df=1
+DEFAULT_MIN_LLR: Final[float] = 6.63
+# Heuristic cutoff (originally chosen because chi-square p<0.01 at df=1
+# corresponds to a test statistic of 6.63). Baseline and foreground apply
+# different content filters and use title+abstract vs title+abstract+
+# fulltext respectively, so the strict chi-square interpretation no longer
+# holds — treat this as a ranking threshold rather than a significance
+# test. See the module docstring's methodological note.
 
 # Query-format choices — `_QUERY_FORMATS[0]` is "all" (default).
 _QUERY_FORMATS: Final[tuple[str, ...]] = (
@@ -128,7 +139,9 @@ MAX_ACRONYM_LENGTH: Final[int] = 8
 # NCBI rate limits — 3 req/s without API key, 10 req/s with.
 _NCBI_SLEEP_NO_KEY: Final[float] = 0.34
 _NCBI_SLEEP_WITH_KEY: Final[float] = 0.11
-_NCBI_RETRY_BACKOFF: Final[tuple[float, ...]] = (1.0, 2.0, 4.0)
+# Waits *between* attempts (in seconds). Total attempts = len + 1, so
+# (1.0, 2.0) means: try, sleep 1s, try, sleep 2s, try — 3 attempts total.
+_NCBI_RETRY_BACKOFF: Final[tuple[float, ...]] = (1.0, 2.0)
 
 # Letter-led tokens that may carry intra-word hyphens. Hyphens must be
 # followed by alphanumerics, which keeps "follow-up" intact but stops
@@ -355,6 +368,26 @@ class DistillationResult:
     acronyms: list[KeywordScore]
     mesh_terms: list[KeywordScore] = field(default_factory=list)
     query_variants: dict[str, str] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# I/O HELPERS
+# ---------------------------------------------------------------------------
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    """Write JSON to ``path`` via tmp+rename so an interrupted write can't
+    leave a half-written file the next read would reject as corrupt.
+    """
+    tmp_path = path.with_name(path.name + ".tmp")
+    try:
+        with tmp_path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        tmp_path.replace(path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -637,17 +670,33 @@ def _ncbi_sleep(api_key: str | None) -> None:
     time.sleep(_NCBI_SLEEP_WITH_KEY if api_key else _NCBI_SLEEP_NO_KEY)
 
 
-def _ncbi_retry(fn: Any, *args: Any, **kwargs: Any) -> Any:
-    """Run an Entrez call with simple exponential-backoff retries."""
+def _ncbi_retry(
+    fn: Callable[..., Any],
+    *args: Any,
+    _reader: Callable[[Any], Any],
+    **kwargs: Any,
+) -> Any:
+    """Open a handle via ``fn`` and read it via ``_reader`` with retries.
+
+    The handle is closed between attempts so transient mid-transfer
+    errors get a fresh connection. Both the open and the read run
+    inside the retry boundary.
+    """
     last_exc: Exception | None = None
-    total = len(_NCBI_RETRY_BACKOFF)
-    for attempt, wait in enumerate(_NCBI_RETRY_BACKOFF):
+    total = len(_NCBI_RETRY_BACKOFF) + 1
+    for attempt in range(total):
         try:
-            return fn(*args, **kwargs)
+            handle = fn(*args, **kwargs)
+            try:
+                return _reader(handle)
+            finally:
+                with contextlib.suppress(Exception):
+                    handle.close()
         except Exception as exc:  # noqa: BLE001 — Entrez raises various I/O types
             last_exc = exc
             if attempt == total - 1:
-                break  # don't sleep after the final failure
+                break
+            wait = _NCBI_RETRY_BACKOFF[attempt]
             logger.warning(
                 f"NCBI call failed (attempt {attempt + 1}/{total}): {exc}; "
                 f"retrying in {wait}s"
@@ -737,18 +786,15 @@ def build_baseline_cache(
         f"Fetching baseline ({size} abstracts, PDAT={pdat_range})..."
     )
 
-    handle = _ncbi_retry(
+    results = _ncbi_retry(
         Entrez.esearch,
         db="pubmed",
         term=query,
         retmax=size,
         sort="date",
         usehistory="n",
+        _reader=Entrez.read,
     )
-    try:
-        results = Entrez.read(handle)
-    finally:
-        handle.close()
     _ncbi_sleep(resolved_key)
 
     pmids = list(results.get("IdList", []))
@@ -765,17 +811,14 @@ def build_baseline_cache(
 
     for start in range(0, len(pmids), batch_size):
         batch = pmids[start : start + batch_size]
-        handle = _ncbi_retry(
+        raw = _ncbi_retry(
             Entrez.efetch,
             db="pubmed",
             id=",".join(batch),
             rettype="abstract",
             retmode="xml",
+            _reader=lambda h: h.read(),
         )
-        try:
-            raw = handle.read()
-        finally:
-            handle.close()
         _ncbi_sleep(resolved_key)
 
         if isinstance(raw, str):
@@ -874,6 +917,8 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
         built_at = _dt.datetime.fromisoformat(built_at_str)
     except ValueError:
         built_at = _dt.datetime.now(_dt.UTC)
+    if built_at.tzinfo is None:
+        built_at = built_at.replace(tzinfo=_dt.UTC)
     age_days = (_dt.datetime.now(_dt.UTC) - built_at).days
     if age_days > BASELINE_STALE_DAYS:
         logger.warning(
@@ -1053,17 +1098,14 @@ def fetch_mesh_terms(
         from Bio import Entrez
 
         def _default_fetcher(batch: list[str]) -> bytes:
-            handle = _ncbi_retry(
+            raw = _ncbi_retry(
                 Entrez.efetch,
                 db="pubmed",
                 id=",".join(batch),
                 rettype="medline",
                 retmode="xml",
+                _reader=lambda h: h.read(),
             )
-            try:
-                raw = handle.read()
-            finally:
-                handle.close()
             _ncbi_sleep(resolved_key)
             return raw if isinstance(raw, bytes) else str(raw).encode("utf-8")
 
@@ -1093,16 +1135,14 @@ def fetch_mesh_terms(
             out[pmid] = descriptors
             cache_path = cache_dir / f"{pmid}.json"
             try:
-                with cache_path.open("w", encoding="utf-8") as f:
-                    json.dump(
-                        {
-                            "pmid": pmid,
-                            "descriptors": _descriptors_to_jsonable(descriptors),
-                            "fetched_at": _dt.datetime.now(_dt.UTC).isoformat(),
-                        },
-                        f,
-                        ensure_ascii=False,
-                    )
+                _atomic_write_json(
+                    cache_path,
+                    {
+                        "pmid": pmid,
+                        "descriptors": _descriptors_to_jsonable(descriptors),
+                        "fetched_at": _dt.datetime.now(_dt.UTC).isoformat(),
+                    },
+                )
             except OSError as e:
                 logger.warning(f"Could not write MeSH cache for PMID {pmid}: {e}")
 
@@ -1114,15 +1154,22 @@ def aggregate_mesh(
     *,
     top_n: int,
 ) -> list[KeywordScore]:
-    """Rank MeSH descriptors by DF across papers; weight major topics 2x."""
+    """Rank MeSH descriptors by DF across papers; weight major topics 2x.
+
+    Duplicate descriptors in a single paper's heading list contribute one
+    weight unit per paper (the highest weight wins on conflict — Major
+    trumps Minor). This keeps weight a per-paper signal consistent with DF.
+    """
     doc_freq: Counter[str] = Counter()
     weight: Counter[str] = Counter()
     for descriptors in pmid_to_descriptors.values():
-        seen: set[str] = set()
+        per_paper_weight: dict[str, int] = {}
         for d in descriptors:
-            seen.add(d.term)
-            weight[d.term] += 2 if d.major else 1
-        for term in seen:
+            w = 2 if d.major else 1
+            if w > per_paper_weight.get(d.term, 0):
+                per_paper_weight[d.term] = w
+        for term, w in per_paper_weight.items():
+            weight[term] += w
             doc_freq[term] += 1
     scored = [
         KeywordScore(
@@ -1163,30 +1210,21 @@ def _classify_jats_section(sec: etree._Element) -> str | None:
     return None
 
 
-def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
-    """Extract IMRaD section bodies from PMC JATS XML.
+def _walk_jats_sections(
+    container: etree._Element,
+    parts_by_label: dict[str, list[str]],
+) -> None:
+    """Recursively classify ``<sec>`` descendants under ``container``.
 
-    Walks top-level ``<body>/<sec>`` elements (descendant ``<p>`` text
-    is collected within each, so nested subsections are folded into
-    their parent's label). When the same label appears multiple times
-    in one article — e.g. two ``<sec sec-type="methods">`` blocks for
-    "Materials and Methods" and "Statistical Methods" — they're joined
-    with a blank line between.
-
-    Returns a 4-key dict (introduction/methods/results/discussion);
-    missing labels hold "". Raises ``etree.XMLSyntaxError`` on
-    malformed XML so the caller can distinguish parse failures (skip
-    cache + retry next run) from genuinely empty bodies.
+    A classified ``<sec>`` absorbs all its descendant ``<p>`` text. An
+    unclassified ``<sec>`` (typically a publisher wrapper like "Main
+    Text" or a non-IMRaD region) is descended into so any inner
+    IMRaD-tagged sections still contribute.
     """
-    root = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
-    body = root.find(f".//{_NS}body")
-    if body is None:
-        return {"introduction": "", "methods": "", "results": "", "discussion": ""}
-
-    parts_by_label: dict[str, list[str]] = {}
-    for sec in body.findall(f"./{_NS}sec"):
+    for sec in container.findall(f"./{_NS}sec"):
         label = _classify_jats_section(sec)
         if label is None:
+            _walk_jats_sections(sec, parts_by_label)
             continue
         paragraphs: list[str] = []
         for p in sec.findall(f".//{_NS}p"):
@@ -1200,6 +1238,31 @@ def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
                 paragraphs.append(text)
         if paragraphs:
             parts_by_label.setdefault(label, []).append("\n\n".join(paragraphs))
+
+
+def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
+    """Extract IMRaD section bodies from PMC JATS XML.
+
+    Walks ``<body>/<sec>`` recursively: classified sections absorb all
+    descendant ``<p>`` text, unclassified outer wrappers (e.g. a
+    publisher's "Main Text" sec without a sec-type) are descended into
+    so their inner IMRaD-tagged children still contribute. When the
+    same label appears multiple times in one article — e.g. two
+    ``<sec sec-type="methods">`` blocks for "Materials and Methods" and
+    "Statistical Methods" — they're joined with a blank line between.
+
+    Returns a 4-key dict (introduction/methods/results/discussion);
+    missing labels hold "". Raises ``etree.XMLSyntaxError`` on
+    malformed XML so the caller can distinguish parse failures (skip
+    cache + retry next run) from genuinely empty bodies.
+    """
+    root = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
+    body = root.find(f".//{_NS}body")
+    if body is None:
+        return {"introduction": "", "methods": "", "results": "", "discussion": ""}
+
+    parts_by_label: dict[str, list[str]] = {}
+    _walk_jats_sections(body, parts_by_label)
 
     return {
         "introduction": "\n\n".join(parts_by_label.get("introduction", [])),
@@ -1263,8 +1326,7 @@ def _write_fulltext_cache(cache_dir: Path, record: FulltextRecord) -> None:
         "fetched_at": _dt.datetime.now(_dt.UTC).isoformat(),
     }
     try:
-        with cache_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
+        _atomic_write_json(cache_path, payload)
     except OSError as e:
         logger.warning(
             f"Could not write fulltext cache for PMID {record.pmid}: {e}"
@@ -1283,29 +1345,33 @@ def _default_pmids_to_pmcids(
     N ``_ncbi_sleep`` pauses into one of each, which is the bulk of the
     first-run wall time at corpus sizes above a handful.
 
-    Returns ``{pmid: pmcid_or_None}`` for every PMID in the input.
+    Returns ``{pmid: pmcid_or_None}`` for PMIDs NCBI returned a LinkSet
+    for. PMIDs *absent* from the response are absent from the returned
+    map (vs ``None``, which encodes a confirmed no-PMC-mirror result)
+    so the caller can retry truncated/missing PMIDs on a subsequent run
+    instead of permanently negative-caching them.
     """
     from Bio import Entrez
 
-    handle = _ncbi_retry(
+    records = _ncbi_retry(
         Entrez.elink,
         dbfrom="pubmed",
         db="pmc",
         id=pmids,
         linkname="pubmed_pmc",
+        _reader=Entrez.read,
     )
-    try:
-        records = Entrez.read(handle)
-    finally:
-        handle.close()
     _ncbi_sleep(api_key)
 
-    out: dict[str, str | None] = dict.fromkeys(pmids)
+    out: dict[str, str | None] = {}
     for record in records or []:
         id_list = record.get("IdList", []) or []
         if not id_list:
             continue
         source_pmid = str(id_list[0])
+        # NCBI returned a LinkSet for this PMID → default to "confirmed
+        # no PMC mirror"; upgrade below if a Link is present.
+        out[source_pmid] = None
         for linkset in record.get("LinkSetDb", []) or []:
             for link in linkset.get("Link", []) or []:
                 linked_id = link.get("Id", "")
@@ -1325,17 +1391,14 @@ def _default_fetch_pmc_jats(pmcid: str, *, api_key: str | None) -> bytes | None:
     # form; strip the prefix for compatibility with older biopython.
     numeric = pmcid.removeprefix("PMC") if pmcid.startswith("PMC") else pmcid
 
-    handle = _ncbi_retry(
+    raw = _ncbi_retry(
         Entrez.efetch,
         db="pmc",
         id=numeric,
         rettype="xml",
         retmode="xml",
+        _reader=lambda h: h.read(),
     )
-    try:
-        raw = handle.read()
-    finally:
-        handle.close()
     _ncbi_sleep(api_key)
 
     if isinstance(raw, str):
@@ -1406,8 +1469,18 @@ def fetch_fulltext_batch(
         return out
 
     for pmid in missing:
-        pmcid = pmid_to_pmcid.get(pmid)
-        if not pmcid:
+        if pmid not in pmid_to_pmcid:
+            # NCBI omitted this PMID from the elink response (truncation,
+            # partial response, ...). Don't cache anything — retry next run.
+            logger.warning(
+                f"elink response did not include PMID {pmid}; "
+                f"will retry next run"
+            )
+            continue
+        pmcid = pmid_to_pmcid[pmid]
+        if pmcid is None:
+            # NCBI confirmed this PMID has no PMC mirror. Safe to cache
+            # the negative result so we don't re-elink it every run.
             record = FulltextRecord(pmid=pmid, pmcid=None)
             _write_fulltext_cache(cache_dir, record)
             out[pmid] = record
@@ -1822,7 +1895,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_MIN_LLR,
         help=(
             "Minimum log-likelihood ratio for inclusion "
-            f"(default: {DEFAULT_MIN_LLR:.2f}, chi-square p<0.01 df=1)"
+            f"(default: {DEFAULT_MIN_LLR:.2f}, heuristic threshold)"
         ),
     )
     parser.add_argument(

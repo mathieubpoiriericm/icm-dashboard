@@ -38,7 +38,7 @@ from unsloth import FastModel  # ty: ignore[unresolved-import]
 from unsloth.chat_templates import train_on_responses_only  # ty: ignore[unresolved-import]
 
 import torch  # ty: ignore[unresolved-import]
-from datasets import load_dataset
+from datasets import load_dataset  # ty: ignore[unresolved-import]
 from trl import SFTConfig, SFTTrainer  # ty: ignore[unresolved-import]
 
 logger = logging.getLogger(__name__)

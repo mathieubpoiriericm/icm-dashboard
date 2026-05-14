@@ -28,6 +28,7 @@ from scripts.distill_pubmed_keywords import (
     _foreground_acronyms,
     _foreground_counts_for,
     _llr_score,
+    _ncbi_retry,
     _rank_terms,
     aggregate_mesh,
     distill_keywords,
@@ -319,6 +320,26 @@ class TestAggregateMesh:
         assert result[0].document_frequency == 3
         assert result[1].term == "W"
 
+    def test_duplicate_descriptor_in_single_paper_not_double_counted(
+        self,
+    ) -> None:
+        # Pathological MeSH list: X appears twice in one paper's list
+        # (once Major, once Minor). Weight must be 2 (Major wins per
+        # paper), not 3 (Major + Minor summed).
+        pmid_to_descriptors = {
+            "p1": [
+                MeshDescriptor(term="X", ui="D1", major=True),
+                MeshDescriptor(term="X", ui="D1", major=False),
+                MeshDescriptor(term="Y", ui="D2", major=False),
+            ],
+        }
+        result = aggregate_mesh(pmid_to_descriptors, top_n=10)
+        by_term = {r.term: r for r in result}
+        assert by_term["X"].document_frequency == 1
+        assert by_term["X"].total_count == 2
+        assert by_term["Y"].document_frequency == 1
+        assert by_term["Y"].total_count == 1
+
 
 # ---------------------------------------------------------------------------
 # Boolean query formatting
@@ -433,6 +454,15 @@ class TestBaselineCache:
         with caplog.at_level(logging.WARNING):
             load_baseline_cache(path)
         assert any("days old" in r.message for r in caplog.records)
+
+    def test_naive_built_at_is_tolerated(self, tmp_path: Path) -> None:
+        # A baseline cache produced by a tool that emitted a timezone-naive
+        # built_at must still load: the age subtraction below would raise
+        # TypeError on a naive/aware mismatch unless the loader normalizes.
+        path = tmp_path / "baseline.json.gz"
+        _write_baseline_payload(path, built_at="2025-01-01T00:00:00")
+        bc = load_baseline_cache(path)
+        assert bc.total_docs == 10
 
 
 # ---------------------------------------------------------------------------
@@ -742,6 +772,21 @@ class TestParseJatsForSections:
         with pytest.raises(etree.XMLSyntaxError):
             parse_jats_for_sections(b"<not-xml>this isn't")
 
+    def test_descends_into_unclassified_outer_sec(self) -> None:
+        # Some publishers wrap IMRaD content in an outer unnamed
+        # <sec><title>Main Text</title>...</sec>. The parser must descend
+        # into the wrapper rather than dropping the entire subtree.
+        xml_bytes = (_FIXTURES / "jats_nested_wrapper.xml").read_bytes()
+        sections = parse_jats_for_sections(xml_bytes)
+        assert "small vessel disease" in sections["introduction"].lower()
+        assert "magnetic resonance imaging" in sections["methods"].lower()
+        assert "white matter hyperintensity" in sections["results"].lower()
+        assert "prospective" in sections["discussion"].lower()
+        # The Acknowledgments sibling outside the wrapper must still be
+        # dropped (no IMRaD classification, no nested IMRaD inside it).
+        combined = " ".join(sections.values()).lower()
+        assert "acknowledgments section should still be dropped" not in combined
+
 
 # ---------------------------------------------------------------------------
 # fetch_fulltext_batch — cache + injected fetchers
@@ -966,6 +1011,145 @@ class TestFetchFulltextBatch:
         assert elink_calls == [["777"]]
         assert out["777"].pmcid == "PMC777"
         assert "schema mismatch" in caplog.text.lower()
+
+    def test_pmid_absent_from_elink_response_is_not_cached(
+        self, tmp_path: Path
+    ) -> None:
+        # If NCBI's elink response omits a PMID (truncation, partial
+        # response), the caller must not write a permanent negative
+        # cache entry for it — that would silently drop the paper's
+        # full-text contribution on every future run with no recovery.
+        # Absent-from-map encodes "NCBI didn't answer"; None encodes
+        # "NCBI confirmed no PMC mirror".
+        def partial_elink(batch: list[str]) -> dict[str, str | None]:
+            # Only the first PMID gets a response; the second is silently
+            # dropped, simulating a truncated NCBI reply.
+            return {batch[0]: None}
+
+        def unused_efetch(_pmcid: str) -> bytes | None:
+            raise AssertionError("efetch should not run for any PMID here")
+
+        out = fetch_fulltext_batch(
+            ["111", "222"],
+            tmp_path,
+            fetcher_elink=partial_elink,
+            fetcher_efetch=unused_efetch,
+        )
+        # PMID 111 had a confirmed no-PMC response → negative cache.
+        assert out["111"].pmcid is None
+        assert (tmp_path / "111.json").exists()
+        # PMID 222 was absent from the response → no cache, retry next run.
+        assert "222" not in out
+        assert not (tmp_path / "222.json").exists()
+
+
+class TestNcbiRetry:
+    def test_reader_retried_when_mid_read_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A transient mid-read error must be retried inside the loop,
+        # not propagated out. Before this fix, only the handle-open call
+        # was wrapped; reads (the actual data transfer) ran unprotected.
+        import scripts.distill_pubmed_keywords as mod
+
+        # Skip the configured backoff sleeps so the test is fast.
+        monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+
+        attempts = {"open": 0, "read": 0}
+
+        class _Handle:
+            def close(self) -> None:
+                pass
+
+        def fake_fn() -> _Handle:
+            attempts["open"] += 1
+            return _Handle()
+
+        def fake_reader(_h: _Handle) -> str:
+            attempts["read"] += 1
+            if attempts["read"] < 3:
+                raise OSError("simulated mid-read failure")
+            return "payload"
+
+        result = _ncbi_retry(fake_fn, _reader=fake_reader)
+        assert result == "payload"
+        assert attempts["open"] == 3
+        assert attempts["read"] == 3
+
+    def test_reader_exhausts_and_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import scripts.distill_pubmed_keywords as mod
+
+        monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+
+        class _Handle:
+            def close(self) -> None:
+                pass
+
+        def fake_fn() -> _Handle:
+            return _Handle()
+
+        def always_fails(_h: _Handle) -> str:
+            raise OSError("persistent failure")
+
+        with pytest.raises(OSError, match="persistent failure"):
+            _ncbi_retry(fake_fn, _reader=always_fails)
+
+
+class TestDefaultPmidsToPmcids:
+    def test_parses_pmcid_from_linkset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Verify the default elink wrapper actually maps source PMID
+        # to PMC{linked_id} when given a realistic Entrez.read output.
+        # Tests bypass this in TestFetchFulltextBatch via the
+        # fetcher_elink injection — this is the direct-path coverage.
+        import scripts.distill_pubmed_keywords as mod
+
+        class _FakeHandle:
+            def close(self) -> None:
+                pass
+
+        fake_records = [
+            {
+                "IdList": ["111"],
+                "LinkSetDb": [
+                    {
+                        "DbTo": "pmc",
+                        "LinkName": "pubmed_pmc",
+                        "Link": [{"Id": "1234567"}],
+                    }
+                ],
+            },
+            {
+                "IdList": ["222"],
+                "LinkSetDb": [],  # confirmed no PMC mirror
+            },
+            # PMID "333" intentionally absent from records (truncated reply)
+        ]
+
+        class _FakeEntrez:
+            @staticmethod
+            def elink(**_kwargs: object) -> _FakeHandle:
+                return _FakeHandle()
+
+            @staticmethod
+            def read(_handle: _FakeHandle) -> list[dict]:
+                return fake_records
+
+        monkeypatch.setitem(
+            __import__("sys").modules, "Bio", type("M", (), {"Entrez": _FakeEntrez})
+        )
+        # _ncbi_sleep is a no-op for tests
+        monkeypatch.setattr(mod, "_ncbi_sleep", lambda _k: None)
+
+        out = mod._default_pmids_to_pmcids(["111", "222", "333"], api_key=None)
+        assert out["111"] == "PMC1234567"
+        assert out["222"] is None
+        # PMID 333 must be absent (not pre-filled with None) so the
+        # caller can retry it instead of negative-caching forever.
+        assert "333" not in out
 
 
 # ---------------------------------------------------------------------------
