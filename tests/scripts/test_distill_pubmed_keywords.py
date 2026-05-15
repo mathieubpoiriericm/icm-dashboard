@@ -16,10 +16,12 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 from scripts.distill_pubmed_keywords import (
     BASELINE_SCHEMA_VERSION,
     FULLTEXT_SCHEMA_VERSION,
     BaselineCounts,
+    DistillationResult,
     FulltextRecord,
     KeywordScore,
     MeshDescriptor,
@@ -34,6 +36,7 @@ from scripts.distill_pubmed_keywords import (
     _pmcid_from_elink_record,
     _rank_terms,
     _render_query,
+    _render_rich_report,
     aggregate_mesh,
     build_baseline_cache,
     distill_keywords,
@@ -2565,6 +2568,115 @@ class TestRenderQuery:
         for bare_token in ("Notch3", "CADASIL", "mouse"):
             assert bare_token in str(text)
             assert bare_token not in all_styled
+
+
+# ---------------------------------------------------------------------------
+# Rich rendering — _render_rich_report trailing copy-paste line
+# ---------------------------------------------------------------------------
+
+
+def _capture_rich_report(
+    result: DistillationResult, *, query_format: str = "all"
+) -> str:
+    """Render to an in-memory console and return the captured plain text."""
+    # `force_terminal=False` + `no_color=True` drops ANSI so the captured
+    # bytes are easy to assert against; `record=True` is the rich-native
+    # way to grab everything printed during the call.
+    console = Console(
+        file=None,
+        force_terminal=False,
+        no_color=True,
+        record=True,
+        width=200,
+        highlight=False,
+    )
+    _render_rich_report(result, query_format=query_format, console=console)
+    return console.export_text()
+
+
+class TestRichReportCopyPaste:
+    def test_structured_query_appears_verbatim_at_end(self) -> None:
+        # Result has both MeSH terms and phrases, so the structured
+        # variant is emitted alongside mesh/titleabstract under
+        # query-format=all.
+        structured = (
+            "(CADASIL[MeSH Terms]) AND "
+            '("white matter"[Title/Abstract] OR "small vessel"[Title/Abstract])'
+        )
+        result = DistillationResult(
+            papers=3,
+            unigrams=[],
+            bigrams=[],
+            trigrams=[],
+            acronyms=[],
+            mesh_terms=[
+                KeywordScore(term="CADASIL", document_frequency=2, total_count=4)
+            ],
+            query_variants={
+                "structured": structured,
+                "mesh": "CADASIL[MeSH Terms]",
+                "titleabstract": (
+                    '"white matter"[Title/Abstract] OR '
+                    '"small vessel"[Title/Abstract]'
+                ),
+            },
+        )
+
+        output = _capture_rich_report(result)
+
+        # The plain-text trailer must be present and must be the literal
+        # query string — no ANSI escapes, no panel borders interleaved.
+        assert "format: structured — copy-paste" in output
+        assert structured in output
+
+        # And it must be the last non-empty line so users can grab it
+        # without scrolling past more output.
+        non_blank_lines = [ln.rstrip() for ln in output.splitlines() if ln.strip()]
+        assert non_blank_lines[-1] == structured
+
+    def test_no_trailer_when_structured_format_not_emitted(self) -> None:
+        # query-format=mesh limits emission to the mesh panel only;
+        # the structured trailer must not appear in that case.
+        result = DistillationResult(
+            papers=1,
+            unigrams=[],
+            bigrams=[],
+            trigrams=[],
+            acronyms=[],
+            mesh_terms=[
+                KeywordScore(term="CADASIL", document_frequency=1, total_count=2)
+            ],
+            query_variants={
+                "structured": "(CADASIL[MeSH Terms]) AND (x[Title/Abstract])",
+                "mesh": "CADASIL[MeSH Terms]",
+                "titleabstract": "x[Title/Abstract]",
+            },
+        )
+
+        output = _capture_rich_report(result, query_format="mesh")
+
+        assert "copy-paste" not in output
+
+    def test_no_trailer_when_structured_variant_empty(self) -> None:
+        # No MeSH terms ⇒ structured variant is empty; the trailer
+        # has nothing to print and must be suppressed.
+        result = DistillationResult(
+            papers=1,
+            unigrams=[],
+            bigrams=[],
+            trigrams=[],
+            acronyms=[],
+            mesh_terms=[],
+            query_variants={
+                "structured": "",
+                "mesh": "",
+                "titleabstract": "x[Title/Abstract]",
+            },
+        )
+
+        output = _capture_rich_report(result)
+
+        assert "copy-paste" not in output
 
 
 # ---------------------------------------------------------------------------

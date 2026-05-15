@@ -2744,6 +2744,20 @@ def _render_rich_report(
             )
         )
 
+    # Plain-text rendering of the structured query at the very end so it
+    # can be selected and pasted straight into PubMed. The panel above is
+    # easier to read but its borders and ANSI styling can leak into the
+    # clipboard; `markup=False` also stops Rich from interpreting the
+    # bracketed field tags (e.g. `[Title/Abstract]`) as markup, and
+    # `soft_wrap=True` keeps the whole query on a single logical line.
+    structured = variants.get("structured", "")
+    if structured and "structured" in formats:
+        console.print()
+        console.print(
+            f"[bold {_PRIMARY_COLOR}]format: structured — copy-paste[/]"
+        )
+        console.print(structured, markup=False, soft_wrap=True)
+
 
 # ---------------------------------------------------------------------------
 # CLI
