@@ -8,9 +8,6 @@ options(
   shiny.sanitize.errors = TRUE,
   warn = 1 # Print warnings as they occur
 )
-#
-# Helper functions are also available in the maRco package.
-# Install with: devtools::install("maRco")
 
 # Load required packages with error handling
 message("Loading R packages...")

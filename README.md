@@ -449,10 +449,7 @@ cd icm-dashboard
 Rscript -e 'renv::restore()'
 # (or, for a minimal manual install, see the Installation section below)
 
-# 3. Install the maRco helper package
-Rscript -e 'devtools::install("maRco")'
-
-# 4. Run the app
+# 3. Run the app
 Rscript -e 'shiny::runApp()'
 ```
 
@@ -467,7 +464,6 @@ The dashboard will open in your browser at `http://127.0.0.1:3838`.
 **For running the Shiny app only:**
 
 - R 4.5+
-- The `maRco` helper package
 
 **For running the data pipeline:**
 
@@ -475,11 +471,6 @@ The dashboard will open in your browser at `http://127.0.0.1:3838`.
 - PostgreSQL 18+
 
 ### Install R Dependencies
-
-```r
-# Install maRco package (required for data fetching/cleaning)
-devtools::install("maRco")
-```
 
 <details>
 <summary><strong>Click to expand full R package list</strong></summary>
@@ -535,12 +526,6 @@ Visualization-only packages (`ggplot2`, `ggrepel`, `ggtext`,
 `patchwork`, `ragg`, `scales`, `systemfonts`, `tidyr`) are required by
 `scripts/plot_tuning_runs.R` but not by the dashboard itself; you can
 omit them if you don't run the tuning plots.
-
-> `devtools::install("maRco")` brings in additional bioinformatics
-> packages (`rentrez`, `RefManageR`, `rbibutils`, plus Bioconductor's
-> `biomaRt` and `UniprotR`) transitively via maRco's `DESCRIPTION` —
-> they aren't required to launch the Shiny app but are needed by the
-> ETL helpers in the maRco package.
 
 </details>
 
