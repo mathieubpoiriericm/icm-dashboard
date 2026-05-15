@@ -1923,42 +1923,52 @@ def test_non_negative_float_rejects_non_finite(value: str) -> None:
 
 class TestDefaultPmidsToPmcids:
     def test_parses_pmcid_from_linkset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Verify the default elink wrapper actually maps source PMID
-        # to PMC{linked_id} when given a realistic Entrez.read output.
-        # Tests bypass this in TestFetchFulltextBatch via the
-        # fetcher_elink injection — this is the direct-path coverage.
+        # Per-PMID dispatch is deliberate — see the function's docstring
+        # for the NCBI chunked-response bug that forced it.
         import scripts.distill_pubmed_keywords as mod
 
         class _FakeHandle:
+            def __init__(self, pmid: str) -> None:
+                self.pmid = pmid
+
             def close(self) -> None:
                 pass
 
-        fake_records = [
-            {
-                "IdList": ["111"],
-                "LinkSetDb": [
-                    {
-                        "DbTo": "pmc",
-                        "LinkName": "pubmed_pmc",
-                        "Link": [{"Id": "1234567"}],
-                    }
-                ],
-            },
-            {
-                "IdList": ["222"],
-                "LinkSetDb": [],  # confirmed no PMC mirror
-            },
-            # PMID "333" intentionally absent from records (truncated reply)
-        ]
+        per_pmid_records: dict[str, list[dict]] = {
+            "111": [
+                {
+                    "IdList": ["111"],
+                    "LinkSetDb": [
+                        {
+                            "DbTo": "pmc",
+                            "LinkName": "pubmed_pmc",
+                            "Link": [{"Id": "1234567"}],
+                        }
+                    ],
+                }
+            ],
+            "222": [
+                {
+                    "IdList": ["222"],
+                    "LinkSetDb": [],  # confirmed no PMC mirror
+                }
+            ],
+            # PMID "333" intentionally returns no record (truncated reply
+            # / NCBI omission) — must end up absent from the output map.
+            "333": [],
+        }
+        elink_calls: list[str] = []
 
         class _FakeEntrez:
             @staticmethod
-            def elink(**_kwargs: object) -> _FakeHandle:
-                return _FakeHandle()
+            def elink(**kwargs: object) -> _FakeHandle:
+                pmid = str(kwargs.get("id"))
+                elink_calls.append(pmid)
+                return _FakeHandle(pmid)
 
             @staticmethod
-            def read(_handle: _FakeHandle) -> list[dict]:
-                return fake_records
+            def read(handle: _FakeHandle) -> list[dict]:
+                return per_pmid_records[handle.pmid]
 
         monkeypatch.setitem(
             __import__("sys").modules, "Bio", type("M", (), {"Entrez": _FakeEntrez})
@@ -1972,6 +1982,8 @@ class TestDefaultPmidsToPmcids:
         # PMID 333 must be absent (not pre-filled with None) so the
         # caller can retry it instead of negative-caching forever.
         assert "333" not in out
+        # Per-PMID dispatch: one elink call per input PMID.
+        assert elink_calls == ["111", "222", "333"]
 
 
 # ---------------------------------------------------------------------------

@@ -1890,17 +1890,39 @@ def _write_fulltext_cache(cache_dir: Path, record: FulltextRecord) -> None:
         logger.warning(f"Could not write fulltext cache for PMID {record.pmid}: {e}")
 
 
+def _pmcid_from_elink_record(record: Mapping[str, Any]) -> str | None:
+    """Return ``PMC{id}`` for the first link in this elink record, or ``None``.
+
+    ``None`` is the "confirmed no PMC mirror" signal (the caller distinguishes
+    this from "PMID absent from response" — see ``_default_pmids_to_pmcids``).
+    """
+    for linkset in record.get("LinkSetDb", []) or []:
+        for link in linkset.get("Link", []) or []:
+            if linked_id := link.get("Id", ""):
+                return f"PMC{linked_id}"
+    return None
+
+
 def _default_pmids_to_pmcids(
     pmids: list[str], *, api_key: str | None
 ) -> dict[str, str | None]:
-    """Resolve a batch of PMIDs to PMCIDs in one ``Entrez.elink`` round-trip.
+    """Resolve PMIDs to PMCIDs via one ``Entrez.elink`` call per PMID.
 
-    NCBI's ``elink`` accepts a list of source ids; the response is a
-    list of LinkSets, each carrying its source PMID in ``IdList`` and
-    the linked PMC id (when one exists) in
-    ``LinkSetDb[].Link[].Id``. Batching collapses N round-trips +
-    N ``_ncbi_sleep`` pauses into one of each, which is the bulk of the
-    first-run wall time at corpus sizes above a handful.
+    Per-PMID is deliberate: NCBI's elink endpoint returns malformed
+    chunked HTTP responses (``IncompleteRead`` after exactly 167 bytes —
+    just the XML preamble) when called with repeated ``&id=`` parameters
+    beyond ~11 ids. Biopython expands ``id=<list>`` into repeated
+    ``&id=`` params via ``urlencode(doseq=True)``, so passing the whole
+    batch in one call hits the bug. The comma-joined single-``id`` form
+    (``id="A,B,C"``) is reliable, but NCBI then collapses all sources
+    into a single LinkSet — losing the per-PMID mapping this function
+    has to return — so we can't use it here.
+
+    With API key the rate limit is ~10 req/s; ``_ncbi_sleep`` enforces
+    110ms between calls so this stays well under the cap. Each PMID's
+    failure is swallowed (and the PMID is omitted from the result map)
+    so a single bad id does not abort the whole batch — the caller
+    treats absent PMIDs as "retry next run".
 
     Returns ``{pmid: pmcid_or_None}`` for PMIDs NCBI returned a LinkSet
     for. PMIDs *absent* from the response are absent from the returned
@@ -1910,32 +1932,30 @@ def _default_pmids_to_pmcids(
     """
     from Bio import Entrez
 
-    records = _ncbi_retry(
-        Entrez.elink,
-        dbfrom="pubmed",
-        db="pmc",
-        id=pmids,
-        linkname="pubmed_pmc",
-        _reader=Entrez.read,
-    )
-    _ncbi_sleep(api_key)
-
     out: dict[str, str | None] = {}
-    for record in records or []:
-        id_list = record.get("IdList", []) or []
-        if not id_list:
+    for pmid in pmids:
+        try:
+            records = _ncbi_retry(
+                Entrez.elink,
+                dbfrom="pubmed",
+                db="pmc",
+                id=pmid,
+                linkname="pubmed_pmc",
+                _reader=Entrez.read,
+            )
+        except Exception as exc:  # noqa: BLE001 — Entrez raises various I/O types
+            logger.warning(
+                f"elink failed for PMID {pmid} after retries: {exc}; "
+                f"will retry next run"
+            )
             continue
-        source_pmid = str(id_list[0])
-        # NCBI returned a LinkSet for this PMID → default to "confirmed
-        # no PMC mirror"; upgrade below if a Link is present.
-        out[source_pmid] = None
-        for linkset in record.get("LinkSetDb", []) or []:
-            for link in linkset.get("Link", []) or []:
-                linked_id = link.get("Id", "")
-                if linked_id:
-                    out[source_pmid] = f"PMC{linked_id}"
-                    break
-            if out.get(source_pmid):
+        finally:
+            _ncbi_sleep(api_key)
+
+        for record in records or []:
+            id_list = record.get("IdList", []) or []
+            if id_list and str(id_list[0]) == pmid:
+                out[pmid] = _pmcid_from_elink_record(record)
                 break
     return out
 
