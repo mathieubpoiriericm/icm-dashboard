@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from scripts.distill_pubmed_keywords import (
+    BASELINE_SCHEMA_VERSION,
     FULLTEXT_SCHEMA_VERSION,
     BaselineCounts,
     FulltextRecord,
@@ -30,6 +31,7 @@ from scripts.distill_pubmed_keywords import (
     _llr_score,
     _ncbi_retry,
     _non_negative_float,
+    _pmcid_from_elink_record,
     _rank_terms,
     _render_query,
     aggregate_mesh,
@@ -75,6 +77,19 @@ class TestStemKey:
         assert stem_key("criteria") == "criterion"
         assert stem_key("data") == "datum"
         assert stem_key("hypotheses") == "hypothesis"
+        assert stem_key("viruses") == "virus"
+
+    def test_invariant_biomedical_terms_not_mangled(self) -> None:
+        assert stem_key("species") == "species"
+        assert stem_key("series") == "series"
+        assert stem_key("diabetes") == "diabetes"
+        assert stem_key("rabies") == "rabies"
+
+    def test_es_plurals(self) -> None:
+        assert stem_key("processes") == "process"
+        assert stem_key("classes") == "class"
+        assert stem_key("approaches") == "approach"
+        assert stem_key("boxes") == "box"
 
     def test_short_tokens_unchanged(self) -> None:
         assert stem_key("gene") == "gene"
@@ -130,6 +145,19 @@ class TestModalSurface:
         ]
         display = _build_display_map(papers, 2)
         assert display[("white", "matter")] == "white matter"
+
+    def test_filtered_surface_forms_cannot_win_modal_display(self) -> None:
+        papers = [
+            [("result", "results")],
+            [("result", "results")],
+            [("result", "result")],
+        ]
+
+        unfiltered = _build_display_map(papers, 1)
+        filtered = _build_display_map(papers, 1, filter_content=True)
+
+        assert unfiltered[("result",)] == "results"
+        assert filtered[("result",)] == "result"
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +442,47 @@ class TestAggregateMesh:
         assert by_term["Y"].document_frequency == 1
         assert by_term["Y"].total_count == 1
 
+    def test_generic_demographic_headings_are_filtered(self) -> None:
+        pmid_to_descriptors = {
+            "p1": [
+                MeshDescriptor(term="Humans", ui="D006801", major=False),
+                MeshDescriptor(term="Female", ui="D005260", major=False),
+                MeshDescriptor(
+                    term="Cerebral Small Vessel Diseases", ui="D000071067", major=True
+                ),
+            ],
+            "p2": [
+                MeshDescriptor(term="Humans", ui="D006801", major=False),
+                MeshDescriptor(term="Aged", ui="D000368", major=False),
+                MeshDescriptor(
+                    term="Cerebral Small Vessel Diseases", ui="D000071067", major=False
+                ),
+            ],
+        }
+
+        result = aggregate_mesh(pmid_to_descriptors, top_n=10)
+
+        assert [r.term for r in result] == ["Cerebral Small Vessel Diseases"]
+        assert result[0].document_frequency == 2
+        assert result[0].total_count == 3
+
+    def test_mesh_terms_are_normalized_before_filtering_and_counting(self) -> None:
+        pmid_to_descriptors = {
+            "p1": [
+                MeshDescriptor(term="  humans  ", ui="D006801", major=False),
+                MeshDescriptor(term="White   Matter", ui="D014867", major=False),
+            ],
+            "p2": [
+                MeshDescriptor(term="White Matter", ui="D014867", major=True),
+            ],
+        }
+
+        result = aggregate_mesh(pmid_to_descriptors, top_n=10)
+
+        assert [r.term for r in result] == ["White Matter"]
+        assert result[0].document_frequency == 2
+        assert result[0].total_count == 3
+
     def test_non_positive_top_n_returns_empty(self) -> None:
         pmid_to_descriptors = {
             "p1": [MeshDescriptor(term="X", ui="D1", major=True)],
@@ -492,7 +561,7 @@ def _write_baseline_payload(
     path: Path, *, built_at: str, override: dict | None = None
 ) -> None:
     payload = {
-        "schema_version": 1,
+        "schema_version": BASELINE_SCHEMA_VERSION,
         "built_at": built_at,
         "params": {"size_requested": 100},
         "total_docs": 10,
@@ -588,9 +657,29 @@ class TestBaselineCache:
                 id="bool-total",
             ),
             pytest.param(
+                {"built_at": "not-a-timestamp"},
+                "built_at",
+                id="invalid-built-at",
+            ),
+            pytest.param(
+                {"built_at": ""},
+                "built_at",
+                id="blank-built-at",
+            ),
+            pytest.param(
                 {"bigrams": {"one-token": 1}},
                 "bigrams",
                 id="wrong-ngram-arity",
+            ),
+            pytest.param(
+                {"unigrams": {"white matter": 1}},
+                "unigrams",
+                id="whitespace-unigram-key",
+            ),
+            pytest.param(
+                {"acronyms": {"BAD KEY": 1}},
+                "acronyms",
+                id="whitespace-acronym-key",
             ),
             pytest.param(
                 {"total_unigrams": 1},
@@ -1053,6 +1142,57 @@ class TestForegroundCounts:
         assert tf["MRI"] == 2
         assert tf["CADASIL"] == 1
 
+    def test_structured_abstract_labels_are_not_acronyms(self) -> None:
+        papers = [
+            PaperText(
+                pmid="1",
+                title="FINDINGS and FUNDING",
+                abstract="WMH was measured by MRI.",
+            )
+        ]
+
+        tf, df = _foreground_acronyms(papers)
+
+        assert "FINDINGS" not in tf
+        assert "FUNDING" not in tf
+        assert "FINDINGS" not in df
+        assert "FUNDING" not in df
+        assert tf["WMH"] == 1
+        assert tf["MRI"] == 1
+
+    def test_fulltext_artifact_labels_are_filtered_from_phrases(self) -> None:
+        pairs = [
+            [
+                ("supplementary", "supplementary"),
+                ("table", "table"),
+                ("white", "white"),
+                ("matter", "matter"),
+            ]
+        ]
+
+        tf, _ = _foreground_counts_for(pairs, n=2, filter_content=True)
+
+        assert ("supplementary", "table") not in tf
+        assert ("table", "white") not in tf
+        assert ("white", "matter") in tf
+
+    def test_url_boilerplate_is_filtered_from_phrases(self) -> None:
+        pairs = [
+            [
+                ("doi", "doi"),
+                ("org", "org"),
+                ("dryad", "dryad"),
+                ("lacunar", "lacunar"),
+                ("stroke", "stroke"),
+            ]
+        ]
+
+        tf, _ = _foreground_counts_for(pairs, n=3, filter_content=True)
+
+        assert ("doi", "org", "dryad") not in tf
+        assert ("org", "dryad", "lacunar") not in tf
+        assert ("dryad", "lacunar", "stroke") not in tf
+
 
 # ---------------------------------------------------------------------------
 # End-to-end distillation (no network, baseline injected directly)
@@ -1078,7 +1218,7 @@ class TestDistillKeywords:
         # cSVD-distinctive terms — every term in the foreground should
         # then be ranked as highly distinctive.
         baseline = BaselineCounts(
-            schema_version=1,
+            schema_version=BASELINE_SCHEMA_VERSION,
             built_at=dt.datetime.now(dt.UTC).isoformat(),
             params={},
             total_docs=1_000,
@@ -1111,7 +1251,7 @@ class TestDistillKeywords:
             PaperText(pmid="111", title="t", abstract="a"),
         ]
         baseline = BaselineCounts(
-            schema_version=1,
+            schema_version=BASELINE_SCHEMA_VERSION,
             built_at=dt.datetime.now(dt.UTC).isoformat(),
             params={},
             total_docs=1,
@@ -1315,6 +1455,36 @@ class TestParseJatsForSections:
         assert "list-based acquisition protocol" in sections["methods"].lower()
         assert "nested result text" not in sections["methods"].lower()
         assert "nested result text" in sections["results"].lower()
+
+    def test_display_object_paragraphs_are_skipped(self) -> None:
+        xml = b"""
+        <article>
+          <body>
+            <sec sec-type="results">
+              <title>Results</title>
+              <p>Prose result about white matter injury.</p>
+              <table-wrap>
+                <caption><p>Supplementary table caption should be ignored.</p></caption>
+                <table>
+                  <tbody>
+                    <tr><td><p>Table cell boilerplate should be ignored.</p></td></tr>
+                  </tbody>
+                </table>
+              </table-wrap>
+              <fig>
+                <caption><p>Figure caption should be ignored.</p></caption>
+              </fig>
+            </sec>
+          </body>
+        </article>
+        """
+
+        sections = parse_jats_for_sections(xml)
+
+        assert "prose result" in sections["results"].lower()
+        assert "supplementary table caption" not in sections["results"].lower()
+        assert "table cell boilerplate" not in sections["results"].lower()
+        assert "figure caption" not in sections["results"].lower()
 
     def test_body_root_is_parsed(self) -> None:
         xml = b"""
@@ -1922,6 +2092,48 @@ def test_non_negative_float_rejects_non_finite(value: str) -> None:
 
 
 class TestDefaultPmidsToPmcids:
+    def test_pmcid_from_elink_record_ignores_non_pmc_links(self) -> None:
+        record = {
+            "LinkSetDb": [
+                {
+                    "DbTo": "pubmed",
+                    "LinkName": "pubmed_pubmed",
+                    "Link": [{"Id": "999"}],
+                },
+                {
+                    "DbTo": "pmc",
+                    "LinkName": "pubmed_pmc",
+                    "Link": [{"Id": "1234567"}],
+                },
+            ]
+        }
+
+        assert _pmcid_from_elink_record(record) == "PMC1234567"
+
+    def test_pmcid_from_elink_record_ignores_malformed_link_ids(self) -> None:
+        record = {
+            "LinkSetDb": [
+                {
+                    "DbTo": "pmc",
+                    "LinkName": "pubmed_pmc",
+                    "Link": [{"Id": "PMC../escape"}, {"Id": "../escape"}],
+                }
+            ]
+        }
+
+        assert _pmcid_from_elink_record(record) is None
+
+    def test_pmcid_from_elink_record_requires_pmc_link_metadata(self) -> None:
+        record = {
+            "LinkSetDb": [
+                {
+                    "Link": [{"Id": "1234567"}],
+                }
+            ]
+        }
+
+        assert _pmcid_from_elink_record(record) is None
+
     def test_parses_pmcid_from_linkset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Per-PMID dispatch is deliberate — see the function's docstring
         # for the NCBI chunked-response bug that forced it.
@@ -2062,7 +2274,7 @@ def _write_minimal_baseline(path: Path) -> None:
     """Write a gzip baseline cache `load_baseline_cache` will accept."""
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 1,
+        "schema_version": BASELINE_SCHEMA_VERSION,
         "built_at": dt.datetime.now(dt.UTC).isoformat(),
         "params": {},
         "total_docs": 1,

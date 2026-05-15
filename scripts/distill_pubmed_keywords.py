@@ -136,8 +136,8 @@ DEFAULT_BASELINE_SIZE: Final[int] = 10_000
 DEFAULT_BASELINE_BATCH: Final[int] = 200
 DEFAULT_MESH_BATCH: Final[int] = 50
 BASELINE_STALE_DAYS: Final[int] = 365
-BASELINE_SCHEMA_VERSION: Final[int] = 1
-FULLTEXT_SCHEMA_VERSION: Final[int] = 1
+BASELINE_SCHEMA_VERSION: Final[int] = 2
+FULLTEXT_SCHEMA_VERSION: Final[int] = 2
 _BASELINE_REBUILD_HINT: Final[str] = "Rebuild with --build-baseline."
 # Drop n-grams with baseline count < this from the cache file to keep
 # it under ~50MB. Side effect: LLR for cSVD n-grams that happen to occur
@@ -215,6 +215,23 @@ _PDAT_RANGE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{4}:\d{4}$")
 # outside the cache directory.
 _PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,12}$")
 _PMCID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^(?:PMC)?\d{1,12}$", re.I)
+
+_WHITESPACE_RE: Final[re.Pattern[str]] = re.compile(r"\s+")
+
+
+def _collapse_whitespace(s: str) -> str:
+    """Collapse runs of whitespace to single spaces and strip the result."""
+    return _WHITESPACE_RE.sub(" ", s).strip()
+
+
+def _has_whitespace_or_empty(s: str) -> bool:
+    """True when ``s`` is empty or contains any whitespace character."""
+    return not s or any(c.isspace() for c in s)
+
+
+# NCBI elink protocol identifiers for the PubMed → PMC traversal.
+_ELINK_DB_PMC: Final[str] = "pmc"
+_ELINK_LINKNAME_PMC: Final[str] = "pubmed_pmc"
 
 # Namespace wildcard — MODS files declare xmlns="http://www.loc.gov/mods/v3"
 # but {*} keeps the queries robust if a record is namespace-stripped.
@@ -360,6 +377,8 @@ _STOPWORDS: Final[frozenset[str]] = frozenset(
         "discussion",
         "interpretation",
         "design",
+        "findings",
+        "funding",
         "setting",
         "interventions",
         "measurements",
@@ -370,6 +389,24 @@ _STOPWORDS: Final[frozenset[str]] = frozenset(
         "results",
         "conclusions",
         "conclusion",
+        # Full-text artifact labels
+        "supplementary",
+        "supplemental",
+        "table",
+        "figure",
+        "fig",
+        "appendix",
+        # URL / data-availability boilerplate
+        "doi",
+        "org",
+        "http",
+        "https",
+        "www",
+        "pmid",
+        "pmcid",
+        "dryad",
+        "figshare",
+        "zenodo",
         # Number words
         "one",
         "two",
@@ -389,13 +426,23 @@ _STOPWORDS: Final[frozenset[str]] = frozenset(
     }
 )
 
-# Biomedical irregular plurals — looked up first by stem_key.
+# Consulted before the suffix rules so they cannot mangle these forms
+# (biomedical irregulars + singular-looking words ending in -s/-ies).
 _IRREGULAR_PLURALS: Final[dict[str, str]] = {
     "analyses": "analysis",
+    "biases": "bias",
+    "classes": "class",
     "diagnoses": "diagnosis",
+    "diabetes": "diabetes",
+    "focuses": "focus",
     "prognoses": "prognosis",
+    "processes": "process",
+    "rabies": "rabies",
+    "series": "series",
+    "species": "species",
     "syntheses": "synthesis",
     "hypotheses": "hypothesis",
+    "statuses": "status",
     "criteria": "criterion",
     "phenomena": "phenomenon",
     "bases": "basis",
@@ -410,12 +457,24 @@ _IRREGULAR_PLURALS: Final[dict[str, str]] = {
     "matrices": "matrix",
     "appendices": "appendix",
     "media": "medium",
+    "viruses": "virus",
 }
 
 # Suffixes that mean "this token does NOT end in a plural -s" — used to
 # protect words like "nervous", "focus", "axis", "stress" from being
 # stem-stripped to garbage.
 _NO_STRIP_SUFFIXES: Final[tuple[str, ...]] = ("ous", "us", "is", "ss")
+
+# Suffixes where the plural marker is "-es" (two chars), not "-s" — e.g.
+# "processes", "boxes", "classes". Stripping a single "s" would leave
+# "processe"/"boxe"; stripping two strips the whole "-es".
+_ES_PLURAL_SUFFIXES: Final[tuple[str, ...]] = (
+    "sses",
+    "ches",
+    "shes",
+    "xes",
+    "zes",
+)
 
 # JATS <sec sec-type="..."> attribute values we treat as IMRaD. Keys are
 # lowercased sec-type strings; values are the canonical label used by
@@ -451,6 +510,58 @@ _JATS_TITLE_SYNONYMS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     ),
     (re.compile(r"^\s*(results|findings)\b", re.I), "results"),
     (re.compile(r"^\s*(discussion|conclusions?)\b", re.I), "discussion"),
+)
+
+# JATS display objects often contain captions, table cells, formula labels,
+# or supplementary metadata rather than prose. Keeping them out avoids
+# ranking table/figure boilerplate as if it were article body text.
+_JATS_NON_PROSE_CONTAINERS: Final[frozenset[str]] = frozenset(
+    {
+        "alternatives",
+        "array",
+        "caption",
+        "disp-formula",
+        "fig",
+        "fig-group",
+        "graphic",
+        "inline-graphic",
+        "media",
+        "supplementary-material",
+        "table",
+        "table-wrap",
+        "table-wrap-foot",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "tr",
+    }
+)
+
+# Generic MeSH headings that describe the population or indexing frame
+# rather than the paper's biomedical topic. If left in, high-frequency
+# headings like "Humans" and "Female" crowd out useful query terms.
+_MESH_STOP_TERMS: Final[frozenset[str]] = frozenset(
+    {
+        "Adolescent",
+        "Adult",
+        "Aged",
+        "Aged, 80 and over",
+        "Animals",
+        "Child",
+        "Child, Preschool",
+        "Female",
+        "Humans",
+        "Infant",
+        "Infant, Newborn",
+        "Male",
+        "Middle Aged",
+        "Young Adult",
+    }
+)
+_MESH_STOP_TERMS_CASEFOLD: Final[frozenset[str]] = frozenset(
+    term.casefold() for term in _MESH_STOP_TERMS
 )
 
 
@@ -513,6 +624,9 @@ class MeshQualifier:
     ui: str
     major: bool
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "term", _collapse_whitespace(self.term))
+
 
 @dataclass(slots=True, frozen=True)
 class MeshDescriptor:
@@ -520,6 +634,9 @@ class MeshDescriptor:
     ui: str
     major: bool
     qualifiers: tuple[MeshQualifier, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "term", _collapse_whitespace(self.term))
 
 
 @dataclass(slots=True)
@@ -807,6 +924,10 @@ def stem_key(token: str) -> str:
         return lower
     if lower.endswith("ies") and len(lower) > 4 and lower[-4] not in "aeiou":
         return lower[:-3] + "y"
+    if lower.endswith(_ES_PLURAL_SUFFIXES):
+        stripped = lower[:-2]
+        if len(stripped) >= MIN_TOKEN_LENGTH:
+            return stripped
     if lower.endswith("s") and not any(
         lower.endswith(suf) for suf in _NO_STRIP_SUFFIXES
     ):
@@ -1214,6 +1335,7 @@ def build_baseline_cache(
 
 _REQUIRED_BASELINE_FIELDS: Final[frozenset[str]] = frozenset(
     {
+        "built_at",
         "params",
         "total_docs",
         "total_unigrams",
@@ -1261,10 +1383,10 @@ def _load_baseline_counter(
                     raise ValueError(
                         f"expected {expected_arity} token(s), got {len(mapped)}"
                     )
-                if any(not part for part in mapped):
-                    raise ValueError("empty token in n-gram key")
-            elif not str(mapped):
-                raise ValueError("empty key")
+                if any(_has_whitespace_or_empty(part) for part in mapped):
+                    raise ValueError("empty/whitespace token in n-gram key")
+            elif _has_whitespace_or_empty(str(mapped)):
+                raise ValueError("empty/whitespace key")
             values[mapped] = _coerce_baseline_count(name, v)
     except (TypeError, ValueError) as e:
         raise _baseline_error(f"Baseline cache field {name!r} is malformed.") from e
@@ -1292,11 +1414,19 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
             f"Baseline cache schema {version} != expected {BASELINE_SCHEMA_VERSION}."
         )
 
-    built_at_str = str(payload.get("built_at", ""))
+    missing_fields = sorted(_REQUIRED_BASELINE_FIELDS.difference(payload))
+    if missing_fields:
+        joined = ", ".join(repr(f) for f in missing_fields)
+        raise _baseline_error(f"Baseline cache is missing required field(s): {joined}.")
+
+    built_at_value = payload["built_at"]
+    if not isinstance(built_at_value, str) or not built_at_value.strip():
+        raise _baseline_error("Baseline cache field 'built_at' is malformed.")
+    built_at_str = built_at_value.strip()
     try:
         built_at = _dt.datetime.fromisoformat(built_at_str)
-    except ValueError:
-        built_at = _dt.datetime.now(_dt.UTC)
+    except ValueError as e:
+        raise _baseline_error("Baseline cache field 'built_at' is malformed.") from e
     if built_at.tzinfo is None:
         built_at = built_at.replace(tzinfo=_dt.UTC)
     age_days = (_dt.datetime.now(_dt.UTC) - built_at).days
@@ -1305,11 +1435,6 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
             f"Baseline cache is {age_days} days old (> {BASELINE_STALE_DAYS}). "
             f"Consider rebuilding with --build-baseline."
         )
-
-    missing_fields = sorted(_REQUIRED_BASELINE_FIELDS.difference(payload))
-    if missing_fields:
-        joined = ", ".join(repr(f) for f in missing_fields)
-        raise _baseline_error(f"Baseline cache is missing required field(s): {joined}.")
 
     params = payload["params"]
     if not isinstance(params, Mapping):
@@ -1660,6 +1785,8 @@ def aggregate_mesh(
     for descriptors in pmid_to_descriptors.values():
         per_paper_weight: dict[str, int] = {}
         for d in descriptors:
+            if not d.term or d.term.casefold() in _MESH_STOP_TERMS_CASEFOLD:
+                continue
             w = 2 if d.major else 1
             if w > per_paper_weight.get(d.term, 0):
                 per_paper_weight[d.term] = w
@@ -1729,7 +1856,7 @@ def _walk_jats_sections(
             # Collapse runs of whitespace to single spaces inside each
             # paragraph; paragraph boundaries are re-introduced by the
             # "\n\n".join below.
-            text = re.sub(r"\s+", " ", _element_text(p))
+            text = _collapse_whitespace(_element_text(p))
             if text:
                 paragraphs.append(text)
         if label is not None and paragraphs:
@@ -1750,7 +1877,7 @@ def _section_owned_paragraphs(sec: etree._Element) -> list[etree._Element]:
     def _collect(node: etree._Element) -> None:
         for child in node:
             local = _local_name(child)
-            if local == "sec":
+            if local == "sec" or local in _JATS_NON_PROSE_CONTAINERS:
                 continue
             if local == "p":
                 paragraphs.append(child)
@@ -1897,8 +2024,13 @@ def _pmcid_from_elink_record(record: Mapping[str, Any]) -> str | None:
     this from "PMID absent from response" — see ``_default_pmids_to_pmcids``).
     """
     for linkset in record.get("LinkSetDb", []) or []:
+        if str(linkset.get("DbTo", "")).strip().lower() != _ELINK_DB_PMC:
+            continue
+        if str(linkset.get("LinkName", "")).strip().lower() != _ELINK_LINKNAME_PMC:
+            continue
         for link in linkset.get("Link", []) or []:
-            if linked_id := link.get("Id", ""):
+            linked_id = str(link.get("Id", "")).strip()
+            if linked_id.isdigit() and 1 <= len(linked_id) <= 12:
                 return f"PMC{linked_id}"
     return None
 
@@ -1938,9 +2070,9 @@ def _default_pmids_to_pmcids(
             records = _ncbi_retry(
                 Entrez.elink,
                 dbfrom="pubmed",
-                db="pmc",
+                db=_ELINK_DB_PMC,
                 id=pmid,
-                linkname="pubmed_pmc",
+                linkname=_ELINK_LINKNAME_PMC,
                 _reader=Entrez.read,
             )
         except Exception as exc:  # noqa: BLE001 — Entrez raises various I/O types
@@ -2144,20 +2276,30 @@ def fetch_fulltext_batch(
 def _build_display_map(
     paper_stem_token_pairs: list[list[tuple[str, str]]],
     n: int,
+    *,
+    filter_content: bool = False,
 ) -> dict[tuple[str, ...], str]:
     """Map each stem-ngram-key to its modal surface n-gram form.
 
     Aggregates by stem so plural variants share a count, but displays
     the most-frequently-observed surface form (so output reads as
-    English, not stems).
+    English, not stems). When ``filter_content`` is set, the display
+    candidates use the same stopword/content filter as foreground
+    counting, so filtered labels like "Results" cannot become the
+    displayed form for a kept singular content token.
     """
     surface_counts: dict[tuple[str, ...], Counter[tuple[str, ...]]] = {}
     for tokens in paper_stem_token_pairs:
         if len(tokens) < n:
             continue
         for i in range(len(tokens) - n + 1):
-            stems = tuple(s for s, _ in tokens[i : i + n])
-            surfaces = tuple(t for _, t in tokens[i : i + n])
+            pair_slice = tokens[i : i + n]
+            if filter_content and not all(
+                _is_content_token(s) and t not in _STOPWORDS for s, t in pair_slice
+            ):
+                continue
+            stems = tuple(s for s, _ in pair_slice)
+            surfaces = tuple(t for _, t in pair_slice)
             surface_counts.setdefault(stems, Counter())[surfaces] += 1
     return {
         stems: " ".join(surfaces.most_common(1)[0][0])
@@ -2251,7 +2393,7 @@ def distill_keywords(
     rankings: dict[int, list[KeywordScore]] = {}
     for n in (1, 2, 3):
         tf, df = _foreground_counts_for(paper_stem_token_pairs, n, filter_content=True)
-        display = _build_display_map(paper_stem_token_pairs, n)
+        display = _build_display_map(paper_stem_token_pairs, n, filter_content=True)
         bg_counts, total_bg = baseline_by_n[n - 1]
         rankings[n] = _rank_terms(
             tf,
@@ -2318,7 +2460,7 @@ def _pubmed_clause(term: str, field: str) -> str:
     can still contain embedded quotes/newlines; sanitize those so one bad term
     cannot unbalance the whole Boolean query.
     """
-    cleaned = re.sub(r"\s+", " ", term.replace('"', " ")).strip()
+    cleaned = _collapse_whitespace(term.replace('"', " "))
     if not cleaned:
         return ""
     return f'"{cleaned}"[{field}]'
