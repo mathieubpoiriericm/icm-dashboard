@@ -163,9 +163,10 @@ _QUERY_FORMATS: Final[tuple[str, ...]] = (
 )
 _QUERY_FORMAT_VARIANTS: Final[tuple[str, ...]] = _QUERY_FORMATS[1:]
 
-# Project palette (matches www/custom.css). Used for title accents in
-# the rich report so the CLI feels visually paired with the dashboard.
-_PRIMARY_COLOR: Final[str] = "#281E78"
+# Project palette echoes www/custom.css so the CLI feels visually
+# paired with the dashboard. Primary is a lightened indigo (the
+# dashboard's #281E78 is unreadable on dark terminals).
+_PRIMARY_COLOR: Final[str] = "#8B80E8"
 _ACCENT_COLOR: Final[str] = "#FA4616"
 
 # Single-pass tokenizer for the PubMed Boolean query renderer. Order of
