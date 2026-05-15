@@ -42,6 +42,8 @@ flowchart LR
 
 The dashboard has **no database connection at runtime**. All data is read from pre-generated QS files produced by `scripts/trigger_update.R`.
 
+Exception: `geocoded_trials.qs` is built at runtime by the Trials Map tab. On first map access — and only when the set of NCT IDs in Table 2 has changed since the last cache write — the app calls ClinicalTrials.gov v2 for facility locations and OpenStreetMap Nominatim for coordinates, then writes the result to `data/qs/geocoded_trials.qs` alongside a SHA-256 integrity hash file (`geocoded_trials.qs.sha256`).
+
 ### QS Data Files
 
 | File | Contents |
@@ -53,7 +55,7 @@ The dashboard has **no database connection at runtime**. All data is read from p
 | `prot_info_clean.qs` | UniProt protein information |
 | `refs.qs` | PubMed publication references for tooltips |
 | `gwas_trait_names.qs` | GWAS trait abbreviation-to-full-name mapping |
-| `geocoded_trials.qs` | Geocoded trial site locations for the map |
+| `geocoded_trials.qs` | Geocoded trial site locations — built at runtime by the Trials Map tab, cached with a sibling `.sha256` integrity hash |
 | `pipeline_status.qs` | Optional pipeline run metadata (timestamp, counts) shown on About tab |
 
 Additionally, `data/csv/omim_info.csv` provides OMIM disease annotations.
@@ -162,16 +164,17 @@ Filter message rendering and filtered data reactives use `bindCache()`.
 ### CSS and JavaScript
 
 - Edit `www/custom.css` and `www/custom.js` only -- `.min.*` files are auto-generated at startup
-- Tippy.js and Popper.js bundled locally in `www/css/` and `www/js/`
+- Tippy.js bundled locally (CSS in `www/css/`, JS in `www/js/`); Popper.js bundled in `www/js/`
 - Tippy tooltips initialized via `initializeTippy()` in DataTable `drawCallback`
 - `www/python_plot.js` handles timeline iframe resizing; also auto-minified
+- Static asset URLs are cache-busted with an 8-char xxhash64 query string (`asset_url()` in `R/utils.R`) so CSS/JS edits invalidate browser caches on deploy
 
 ### Leaflet Map
 
 - Base map rendered immediately; markers added via `leafletProxy` when map tab is accessed
 - Marker clustering with coordinate jittering to separate co-located trial sites
 - NCT-registered trials only (other registries lack location API access)
-- Geocoded data cached in `data/qs/geocoded_trials.qs`
+- Geocoded data cached in `data/qs/geocoded_trials.qs`; `save_cache_with_integrity()` writes a sibling `.sha256` file and `load_cache_with_integrity()` verifies the hash before deserialization to prevent tampered-cache deserialization attacks
 
 ### Fonts
 
@@ -203,7 +206,7 @@ Docker runs the dashboard only (no Python pipeline or database). It requires pre
 
 ## Testing
 
-Tests live in `tests/test_all.R` (97 testthat + shinytest2 tests). Coverage includes utility functions, filter logic, tooltip generation, data preparation, and the checkbox filter module.
+Tests live in `tests/test_all.R` (102 testthat + shinytest2 tests). Coverage includes utility functions, filter logic, tooltip generation, data preparation, and the checkbox filter module.
 
 ```bash
 Rscript -e 'testthat::test_file("tests/test_all.R")'

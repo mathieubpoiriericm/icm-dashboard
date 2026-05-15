@@ -83,13 +83,15 @@ All XML parsing uses `SAFE_XML_PARSER` from `config.py`, which disables entity r
 - Filters header/footer blocks using Y-coordinate margins (top 40pt, bottom 740pt).
 - Truncates at the earliest "back matter" section (References, Bibliography, Methods, Acknowledgements, etc.) found in the latter half of the document, preventing the LLM from hallucinating gene mentions from bibliography entries.
 
-### 3. Extract (`llm_extraction.py`, `prompts.py`)
+### 3. Extract (`llm_extraction.py`, `llm_providers/`, `prompts.py`)
 
-Sends the retrieved text to the Anthropic Claude API and parses the streamed response into typed `GeneEntry` instances.
+Sends the retrieved text to the configured LLM provider and parses the streamed response into typed `GeneEntry` instances.
+
+**Provider abstraction.** Extraction runs through a pluggable `LLMProvider` protocol defined in `pipeline/llm_providers/base.py` (alongside the `GeneEntry`, `ExtractionResult`, and `ExtractionFailedError` Pydantic types). `get_provider(config)` in `llm_providers/__init__.py` selects an implementation by `config.llm_provider`; the only built-in provider today is `AnthropicProvider` (`llm_providers/anthropic_provider.py`). `llm_extraction.py` itself is a thin dispatcher — it caches a single provider instance keyed on `config.llm_provider` and forwards `extract_from_paper(text, pmid, config, rate_limiter)` to the provider.
 
 **API configuration.**
 
-- Model: `claude-opus-4-7` (overridable via `PIPELINE_LLM_MODEL`).
+- Model: `claude-opus-4-7` (overridable via `PIPELINE_LLM_MODEL`). Pricing and token-cap tables key on the full model ID, so Haiku is `claude-haiku-4-5-20251001` while Opus and Sonnet use undated IDs.
 - Max output tokens: auto-resolved from `MODEL_MAX_OUTPUT_TOKENS` when `PIPELINE_LLM_MAX_TOKENS=0` (the default). Opus 4.7 resolves to 128,000; Sonnet 4.6 and Haiku 4.5 to 64,000. Set the env var to any positive integer to override.
 - Thinking: adaptive (`{"type": "adaptive", "display": "summarized"}`) for models in `ADAPTIVE_THINKING_MODELS` (`claude-opus-4-7`, `claude-sonnet-4-6`). Older models fall back to manual thinking (`{"type": "enabled", "budget_tokens": max_tokens - 8000}`, clamped to at least `max_tokens // 2`). `THINKING_OUTPUT_RESERVE=8000` reserves that many tokens for the JSON response text.
 - Effort: `config.llm_effort` (default `"high"`). Only transmitted to the API when the value differs from `"high"` (the API default) and the model is in `EFFORT_CAPABLE_MODELS`.
@@ -130,7 +132,7 @@ Sends the retrieved text to the Anthropic Claude API and parses the streamed res
 
 On any other `anthropic.APIError` or unexpected exception, the extractor logs and returns an empty gene list — the paper is skipped but the batch continues.
 
-**Usage accounting.** After each successful call the rate limiter's pre-estimated token count is corrected via `record_actual_usage(request_id, actual_tokens)`. The response's thinking tokens are estimated from the character ratio between thinking and text content blocks (the API reports a single `output_tokens` field that lumps both). All counts accumulate into the shared `TokenUsage` dataclass used by the report and cost estimator.
+**Usage accounting.** After each successful call the rate limiter's pre-estimated token count is corrected via `record_actual_usage(request_id, actual_tokens)`. The response's thinking tokens are estimated from the character ratio between thinking and text content blocks (the API reports a single `output_tokens` field that lumps both). All counts accumulate into the shared `TokenUsage` dataclass (defined in `quality_metrics.py`) used by the report and cost estimator.
 
 ### 4. Validate (`validation.py`, `batch_validation.py`)
 
@@ -145,8 +147,6 @@ Three stages, fail-fast on critical errors:
 3. **GWAS trait check.** Warns (but does not reject) on unrecognized GWAS trait abbreviations not in the `VALID_GWAS_TRAITS` frozenset (23 canonical cSVD phenotypes defined in `config.py`).
 
 The `ValidationResult` dataclass returned to the caller carries `is_valid`, `errors`, `warnings`, and the possibly-normalized `GeneEntry`.
-
-Stage-0 required-field checks from earlier versions are no longer needed — Pydantic enforces those at extraction time.
 
 #### Batch validation (`batch_validation.py`)
 
@@ -181,7 +181,7 @@ Merges validated genes into PostgreSQL and records processed PMIDs.
 The `--sync-external-data` mode (`external_data_sync.py`) populates cache tables consumed by the R transformation step. It runs independently of the PubMed extraction and ClinicalTrials.gov discovery pipelines and is wrapped in an `asyncio.timeout(3600)` — a 1-hour hard cap.
 
 1. Collects distinct gene symbols from `genes` (Table 1) and `clinical_trials` (Table 2). Table 2's `genetic_target` column is split on `,`, `;`, and `/` to unpack multi-gene entries. Run `--clinical-trials` first when newly discovered trials should feed this set.
-2. Extracts all PMIDs from the `genes.references` column via `extract_pmids_from_text()` (a 7–9 digit regex to avoid year-like tokens).
+2. Extracts all PMIDs from the `genes.references` column via `extract_pmids_from_text()` — defined in `pubmed_citations.py` and matching `\b(\d{7,9})\b` to avoid year-like tokens.
 3. **NCBI Gene info** (`ncbi_gene_fetch.py`): fetches description, aliases, and NCBI UID. Upserts into `ncbi_gene_info`.
 4. **UniProt info** (`uniprot_fetch.py`): fetches protein name, GO annotations (biological process, molecular function, cellular component), and UniProt URL. Upserts into `uniprot_info`. Only Table 1 genes are synced to UniProt — Table 2 (clinical trials) does not display protein-level data.
 5. **PubMed citations** (`pubmed_citations.py`): fetches formatted bibliographic data (authors, title, journal, date, DOI). Upserts into `pubmed_citations`.
@@ -239,7 +239,9 @@ Sending is wrapped in a Tenacity `@retry` decorator: up to `notify_max_retries` 
 
 ### Event log (`event_log.py`)
 
-Before dispatching the notification, `_record_and_notify()` persists a `pipeline_completed` event (with the full run data as JSON) to a local SQLite database at `PIPELINE_EVENT_DB_PATH` (default `logs/events.db`, WAL journal mode). After a successful Apprise send, the event is stamped via `mark_notified()`. `get_pending()` returns events where `notified = 0`, useful for replaying missed notifications and for cross-run deduplication / audit trails.
+`event_log.py` defines the `EventLog` class with three methods: `record(event_type, data)` persists a JSON-serialised event to a local SQLite database at `PIPELINE_EVENT_DB_PATH` (default `logs/events.db`, WAL journal mode); `mark_notified(event_ids)` stamps events after a successful notification dispatch; `get_pending()` returns events where `notified = 0`, useful for replaying missed notifications and for cross-run deduplication / audit trails.
+
+The orchestration function `_record_and_notify()` lives in `main.py` (not `event_log.py`) and offloads the blocking SQLite + Apprise work to a worker thread via `asyncio.to_thread`. It records a `pipeline_completed` event, sends the Apprise notification, then stamps the event as notified — all under a single `EventLog` context manager.
 
 ### Healthcheck (`healthcheck.py`)
 
@@ -255,7 +257,7 @@ All three are no-ops when `PIPELINE_HEALTHCHECK_URL` is empty and catch-and-log 
 
 `build_run_data()` / `build_local_pdf_run_data()` / `build_pmid_run_data()` assemble a `PipelineRunData` TypedDict from the metrics accumulator, per-paper `PaperResult` list, batch warnings, and run configuration. `write_comprehensive_report()` serialises it to `logs/json/pipeline_report_<timestamp>.json`. `print_rich_summary()` renders a coloured terminal summary using `rich.Panel` and `rich.Table` for interactive runs.
 
-**Cost estimation.** `_estimate_cost()` uses `MODEL_PRICING` from `config.py` (input / output USD per 1M tokens) and applies prompt-caching multipliers: cache writes at 2× base input (because the pipeline uses 1h TTL caches) and cache reads at 0.1× base input. Costs are rounded to cents with `ROUND_HALF_UP`. If the model is absent from the pricing table, the cost field is `None` and a warning is logged.
+**Cost estimation.** Cost is provider-pluggable: the `LLMProvider` protocol declares `estimate_cost(usage, config) -> float | None` (`llm_providers/base.py`), and `report.py` calls it through the protocol. The current `AnthropicProvider.estimate_cost()` uses `_MODEL_PRICING` from `llm_providers/anthropic_provider.py` (input / output USD per 1M tokens — Opus 4.7 `(5.0, 25.0)`, Sonnet 4.6 `(3.0, 15.0)`, Haiku 4.5 `(1.0, 5.0)`) and applies prompt-caching multipliers: cache writes at 2× base input (because the pipeline uses 1h TTL caches) and cache reads at 0.1× base input. `report.py` rounds the result to cents with `ROUND_HALF_UP`. If the provider returns `None` (e.g. unknown model) the cost field is omitted and a warning is logged.
 
 ### Pipeline runs table
 
@@ -281,11 +283,15 @@ Defaults: `rpm=50`, `tpm=100_000`, `estimated_tokens_per_call=40_000`.
 
 ### Shared HTTP client (`http_client.py`)
 
-`AsyncHttpClientManager` is a thin lazy-singleton wrapper over `httpx.AsyncClient` that the validation, NCBI, UniProt, PubMed, and PDF modules share. It stores a `timeout`, `httpx.Limits` (default: 20 max connections, 10 keepalive), and arbitrary `client_kwargs`, returning the same client on every `get()` and closing it on `close()`. `reset()` is provided for test teardown so tests can replace the client without closing it. `pdf_retrieval.py` uses two distinct timeouts: `DEFAULT_TIMEOUT` (30s read) for API calls and `PDF_TIMEOUT` (120s read) for the PDF downloads specifically.
+`AsyncHttpClientManager` is a thin lazy-singleton wrapper over `httpx.AsyncClient` that the validation, NCBI, UniProt, PubMed, and PDF modules share. It stores a `timeout`, `httpx.Limits` (class default: `max_connections=10`, `max_keepalive_connections=5`), and arbitrary `client_kwargs`, returning the same client on every `get()` and closing it on `close()`. `reset()` is provided for test teardown so tests can replace the client without closing it. `pdf_retrieval.py` instantiates its own manager with `max_connections=20`, `max_keepalive_connections=10` to absorb the heavier PDF download workload, and uses two distinct timeouts: `DEFAULT_TIMEOUT` (30s read) for API calls and `PDF_TIMEOUT` (120s read) for the PDF downloads specifically.
 
 ### LRU cache helper (`cache_utils.py`)
 
 `evict_lru(cache, max_size, evict_fraction, label)` drops the oldest `evict_fraction * max_size` entries from an `OrderedDict` once `max_size` is exceeded. The validation, NCBI, UniProt, and PubMed modules all use this helper with `DEFAULT_MAX_SIZE=10_000` / `DEFAULT_EVICT_FRACTION=0.2`. Two related utilities live here too: the `SyncResult` dataclass returned by external-sync sub-modules (`fetched`, `cached`, `failed`, `errors`) and `make_log_progress(label, interval)` which returns a progress-callback that logs every *N* items.
+
+### Quality metrics (`quality_metrics.py`)
+
+`TokenUsage` is a `@dataclass(slots=True)` accumulator with `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, estimated `thinking_tokens`, and a `truncated_responses` counter (incremented when the response hits `stop_reason=max_tokens`). It exposes derived properties `text_output_tokens`, `total_tokens`, and `cache_hit_rate`, and overloads `__iadd__` so metrics from concurrent paper tasks can be merged. `PipelineMetrics` wraps `TokenUsage` alongside per-paper counters (`papers_processed`, `fulltext_retrieved`, `abstract_only`, `genes_extracted`, `genes_validated`, `genes_rejected`) and exposes `gene_acceptance_rate` and `fulltext_rate`. `accumulate_usage(usage, response)` reads the Anthropic response's `usage` block and folds it into a `TokenUsage` instance.
 
 ### Database connection pool (`database.py`)
 
@@ -293,11 +299,11 @@ The `Database` class is a singleton wrapper over `asyncpg.create_pool()` keyed b
 
 ### Alembic migrations
 
-Database schema is managed by Alembic (`pipeline/alembic.ini`, migrations in `pipeline/alembic/versions/`). Migrations use raw SQL via `op.execute()` rather than SQLAlchemy models, mirroring the style of `sql/setup.sql`. Because Alembic runs against a synchronous connection, it requires the `psycopg2-binary` dependency in addition to the pipeline's asyncpg.
+Database schema is managed by Alembic (`pipeline/alembic.ini`, migrations in `pipeline/alembic/versions/`). Migrations use raw SQL via `op.execute()` rather than SQLAlchemy models, mirroring the style of `sql/01_setup.sql`. Because Alembic runs against a synchronous connection, it requires the `psycopg2-binary` dependency in addition to the pipeline's asyncpg.
 
 | Revision | Purpose |
 | -------- | ------- |
-| `001_baseline_schema` | Baseline — creates `genes`, `clinical_trials`, `pubmed_refs`, `ncbi_gene_info`, `uniprot_info`, `pubmed_citations`, plus indexes and the `update_timestamp()` trigger. Equivalent to running `sql/setup.sql` + `sql/add_external_data_tables.sql`. |
+| `001_baseline_schema` | Baseline — creates `genes`, `clinical_trials`, `pubmed_refs`, `ncbi_gene_info`, `uniprot_info`, `pubmed_citations`, plus indexes and the `update_timestamp()` trigger. Equivalent to running `sql/01_setup.sql` + `sql/02_add_external_data_tables.sql`. |
 | `002_add_upper_gene_index` | Adds a functional index on `UPPER(gene)` for case-insensitive gene lookups. |
 | `003_add_pipeline_runs_table` | Creates the `pipeline_runs` table with an index on `run_timestamp DESC`. |
 
@@ -327,7 +333,8 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `PIPELINE_LLM_MODEL` | `claude-opus-4-7` | Anthropic model ID |
+| `PIPELINE_LLM_PROVIDER` | `anthropic` | Selects the `LLMProvider` backend. Validated against `LLM_PROVIDERS` in `config.py`; `anthropic` is currently the only built-in value |
+| `PIPELINE_LLM_MODEL` | `claude-opus-4-7` | Anthropic model ID. Use the full dated ID (`claude-haiku-4-5-20251001`) for Haiku |
 | `PIPELINE_LLM_MAX_TOKENS` | `0` (auto) | Max output tokens per call. `0` auto-resolves to the model's maximum from `MODEL_MAX_OUTPUT_TOKENS` (Opus 4.7 → 128,000; Sonnet 4.6 / Haiku 4.5 → 64,000) |
 | `PIPELINE_LLM_EFFORT` | `high` | Adaptive-thinking effort level (`low`, `medium`, `high`, `xhigh`, `max`). `xhigh` and `max` are Opus-tier only |
 | `PIPELINE_PROMPT_VERSION` | `v5` | Selects a versioned prompt from `prompts.py` (`v1`–`v5`) |
@@ -359,6 +366,18 @@ All settings are fields on `PipelineConfig` (`pipeline/config.py`). Each can be 
 | `PIPELINE_CONFIDENCE_THRESHOLD` | `0.65` | Minimum confidence for a gene to pass Stage 1 |
 | `PIPELINE_NCBI_RATE_LIMIT` | `10` | Max concurrent NCBI requests (semaphore size) |
 | `PIPELINE_UNIPROT_RATE_LIMIT` | `5` | Max concurrent UniProt requests |
+
+### Clinical trials
+
+Tunables for the `--clinical-trials` mode. See the [ClinicalTrials.gov Sync](#clinicaltrialsgov-sync) section for behaviour details.
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `PIPELINE_CT_ENABLED` | `true` | Gate the CTG sync (`true`/`false`) |
+| `PIPELINE_CT_SEARCH_TERMS` | `DEFAULT_CT_SEARCH_TERMS` | Comma-separated condition terms (overrides the default list in `config.py`) |
+| `PIPELINE_CT_PAGE_SIZE` | `100` | CTG `pageSize` parameter |
+| `PIPELINE_CT_MAX_CONCURRENCY` | `5` | Semaphore size for concurrent requests |
+| `PIPELINE_CT_MAX_RETRIES` | `3` | Retries on 429 / 5xx / timeout per page |
 
 ### Database
 
@@ -402,12 +421,14 @@ flowchart LR
         NI[ncbi_gene_info]
         UI[uniprot_info]
         PC[pubmed_citations]
+        PR[pipeline_runs]
     end
 
     subgraph trigger_update.R
         C1[clean_table1]
         C2[clean_table2]
         RD[read_external_data]
+        PS[read_pipeline_status]
     end
 
     subgraph "data/qs/"
@@ -418,6 +439,7 @@ flowchart LR
         Q5[prot_info_clean.qs]
         Q6[refs.qs]
         Q7[gwas_trait_names.qs]
+        Q8[pipeline_status.qs]
     end
 
     G --> C1 --> Q1
@@ -427,9 +449,10 @@ flowchart LR
     UI --> RD --> Q5
     PC --> RD --> Q6
     Q1 --> Q7
+    PR --> PS --> Q8
 ```
 
-The script runs 7 sequential steps:
+The script runs 8 sequential steps:
 
 1. Fetch and clean the genes table via `clean_table1()` (column renaming, list-column parsing, data type normalization).
 2. Fetch and clean the clinical trials table via `clean_table2()`.
@@ -438,5 +461,6 @@ The script runs 7 sequential steps:
 5. Read UniProt protein info from the `uniprot_info` cache table.
 6. Read PubMed citation references from the `pubmed_citations` cache table.
 7. Extract the GWAS trait name mapping from the cleaned Table 1 data.
+8. Read the most recent row from `pipeline_runs` and save to `pipeline_status.qs`. This row populates the "Last pipeline run" metadata on the dashboard About tab; missing/empty results are tolerated (the file is still written as `NULL`).
 
 The Shiny app reads only from QS files at runtime -- it has no database connection.
