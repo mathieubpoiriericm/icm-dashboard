@@ -32,6 +32,7 @@ from scripts.distill_pubmed_keywords import (
     _rank_terms,
     _render_query,
     aggregate_mesh,
+    build_baseline_cache,
     distill_keywords,
     fetch_fulltext_batch,
     fetch_mesh_terms,
@@ -187,9 +188,14 @@ class TestRankTermsLLR:
         df = Counter({("common",): 1, ("rare",): 5})
         bg = Counter({("common",): 5_000, ("rare",): 2})
         result = _rank_terms(
-            fg, df, bg,
-            total_fg=1_000, total_bg=10_000,
-            min_df=1, top_n=10, min_llr=0.0,
+            fg,
+            df,
+            bg,
+            total_fg=1_000,
+            total_bg=10_000,
+            min_df=1,
+            top_n=10,
+            min_llr=0.0,
         )
         terms = [r.term for r in result]
         assert "rare" in terms
@@ -199,9 +205,14 @@ class TestRankTermsLLR:
         fg = Counter({("x",): 5, ("y",): 2})
         df = Counter({("x",): 3, ("y",): 2})
         result = _rank_terms(
-            fg, df, None,
-            total_fg=7, total_bg=None,
-            min_df=1, top_n=10, min_llr=0.0,
+            fg,
+            df,
+            None,
+            total_fg=7,
+            total_bg=None,
+            min_df=1,
+            top_n=10,
+            min_llr=0.0,
         )
         assert result[0].term == "x"
         assert result[0].llr == 0.0  # no LLR computed in DF fallback
@@ -211,9 +222,14 @@ class TestRankTermsLLR:
         df = Counter({("kept",): 2, ("dropped",): 1})
         bg = Counter({("kept",): 0, ("dropped",): 0})
         result = _rank_terms(
-            fg, df, bg,
-            total_fg=4, total_bg=1_000,
-            min_df=2, top_n=10, min_llr=0.0,
+            fg,
+            df,
+            bg,
+            total_fg=4,
+            total_bg=1_000,
+            min_df=2,
+            top_n=10,
+            min_llr=0.0,
         )
         terms = [r.term for r in result]
         assert "kept" in terms
@@ -225,12 +241,49 @@ class TestRankTermsLLR:
         bg = Counter({("gene",): 1})
         display = {("gene",): "GENES"}
         result = _rank_terms(
-            fg, df, bg,
-            total_fg=3, total_bg=1_000,
-            min_df=1, top_n=10, min_llr=0.0,
+            fg,
+            df,
+            bg,
+            total_fg=3,
+            total_bg=1_000,
+            min_df=1,
+            top_n=10,
+            min_llr=0.0,
             display=display,
         )
         assert result[0].term == "GENES"
+
+    def test_non_positive_top_n_returns_empty(self) -> None:
+        fg = Counter({("gene",): 3})
+        df = Counter({("gene",): 2})
+        bg = Counter({("gene",): 1})
+
+        assert (
+            _rank_terms(
+                fg,
+                df,
+                bg,
+                total_fg=3,
+                total_bg=1_000,
+                min_df=1,
+                top_n=0,
+                min_llr=0.0,
+            )
+            == []
+        )
+        assert (
+            _rank_terms(
+                fg,
+                df,
+                None,
+                total_fg=3,
+                total_bg=None,
+                min_df=1,
+                top_n=-1,
+                min_llr=0.0,
+            )
+            == []
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -312,10 +365,14 @@ class TestAggregateMesh:
         # DF dominates → Z ranks first.
         pmid_to_descriptors = {
             "p1": [MeshDescriptor(term="Z", ui="D3", major=False)],
-            "p2": [MeshDescriptor(term="Z", ui="D3", major=False),
-                   MeshDescriptor(term="W", ui="D4", major=True)],
-            "p3": [MeshDescriptor(term="Z", ui="D3", major=False),
-                   MeshDescriptor(term="W", ui="D4", major=True)],
+            "p2": [
+                MeshDescriptor(term="Z", ui="D3", major=False),
+                MeshDescriptor(term="W", ui="D4", major=True),
+            ],
+            "p3": [
+                MeshDescriptor(term="Z", ui="D3", major=False),
+                MeshDescriptor(term="W", ui="D4", major=True),
+            ],
         }
         result = aggregate_mesh(pmid_to_descriptors, top_n=10)
         assert result[0].term == "Z"
@@ -341,6 +398,13 @@ class TestAggregateMesh:
         assert by_term["X"].total_count == 2
         assert by_term["Y"].document_frequency == 1
         assert by_term["Y"].total_count == 1
+
+    def test_non_positive_top_n_returns_empty(self) -> None:
+        pmid_to_descriptors = {
+            "p1": [MeshDescriptor(term="X", ui="D1", major=True)],
+        }
+        assert aggregate_mesh(pmid_to_descriptors, top_n=0) == []
+        assert aggregate_mesh(pmid_to_descriptors, top_n=-1) == []
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +451,22 @@ class TestBuildQuery:
     def test_structured_query_returns_empty_when_no_input(self) -> None:
         assert format_structured_query([], [], mesh_top=10, phrase_top=10) == ""
 
+    def test_query_terms_are_sanitized_before_quoting(self) -> None:
+        scores = [
+            KeywordScore(
+                term='white "matter"\nhyperintensities',
+                document_frequency=3,
+                total_count=3,
+            ),
+            KeywordScore(term='""', document_frequency=2, total_count=2),
+            KeywordScore(term="microbleeds", document_frequency=1, total_count=1),
+        ]
+        q = format_titleabstract_query(scores, top=2)
+        assert q == (
+            '"white matter hyperintensities"[Title/Abstract] OR '
+            '"microbleeds"[Title/Abstract]'
+        )
+
 
 # ---------------------------------------------------------------------------
 # Baseline cache I/O
@@ -420,9 +500,7 @@ def _write_baseline_payload(
 class TestBaselineCache:
     def test_roundtrip(self, tmp_path: Path) -> None:
         path = tmp_path / "baseline.json.gz"
-        _write_baseline_payload(
-            path, built_at=dt.datetime.now(dt.UTC).isoformat()
-        )
+        _write_baseline_payload(path, built_at=dt.datetime.now(dt.UTC).isoformat())
         bc = load_baseline_cache(path)
         assert bc.total_docs == 10
         # Unigrams stored flat in JSON; loaded as `(stem,)` tuples to
@@ -447,6 +525,91 @@ class TestBaselineCache:
         with pytest.raises(RuntimeError, match="schema"):
             load_baseline_cache(path)
 
+    def test_corrupt_cache_raises_runtime_error(self, tmp_path: Path) -> None:
+        path = tmp_path / "baseline.json.gz"
+        path.write_bytes(b"not gzip")
+
+        with pytest.raises(RuntimeError, match="Could not read baseline cache"):
+            load_baseline_cache(path)
+
+    def test_missing_required_cache_field_raises_runtime_error(
+        self, tmp_path: Path
+    ) -> None:
+        # Removing a required field is structurally different from overriding it
+        # (override with None still leaves the key present), so this case can't
+        # share the parametrized fixture below.
+        path = tmp_path / "baseline.json.gz"
+        _write_baseline_payload(path, built_at=dt.datetime.now(dt.UTC).isoformat())
+        with gzip.open(path, "rt", encoding="utf-8") as gz:
+            payload = json.load(gz)
+        del payload["trigrams"]
+        with gzip.open(path, "wt", encoding="utf-8") as gz:
+            json.dump(payload, gz)
+
+        with pytest.raises(RuntimeError, match="missing required"):
+            load_baseline_cache(path)
+
+    @pytest.mark.parametrize(
+        ("override", "match"),
+        [
+            pytest.param(
+                {"unigrams": ["not", "a", "mapping"]},
+                "unigrams",
+                id="non-mapping-counter",
+            ),
+            pytest.param(
+                {"acronyms": {"MRI": -1}},
+                "negative",
+                id="negative-count",
+            ),
+            pytest.param(
+                {"unigrams": {"gene": 1.8}},
+                "non-integer",
+                id="float-count",
+            ),
+            pytest.param(
+                {"total_docs": True},
+                "non-integer",
+                id="bool-total",
+            ),
+            pytest.param(
+                {"bigrams": {"one-token": 1}},
+                "bigrams",
+                id="wrong-ngram-arity",
+            ),
+            pytest.param(
+                {"total_unigrams": 1},
+                "total_unigrams",
+                id="total-smaller-than-counts",
+            ),
+            pytest.param(
+                {
+                    "total_docs": 0,
+                    "total_unigrams": 0,
+                    "total_bigrams": 0,
+                    "total_acronyms": 0,
+                    "unigrams": {},
+                    "bigrams": {},
+                    "acronyms": {},
+                },
+                "total_docs",
+                id="zero-document-baseline",
+            ),
+        ],
+    )
+    def test_malformed_baseline_payload_raises_runtime_error(
+        self, tmp_path: Path, override: dict, match: str
+    ) -> None:
+        path = tmp_path / "baseline.json.gz"
+        _write_baseline_payload(
+            path,
+            built_at=dt.datetime.now(dt.UTC).isoformat(),
+            override=override,
+        )
+
+        with pytest.raises(RuntimeError, match=match):
+            load_baseline_cache(path)
+
     def test_stale_logs_warning(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -465,6 +628,29 @@ class TestBaselineCache:
         _write_baseline_payload(path, built_at="2025-01-01T00:00:00")
         bc = load_baseline_cache(path)
         assert bc.total_docs == 10
+
+    def test_build_rejects_invalid_sizes_before_network(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="size"):
+            build_baseline_cache(
+                0,
+                tmp_path / "baseline.json.gz",
+                pdat_range="2020:2024",
+            )
+        with pytest.raises(ValueError, match="batch_size"):
+            build_baseline_cache(
+                10,
+                tmp_path / "baseline.json.gz",
+                pdat_range="2020:2024",
+                batch_size=0,
+            )
+
+    def test_build_rejects_reversed_pdat_before_network(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="start year"):
+            build_baseline_cache(
+                10,
+                tmp_path / "baseline.json.gz",
+                pdat_range="2024:2020",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -533,9 +719,7 @@ class TestMeshCache:
         )
         assert second_calls == []
 
-    def test_pmid_absent_from_response_is_not_cached(
-        self, tmp_path: Path
-    ) -> None:
+    def test_pmid_absent_from_response_is_not_cached(self, tmp_path: Path) -> None:
         # If NCBI's efetch response omits a PMID (truncation, partial
         # response), the function must not write a permanent empty
         # descriptors cache entry for it — that would silently drop the
@@ -563,9 +747,7 @@ class TestMeshCache:
         assert "12345678" not in result
         assert not (tmp_path / "12345678.json").exists()
 
-    def test_refuses_non_numeric_pmid_at_cache_write(
-        self, tmp_path: Path
-    ) -> None:
+    def test_refuses_non_numeric_pmid_at_cache_write(self, tmp_path: Path) -> None:
         # Defense in depth: even if a non-numeric PMID slips past
         # parse_mods_file (e.g., a direct caller bypasses the corpus
         # loader), the cache write must refuse to use it as a filename
@@ -584,6 +766,55 @@ class TestMeshCache:
         assert "../escape" not in result
         # The traversal would have landed in tmp_path.parent if unguarded.
         assert not (tmp_path.parent / "escape.json").exists()
+
+    def test_duplicate_pmids_are_deduped_before_fetch(self, tmp_path: Path) -> None:
+        fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+        calls: list[list[str]] = []
+        progress: list[tuple[int, int]] = []
+
+        def stub_fetcher(batch: list[str]) -> bytes:
+            calls.append(list(batch))
+            return fixture
+
+        result = fetch_mesh_terms(
+            ["15905468", "15905468", "23649698"],
+            cache_dir=tmp_path,
+            fetcher=stub_fetcher,
+            progress_callback=lambda c, t: progress.append((c, t)),
+        )
+
+        assert calls == [["15905468", "23649698"]]
+        assert set(result) == {"15905468", "23649698"}
+        assert progress[-1] == (2, 2)
+
+    def test_cache_pmid_mismatch_is_refetched(self, tmp_path: Path) -> None:
+        (tmp_path / "15905468.json").write_text(
+            json.dumps(
+                {
+                    "pmid": "23649698",
+                    "descriptors": [{"term": "Wrong", "ui": "D0", "major": False}],
+                    "fetched_at": "2025-01-01T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+        fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+        calls: list[list[str]] = []
+
+        def stub_fetcher(batch: list[str]) -> bytes:
+            calls.append(list(batch))
+            return fixture
+
+        result = fetch_mesh_terms(
+            ["15905468"], cache_dir=tmp_path, fetcher=stub_fetcher
+        )
+
+        assert calls == [["15905468"]]
+        assert result["15905468"][0].term != "Wrong"
+
+    def test_rejects_non_positive_batch_size(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="batch_size"):
+            fetch_mesh_terms(["15905468"], cache_dir=tmp_path, batch_size=0)
 
 
 def _write_mods(path: Path, *, pmid: str) -> None:
@@ -697,7 +928,7 @@ class TestDistillKeywords:
                 pmid="111",
                 title="cerebral microbleeds and white matter hyperintensities",
                 abstract="MRI confirmed white matter hyperintensities and "
-                         "cerebral microbleeds in patients with SVD.",
+                "cerebral microbleeds in patients with SVD.",
             ),
             PaperText(
                 pmid="222",
@@ -1022,6 +1253,22 @@ class TestFetchFulltextBatch:
         assert "123" not in out
         assert not (tmp_path / "123.json").exists()
 
+    def test_skips_on_malformed_elink_payload(self, tmp_path: Path) -> None:
+        calls: list[tuple[int, int]] = []
+
+        out = fetch_fulltext_batch(
+            ["123", "456"],
+            tmp_path,
+            fetcher_elink=lambda _batch: None,
+            fetcher_efetch=lambda _pmcid: None,
+            progress_callback=lambda c, t: calls.append((c, t)),
+        )
+
+        assert out == {}
+        assert calls[-1] == (2, 2)
+        assert not (tmp_path / "123.json").exists()
+        assert not (tmp_path / "456.json").exists()
+
     def test_skips_cache_write_on_xml_parse_error(self, tmp_path: Path) -> None:
         def stub_elink(batch: list[str]) -> dict[str, str | None]:
             return dict.fromkeys(batch, "PMC777")
@@ -1040,9 +1287,7 @@ class TestFetchFulltextBatch:
         assert "555" not in out
         assert not (tmp_path / "555.json").exists()
 
-    def test_batches_elink_for_multiple_missing_pmids(
-        self, tmp_path: Path
-    ) -> None:
+    def test_batches_elink_for_multiple_missing_pmids(self, tmp_path: Path) -> None:
         # The whole point of batching is one elink call per
         # fetch_fulltext_batch invocation, regardless of how many PMIDs
         # are missing from cache.
@@ -1106,6 +1351,36 @@ class TestFetchFulltextBatch:
         assert out["777"].pmcid == "PMC777"
         assert "schema mismatch" in caplog.text.lower()
 
+    def test_refetches_on_missing_sections_mapping(self, tmp_path: Path) -> None:
+        (tmp_path / "777.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": FULLTEXT_SCHEMA_VERSION,
+                    "pmid": "777",
+                    "pmcid": "PMC777",
+                    "fetched_at": "2025-01-01T00:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+        elink_calls: list[list[str]] = []
+
+        def stub_elink(batch: list[str]) -> dict[str, str | None]:
+            elink_calls.append(list(batch))
+            return dict.fromkeys(batch, "PMC777")
+
+        out = fetch_fulltext_batch(
+            ["777"],
+            tmp_path,
+            fetcher_elink=stub_elink,
+            fetcher_efetch=lambda _pmcid: jats_bytes,
+        )
+
+        assert elink_calls == [["777"]]
+        assert "small vessel disease" in out["777"].introduction.lower()
+
     def test_pmid_absent_from_elink_response_is_not_cached(
         self, tmp_path: Path
     ) -> None:
@@ -1135,6 +1410,78 @@ class TestFetchFulltextBatch:
         # PMID 222 was absent from the response → no cache, retry next run.
         assert "222" not in out
         assert not (tmp_path / "222.json").exists()
+
+    def test_refuses_non_numeric_pmids_before_fetch(self, tmp_path: Path) -> None:
+        elink_calls: list[list[str]] = []
+
+        def fail_elink(batch: list[str]) -> dict[str, str | None]:
+            elink_calls.append(batch)
+            raise AssertionError("invalid PMID must not reach elink")
+
+        out = fetch_fulltext_batch(
+            ["../escape"],
+            tmp_path,
+            fetcher_elink=fail_elink,
+            fetcher_efetch=lambda _pmcid: None,
+        )
+
+        assert out == {}
+        assert elink_calls == []
+        assert not (tmp_path.parent / "escape.json").exists()
+
+    def test_duplicate_pmids_are_deduped_before_elink(self, tmp_path: Path) -> None:
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+        elink_calls: list[list[str]] = []
+        progress: list[tuple[int, int]] = []
+
+        def stub_elink(batch: list[str]) -> dict[str, str | None]:
+            elink_calls.append(list(batch))
+            return dict.fromkeys(batch, "PMC1")
+
+        out = fetch_fulltext_batch(
+            ["15905468", "15905468"],
+            tmp_path,
+            fetcher_elink=stub_elink,
+            fetcher_efetch=lambda _pmcid: jats_bytes,
+            progress_callback=lambda c, t: progress.append((c, t)),
+        )
+
+        assert elink_calls == [["15905468"]]
+        assert set(out) == {"15905468"}
+        assert progress[-1] == (1, 1)
+
+    def test_cache_pmid_mismatch_is_refetched(self, tmp_path: Path) -> None:
+        _write_cached_record(
+            tmp_path,
+            FulltextRecord(
+                pmid="222",
+                pmcid="PMC222",
+                introduction="wrong cached intro",
+            ),
+        )
+        # Move the mismatched payload under the requested PMID filename.
+        (tmp_path / "111.json").write_text(
+            (tmp_path / "222.json").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+        elink_calls: list[list[str]] = []
+
+        def stub_elink(batch: list[str]) -> dict[str, str | None]:
+            elink_calls.append(list(batch))
+            return dict.fromkeys(batch, "PMC111")
+
+        out = fetch_fulltext_batch(
+            ["111"],
+            tmp_path,
+            fetcher_elink=stub_elink,
+            fetcher_efetch=lambda _pmcid: jats_bytes,
+        )
+
+        assert elink_calls == [["111"]]
+        assert out["111"].pmid == "111"
+        assert out["111"].introduction != "wrong cached intro"
 
 
 class TestNcbiRetry:
@@ -1170,9 +1517,7 @@ class TestNcbiRetry:
         assert attempts["open"] == 3
         assert attempts["read"] == 3
 
-    def test_reader_exhausts_and_raises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_reader_exhausts_and_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import scripts.distill_pubmed_keywords as mod
 
         monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
@@ -1192,9 +1537,7 @@ class TestNcbiRetry:
 
 
 class TestDefaultPmidsToPmcids:
-    def test_parses_pmcid_from_linkset(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_parses_pmcid_from_linkset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Verify the default elink wrapper actually maps source PMID
         # to PMC{linked_id} when given a realistic Entrez.read output.
         # Tests bypass this in TestFetchFulltextBatch via the
@@ -1259,8 +1602,7 @@ def test_paper_text_combined_includes_fulltext() -> None:
         fulltext="Body text covering Methods and Results.",
     )
     assert paper.combined == (
-        "A study of vessels We measured things. "
-        "Body text covering Methods and Results."
+        "A study of vessels We measured things. Body text covering Methods and Results."
     )
 
 
@@ -1311,7 +1653,7 @@ def _stub_corpus(tmp_path: Path) -> Path:
         "  <mods>\n"
         "    <titleInfo><title>Stub title</title></titleInfo>\n"
         "    <abstract>Stub abstract.</abstract>\n"
-        "    <identifier type=\"pubmed\">12345</identifier>\n"
+        '    <identifier type="pubmed">12345</identifier>\n'
         "  </mods>\n"
         "</modsCollection>\n",
         encoding="utf-8",
@@ -1354,9 +1696,7 @@ def test_main_no_fulltext_flag_skips_fetch(
         calls.append((args, kwargs))
         return {}
 
-    monkeypatch.setattr(
-        "scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy
-    )
+    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
 
     rc = main(
         [
@@ -1399,9 +1739,7 @@ def test_main_default_invokes_fulltext_fetch(
             )
         }
 
-    monkeypatch.setattr(
-        "scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy
-    )
+    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
 
     rc = main(
         [
@@ -1419,6 +1757,36 @@ def test_main_default_invokes_fulltext_fetch(
     )
     assert rc == 0
     assert received_pmids == [["12345"]]
+
+
+def test_main_missing_baseline_fails_before_fulltext_fetch(
+    _stub_corpus: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple, dict]] = []
+
+    def spy(*args, **kwargs):  # noqa: ANN002, ANN003
+        calls.append((args, kwargs))
+        return {}
+
+    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(tmp_path / "missing.json.gz"),
+            "--no-mesh",
+            "--json",
+            "--output",
+            str(tmp_path / "out.json"),
+        ]
+    )
+
+    assert rc == 1
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -1443,9 +1811,7 @@ class TestRenderQuery:
         # class landed on the right color.
         spanned: dict[str, set[str]] = {}
         for span in text.spans:
-            spanned.setdefault(str(span.style), set()).add(
-                q[span.start : span.end]
-            )
+            spanned.setdefault(str(span.style), set()).add(q[span.start : span.end])
 
         ops = spanned.get("bold magenta", set())
         assert {"AND", "OR", "NOT"}.issubset(ops)
@@ -1484,9 +1850,7 @@ def test_fetch_mesh_terms_invokes_progress_callback(tmp_path: Path) -> None:
         json.dumps(
             {
                 "pmid": "111",
-                "descriptors": [
-                    {"term": "Brain", "ui": "D001921", "major": True}
-                ],
+                "descriptors": [{"term": "Brain", "ui": "D001921", "major": True}],
                 "fetched_at": "2025-01-01T00:00:00",
             }
         ),
@@ -1512,11 +1876,41 @@ def test_fetch_mesh_terms_invokes_progress_callback(tmp_path: Path) -> None:
     # Final reported completion must be 3/3 (full coverage).
     assert calls[-1] == (3, 3)
     # Monotonic non-decreasing across the run.
-    assert all(
-        calls[i][0] <= calls[i + 1][0] for i in range(len(calls) - 1)
-    )
+    assert all(calls[i][0] <= calls[i + 1][0] for i in range(len(calls) - 1))
     # Total is constant across the run.
     assert {t for _, t in calls} == {3}
+
+
+def test_fetch_mesh_terms_progress_completes_on_fetch_error(tmp_path: Path) -> None:
+    def broken_fetcher(_batch: list[str]) -> bytes:
+        raise RuntimeError("simulated NCBI failure")
+
+    calls: list[tuple[int, int]] = []
+    out = fetch_mesh_terms(
+        ["111", "222"],
+        cache_dir=tmp_path,
+        fetcher=broken_fetcher,
+        batch_size=2,
+        progress_callback=lambda c, t: calls.append((c, t)),
+    )
+
+    assert out == {}
+    assert calls[-1] == (2, 2)
+
+
+def test_fetch_mesh_terms_progress_completes_on_omitted_pmid(tmp_path: Path) -> None:
+    fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+    calls: list[tuple[int, int]] = []
+
+    out = fetch_mesh_terms(
+        ["12345678"],
+        cache_dir=tmp_path,
+        fetcher=lambda _batch: fixture,
+        progress_callback=lambda c, t: calls.append((c, t)),
+    )
+
+    assert out == {}
+    assert calls[-1] == (1, 1)
 
 
 def test_fetch_fulltext_batch_invokes_progress_callback(tmp_path: Path) -> None:
@@ -1546,10 +1940,27 @@ def test_fetch_fulltext_batch_invokes_progress_callback(tmp_path: Path) -> None:
     # Final completion must equal total — the try/finally ensures the
     # callback ticks even when the PMID is dropped from elink.
     assert calls[-1] == (3, 3)
-    assert all(
-        calls[i][0] <= calls[i + 1][0] for i in range(len(calls) - 1)
-    )
+    assert all(calls[i][0] <= calls[i + 1][0] for i in range(len(calls) - 1))
     assert {t for _, t in calls} == {3}
+
+
+def test_fetch_fulltext_batch_progress_completes_on_elink_error(
+    tmp_path: Path,
+) -> None:
+    def broken_elink(_batch: list[str]) -> dict[str, str | None]:
+        raise RuntimeError("simulated NCBI failure")
+
+    calls: list[tuple[int, int]] = []
+    out = fetch_fulltext_batch(
+        ["111", "222"],
+        tmp_path,
+        fetcher_elink=broken_elink,
+        fetcher_efetch=lambda _pmcid: None,
+        progress_callback=lambda c, t: calls.append((c, t)),
+    )
+
+    assert out == {}
+    assert calls[-1] == (2, 2)
 
 
 def test_load_corpus_invokes_progress_callback_monotonically(
@@ -1562,11 +1973,9 @@ def test_load_corpus_invokes_progress_callback_monotonically(
     # still fire (attempted, not just parsed).
     for i, body in enumerate(
         (
-            "<titleInfo><title>One</title></titleInfo>"
-            "<abstract>A1.</abstract>",
+            "<titleInfo><title>One</title></titleInfo><abstract>A1.</abstract>",
             "",  # empty mods body — skipped
-            "<titleInfo><title>Three</title></titleInfo>"
-            "<abstract>A3.</abstract>",
+            "<titleInfo><title>Three</title></titleInfo><abstract>A3.</abstract>",
         ),
         start=1,
     ):

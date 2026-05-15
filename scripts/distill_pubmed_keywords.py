@@ -137,6 +137,7 @@ DEFAULT_MESH_BATCH: Final[int] = 50
 BASELINE_STALE_DAYS: Final[int] = 365
 BASELINE_SCHEMA_VERSION: Final[int] = 1
 FULLTEXT_SCHEMA_VERSION: Final[int] = 1
+_BASELINE_REBUILD_HINT: Final[str] = "Rebuild with --build-baseline."
 # Drop n-grams with baseline count < this from the cache file to keep
 # it under ~50MB. Side effect: LLR for cSVD n-grams that happen to occur
 # exactly once in baseline treats their baseline count as 0 (smoothed
@@ -154,7 +155,10 @@ DEFAULT_MIN_LLR: Final[float] = 6.63
 
 # Query-format choices — `_QUERY_FORMATS[0]` is "all" (default).
 _QUERY_FORMATS: Final[tuple[str, ...]] = (
-    "all", "structured", "mesh", "titleabstract",
+    "all",
+    "structured",
+    "mesh",
+    "titleabstract",
 )
 _QUERY_FORMAT_VARIANTS: Final[tuple[str, ...]] = _QUERY_FORMATS[1:]
 
@@ -168,9 +172,9 @@ _ACCENT_COLOR: Final[str] = "#FA4616"
 # is the fallback for anything that isn't whitespace, paren, bracket,
 # or quote.
 _QUERY_TOKEN_RE: Final[re.Pattern[str]] = re.compile(
-    r'(?P<paren>[()])'
-    r'|(?P<op>\bAND\b|\bOR\b|\bNOT\b)'
-    r'|(?P<tag>\[[^\]]+\])'
+    r"(?P<paren>[()])"
+    r"|(?P<op>\bAND\b|\bOR\b|\bNOT\b)"
+    r"|(?P<tag>\[[^\]]+\])"
     r'|(?P<phrase>"[^"]*")'
     r'|(?P<bare>[^\s()\[\]"]+)'
 )
@@ -227,33 +231,158 @@ _SAFE_PARSER: Final[etree.XMLParser] = etree.XMLParser(
 _STOPWORDS: Final[frozenset[str]] = frozenset(
     {
         # Articles, prepositions, conjunctions
-        "a", "an", "the", "and", "or", "but", "if", "of", "at", "by",
-        "for", "with", "about", "against", "between", "into", "through",
-        "during", "before", "after", "above", "below", "to", "from", "up",
-        "down", "in", "out", "on", "off", "over", "under", "than", "then",
-        "once", "here", "there", "when", "where", "why", "how", "as",
-        "because", "while", "although", "though", "since", "unless",
-        "until", "whether", "via", "across", "within", "without", "among",
-        "per", "upon",
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "if",
+        "of",
+        "at",
+        "by",
+        "for",
+        "with",
+        "about",
+        "against",
+        "between",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "to",
+        "from",
+        "up",
+        "down",
+        "in",
+        "out",
+        "on",
+        "off",
+        "over",
+        "under",
+        "than",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "as",
+        "because",
+        "while",
+        "although",
+        "though",
+        "since",
+        "unless",
+        "until",
+        "whether",
+        "via",
+        "across",
+        "within",
+        "without",
+        "among",
+        "per",
+        "upon",
         # Pronouns / demonstratives
-        "me", "my", "we", "our", "us", "you", "your", "yours", "he", "him",
-        "his", "she", "her", "hers", "it", "its", "they", "them", "their",
-        "theirs", "what", "which", "who", "whom", "this", "that", "these",
+        "me",
+        "my",
+        "we",
+        "our",
+        "us",
+        "you",
+        "your",
+        "yours",
+        "he",
+        "him",
+        "his",
+        "she",
+        "her",
+        "hers",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "theirs",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "this",
+        "that",
+        "these",
         "those",
         # Aux / common verbs
-        "am", "is", "are", "was", "were", "be", "been", "being", "have",
-        "has", "had", "having", "do", "does", "did", "doing", "would",
-        "could", "should", "ought", "may", "might", "must", "can", "will",
-        "shall", "let",
+        "am",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "having",
+        "do",
+        "does",
+        "did",
+        "doing",
+        "would",
+        "could",
+        "should",
+        "ought",
+        "may",
+        "might",
+        "must",
+        "can",
+        "will",
+        "shall",
+        "let",
         # Structured-abstract section labels (appear as bare prefixes;
         # LLR helps but they still pollute trigrams).
-        "background", "purpose", "objective", "objectives", "aim", "aims",
-        "introduction", "discussion", "interpretation", "design", "setting",
-        "interventions", "measurements", "outcomes", "outcome", "context",
-        "methods", "results", "conclusions", "conclusion",
+        "background",
+        "purpose",
+        "objective",
+        "objectives",
+        "aim",
+        "aims",
+        "introduction",
+        "discussion",
+        "interpretation",
+        "design",
+        "setting",
+        "interventions",
+        "measurements",
+        "outcomes",
+        "outcome",
+        "context",
+        "methods",
+        "results",
+        "conclusions",
+        "conclusion",
         # Number words
-        "one", "two", "three", "four", "five", "six", "seven", "eight",
-        "nine", "ten", "first", "second", "third", "fourth", "fifth",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "first",
+        "second",
+        "third",
+        "fourth",
+        "fifth",
     }
 )
 
@@ -458,6 +587,26 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
         raise
 
 
+def _unique_valid_pmids(pmids: Iterable[str]) -> list[str]:
+    """Return numeric PMIDs in first-seen order, dropping duplicates.
+
+    Cache and network functions are keyed by PMID, so duplicate inputs only
+    create redundant requests and can make progress callbacks report impossible
+    totals. Invalid PMIDs are skipped here for defense in depth; direct callers
+    can bypass ``parse_mods_file``.
+    """
+    cleaned = (str(p).strip() for p in pmids)
+    valid: list[str] = []
+    for pmid in cleaned:
+        if not pmid:
+            continue
+        if not _is_valid_pmid(pmid):
+            logger.warning(f"Refusing to use non-numeric PMID {pmid!r}")
+            continue
+        valid.append(pmid)
+    return list(dict.fromkeys(valid))
+
+
 # ---------------------------------------------------------------------------
 # XML PARSING (MODS)
 # ---------------------------------------------------------------------------
@@ -511,9 +660,7 @@ def parse_mods_file(path: Path) -> PaperText | None:
         # later be interpolated into cache filenames. The paper still
         # loads (title+abstract are usable), just without MeSH/full-text
         # enrichment which require a valid PMID.
-        logger.warning(
-            f"Ignoring non-numeric PMID {pmid_text!r} in {path.name}"
-        )
+        logger.warning(f"Ignoring non-numeric PMID {pmid_text!r} in {path.name}")
         pmid_text = None
 
     return PaperText(
@@ -546,9 +693,7 @@ def load_corpus(
             papers.append(parsed)
         if progress_callback is not None:
             progress_callback(i, total)
-    logger.info(
-        f"Parsed {len(papers)} paper(s) from {total} XML file(s) in {xml_dir}"
-    )
+    logger.info(f"Parsed {len(papers)} paper(s) from {total} XML file(s) in {xml_dir}")
     return papers
 
 
@@ -597,11 +742,7 @@ def stem_key(token: str) -> str:
         return _IRREGULAR_PLURALS[lower]
     if len(lower) < 4:
         return lower
-    if (
-        lower.endswith("ies")
-        and len(lower) > 4
-        and lower[-4] not in "aeiou"
-    ):
+    if lower.endswith("ies") and len(lower) > 4 and lower[-4] not in "aeiou":
         return lower[:-3] + "y"
     if lower.endswith("s") and not any(
         lower.endswith(suf) for suf in _NO_STRIP_SUFFIXES
@@ -658,6 +799,9 @@ def _rank_terms(
     The ``display`` mapping converts the internal hash key (typically a
     tuple of stems) to the surface string shown to the user.
     """
+    if top_n <= 0 or total_fg <= 0:
+        return []
+
     if bg_counts is None or total_bg is None or total_bg == 0:
         return _rank_terms_df(
             fg_counts,
@@ -679,9 +823,7 @@ def _rank_terms(
         if llr < min_llr:
             continue
         term = (
-            display[key]
-            if display is not None and key in display
-            else _stringify(key)
+            display[key] if display is not None and key in display else _stringify(key)
         )
         scored.append(
             KeywordScore(
@@ -705,14 +847,15 @@ def _rank_terms_df(
     display: Mapping[Any, str] | None = None,
 ) -> list[KeywordScore]:
     """Fallback ranking by document frequency — used when no baseline."""
+    if top_n <= 0:
+        return []
+
     scored: list[KeywordScore] = []
     for key, fg in fg_counts.items():
         if fg_doc_freq[key] < min_df:
             continue
         term = (
-            display[key]
-            if display is not None and key in display
-            else _stringify(key)
+            display[key] if display is not None and key in display else _stringify(key)
         )
         scored.append(
             KeywordScore(
@@ -864,23 +1007,28 @@ def build_baseline_cache(
     ``size`` PMIDs. Then ``efetch`` in batches and accumulates n-gram +
     acronym counts. Writes gzipped JSON to ``output_path``.
     """
-    from Bio import Entrez
-
-    resolved_key = _configure_entrez(email=email, api_key=api_key)
+    if size <= 0:
+        raise ValueError(f"size must be positive, got {size}")
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
 
     if not _PDAT_RANGE_PATTERN.match(pdat_range):
         raise ValueError(
-            f"pdat_range must be 'YYYY:YYYY' (e.g. '2020:2024'), "
-            f"got {pdat_range!r}"
+            f"pdat_range must be 'YYYY:YYYY' (e.g. '2020:2024'), got {pdat_range!r}"
         )
     pdat_from, pdat_to = pdat_range.split(":", 1)
+    if int(pdat_from) > int(pdat_to):
+        raise ValueError(
+            f"pdat_range start year must be <= end year, got {pdat_range!r}"
+        )
+    from Bio import Entrez
+
+    resolved_key = _configure_entrez(email=email, api_key=api_key)
     query = (
         f'"english"[Language] AND "journal article"[Publication Type] '
         f'AND ("{pdat_from}"[PDAT] : "{pdat_to}"[PDAT])'
     )
-    logger.info(
-        f"Fetching baseline ({size} abstracts, PDAT={pdat_range})..."
-    )
+    logger.info(f"Fetching baseline ({size} abstracts, PDAT={pdat_range})...")
 
     results = _ncbi_retry(
         Entrez.esearch,
@@ -950,11 +1098,14 @@ def build_baseline_cache(
                 # Fallback when no live progress is wired up — keep the
                 # legacy info-log cadence so headless runs still surface
                 # heartbeat output.
-                logger.info(
-                    f"  baseline progress: {completed}/{len(pmids)} PMIDs"
-                )
+                logger.info(f"  baseline progress: {completed}/{len(pmids)} PMIDs")
 
     logger.info(f"Baseline assembled from {total_docs} parseable abstract(s).")
+    if total_docs == 0:
+        raise RuntimeError(
+            "PubMed baseline fetch produced no parseable abstracts; "
+            "not writing an empty baseline cache."
+        )
 
     # Drop hapaxes from bigrams/trigrams to keep the cache file manageable.
     bi_filtered = Counter(
@@ -999,6 +1150,65 @@ def build_baseline_cache(
     return output_path
 
 
+_REQUIRED_BASELINE_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "params",
+        "total_docs",
+        "total_unigrams",
+        "total_bigrams",
+        "total_trigrams",
+        "total_acronyms",
+        "unigrams",
+        "bigrams",
+        "trigrams",
+        "acronyms",
+    }
+)
+
+
+def _baseline_error(detail: str) -> RuntimeError:
+    return RuntimeError(f"{detail} {_BASELINE_REBUILD_HINT}")
+
+
+def _coerce_baseline_count(name: str, value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _baseline_error(
+            f"Baseline cache field {name!r} contains a non-integer count."
+        )
+    if value < 0:
+        raise _baseline_error(f"Baseline cache field {name!r} has negative counts.")
+    return value
+
+
+def _load_baseline_counter(
+    payload: Mapping[str, Any],
+    name: str,
+    key_mapper: Callable[[str], Any],
+    *,
+    expected_arity: int | None = None,
+) -> Counter[Any]:
+    raw = payload.get(name, {})
+    if not isinstance(raw, Mapping):
+        raise _baseline_error(f"Baseline cache field {name!r} is malformed.")
+    values: dict[Any, int] = {}
+    try:
+        for k, v in raw.items():
+            mapped = key_mapper(str(k))
+            if isinstance(mapped, tuple):
+                if expected_arity is not None and len(mapped) != expected_arity:
+                    raise ValueError(
+                        f"expected {expected_arity} token(s), got {len(mapped)}"
+                    )
+                if any(not part for part in mapped):
+                    raise ValueError("empty token in n-gram key")
+            elif not str(mapped):
+                raise ValueError("empty key")
+            values[mapped] = _coerce_baseline_count(name, v)
+    except (TypeError, ValueError) as e:
+        raise _baseline_error(f"Baseline cache field {name!r} is malformed.") from e
+    return Counter(values)
+
+
 def load_baseline_cache(path: Path) -> BaselineCounts:
     """Read a baseline cache; raise if missing or schema-mismatched."""
     if not path.exists():
@@ -1006,14 +1216,18 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
             f"Baseline cache not found at {path}. Build it first with:\n"
             f"  python {Path(sys.argv[0]).name} --build-baseline"
         )
-    with gzip.open(path, "rt", encoding="utf-8") as gz:
-        payload = json.load(gz)
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as gz:
+            payload = json.load(gz)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise _baseline_error(f"Could not read baseline cache at {path}: {e}.") from e
+    if not isinstance(payload, Mapping):
+        raise _baseline_error(f"Baseline cache at {path} is malformed.")
 
     version = payload.get("schema_version")
     if version != BASELINE_SCHEMA_VERSION:
-        raise RuntimeError(
-            f"Baseline cache schema {version} != expected "
-            f"{BASELINE_SCHEMA_VERSION}. Rebuild with --build-baseline."
+        raise _baseline_error(
+            f"Baseline cache schema {version} != expected {BASELINE_SCHEMA_VERSION}."
         )
 
     built_at_str = str(payload.get("built_at", ""))
@@ -1030,27 +1244,59 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
             f"Consider rebuilding with --build-baseline."
         )
 
+    missing_fields = sorted(_REQUIRED_BASELINE_FIELDS.difference(payload))
+    if missing_fields:
+        joined = ", ".join(repr(f) for f in missing_fields)
+        raise _baseline_error(f"Baseline cache is missing required field(s): {joined}.")
+
+    params = payload["params"]
+    if not isinstance(params, Mapping):
+        raise _baseline_error("Baseline cache field 'params' is malformed.")
+
+    total_docs = _coerce_baseline_count("total_docs", payload["total_docs"])
+    total_unigrams = _coerce_baseline_count("total_unigrams", payload["total_unigrams"])
+    total_bigrams = _coerce_baseline_count("total_bigrams", payload["total_bigrams"])
+    total_trigrams = _coerce_baseline_count("total_trigrams", payload["total_trigrams"])
+    total_acronyms = _coerce_baseline_count("total_acronyms", payload["total_acronyms"])
+    # Cache stores n-gram keys flat as strings for compact JSON; ranking keys
+    # them as (stem,) / (s1, s2) / (s1, s2, s3) tuples — wrap on load.
+    unigrams = _load_baseline_counter(
+        payload, "unigrams", lambda k: (k,), expected_arity=1
+    )
+    bigrams = _load_baseline_counter(
+        payload, "bigrams", lambda k: tuple(k.split(" ")), expected_arity=2
+    )
+    trigrams = _load_baseline_counter(
+        payload, "trigrams", lambda k: tuple(k.split(" ")), expected_arity=3
+    )
+    acronyms = _load_baseline_counter(payload, "acronyms", lambda k: k)
+
+    if total_docs <= 0:
+        raise _baseline_error("Baseline cache field 'total_docs' must be positive.")
+    for name, total, counts in (
+        ("total_unigrams", total_unigrams, unigrams),
+        ("total_bigrams", total_bigrams, bigrams),
+        ("total_trigrams", total_trigrams, trigrams),
+        ("total_acronyms", total_acronyms, acronyms),
+    ):
+        if sum(counts.values()) > total:
+            raise _baseline_error(
+                f"Baseline cache field {name!r} is smaller than stored counts."
+            )
+
     return BaselineCounts(
         schema_version=version,
         built_at=built_at_str,
-        params=dict(payload.get("params", {})),
-        total_docs=int(payload.get("total_docs", 0)),
-        # Foreground n=1 ranking keys n-grams as `(stem,)` tuples; the
-        # cache stores them flat as strings for compact JSON. Wrap on load.
-        unigrams=Counter(
-            {(k,): v for k, v in payload.get("unigrams", {}).items()}
-        ),
-        bigrams=Counter(
-            {tuple(k.split(" ")): v for k, v in payload.get("bigrams", {}).items()}
-        ),
-        trigrams=Counter(
-            {tuple(k.split(" ")): v for k, v in payload.get("trigrams", {}).items()}
-        ),
-        acronyms=Counter(payload.get("acronyms", {})),
-        total_unigrams=int(payload.get("total_unigrams", 0)),
-        total_bigrams=int(payload.get("total_bigrams", 0)),
-        total_trigrams=int(payload.get("total_trigrams", 0)),
-        total_acronyms=int(payload.get("total_acronyms", 0)),
+        params=dict(params),
+        total_docs=total_docs,
+        unigrams=unigrams,
+        bigrams=bigrams,
+        trigrams=trigrams,
+        acronyms=acronyms,
+        total_unigrams=total_unigrams,
+        total_bigrams=total_bigrams,
+        total_trigrams=total_trigrams,
+        total_acronyms=total_acronyms,
     )
 
 
@@ -1116,8 +1362,7 @@ def _descriptors_to_jsonable(items: list[MeshDescriptor]) -> list[dict[str, Any]
             "ui": d.ui,
             "major": d.major,
             "qualifiers": [
-                {"term": q.term, "ui": q.ui, "major": q.major}
-                for q in d.qualifiers
+                {"term": q.term, "ui": q.ui, "major": q.major} for q in d.qualifiers
             ],
         }
         for d in items
@@ -1164,39 +1409,38 @@ def fetch_mesh_terms(
     list of PMIDs and returning the raw efetch XML bytes. Default uses
     ``Bio.Entrez.efetch``.
     """
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    pmid_list = [str(p) for p in pmids if p]
+    pmid_list = _unique_valid_pmids(pmids)
     out: dict[str, list[MeshDescriptor]] = {}
     missing: list[str] = []
 
     total = len(pmid_list)
     for pmid in pmid_list:
-        if not _is_valid_pmid(pmid):
-            logger.warning(
-                f"Refusing to read MeSH cache for non-numeric PMID {pmid!r}"
-            )
-            continue
         cache_path = cache_dir / f"{pmid}.json"
         if cache_path.exists():
             try:
                 with cache_path.open(encoding="utf-8") as f:
                     cached = json.load(f)
-                out[pmid] = _descriptors_from_jsonable(
-                    cached.get("descriptors", [])
-                )
+                cached_pmid = cached.get("pmid")
+                if cached_pmid is not None and str(cached_pmid) != pmid:
+                    raise ValueError(
+                        f"cache PMID {cached_pmid!r} does not match {pmid!r}"
+                    )
+                out[pmid] = _descriptors_from_jsonable(cached.get("descriptors", []))
             except (
                 json.JSONDecodeError,
                 OSError,
                 AttributeError,
                 TypeError,
                 KeyError,
+                ValueError,
             ) as e:
                 # AttributeError/TypeError catch JSON that parses but isn't
                 # a dict; KeyError catches descriptors missing the required
                 # ``term`` field.
-                logger.warning(
-                    f"Corrupt MeSH cache for PMID {pmid}: {e}; will refetch"
-                )
+                logger.warning(f"Corrupt MeSH cache for PMID {pmid}: {e}; will refetch")
                 missing.append(pmid)
         else:
             missing.append(pmid)
@@ -1227,6 +1471,7 @@ def fetch_mesh_terms(
 
         fetcher = _default_fetcher
 
+    cached_count = total - len(missing)
     for start in range(0, len(missing), batch_size):
         batch = missing[start : start + batch_size]
         try:
@@ -1266,8 +1511,7 @@ def fetch_mesh_terms(
                 # rely on that one upstream check.
                 if not _is_valid_pmid(pmid):
                     logger.warning(
-                        f"Refusing to write MeSH cache for non-numeric "
-                        f"PMID {pmid!r}"
+                        f"Refusing to write MeSH cache for non-numeric PMID {pmid!r}"
                     )
                     continue
                 cache_path = cache_dir / f"{pmid}.json"
@@ -1281,15 +1525,13 @@ def fetch_mesh_terms(
                         },
                     )
                 except OSError as e:
-                    logger.warning(
-                        f"Could not write MeSH cache for PMID {pmid}: {e}"
-                    )
+                    logger.warning(f"Could not write MeSH cache for PMID {pmid}: {e}")
         finally:
             # Tick progress even when a batch fails wholesale (fetcher
             # exception, parse error) — otherwise the bar appears stuck
             # for the duration of every failed batch.
             if progress_callback is not None:
-                progress_callback(min(len(out), total), total)
+                progress_callback(cached_count + start + len(batch), total)
 
     return out
 
@@ -1305,6 +1547,9 @@ def aggregate_mesh(
     weight unit per paper (the highest weight wins on conflict — Major
     trumps Minor). This keeps weight a per-paper signal consistent with DF.
     """
+    if top_n <= 0:
+        return []
+
     doc_freq: Counter[str] = Counter()
     weight: Counter[str] = Counter()
     for descriptors in pmid_to_descriptors.values():
@@ -1435,6 +1680,16 @@ def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
     except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"Corrupt fulltext cache for PMID {pmid}: {e}; will refetch")
         return None
+    if not isinstance(payload, Mapping):
+        logger.warning(f"Malformed fulltext cache for PMID {pmid}; will refetch")
+        return None
+    cached_pmid = payload.get("pmid")
+    if cached_pmid is not None and str(cached_pmid) != pmid:
+        logger.warning(
+            f"Fulltext cache PMID mismatch for {pmid}: "
+            f"payload has {cached_pmid!r}; will refetch"
+        )
+        return None
     if payload.get("schema_version") != FULLTEXT_SCHEMA_VERSION:
         logger.warning(
             f"Fulltext cache schema mismatch for PMID {pmid} "
@@ -1442,8 +1697,11 @@ def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
             f"will refetch"
         )
         return None
+    sections = payload.get("sections")
+    if not isinstance(sections, Mapping):
+        logger.warning(f"Malformed fulltext cache for PMID {pmid}; will refetch")
+        return None
     try:
-        sections = payload.get("sections") or {}
         return FulltextRecord(
             pmid=str(payload["pmid"]),
             pmcid=(str(payload["pmcid"]) if payload.get("pmcid") else None),
@@ -1461,8 +1719,7 @@ def _write_fulltext_cache(cache_dir: Path, record: FulltextRecord) -> None:
     """Persist one ``FulltextRecord`` as JSON. Logs and continues on OSError."""
     if not _is_valid_pmid(record.pmid):
         logger.warning(
-            f"Refusing to write fulltext cache for non-numeric "
-            f"PMID {record.pmid!r}"
+            f"Refusing to write fulltext cache for non-numeric PMID {record.pmid!r}"
         )
         return
     cache_path = cache_dir / f"{record.pmid}.json"
@@ -1481,9 +1738,7 @@ def _write_fulltext_cache(cache_dir: Path, record: FulltextRecord) -> None:
     try:
         _atomic_write_json(cache_path, payload)
     except OSError as e:
-        logger.warning(
-            f"Could not write fulltext cache for PMID {record.pmid}: {e}"
-        )
+        logger.warning(f"Could not write fulltext cache for PMID {record.pmid}: {e}")
 
 
 def _default_pmids_to_pmcids(
@@ -1584,7 +1839,7 @@ def fetch_fulltext_batch(
     the matching ``_default_*`` helper is used.
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
-    pmid_list = [str(p) for p in pmids if p]
+    pmid_list = _unique_valid_pmids(pmids)
     out: dict[str, FulltextRecord] = {}
     missing: list[str] = []
 
@@ -1624,6 +1879,16 @@ def fetch_fulltext_batch(
         pmid_to_pmcid = fetcher_elink(missing)
     except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
         logger.warning(f"elink batch failed for {len(missing)} PMIDs: {e}")
+        if progress_callback is not None:
+            progress_callback(total, total)
+        return out
+    if not isinstance(pmid_to_pmcid, Mapping):
+        logger.warning(
+            f"elink batch returned malformed payload for {len(missing)} PMIDs; "
+            f"expected mapping, got {type(pmid_to_pmcid).__name__}"
+        )
+        if progress_callback is not None:
+            progress_callback(total, total)
         return out
 
     cached_count = total - len(missing)
@@ -1633,8 +1898,7 @@ def fetch_fulltext_batch(
                 # NCBI omitted this PMID from the elink response (truncation,
                 # partial response, ...). Don't cache anything — retry next run.
                 logger.warning(
-                    f"elink response did not include PMID {pmid}; "
-                    f"will retry next run"
+                    f"elink response did not include PMID {pmid}; will retry next run"
                 )
                 continue
             pmcid = pmid_to_pmcid[pmid]
@@ -1649,15 +1913,11 @@ def fetch_fulltext_batch(
             try:
                 xml_bytes = fetcher_efetch(pmcid)
             except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
-                logger.warning(
-                    f"efetch failed for PMID {pmid} (PMCID {pmcid}): {e}"
-                )
+                logger.warning(f"efetch failed for PMID {pmid} (PMCID {pmcid}): {e}")
                 continue
 
             if not xml_bytes:
-                logger.warning(
-                    f"Empty efetch response for PMID {pmid} (PMCID {pmcid})"
-                )
+                logger.warning(f"Empty efetch response for PMID {pmid} (PMCID {pmcid})")
                 continue
 
             try:
@@ -1737,8 +1997,7 @@ def _foreground_counts_for(
             pair_slice = tokens[i : i + n]
             stems = tuple(s for s, _ in pair_slice)
             if filter_content and not all(
-                _is_content_token(s) and t not in _STOPWORDS
-                for s, t in pair_slice
+                _is_content_token(s) and t not in _STOPWORDS for s, t in pair_slice
             ):
                 continue
             clean.append(stems)
@@ -1797,9 +2056,7 @@ def distill_keywords(
 
     rankings: dict[int, list[KeywordScore]] = {}
     for n in (1, 2, 3):
-        tf, df = _foreground_counts_for(
-            paper_stem_token_pairs, n, filter_content=True
-        )
+        tf, df = _foreground_counts_for(paper_stem_token_pairs, n, filter_content=True)
         display = _build_display_map(paper_stem_token_pairs, n)
         bg_counts, total_bg = baseline_by_n[n - 1]
         rankings[n] = _rank_terms(
@@ -1859,18 +2116,47 @@ def _merged_phrases(result: DistillationResult) -> list[KeywordScore]:
     )
 
 
+def _pubmed_clause(term: str, field: str) -> str:
+    """Return one quoted PubMed clause, or "" when the term is empty.
+
+    PubMed phrase syntax is quote-delimited. Terms are normally generated by
+    tokenizers or MeSH descriptors, but direct callers and future descriptors
+    can still contain embedded quotes/newlines; sanitize those so one bad term
+    cannot unbalance the whole Boolean query.
+    """
+    cleaned = re.sub(r"\s+", " ", term.replace('"', " ")).strip()
+    if not cleaned:
+        return ""
+    return f'"{cleaned}"[{field}]'
+
+
+def _format_pubmed_query(
+    scores: list[KeywordScore],
+    *,
+    top: int,
+    field: str,
+) -> str:
+    if top <= 0:
+        return ""
+    clauses: list[str] = []
+    for score in scores:
+        clause = _pubmed_clause(score.term, field)
+        if not clause:
+            continue
+        clauses.append(clause)
+        if len(clauses) >= top:
+            break
+    return " OR ".join(clauses)
+
+
 def format_titleabstract_query(scores: list[KeywordScore], top: int) -> str:
     """OR-joined ``[Title/Abstract]`` Boolean fragment."""
-    if not scores or top <= 0:
-        return ""
-    return " OR ".join(f'"{s.term}"[Title/Abstract]' for s in scores[:top])
+    return _format_pubmed_query(scores, top=top, field="Title/Abstract")
 
 
 def format_mesh_query(scores: list[KeywordScore], top: int) -> str:
     """OR-joined ``[MeSH Terms]`` Boolean fragment."""
-    if not scores or top <= 0:
-        return ""
-    return " OR ".join(f'"{s.term}"[MeSH Terms]' for s in scores[:top])
+    return _format_pubmed_query(scores, top=top, field="MeSH Terms")
 
 
 def format_structured_query(
@@ -1941,18 +2227,14 @@ def write_text_report(
 ) -> None:
     print(f"\nDistilled keywords from {result.papers} paper(s).", file=stream)
     if result.mesh_terms:
-        _print_section(
-            "Top MeSH headings", result.mesh_terms, stream, show_llr=False
-        )
+        _print_section("Top MeSH headings", result.mesh_terms, stream, show_llr=False)
     _print_section("Top distinctive phrases (bigrams)", result.bigrams, stream)
     _print_section("Top distinctive phrases (trigrams)", result.trigrams, stream)
     _print_section("Top distinctive unigrams", result.unigrams, stream)
     _print_section("Acronyms", result.acronyms, stream)
 
     variants = result.query_variants
-    formats = (
-        list(_QUERY_FORMAT_VARIANTS) if query_format == "all" else [query_format]
-    )
+    formats = list(_QUERY_FORMAT_VARIANTS) if query_format == "all" else [query_format]
     print("\n--- Suggested PubMed query ---", file=stream)
     for fmt in formats:
         q = variants.get(fmt, "")
@@ -2042,9 +2324,7 @@ def _render_query(query: str) -> Text:
     return text
 
 
-def _render_config_panel(
-    args: argparse.Namespace, *, phrase_top: int
-) -> Panel:
+def _render_config_panel(args: argparse.Namespace, *, phrase_top: int) -> Panel:
     """Compact key-value panel summarising the resolved CLI args."""
     grid = Table.grid(padding=(0, 2))
     grid.add_column(justify="right", style="dim")
@@ -2083,9 +2363,7 @@ def _render_rich_report(
 ) -> None:
     """Render the full keyword report to ``console`` with rich styling."""
     console.print()
-    console.print(
-        f"Distilled keywords from [bold]{result.papers}[/] paper(s)."
-    )
+    console.print(f"Distilled keywords from [bold]{result.papers}[/] paper(s).")
 
     sections: list[tuple[str, list[KeywordScore], bool]] = []
     if result.mesh_terms:
@@ -2101,20 +2379,14 @@ def _render_rich_report(
     for title, scores, show_llr in sections:
         console.print()
         if not scores:
-            console.print(
-                f"[bold {_PRIMARY_COLOR}]{title}[/] — [dim](none)[/]"
-            )
+            console.print(f"[bold {_PRIMARY_COLOR}]{title}[/] — [dim](none)[/]")
             continue
         console.print(_render_score_table(title, scores, show_llr=show_llr))
 
     variants = result.query_variants
-    formats = (
-        list(_QUERY_FORMAT_VARIANTS) if query_format == "all" else [query_format]
-    )
+    formats = list(_QUERY_FORMAT_VARIANTS) if query_format == "all" else [query_format]
     console.print()
-    console.print(
-        f"[bold {_PRIMARY_COLOR}]Suggested PubMed query[/]"
-    )
+    console.print(f"[bold {_PRIMARY_COLOR}]Suggested PubMed query[/]")
     for fmt in formats:
         q = variants.get(fmt, "")
         if not q:
@@ -2146,9 +2418,7 @@ def _non_negative_int(value: str) -> int:
     except ValueError as e:
         raise argparse.ArgumentTypeError(f"invalid int: {value!r}") from e
     if parsed < 0:
-        raise argparse.ArgumentTypeError(
-            f"value must be non-negative, got {parsed}"
-        )
+        raise argparse.ArgumentTypeError(f"value must be non-negative, got {parsed}")
     return parsed
 
 
@@ -2158,9 +2428,7 @@ def _non_negative_float(value: str) -> float:
     except ValueError as e:
         raise argparse.ArgumentTypeError(f"invalid float: {value!r}") from e
     if parsed < 0:
-        raise argparse.ArgumentTypeError(
-            f"value must be non-negative, got {parsed}"
-        )
+        raise argparse.ArgumentTypeError(f"value must be non-negative, got {parsed}")
     return parsed
 
 
@@ -2188,8 +2456,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=_non_negative_int,
         default=DEFAULT_MIN_DF,
         help=(
-            "Minimum document frequency to keep a keyword "
-            f"(default: {DEFAULT_MIN_DF})"
+            f"Minimum document frequency to keep a keyword (default: {DEFAULT_MIN_DF})"
         ),
     )
     parser.add_argument(
@@ -2206,8 +2473,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=_non_negative_int,
         default=DEFAULT_PHRASE_TOP,
         help=(
-            "Phrases included in the suggested query "
-            f"(default: {DEFAULT_PHRASE_TOP})"
+            f"Phrases included in the suggested query (default: {DEFAULT_PHRASE_TOP})"
         ),
     )
     parser.add_argument(
@@ -2246,8 +2512,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_FULLTEXT_CACHE_DIR,
         help=(
-            "Per-PMID PMC full-text cache dir "
-            f"(default: {DEFAULT_FULLTEXT_CACHE_DIR})"
+            f"Per-PMID PMC full-text cache dir (default: {DEFAULT_FULLTEXT_CACHE_DIR})"
         ),
     )
     parser.add_argument(
@@ -2406,6 +2671,15 @@ def main(argv: list[str] | None = None) -> int:
             logger.error("No parseable papers found.")
             return 1
 
+        try:
+            baseline = load_baseline_cache(args.baseline_cache)
+        except FileNotFoundError as e:
+            logger.error(str(e))
+            return 1
+        except RuntimeError as e:
+            logger.error(str(e))
+            return 1
+
         if not args.no_fulltext:
             pmids_for_fulltext = [p.pmid for p in papers if p.pmid]
             if pmids_for_fulltext:
@@ -2417,9 +2691,7 @@ def main(argv: list[str] | None = None) -> int:
                         pmids_for_fulltext,
                         args.fulltext_cache,
                         email=os.getenv("ENTREZ_EMAIL"),
-                        api_key=(
-                            os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY")
-                        ),
+                        api_key=(os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY")),
                         progress_callback=lambda c, t: progress.update(
                             ft_task, completed=c, total=t
                         ),
@@ -2431,9 +2703,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     fulltext_records = {}
                 for paper in papers:
-                    if paper.pmid and (
-                        record := fulltext_records.get(paper.pmid)
-                    ):
+                    if paper.pmid and (record := fulltext_records.get(paper.pmid)):
                         paper.fulltext = record.as_text()
                 with_text = sum(
                     1 for r in fulltext_records.values() if r.pmcid is not None
@@ -2446,22 +2716,11 @@ def main(argv: list[str] | None = None) -> int:
                     f"title+abstract only."
                 )
 
-        try:
-            baseline = load_baseline_cache(args.baseline_cache)
-        except FileNotFoundError as e:
-            logger.error(str(e))
-            return 1
-        except RuntimeError as e:
-            logger.error(str(e))
-            return 1
-
         mesh_map: dict[str, list[MeshDescriptor]] | None = None
         if not args.no_mesh:
             pmids = [p.pmid for p in papers if p.pmid]
             if pmids:
-                mesh_task = progress.add_task(
-                    "Fetching MeSH terms", total=len(pmids)
-                )
+                mesh_task = progress.add_task("Fetching MeSH terms", total=len(pmids))
                 try:
                     mesh_map = fetch_mesh_terms(
                         pmids,
@@ -2472,8 +2731,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 except RuntimeError as e:
                     logger.warning(
-                        f"MeSH harvest disabled — {e}. "
-                        f"Run with --no-mesh to silence."
+                        f"MeSH harvest disabled — {e}. Run with --no-mesh to silence."
                     )
 
     result = distill_keywords(
