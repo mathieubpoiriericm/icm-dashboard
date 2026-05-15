@@ -32,11 +32,11 @@ offline modes, all selected via CLI flags in `pipeline/main.py`:
 
 | Mode | Flag | Database? | Description | Example |
 | ---- | ---- | --------- | ----------- | ------- |
-| **PubMed extraction** | *(none)* or `--pubmed` | Yes | Search PubMed, retrieve, extract, validate, merge into DB | `python pipeline/main.py --pubmed --days-back 30` |
-| **ClinicalTrials.gov** | `--clinical-trials` | Yes | Discover cSVD-relevant drug trials and refresh `clinical_trials` | `python pipeline/main.py --clinical-trials` |
-| **External sync** | `--sync-external-data` | Yes | Refresh NCBI Gene, UniProt, and PubMed citation caches | `python pipeline/main.py --pubmed --sync-external-data` |
-| **Local PDF** | `--local-pdfs PATH` | No | Extract from local PDF files, write JSON report only | `python pipeline/main.py --local-pdfs papers/` |
-| **PMID file** | `--pmids FILE` | No | Process specific PMIDs from a text file, write JSON report only | `python pipeline/main.py --pmids pmids.txt` |
+| **PubMed extraction** | *(none)* or `--pubmed` | Yes | Search PubMed, retrieve, extract, validate, merge into DB | `uv run python pipeline/main.py --pubmed --days-back 30` |
+| **ClinicalTrials.gov** | `--clinical-trials` | Yes | Discover cSVD-relevant drug trials and refresh `clinical_trials` | `uv run python pipeline/main.py --clinical-trials` |
+| **External sync** | `--sync-external-data` | Yes | Refresh NCBI Gene, UniProt, and PubMed citation caches | `uv run python pipeline/main.py --pubmed --sync-external-data` |
+| **Local PDF** | `--local-pdfs PATH` | No | Extract from local PDF files, write JSON report only | `uv run python pipeline/main.py --local-pdfs papers/` |
+| **PMID file** | `--pmids FILE` | No | Process specific PMIDs from a text file, write JSON report only | `uv run python pipeline/main.py --pmids pmids.txt` |
 
 Additional flags:
 

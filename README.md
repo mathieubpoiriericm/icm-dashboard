@@ -175,12 +175,10 @@ rshiny_dashboard/
 ├── Dockerfile.pipeline           # Pipeline Docker build
 ├── LICENSE                       # MIT License
 ├── Makevars                      # R compilation flags (OpenMP/clang) for macOS (arm64)
-├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
+├── pyproject.toml                # Canonical Python dependencies and tooling config
 ├── README.md                     # Project documentation
 ├── R_PACKAGE_MANIFEST.md         # Canonical R dependency list
-├── requirements.txt              # Python dependencies (version floors)
-├── requirements.lock             # Pinned Python deps (uv-managed)
-├── uv.lock                       # uv resolver lockfile
+├── uv.lock                       # Generated uv resolver lockfile
 ├── R/
 │   ├── clean_table1.R            # Table 1 data cleaning
 │   ├── clean_table2.R            # Table 2 data cleaning
@@ -532,77 +530,12 @@ omit them if you don't run the tuning plots.
 ### Install Python Dependencies (for data pipeline)
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-<details>
-<summary><strong>Click to expand Python package list</strong></summary>
-
-```txt
-# HTTP client (async)
-httpx>=0.24.0
-
-# XML parsing
-lxml>=4.9.0
-lxml-stubs>=0.5.1
-
-# LLM API
-anthropic>=0.25.0
-
-# Data validation
-pydantic>=2.0.0
-
-# Batch validation
-pandera>=0.18.0
-
-# DataFrame operations
-pandas>=2.0.0
-
-# Bioinformatics
-biopython>=1.81
-
-# Database
-asyncpg>=0.28.0
-
-# Database migrations
-alembic>=1.15.0
-psycopg2-binary>=2.9.0
-sqlalchemy>=2.0.0
-
-# Environment variables
-python-dotenv>=1.0.0
-
-# CLI tab-completion
-argcomplete>=3.0.0
-
-# CLI output formatting
-rich>=13.0.0
-
-# PDF extraction (optional)
-PyMuPDF>=1.23.0
-
-# Notifications
-apprise>=1.9.7
-tenacity>=9.1.4
-jinja2>=3.1.6
-
-# Analysis & visualization (tuning scripts)
-matplotlib>=3.8.0
-scikit-learn>=1.4.0
-
-# NiceGUI framework (pipeline app + HPC pipeline app)
-nicegui>=2.0.0
-
-# Dev tools — linting & type-checking
-ruff>=0.9.0
-ty>=0.0.1a0
-```
-
-For reproducible builds, pinned versions are captured in
-`requirements.lock` and `uv.lock` (used by `uv` and the Docker
-pipeline image).
-
-</details>
+`pyproject.toml` is the sole source for Python dependency declarations.
+`uv.lock` is the generated resolver lockfile used by `uv sync` and the
+Docker pipeline image.
 
 <details>
 <summary><strong>Click to expand database setup instructions</strong></summary>
@@ -643,10 +576,10 @@ Python (the `pipeline/`, `pipeline_app/`, `pipeline_app_hpc/`,
 `scripts/`, `tests/` trees):
 
 ```bash
-ruff check pipeline pipeline_app pipeline_app_hpc scripts tests   # Lint
-ruff format pipeline pipeline_app pipeline_app_hpc scripts tests  # Format
-ruff check --fix pipeline pipeline_app pipeline_app_hpc scripts   # Auto-fix
-ty check pipeline pipeline_app pipeline_app_hpc scripts           # Type-check
+uv run ruff check pipeline pipeline_app pipeline_app_hpc scripts tests   # Lint
+uv run ruff format pipeline pipeline_app pipeline_app_hpc scripts tests  # Format
+uv run ruff check --fix pipeline pipeline_app pipeline_app_hpc scripts   # Auto-fix
+uv run ty check pipeline pipeline_app pipeline_app_hpc scripts           # Type-check
 ```
 
 R:
@@ -727,16 +660,16 @@ Rscript -e "shiny::runApp()"
 Run the pipeline operator UIs:
 
 ```bash
-python pipeline_app/main.py       # local pipeline      — http://127.0.0.1:8080
-python pipeline_app_hpc/main.py   # HPC pipeline        — http://127.0.0.1:8081
+uv run python pipeline_app/main.py       # local pipeline      — http://127.0.0.1:8080
+uv run python pipeline_app_hpc/main.py   # HPC pipeline        — http://127.0.0.1:8081
 ```
 
 Run the ETL pipeline directly (see [Data Pipeline](#data-pipeline)
 for the full CLI):
 
 ```bash
-python pipeline/main.py                                     # PubMed, default 7-day window
-python pipeline/main.py --pubmed --clinical-trials --sync-external-data
+uv run python pipeline/main.py                                     # PubMed, default 7-day window
+uv run python pipeline/main.py --pubmed --clinical-trials --sync-external-data
 ```
 
 ---
@@ -835,8 +768,8 @@ Browser) and adds an HPC card to the configure page that drives a
 remote vLLM provider through Slurm.
 
 ```bash
-python pipeline_app_hpc/main.py    # http://127.0.0.1:8081
-python -m pipeline_app_hpc.cli     # headless invocation
+uv run python pipeline_app_hpc/main.py    # http://127.0.0.1:8081
+uv run python -m pipeline_app_hpc.cli     # headless invocation
 ```
 
 ### Runner orchestration
@@ -973,16 +906,16 @@ flowchart LR
 
 ```bash
 # Standard run (search last 7 days, extract genes)
-python pipeline/main.py
+uv run python pipeline/main.py
 
 # Sync external data (NCBI Gene, UniProt, PubMed citations)
-python pipeline/main.py --sync-external-data
+uv run python pipeline/main.py --sync-external-data
 
 # Run PubMed extraction and external sync in one invocation
-python pipeline/main.py --pubmed --sync-external-data
+uv run python pipeline/main.py --pubmed --sync-external-data
 
 # Extended lookback (30 days)
-python pipeline/main.py --days-back 30
+uv run python pipeline/main.py --days-back 30
 ```
 
 | Argument | Default | Description |
@@ -1162,7 +1095,7 @@ The clinical trials visualization is generated by `scripts/python_plot.py` as a 
 To regenerate the visualization:
 
 ```bash
-python scripts/python_plot.py
+uv run python scripts/python_plot.py
 ```
 
 This creates `www/python_plot.html` and `www/python_plot.js`.
@@ -1219,24 +1152,24 @@ Rscript -e 'testthat::test_file("tests/test_all.R")'
 
 ```bash
 # Run a specific suite
-pytest tests/pipeline/
-pytest tests/pipeline_app/
-pytest tests/pipeline_app_hpc/
-pytest tests/scripts/
+uv run pytest tests/pipeline/
+uv run pytest tests/pipeline_app/
+uv run pytest tests/pipeline_app_hpc/
+uv run pytest tests/scripts/
 
 # Or all four at once (pyproject.toml `testpaths` defaults to these)
-pytest
+uv run pytest
 
 # Verbose with stop-on-first-failure
-pytest -x -v
+uv run pytest -x -v
 ```
 
 Configuration (`pyproject.toml`): `asyncio_mode = "auto"`, 30s timeout.
 Markers:
 
 ```bash
-pytest -m "not slow"          # Skip slow tests
-pytest -m "not integration"   # Skip integration tests
+uv run pytest -m "not slow"          # Skip slow tests
+uv run pytest -m "not integration"   # Skip integration tests
 ```
 
 Shared fixtures live in `tests/pipeline/conftest.py`,

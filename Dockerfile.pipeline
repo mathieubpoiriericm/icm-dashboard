@@ -14,8 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Python dependencies (above source so a code edit doesn't invalidate this layer)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+ENV PATH="/app/.venv/bin:${PATH}"
 
 # R packages needed by trigger_update.R (same caching motivation)
 RUN R -e "install.packages(c('DBI', 'RPostgres', 'data.table', 'qs2', 'jsonlite'))"

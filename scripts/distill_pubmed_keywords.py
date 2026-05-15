@@ -3009,7 +3009,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
     )
     args = _parse_args(argv)
-    from dotenv import load_dotenv  # python-dotenv pinned in requirements.txt
+    from dotenv import load_dotenv  # python-dotenv pinned in pyproject.toml
 
     load_dotenv()
 

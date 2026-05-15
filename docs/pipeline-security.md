@@ -370,8 +370,8 @@ def _is_within(path: Path, anchor: Path) -> bool:
 No automated CI/CD pipeline exists yet. Run periodic vulnerability scans manually:
 
 ```bash
-pip install pip-audit
-pip-audit -r requirements.txt
+uv sync
+uv run --with pip-audit pip-audit
 ```
 
 > [!TIP]
