@@ -6,7 +6,6 @@ __pycache__
 
 # Claude Code-related
 .claude
-.superpowers
 docs/superpowers
 CLAUDE.md
 
@@ -20,8 +19,8 @@ AGENTS.md
 # Files and directories
 data
 docs/other
-hpc-explorer/
-icm-hpc/
+hpc-explorer
+icm-hpc
 logs
 history.json
 presets.json
@@ -39,13 +38,8 @@ www/*min.js
 config.json
 tuning_config.json
 
-# Python-related
+# Python virtual environment
 .venv
 
 # Secrets
 .env
-secrets-values.yaml
-
-# VSCode-specific
-.vscode
-rshiny_dashboard.code-workspace

@@ -222,7 +222,6 @@ rshiny_dashboard/
 │   ├── database.py               # Async PostgreSQL operations
 │   ├── event_log.py              # Structured event logging (SQLite-backed)
 │   ├── external_data_sync.py     # External data synchronization
-│   ├── healthcheck.py            # Pipeline health checks (Healthchecks.io)
 │   ├── http_client.py            # Shared HTTP client (AsyncHttpClientManager)
 │   ├── llm_extraction.py         # LLM-based gene extraction orchestration
 │   ├── main.py                   # CLI entry point & pipeline orchestrator
@@ -358,7 +357,6 @@ rshiny_dashboard/
 │   │   ├── test_database.py                  # Tests for database.py
 │   │   ├── test_event_log.py                 # Tests for event_log.py
 │   │   ├── test_external_data_sync.py        # Tests for external_data_sync.py
-│   │   ├── test_healthcheck.py               # Tests for healthcheck.py
 │   │   ├── test_llm_extraction.py            # Tests for llm_extraction.py
 │   │   ├── test_llm_extraction_dispatch.py   # Tests for provider dispatch
 │   │   ├── test_llm_providers_base.py        # Tests for llm_providers/base.py
@@ -633,8 +631,7 @@ Any field on `pipeline/config.py:PipelineConfig` can be overridden via a
 | `PIPELINE_MAX_CONCURRENT_PAPERS` | `5` | Parallel paper processing |
 | `PIPELINE_CT_*` | various | Clinical-trials fetch tuning (`PAGE_SIZE`, `MAX_CONCURRENCY`, `MAX_RETRIES`, `SEARCH_TERMS`) |
 | `PIPELINE_DB_POOL_MIN` / `PIPELINE_DB_POOL_MAX` | `2` / `10` | asyncpg connection pool sizing |
-| `PIPELINE_NOTIFY_URLS` | `""` | Comma-separated Apprise URLs (ntfy/Gmail) |
-| `PIPELINE_HEALTHCHECK_URL` | `""` | Healthchecks.io dead-man's-switch URL |
+| `PIPELINE_NOTIFY_URLS` | `""` | Comma-separated Apprise URLs (e.g. Gmail SMTP) |
 
 See `pipeline/config.py` for the full set (~25 variables total).
 
@@ -752,8 +749,8 @@ writes a log per invocation at `logs/cron_<ts>.log`:
 2. `docker compose restart dashboard` (dashboard re-reads `qs_data`)
 
 **Notifications / observability:** disabled by design. The pipeline
-supports Apprise-based notifications and Healthchecks.io pings, but the
-current deployment keeps things minimal — logs only.
+supports Apprise-based notifications, but the current deployment keeps
+things minimal — logs only.
 
 ---
 
@@ -884,7 +881,7 @@ flowchart LR
         Validate against NCBI Gene
         Batch quality checks"] --> C["Merge into PostgreSQL
         Generate report
-        Notify + healthcheck"]
+        Notify"]
     end
 
     subgraph stage2["Stage 2: R Transformation"]
@@ -954,11 +951,10 @@ Reads from PostgreSQL and generates QS files for the Shiny app:
 ### Notifications (optional)
 
 The pipeline includes an optional Apprise-based notification system
-(`pipeline/notifications.py`) plus a Healthchecks.io dead-man's-switch
-(`pipeline/healthcheck.py`). Both are inert unless the relevant env vars
-(`PIPELINE_NOTIFY_URLS`, `PIPELINE_HEALTHCHECK_URL`) are set. The
-current docker-compose deployment leaves them unset — pipeline output is
-kept as plain logs in `logs/cron_<ts>.log` and `logs/pipeline_*.log`.
+(`pipeline/notifications.py`). It is inert unless `PIPELINE_NOTIFY_URLS`
+is set. The current docker-compose deployment leaves it unset —
+pipeline output is kept as plain logs in `logs/cron_<ts>.log` and
+`logs/pipeline_*.log`.
 
 ### Automated Updates
 

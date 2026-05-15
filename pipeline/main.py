@@ -11,7 +11,7 @@ Runs one or more of three independently-selectable pipelines:
   (``--sync-external-data``)
 
 Flags can be combined; selected pipelines run in sequence with a single
-healthcheck ping and notification per invocation.
+notification per invocation.
 
 Usage:
     python pipeline/main.py [--days-back N] [--dry-run] [--test-mode]
@@ -165,12 +165,6 @@ from pipeline.database import (
     reset_sequence,
 )
 from pipeline.event_log import EventLog
-from pipeline.healthcheck import (
-    close_healthcheck_client,
-    ping_failure,
-    ping_start,
-    ping_success,
-)
 from pipeline.http_client import AsyncHttpClientManager
 from pipeline.llm_extraction import (
     ExtractionFailedError,
@@ -429,9 +423,7 @@ async def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
     """Record pipeline run to event log and send a notification.
 
     Offloads the blocking SQLite + Apprise work to a worker thread so the
-    asyncio event loop isn't stalled during the final flush. Healthcheck
-    pings are handled separately by the caller so they don't double-fire
-    across multi-pipeline invocations.
+    asyncio event loop isn't stalled during the final flush.
     """
 
     def _run() -> None:
@@ -450,9 +442,8 @@ async def _finalize_run(
 ) -> None:
     """Record run stats to database.
 
-    Notification and healthcheck pings are handled separately by the
-    caller (see ``main()``) so they can be coalesced across multiple
-    pipelines in one invocation.
+    Notifications are handled separately by the caller (see ``main()``) so
+    they can be coalesced across multiple pipelines in one invocation.
     """
     await record_pipeline_run(
         run_timestamp=run_data["timestamp"],
@@ -630,10 +621,9 @@ async def run_pipeline(
         test_mode: If True, skip LLM extraction.
         config: Pipeline configuration (uses defaults if None).
         manage_lifecycle: When True (default, for direct callers and tests),
-            this function handles its own healthcheck pings and notification.
-            When False (set by the ``main()`` dispatcher for combined runs),
-            pings and notifications are skipped so the dispatcher can coalesce
-            them across pipelines.
+            this function sends its own completion notification. When False
+            (set by the ``main()`` dispatcher for combined runs), notifications
+            are skipped so the dispatcher can coalesce them across pipelines.
 
     Returns:
         A tuple of (PipelineMetrics, run_data). ``run_data`` is ``None`` on
@@ -666,8 +656,6 @@ async def run_pipeline(
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
     pipeline_start_time = time.monotonic()
-    if manage_lifecycle:
-        await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting SVD Dashboard pipeline (looking back {days_back} days)")
     logger.info(
@@ -857,7 +845,6 @@ async def run_pipeline(
 
             if manage_lifecycle:
                 await _record_and_notify(config, run_data)
-                await ping_success(config.healthcheck_url)
 
             return metrics, run_data
 
@@ -911,7 +898,6 @@ async def run_pipeline(
         await _finalize_run(metrics, run_data, "standard")
         if manage_lifecycle:
             await _record_and_notify(config, run_data)
-            await ping_success(config.healthcheck_url)
 
         _finalize_progress(
             status="completed",
@@ -924,8 +910,7 @@ async def run_pipeline(
     except BaseException as exc:
         # BaseException (not Exception) so SIGTERM-driven CancelledError and
         # Ctrl+C KeyboardInterrupt also write a terminal state before
-        # propagating. Awaiting more work after cancellation is unsafe, so the
-        # healthcheck ping is skipped on interrupt.
+        # propagating.
         is_interrupt = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
         sid, slabel = _STAGES[stage_idx]
         if is_interrupt:
@@ -939,8 +924,6 @@ async def run_pipeline(
             stage_label=stage_label,
             error_message=error_message,
         )
-        if manage_lifecycle and not is_interrupt:
-            await ping_failure(config.healthcheck_url, traceback.format_exc())
         raise
 
     finally:
@@ -967,7 +950,6 @@ async def run_pipeline(
         await close_validation_client()
         await close_async_client()
         if manage_lifecycle:
-            await close_healthcheck_client()
             await Database.close()
         clear_gene_cache()
 
@@ -1012,7 +994,6 @@ async def run_local_pdf_pipeline(
     init_ncbi_fetch_state(config)
 
     pipeline_start_time = time.monotonic()
-    await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
     logger.info(
@@ -1151,16 +1132,10 @@ async def run_local_pdf_pipeline(
         print_rich_summary(run_data)
 
         await _record_and_notify(config, run_data)
-        await ping_success(config.healthcheck_url)
-
-    except Exception:
-        await ping_failure(config.healthcheck_url, traceback.format_exc())
-        raise
 
     finally:
         await close_validation_client()
         await close_async_client()
-        await close_healthcheck_client()
         await Database.close()
         clear_gene_cache()
 
@@ -1219,7 +1194,6 @@ async def run_pmid_pipeline(
     init_ncbi_fetch_state(config)
 
     pipeline_start_time = time.monotonic()
-    await ping_start(config.healthcheck_url)
 
     logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")
     logger.info(
@@ -1359,18 +1333,12 @@ async def run_pmid_pipeline(
         print_rich_summary(run_data)
 
         await _record_and_notify(config, run_data)
-        await ping_success(config.healthcheck_url)
-
-    except Exception:
-        await ping_failure(config.healthcheck_url, traceback.format_exc())
-        raise
 
     finally:
         await _close_metadata_client()
         await close_http_client()
         await close_validation_client()
         await close_async_client()
-        await close_healthcheck_client()
         await Database.close()
         clear_gene_cache()
 
@@ -1387,7 +1355,7 @@ async def run_external_data_sync(
 
     Args:
         config: Pipeline configuration (uses defaults if None).
-        manage_lifecycle: When True, handle healthcheck pings internally.
+        manage_lifecycle: When True, close the database pool on exit.
             Set to False by the dispatcher when coalescing multiple pipelines.
 
     Returns:
@@ -1398,8 +1366,6 @@ async def run_external_data_sync(
     if config is None:
         config = PipelineConfig()
 
-    if manage_lifecycle:
-        await ping_start(config.healthcheck_url)
     logger.info("Starting external data sync...")
     try:
         result = await sync_all_external_data(config=config)
@@ -1407,8 +1373,6 @@ async def run_external_data_sync(
         logger.info("External Data Sync Summary:")
         logger.info(result.summary())
         logger.info(LOG_SEPARATOR)
-        if manage_lifecycle:
-            await ping_success(config.healthcheck_url)
         return {
             "name": "external_sync",
             "status": "failed" if result.errors else "ok",
@@ -1425,13 +1389,8 @@ async def run_external_data_sync(
             },
             "errors": result.errors,
         }
-    except Exception:
-        if manage_lifecycle:
-            await ping_failure(config.healthcheck_url, traceback.format_exc())
-        raise
     finally:
         if manage_lifecycle:
-            await close_healthcheck_client()
             await Database.close()
 
 
@@ -1450,7 +1409,7 @@ async def run_clinical_trials_pipeline(
 
     Args:
         config: Pipeline configuration (uses defaults if None).
-        manage_lifecycle: When True, handle healthcheck pings internally.
+        manage_lifecycle: When True, close the database pool on exit.
             Set to False by the dispatcher when coalescing multiple pipelines.
 
     Returns:
@@ -1459,14 +1418,8 @@ async def run_clinical_trials_pipeline(
     if config is None:
         config = PipelineConfig()
 
-    if manage_lifecycle:
-        await ping_start(config.healthcheck_url)
-
     if not config.ct_enabled:
         logger.warning("ClinicalTrials.gov sync disabled (ct_enabled=False); skipping")
-        if manage_lifecycle:
-            await ping_success(config.healthcheck_url)
-            await close_healthcheck_client()
         return {
             "name": "clinical_trials",
             "status": "skipped",
@@ -1486,8 +1439,6 @@ async def run_clinical_trials_pipeline(
             f"{ctg_result.failed} failed"
         )
         logger.info(LOG_SEPARATOR)
-        if manage_lifecycle:
-            await ping_success(config.healthcheck_url)
         return {
             "name": "clinical_trials",
             "status": "failed" if ctg_result.errors else "ok",
@@ -1498,14 +1449,9 @@ async def run_clinical_trials_pipeline(
             },
             "errors": ctg_result.errors,
         }
-    except Exception:
-        if manage_lifecycle:
-            await ping_failure(config.healthcheck_url, traceback.format_exc())
-        raise
     finally:
         await close_ctg_client()
         if manage_lifecycle:
-            await close_healthcheck_client()
             await Database.close()
 
 
@@ -1522,18 +1468,13 @@ async def _run_summary_pipeline(
     coro: Awaitable[dict[str, Any]],
     pipeline_name: str,
     display_label: str,
-) -> tuple[dict[str, Any], str | None]:
-    """Run a pipeline coroutine that returns a summary dict, catching errors.
-
-    Returns ``(summary, traceback_str)`` where ``traceback_str`` is non-None
-    iff the coroutine raised — the caller uses it to surface the first
-    failure's trace in the healthcheck ping.
-    """
+) -> dict[str, Any]:
+    """Run a pipeline coroutine that returns a summary dict, catching errors."""
     try:
-        return await coro, None
+        return await coro
     except Exception as e:
         logger.exception(f"{display_label} failed")
-        return _failure_summary(pipeline_name, e), traceback.format_exc()
+        return _failure_summary(pipeline_name, e)
 
 
 async def _run_selected_pipelines(
@@ -1542,22 +1483,14 @@ async def _run_selected_pipelines(
 ) -> int:
     """Run the online pipelines selected on the command line, in sequence.
 
-    Owns the single healthcheck ping and the single combined notification
-    for the invocation. Continues on per-pipeline failure so that one
-    pipeline's error doesn't silently skip the others.
+    Owns the single combined notification for the invocation. Continues on
+    per-pipeline failure so that one pipeline's error doesn't silently skip
+    the others.
 
     Returns the process exit code (0 on full success, 1 if any pipeline failed).
     """
-    await ping_start(config.healthcheck_url)
-
     summaries: list[dict[str, Any]] = []
     pubmed_run_data: PipelineRunData | None = None
-    first_failure_trace: str | None = None
-
-    def record_failure(trace: str) -> None:
-        nonlocal first_failure_trace
-        if first_failure_trace is None:
-            first_failure_trace = trace
 
     try:
         if args.pubmed:
@@ -1585,28 +1518,25 @@ async def _run_selected_pipelines(
                 )
             except Exception as e:
                 logger.exception("PubMed pipeline failed")
-                record_failure(traceback.format_exc())
                 summaries.append(_failure_summary("pubmed", e))
 
         if args.clinical_trials:
-            summary, trace = await _run_summary_pipeline(
-                run_clinical_trials_pipeline(config=config, manage_lifecycle=False),
-                "clinical_trials",
-                "Clinical trials pipeline",
+            summaries.append(
+                await _run_summary_pipeline(
+                    run_clinical_trials_pipeline(config=config, manage_lifecycle=False),
+                    "clinical_trials",
+                    "Clinical trials pipeline",
+                )
             )
-            summaries.append(summary)
-            if trace is not None:
-                record_failure(trace)
 
         if args.sync_external_data:
-            summary, trace = await _run_summary_pipeline(
-                run_external_data_sync(config=config, manage_lifecycle=False),
-                "external_sync",
-                "External data sync",
+            summaries.append(
+                await _run_summary_pipeline(
+                    run_external_data_sync(config=config, manage_lifecycle=False),
+                    "external_sync",
+                    "External data sync",
+                )
             )
-            summaries.append(summary)
-            if trace is not None:
-                record_failure(trace)
 
         any_failed = any(s["status"] == "failed" for s in summaries)
         pubmed_only = len(summaries) == 1 and summaries[0]["name"] == "pubmed"
@@ -1629,20 +1559,10 @@ async def _run_selected_pipelines(
             await _record_and_notify(config, combined)
 
         if any_failed:
-            await ping_failure(
-                config.healthcheck_url,
-                first_failure_trace or "pipeline failed",
-            )
             return 1
 
-        await ping_success(config.healthcheck_url)
-
-    except Exception:
-        await ping_failure(config.healthcheck_url, traceback.format_exc())
-        raise
     finally:
         await close_async_client()
-        await close_healthcheck_client()
         await Database.close()
 
     return 0

@@ -7,7 +7,7 @@ The rest of this document is organised by subsystem:
 - **Overview** and **Execution Modes** — what the pipeline does and how to run it.
 - **Extraction Pipeline** — the five-stage flow that turns a PMID into validated database rows.
 - **External Data Sync** — a separate mode that refreshes NCBI / UniProt / PubMed cache tables.
-- **Observability & Operations** — progress reporting, notifications, event log, healthcheck, and run reports.
+- **Observability & Operations** — progress reporting, notifications, event log, and run reports.
 - **Infrastructure** — rate limiter, concurrency, HTTP client, caching, connection pool, migrations.
 - **Error Handling Philosophy** — how failures are isolated.
 - **Configuration Reference** — every `PIPELINE_*` environment variable.
@@ -44,7 +44,7 @@ Additional flags:
 - `--test-mode` — stop before LLM extraction (prints a preview of PMIDs that would be processed).
 - `--skip-validation` — skip the NCBI gene lookup stage; only valid with `--local-pdfs` or `--pmids`. The local confidence-threshold check still runs.
 
-`--pubmed`, `--clinical-trials`, and `--sync-external-data` can be combined and run in sequence with one healthcheck ping and notification. `--local-pdfs` and `--pmids` are offline modes; each is mutually exclusive with the other and with all online selectors. `main()` enforces this with explicit `parser.error()` checks.
+`--pubmed`, `--clinical-trials`, and `--sync-external-data` can be combined and run in sequence with one combined notification. `--local-pdfs` and `--pmids` are offline modes; each is mutually exclusive with the other and with all online selectors. `main()` enforces this with explicit `parser.error()` checks.
 
 ## Extraction Pipeline
 
@@ -233,7 +233,7 @@ As it enters each stage, the standard-mode runner calls `_report_stage(idx)` (wh
 
 ### Notifications (`notifications.py`)
 
-Pipeline completion dispatches a digest via [Apprise](https://github.com/caronc/apprise), which fans out to whichever backends are listed in `PIPELINE_NOTIFY_URLS` (comma-separated, e.g. ntfy, Gmail SMTP, Slack, Discord). The body is rendered from a Jinja2 template at `pipeline/templates/digest.md.j2` showing mode, duration, search counts, papers / gene ratios, database write counts, token usage, estimated cost, and any batch-validation warnings.
+Pipeline completion dispatches a digest via [Apprise](https://github.com/caronc/apprise), which fans out to whichever backends are listed in `PIPELINE_NOTIFY_URLS` (comma-separated, e.g. Gmail SMTP, Slack, Discord). The body is rendered from a Jinja2 template at `pipeline/templates/digest.md.j2` showing mode, duration, search counts, papers / gene ratios, database write counts, token usage, estimated cost, and any batch-validation warnings.
 
 Sending is wrapped in a Tenacity `@retry` decorator: up to `notify_max_retries` (default 3) attempts, exponential backoff between `notify_retry_min_wait` (4s) and `notify_retry_max_wait` (30s). Any exception is logged but never propagated — a broken notification channel does not fail the pipeline.
 
@@ -242,16 +242,6 @@ Sending is wrapped in a Tenacity `@retry` decorator: up to `notify_max_retries` 
 `event_log.py` defines the `EventLog` class with three methods: `record(event_type, data)` persists a JSON-serialised event to a local SQLite database at `PIPELINE_EVENT_DB_PATH` (default `logs/events.db`, WAL journal mode); `mark_notified(event_ids)` stamps events after a successful notification dispatch; `get_pending()` returns events where `notified = 0`, useful for replaying missed notifications and for cross-run deduplication / audit trails.
 
 The orchestration function `_record_and_notify()` lives in `main.py` (not `event_log.py`) and offloads the blocking SQLite + Apprise work to a worker thread via `asyncio.to_thread`. It records a `pipeline_completed` event, sends the Apprise notification, then stamps the event as notified — all under a single `EventLog` context manager.
-
-### Healthcheck (`healthcheck.py`)
-
-Integrates with [Healthchecks.io](https://healthchecks.io) (or a self-hosted equivalent) as a dead-man's-switch for scheduled runs.
-
-- `ping_start(url)` → `GET {url}/start` when the run begins.
-- `ping_success(url)` → `GET {url}` after a clean finish.
-- `ping_failure(url, message)` → `POST {url}/fail` with the traceback body on any exception.
-
-All three are no-ops when `PIPELINE_HEALTHCHECK_URL` is empty and catch-and-log on network errors — checkpoints must never block or fail the pipeline.
 
 ### Reporting (`report.py`)
 
@@ -321,7 +311,7 @@ The pipeline is designed to maximise the number of successfully processed papers
 
 **Transaction rollback on DB errors.** The gene merge uses a PostgreSQL transaction. If any insert or update fails, the entire batch rolls back. PMID recording happens after a successful merge, so a rollback does not leave orphaned PMID records.
 
-**Non-fatal observability.** Healthcheck pings, event-log writes, and Apprise notifications each catch their own exceptions — a broken external service never prevents the pipeline from completing.
+**Non-fatal observability.** Event-log writes and Apprise notifications each catch their own exceptions — a broken external service never prevents the pipeline from completing.
 
 **Resource cleanup.** The `finally` block of each mode closes all shared HTTP clients, the database pool, and the in-memory caches, regardless of whether the run succeeded or raised.
 
@@ -395,7 +385,6 @@ Tunables for the `--clinical-trials` mode. See the [ClinicalTrials.gov Sync](#cl
 | `PIPELINE_NOTIFY_MAX_RETRIES` | `3` | Tenacity attempt limit for notification dispatch |
 | `PIPELINE_NOTIFY_RETRY_MIN_WAIT` | `4.0` | Minimum exponential backoff between notification retries (seconds) |
 | `PIPELINE_NOTIFY_RETRY_MAX_WAIT` | `30.0` | Maximum exponential backoff between notification retries (seconds) |
-| `PIPELINE_HEALTHCHECK_URL` | *(empty)* | Healthchecks.io base URL (`/start`, `/fail` are appended). Empty = disabled |
 | `PIPELINE_EVENT_DB_PATH` | `logs/events.db` | SQLite path for the event log |
 | `PIPELINE_PROGRESS_FILE` | `logs/json/pipeline_progress.json` | JSON progress file consumed by the Shiny dashboard |
 

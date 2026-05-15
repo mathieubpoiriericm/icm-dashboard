@@ -288,13 +288,10 @@ class TestRunPipeline:
         mocker.patch("pipeline.main.write_comprehensive_report")
         mocker.patch("pipeline.main.print_rich_summary")
         mocker.patch("pipeline.main._record_and_notify", new_callable=AsyncMock)
-        mocker.patch("pipeline.main.ping_start", new_callable=AsyncMock)
-        mocker.patch("pipeline.main.ping_success", new_callable=AsyncMock)
         mocker.patch("pipeline.main._close_metadata_client", new_callable=AsyncMock)
         mocker.patch("pipeline.main.close_http_client", new_callable=AsyncMock)
         mocker.patch("pipeline.main.close_validation_client", new_callable=AsyncMock)
         mocker.patch("pipeline.main.close_async_client", new_callable=AsyncMock)
-        mocker.patch("pipeline.main.close_healthcheck_client", new_callable=AsyncMock)
         mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
         mocker.patch("pipeline.main.clear_gene_cache")
 
@@ -390,9 +387,6 @@ class TestRunSelectedPipelines:
     async def test_pubmed_only_calls_run_pipeline(self, mocker):
         mock_run = mocker.patch("pipeline.main.run_pipeline", new_callable=AsyncMock)
         mock_run.return_value = (PipelineMetrics(), {"pipeline_config": {"mode": None}})
-        mocker.patch("pipeline.main.ping_start")
-        mocker.patch("pipeline.main.ping_success")
-        mocker.patch("pipeline.main.ping_failure")
         mocker.patch("pipeline.main._record_and_notify")
         mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
 
@@ -415,9 +409,6 @@ class TestRunSelectedPipelines:
             "errors": [],
         }
         mock_run = mocker.patch("pipeline.main.run_pipeline", new_callable=AsyncMock)
-        mocker.patch("pipeline.main.ping_start")
-        mocker.patch("pipeline.main.ping_success")
-        mocker.patch("pipeline.main.ping_failure")
         mocker.patch("pipeline.main._record_and_notify")
         mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
 
@@ -440,9 +431,6 @@ class TestRunSelectedPipelines:
             "metrics": {},
             "errors": [],
         }
-        mocker.patch("pipeline.main.ping_start")
-        mocker.patch("pipeline.main.ping_success")
-        mocker.patch("pipeline.main.ping_failure")
         mocker.patch("pipeline.main._record_and_notify")
         mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
 
@@ -466,9 +454,6 @@ class TestRunSelectedPipelines:
             "metrics": {},
             "errors": [],
         }
-        mocker.patch("pipeline.main.ping_start")
-        mocker.patch("pipeline.main.ping_success")
-        mock_fail = mocker.patch("pipeline.main.ping_failure")
         mocker.patch("pipeline.main._record_and_notify")
         mocker.patch("pipeline.main.Database.close", new_callable=AsyncMock)
 
@@ -477,4 +462,3 @@ class TestRunSelectedPipelines:
 
         assert exit_code == 1  # failure reported
         mock_ct.assert_awaited_once()  # still ran CT after PubMed failed
-        mock_fail.assert_called_once()

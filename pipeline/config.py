@@ -339,9 +339,6 @@ class PipelineConfig:
     notify_urls: str = field(
         default_factory=lambda: _env_str("PIPELINE_NOTIFY_URLS", "")
     )
-    healthcheck_url: str = field(
-        default_factory=lambda: _env_str("PIPELINE_HEALTHCHECK_URL", "")
-    )
     event_db_path: str = field(
         default_factory=lambda: (
             _env_str("PIPELINE_EVENT_DB_PATH", str(PROJECT_ROOT / "logs" / "events.db"))
