@@ -1,8 +1,11 @@
 """Distill PubMed-API-ready keywords from a curated MODS bibliography.
 
-Reads MODS XML files in the input directory (default
-``data/bibentry/xml/``), tokenises titles + abstracts (and, when
-available, PMC full-text body sections), then ranks unigrams, bigrams,
+Reads MODS XML files in the primary directory (default
+``data/bibentry/xml/``) and, when present, also the supplementary
+directory ``data/bibentry/xml_extra/`` — papers kept out of the
+dashboard but still useful for keyword distillation. Tokenises titles
++ abstracts (and, when available, PMC full-text body sections), then
+ranks unigrams, bigrams,
 trigrams and ALL-CAPS acronyms by **Dunning's log-likelihood ratio** of
 foreground vs. a one-time PubMed baseline snapshot. LLR surfaces terms
 that are *distinctive* to the corpus rather than merely frequent —
@@ -52,6 +55,7 @@ Usage:
     python scripts/distill_pubmed_keywords.py --build-baseline
     python scripts/distill_pubmed_keywords.py
     python scripts/distill_pubmed_keywords.py --xml-dir data/bibentry/xml
+    python scripts/distill_pubmed_keywords.py --xml-extra-dir data/bibentry/xml_extra
     python scripts/distill_pubmed_keywords.py --no-mesh
     python scripts/distill_pubmed_keywords.py --no-fulltext
     python scripts/distill_pubmed_keywords.py --json --output keywords.json
@@ -74,7 +78,7 @@ import tempfile
 import time
 import warnings
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, TextIO
@@ -119,6 +123,7 @@ _stderr_console: Final[Console] = Console(stderr=True)
 # regardless of the caller's working directory.
 _PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 DEFAULT_XML_DIR: Final[Path] = _PROJECT_ROOT / "data" / "bibentry" / "xml"
+DEFAULT_XML_EXTRA_DIR: Final[Path] = _PROJECT_ROOT / "data" / "bibentry" / "xml_extra"
 DEFAULT_BASELINE_CACHE: Final[Path] = (
     _PROJECT_ROOT / "data" / "bibentry" / "baseline" / "pubmed_baseline.json.gz"
 )
@@ -851,20 +856,29 @@ def parse_mods_file(path: Path) -> PaperText | None:
 
 
 def load_corpus(
-    xml_dir: Path,
+    xml_dirs: Sequence[Path],
     *,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[PaperText]:
-    """Parse every ``*.xml`` file in the directory into PaperText records.
+    """Parse every ``*.xml`` file across the given directories into PaperText records.
 
-    ``progress_callback`` is invoked once after each XML file is
-    attempted (parsed or skipped) with ``(completed, total)``, so a
-    rich.Progress task driven from the caller can advance in real time.
+    Files within each directory are processed in sorted order; directories
+    are processed in the order given. Raises ``FileNotFoundError`` if any
+    directory is missing.
     """
-    if not xml_dir.exists() or not xml_dir.is_dir():
-        raise FileNotFoundError(f"XML directory not found: {xml_dir}")
+    if not xml_dirs:
+        raise ValueError("load_corpus: at least one XML directory is required")
+    for d in xml_dirs:
+        if not d.is_dir():
+            raise FileNotFoundError(f"XML directory not found: {d}")
 
-    files = sorted(xml_dir.glob("*.xml"))
+    files: list[Path] = []
+    per_dir_counts: list[tuple[Path, int]] = []
+    for d in xml_dirs:
+        d_files = sorted(d.glob("*.xml"))
+        per_dir_counts.append((d, len(d_files)))
+        files.extend(d_files)
+
     total = len(files)
     papers: list[PaperText] = []
     for i, f in enumerate(files, start=1):
@@ -873,7 +887,8 @@ def load_corpus(
             papers.append(parsed)
         if progress_callback is not None:
             progress_callback(i, total)
-    logger.info(f"Parsed {len(papers)} paper(s) from {total} XML file(s) in {xml_dir}")
+    breakdown = ", ".join(f"{n} in {d}" for d, n in per_dir_counts)
+    logger.info(f"Parsed {len(papers)} paper(s) from {total} XML file(s) ({breakdown})")
     return papers
 
 
@@ -2675,6 +2690,7 @@ def _render_config_panel(args: argparse.Namespace, *, phrase_top: int) -> Panel:
     grid.add_column(style="bold")
 
     grid.add_row("xml-dir", str(args.xml_dir))
+    grid.add_row("xml-extra-dir", str(args.xml_extra_dir))
     grid.add_row(
         "top-n / min-df / min-llr",
         f"{args.top_n}  /  {args.min_df}  /  {args.min_llr:.2f}",
@@ -2804,6 +2820,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_XML_DIR,
         help=f"Directory of MODS XML files (default: {DEFAULT_XML_DIR})",
+    )
+    parser.add_argument(
+        "--xml-extra-dir",
+        type=Path,
+        default=DEFAULT_XML_EXTRA_DIR,
+        help=(
+            "Supplementary MODS XML directory merged into the corpus "
+            f"(default: {DEFAULT_XML_EXTRA_DIR}). A missing dir is skipped "
+            "with an info log line, so the default works whether or not "
+            "this directory has been populated."
+        ),
     )
     parser.add_argument(
         "--top-n",
@@ -3014,11 +3041,21 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
 
+    xml_dirs: list[Path] = [args.xml_dir]
+    # Supplementary dir is best-effort so the default invocation works
+    # whether or not the user has populated it.
+    if args.xml_extra_dir.is_dir():
+        xml_dirs.append(args.xml_extra_dir)
+    else:
+        logger.info(
+            f"Supplementary xml-extra-dir {args.xml_extra_dir} not found; skipping."
+        )
+
     with _build_progress() as progress:
         load_task = progress.add_task("Loading corpus", total=None)
         try:
             papers = load_corpus(
-                args.xml_dir,
+                xml_dirs,
                 progress_callback=lambda c, t: progress.update(
                     load_task, completed=c, total=t
                 ),

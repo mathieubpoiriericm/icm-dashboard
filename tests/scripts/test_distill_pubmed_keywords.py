@@ -56,6 +56,28 @@ from scripts.distill_pubmed_keywords import (
 _FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_xml_extra_default(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stop main()-based tests from picking up the real xml_extra dir.
+
+    The CLI default for ``--xml-extra-dir`` resolves to
+    ``data/bibentry/xml_extra/`` inside the project, which actually
+    exists on developer machines. Without this fixture, every test that
+    invokes ``main()`` would inadvertently load whatever XML files live
+    there, polluting assertions like ``received_pmids == [["12345"]]``.
+    Pointing the constant at a never-created tmp path makes the
+    best-effort skip branch in ``main()`` engage.
+    """
+    nowhere = tmp_path_factory.mktemp("no_xml_extra") / "absent"
+    monkeypatch.setattr(
+        "scripts.distill_pubmed_keywords.DEFAULT_XML_EXTRA_DIR",
+        nowhere,
+    )
+
+
 # ---------------------------------------------------------------------------
 # stem_key — singular/plural collapse
 # ---------------------------------------------------------------------------
@@ -999,14 +1021,16 @@ class TestMeshCache:
             fetch_mesh_terms(["15905468"], cache_dir=tmp_path, batch_size=0)
 
 
-def _write_mods(path: Path, *, pmid: str) -> None:
-    """Write a minimal MODS XML record with the given PMID."""
+def _write_mods(
+    path: Path, *, pmid: str, title: str = "T", abstract: str = "A."
+) -> None:
+    """Write a minimal MODS XML record with the given PMID, title, and abstract."""
     path.write_text(
         '<?xml version="1.0"?>\n'
         '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
         "  <mods>\n"
-        "    <titleInfo><title>T</title></titleInfo>\n"
-        "    <abstract>A.</abstract>\n"
+        f"    <titleInfo><title>{title}</title></titleInfo>\n"
+        f"    <abstract>{abstract}</abstract>\n"
         f'    <identifier type="pubmed">{pmid}</identifier>\n'
         "  </mods>\n"
         "</modsCollection>\n",
@@ -2259,16 +2283,8 @@ def _stub_corpus(tmp_path: Path) -> Path:
     """Minimal MODS XML directory so load_corpus succeeds in main()."""
     xml_dir = tmp_path / "xml"
     xml_dir.mkdir()
-    (xml_dir / "1.xml").write_text(
-        '<?xml version="1.0"?>\n'
-        '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
-        "  <mods>\n"
-        "    <titleInfo><title>Stub title</title></titleInfo>\n"
-        "    <abstract>Stub abstract.</abstract>\n"
-        '    <identifier type="pubmed">12345</identifier>\n'
-        "  </mods>\n"
-        "</modsCollection>\n",
-        encoding="utf-8",
+    _write_mods(
+        xml_dir / "1.xml", pmid="12345", title="Stub title", abstract="Stub abstract."
     )
     return xml_dir
 
@@ -2369,6 +2385,57 @@ def test_main_default_invokes_fulltext_fetch(
     )
     assert rc == 0
     assert received_pmids == [["12345"]]
+
+
+def test_main_xml_extra_dir_contributes_to_corpus(
+    _stub_corpus: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit --xml-extra-dir adds its PMIDs to the run, alongside --xml-dir."""
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_minimal_baseline(baseline_path)
+    fulltext_cache = tmp_path / "ft"
+
+    extra_dir = tmp_path / "xml_extra"
+    extra_dir.mkdir()
+    _write_mods(
+        extra_dir / "extra.xml",
+        pmid="67890",
+        title="Extra title",
+        abstract="Extra abstract.",
+    )
+
+    received_pmids: list[list[str]] = []
+
+    def spy(pmids, cache_dir, **_kwargs):  # noqa: ANN001, ANN003
+        received_pmids.append(list(pmids))
+        return {}
+
+    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
+
+    out_path = tmp_path / "out.json"
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--xml-extra-dir",
+            str(extra_dir),
+            "--baseline-cache",
+            str(baseline_path),
+            "--fulltext-cache",
+            str(fulltext_cache),
+            "--no-mesh",
+            "--json",
+            "--output",
+            str(out_path),
+        ]
+    )
+
+    assert rc == 0
+    assert len(received_pmids) == 1
+    assert set(received_pmids[0]) == {"12345", "67890"}
+    assert json.loads(out_path.read_text(encoding="utf-8"))["papers"] == 2
 
 
 def test_main_missing_baseline_fails_before_fulltext_fetch(
@@ -2832,12 +2899,38 @@ def test_load_corpus_invokes_progress_callback_monotonically(
         )
 
     calls: list[tuple[int, int]] = []
-    papers = load_corpus(xml_dir, progress_callback=lambda c, t: calls.append((c, t)))
+    papers = load_corpus([xml_dir], progress_callback=lambda c, t: calls.append((c, t)))
 
     assert [c[0] for c in calls] == [1, 2, 3]
     assert all(t == 3 for _, t in calls)
     # 2 of 3 files yielded papers (middle one had no title/abstract).
     assert len(papers) == 2
+
+
+def test_load_corpus_merges_multiple_dirs(tmp_path: Path) -> None:
+    """Files from the supplementary dir reach the corpus alongside the primary."""
+    primary = tmp_path / "xml"
+    extra = tmp_path / "xml_extra"
+    primary.mkdir()
+    extra.mkdir()
+
+    _write_mods(primary / "1.xml", pmid="1001", title="Primary paper")
+    _write_mods(extra / "2.xml", pmid="2002", title="Extra paper")
+
+    papers = load_corpus([primary, extra])
+
+    pmids = {p.pmid for p in papers}
+    assert pmids == {"1001", "2002"}
+
+
+def test_load_corpus_raises_when_any_dir_missing(tmp_path: Path) -> None:
+    """All dirs in the iterable must exist — the function raises on the first miss."""
+    primary = tmp_path / "xml"
+    primary.mkdir()
+    missing = tmp_path / "absent"
+
+    with pytest.raises(FileNotFoundError, match=str(missing)):
+        load_corpus([primary, missing])
 
 
 # ---------------------------------------------------------------------------
