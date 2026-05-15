@@ -7,16 +7,8 @@
 [![Python](https://img.shields.io/badge/Python-3.14+-yellow.svg)](https://www.python.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-purple.svg)](https://www.postgresql.org/)
 
-| <center>R Tests</center> | <center>Pipeline Tests</center> |
-| :-- | :-- |
-| [![R Tests: 97](https://img.shields.io/badge/R_Tests-97_passing-green.svg)](#testing) | [![Pipeline Tests: 443](https://img.shields.io/badge/Pipeline_Tests-443_passing-green.svg)](#testing) |
-| [![filter_utils](https://img.shields.io/badge/filter__utils-42_tests-brightgreen.svg)](#testing) | [![Infrastructure](https://img.shields.io/badge/Infrastructure-126_tests-brightgreen.svg)](#testing) |
-| [![data_prep](https://img.shields.io/badge/data__prep-20_tests-brightgreen.svg)](#testing) | [![External Data](https://img.shields.io/badge/External_Data-103_tests-brightgreen.svg)](#testing) |
-| [![tooltips](https://img.shields.io/badge/tooltips-18_tests-brightgreen.svg)](#testing) | [![Data Processing](https://img.shields.io/badge/Data_Processing-94_tests-brightgreen.svg)](#testing) |
-| [![utils](https://img.shields.io/badge/utils-12_tests-brightgreen.svg)](#testing) | [![Paper Retrieval](https://img.shields.io/badge/Paper_Retrieval-51_tests-brightgreen.svg)](#testing) |
-| [![shinytest2](https://img.shields.io/badge/shinytest2-5_tests-brightgreen.svg)](#testing) | [![LLM Extraction](https://img.shields.io/badge/LLM_Extraction-33_tests-brightgreen.svg)](#testing) |
-| | [![Orchestration](https://img.shields.io/badge/Orchestration-25_tests-brightgreen.svg)](#testing) |
-| | [![Notifications](https://img.shields.io/badge/Notifications-11_tests-brightgreen.svg)](#testing) |
+[![R Tests](https://img.shields.io/badge/R_Tests-102_passing-green.svg)](#testing)
+[![Python Tests](https://img.shields.io/badge/Python_Tests-1230_passing-green.svg)](#testing)
 
 An interactive R Shiny dashboard for exploring putative causal genes and clinical trial drugs for cerebral small vessel disease (cSVD), developed at the Paris Brain Institute (ICM).
 
@@ -25,14 +17,18 @@ An interactive R Shiny dashboard for exploring putative causal genes and clinica
 ## Table of Contents
 
 - [Overview](#overview)
+- [Technology Stack](#technology-stack)
 - [Features](#features)
+- [Project Structure](#project-structure)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
+- [Development](#development)
 - [Environment Variables](#environment-variables)
 - [Usage](#usage)
 - [Deployment](#deployment)
-- [Technology Stack](#technology-stack)
-- [Project Structure](#project-structure)
+- [HPC Pipeline App](#hpc-pipeline-app)
+- [HPC Probe Explorer](#hpc-probe-explorer)
+- [Fine-Tuning Loop](#fine-tuning-loop)
 - [Data Pipeline](#data-pipeline)
 - [LLM Configuration](#llm-configuration)
 - [Data Sources](#data-sources)
@@ -181,8 +177,11 @@ rshiny_dashboard/
 ├── Makevars                      # R compilation flags (OpenMP/clang) for macOS (arm64)
 ├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
 ├── README.md                     # Project documentation
+├── R_PACKAGE_MANIFEST.md         # Canonical R dependency list
 ├── renv.lock                     # R dependency lockfile (used by Docker)
-├── requirements.txt              # Python dependencies
+├── requirements.txt              # Python dependencies (version floors)
+├── requirements.lock             # Pinned Python deps (uv-managed)
+├── uv.lock                       # uv resolver lockfile
 ├── R/
 │   ├── clean_table1.R            # Table 1 data cleaning
 │   ├── clean_table2.R            # Table 2 data cleaning
@@ -206,14 +205,17 @@ rshiny_dashboard/
 │   ├── csv/                      # CSV exports
 │   └── qs/                       # QS serialized files (read by Shiny at runtime)
 ├── docs/                         # Technical documentation
-│   ├── dashboard-overview.md     # Dashboard architecture reference
-│   ├── python-etl-pipeline.md    # ETL pipeline documentation
-│   └── pipeline-security.md      # Security audit and threat model
+│   ├── dashboard-overview.md             # Dashboard architecture reference
+│   ├── python-etl-pipeline.md            # ETL pipeline documentation
+│   ├── pipeline-security.md              # Security audit and threat model
+│   ├── hpc-pipeline-app-runtime.md       # HPC pipeline-app runtime contract
+│   ├── icm-hpc-finetuning-stack.md       # HPC fine-tuning stack (canonical)
+│   └── icm-hpc-finetuning-stack-plain.md # HPC fine-tuning stack (plain English)
 ├── logs/                         # Pipeline execution logs (gitignored)
 ├── sql/                          # PostgreSQL init scripts (bind-mounted into postgres)
-│   ├── add_external_data_tables.sql  # Cache table schema
-│   └── setup.sql                 # Core database schema
-├── pipeline/
+│   ├── 01_setup.sql                     # Core database schema
+│   └── 02_add_external_data_tables.sql  # Cache table schema
+├── pipeline/                     # Python ETL pipeline
 │   ├── __init__.py               # Package marker
 │   ├── alembic.ini               # Alembic migration config
 │   ├── batch_validation.py       # Pandera batch quality checks
@@ -222,14 +224,14 @@ rshiny_dashboard/
 │   ├── config.py                 # Centralized configuration with env overrides
 │   ├── data_merger.py            # Data transformation & database loading
 │   ├── database.py               # Async PostgreSQL operations
-│   ├── event_log.py              # Structured event logging
+│   ├── event_log.py              # Structured event logging (SQLite-backed)
 │   ├── external_data_sync.py     # External data synchronization
-│   ├── healthcheck.py            # Pipeline health checks
-│   ├── http_client.py            # Shared HTTP client utilities
-│   ├── llm_extraction.py         # LLM-based gene extraction (Anthropic Claude)
+│   ├── healthcheck.py            # Pipeline health checks (Healthchecks.io)
+│   ├── http_client.py            # Shared HTTP client (AsyncHttpClientManager)
+│   ├── llm_extraction.py         # LLM-based gene extraction orchestration
 │   ├── main.py                   # CLI entry point & pipeline orchestrator
 │   ├── ncbi_gene_fetch.py        # NCBI Gene data fetching
-│   ├── notifications.py          # Pipeline notification system
+│   ├── notifications.py          # Apprise-based pipeline notifications
 │   ├── pdf_retrieval.py          # Multi-source text retrieval (PMC/Unpaywall/Abstract)
 │   ├── prompts.py                # LLM prompt templates with prompt caching
 │   ├── pubmed_citations.py       # PubMed citation handling
@@ -237,18 +239,23 @@ rshiny_dashboard/
 │   ├── quality_metrics.py        # Pipeline statistics tracking
 │   ├── rate_limiter.py           # Token-bucket rate limiter (RPM/TPM)
 │   ├── report.py                 # JSON/Rich CLI report generation
+│   ├── tuning_schema.py          # Pydantic models for tuning runs
 │   ├── uniprot_fetch.py          # UniProt data fetching
 │   ├── validation.py             # NCBI gene verification & confidence filtering
 │   ├── alembic/                  # Database migrations (Alembic)
 │   │   ├── env.py                # Alembic environment config
 │   │   ├── script.py.mako        # Migration script template
 │   │   └── versions/             # Migration version scripts
-│   │       ├── 001_baseline_schema.py  # Initial database schema
-│   │       ├── 002_add_upper_gene_index.py  # Upper gene name index
+│   │       ├── 001_baseline_schema.py        # Initial database schema
+│   │       ├── 002_add_upper_gene_index.py   # Upper gene name index
 │   │       └── 003_add_pipeline_runs_table.py  # Pipeline runs audit table
+│   ├── llm_providers/            # Pluggable LLM provider abstraction
+│   │   ├── __init__.py           # Package marker
+│   │   ├── base.py               # Provider protocol + GeneEntry/ExtractionResult Pydantic models
+│   │   └── anthropic_provider.py # Claude/Anthropic implementation (streaming + adaptive thinking)
 │   └── templates/                # Jinja2 notification templates
 │       └── digest.md.j2          # Markdown notification template
-├── pipeline_app/                 # NiceGUI pipeline app (dev/testing UI)
+├── pipeline_app/                 # NiceGUI local pipeline app (port 8080)
 │   ├── __init__.py               # Package marker
 │   ├── config.json               # Persisted non-sensitive app config
 │   ├── config.py                 # Config dataclasses and persistence
@@ -258,16 +265,21 @@ rshiny_dashboard/
 │   ├── tuning_config.json        # Persisted tuning preset config
 │   ├── components/               # Reusable UI elements
 │   │   ├── __init__.py           # Package marker
+│   │   ├── async_loader.py       # Helper for async data loading
 │   │   ├── button_loading.py     # Button with loading state
 │   │   ├── confirm_dialog.py     # Confirmation dialog
 │   │   ├── empty_state.py        # Empty state placeholder
+│   │   ├── execution_panel.py    # Pipeline execution panel
 │   │   ├── file_content.py       # File content viewer
+│   │   ├── form_fields.py        # Reusable form field helpers
 │   │   ├── fs_nav.py             # Filesystem navigation
 │   │   ├── log_viewer.py         # Log viewer with severity filters
 │   │   ├── path_picker.py        # Path picker dialog
 │   │   ├── preset_dialog.py      # Preset save/load dialog
+│   │   ├── preset_selector.py    # Preset selector widget
 │   │   ├── stage_tracker.py      # Pipeline stage progress tracker
-│   │   └── stat_card.py          # Statistic display card
+│   │   ├── stat_card.py          # Statistic display card
+│   │   └── table_utils.py        # Table rendering utilities
 │   ├── pages/                    # Application pages
 │   │   ├── __init__.py           # Package marker
 │   │   ├── configure_run.py      # Configure & Run page
@@ -278,64 +290,120 @@ rshiny_dashboard/
 │   │   └── tuning_history.py     # Tuning History page
 │   └── static/                   # Static assets
 │       └── theme.css             # Theme stylesheet
+├── pipeline_app_hpc/             # NiceGUI HPC pipeline app (port 8081)
+│   ├── __init__.py               # Package marker
+│   ├── README.md                 # HPC pipeline-app readme
+│   ├── cli.py                    # Headless CLI entrypoint (`python -m pipeline_app_hpc.cli`)
+│   ├── config.json               # Persisted non-sensitive app config
+│   ├── config.py                 # Config dataclasses (SSH, vLLM, sbatch)
+│   ├── extract.py                # Extraction orchestration (HPC variant)
+│   ├── main.py                   # NiceGUI entry point + bounded shutdown
+│   ├── runner.py                 # HPC-aware pipeline + tuning runner
+│   ├── theme.py                  # Shared dark theme
+│   ├── components/               # HPC-specific UI elements
+│   │   ├── __init__.py           # Package marker
+│   │   ├── hpc_card.py           # HPC connection / vLLM status card
+│   │   └── preset_selector.py    # Preset selector widget
+│   ├── hpc/                      # HPC orchestration layer
+│   │   ├── __init__.py           # Package marker
+│   │   ├── lifecycle.py          # VllmServer state machine
+│   │   ├── readiness.py          # vLLM HTTP readiness polling
+│   │   ├── sbatch.py             # Slurm submission + status polling
+│   │   ├── ssh.py                # SshControlMaster (single-conn multiplexing)
+│   │   └── tunnel.py             # Local-port → remote vLLM tunnel
+│   ├── pages/                    # Application pages (mirrors pipeline_app/)
+│   │   ├── __init__.py           # Package marker
+│   │   ├── _helpers.py           # Shared page helpers
+│   │   ├── configure_run.py      # Configure & Run (with HPC card)
+│   │   ├── file_browser.py       # File Browser page
+│   │   ├── results_viewer.py     # Results Viewer page
+│   │   ├── run_history.py        # Run History page
+│   │   ├── tuning.py             # Tuning page
+│   │   └── tuning_history.py     # Tuning History page
+│   ├── providers/                # HPC LLM provider
+│   │   ├── __init__.py           # Package marker
+│   │   └── vllm_provider.py      # OpenAI-compatible client targeting tunneled vLLM
+│   └── sbatch/                   # Slurm submission templates
+│       └── vllm_serve.sbatch.j2  # vLLM serve job template
 ├── scripts/
+│   ├── __init__.py               # Package marker
+│   ├── bib_to_xml.R              # Convert .bib files to MODS XML
+│   ├── distill_pubmed_keywords.py  # Distill PubMed keywords from MODS XML bibliography
 │   ├── plot_tuning_runs.R        # Tuning experiment visualization
 │   ├── python_plot.py            # Clinical trials visualization generator
 │   ├── run_pipeline.sh           # Weekly cron wrapper (pipeline + trigger + restart)
 │   ├── trigger_update.R          # Regenerate QS files from database
 │   ├── validate_pipeline.py      # Pipeline validation script
+│   ├── finetune/                 # QLoRA fine-tuning loop (Mac → ICM HPC)
+│   │   ├── __init__.py           # Package marker
+│   │   ├── build_dataset.py      # Builds MLX-LM JSONL from pipeline logs + PDFs (runs on Mac)
+│   │   ├── train_unsloth.py      # QLoRA fine-tune on HPC via Unsloth + TRL
+│   │   ├── icm_finetune.sbatch   # Main fine-tune Slurm script
+│   │   ├── icm_fa2_build.sbatch  # FlashAttention 2 wheel build
+│   │   └── icm_smoke.sbatch      # Adapter smoke test
 │   └── tuning/                   # Threshold calibration experiments
+│       ├── __init__.py           # Package marker
 │       ├── analyze_errors.py     # Error analysis
 │       ├── calibrate_threshold.py  # Threshold calibration
 │       ├── track_run.py          # Experiment run tracking
 │       ├── run_experiment.sh     # Experiment runner (bash)
 │       └── run_experiment.completion.zsh  # Zsh tab-completion
 ├── tests/
-│   ├── test_all.R                # R test suite (testthat + shinytest2)
-│   ├── pipeline/                 # Python test suite (pytest)
+│   ├── test_all.R                # R test suite — 102 tests (testthat + shinytest2)
+│   ├── pipeline/                 # ETL pipeline pytest suite — 543 tests
 │   │   ├── conftest.py           # Shared fixtures
-│   │   ├── test_batch_validation.py      # Tests for batch_validation.py
-│   │   ├── test_clinical_trials_fetch.py # Tests for clinical_trials_fetch.py
+│   │   ├── test_anthropic_provider.py        # Tests for anthropic_provider.py
+│   │   ├── test_batch_validation.py          # Tests for batch_validation.py
+│   │   ├── test_build_dataset.py             # Tests for scripts/finetune/build_dataset.py
+│   │   ├── test_clinical_trials_fetch.py     # Tests for clinical_trials_fetch.py
 │   │   ├── test_clinical_trials_pipeline.py  # Tests for CT pipeline orchestration
-│   │   ├── test_config.py                # Tests for config.py
-│   │   ├── test_data_merger.py           # Tests for data_merger.py
-│   │   ├── test_database.py              # Tests for database.py
-│   │   ├── test_event_log.py             # Tests for event_log.py
-│   │   ├── test_external_data_sync.py    # Tests for external_data_sync.py
-│   │   ├── test_healthcheck.py           # Tests for healthcheck.py
-│   │   ├── test_llm_extraction.py        # Tests for llm_extraction.py
-│   │   ├── test_main.py                  # Tests for main.py
-│   │   ├── test_ncbi_gene_fetch.py       # Tests for ncbi_gene_fetch.py
-│   │   ├── test_notification_config.py   # Tests for notification config
-│   │   ├── test_notifications.py         # Tests for notifications.py
-│   │   ├── test_pdf_retrieval.py         # Tests for pdf_retrieval.py
-│   │   ├── test_prompts.py               # Tests for prompts.py
-│   │   ├── test_pubmed_citations.py      # Tests for pubmed_citations.py
-│   │   ├── test_pubmed_search.py         # Tests for pubmed_search.py
-│   │   ├── test_quality_metrics.py       # Tests for quality_metrics.py
-│   │   ├── test_rate_limiter.py          # Tests for rate_limiter.py
-│   │   ├── test_report.py                # Tests for report.py
-│   │   ├── test_uniprot_fetch.py         # Tests for uniprot_fetch.py
-│   │   └── test_validation.py            # Tests for validation.py
-│   └── pipeline_app/             # Pipeline app test suite (pytest)
-│       ├── conftest.py                   # Shared fixtures (tmp_config_dir)
-│       ├── test_config.py                # Tests for pipeline_app/config.py
-│       ├── test_empty_state.py           # Tests for empty_state component
-│       ├── test_file_browser.py          # Tests for File Browser page
-│       ├── test_file_content.py          # Tests for file_content component
-│       ├── test_fs_nav.py                # Tests for fs_nav component
-│       ├── test_log_viewer_severity.py   # Tests for log_viewer severity filter
-│       ├── test_main.py                  # Tests for pipeline_app/main.py
-│       ├── test_main_breadcrumbs.py      # Tests for main breadcrumbs
-│       ├── test_path_picker.py           # Tests for path_picker component
-│       ├── test_results_viewer.py        # Tests for Results Viewer page
-│       ├── test_runner.py                # Tests for runner.py
-│       ├── test_runner_args.py           # Tests for runner CLI arg building
-│       ├── test_stage_tracker.py         # Tests for stage_tracker component
-│       ├── test_stat_card.py             # Tests for stat_card component
-│       ├── test_theme.py                 # Tests for theme
-│       ├── test_tuning_history.py        # Tests for Tuning History page
-│       └── test_tuning_runner.py         # Tests for TuningRunner
+│   │   ├── test_config.py                    # Tests for config.py
+│   │   ├── test_data_merger.py               # Tests for data_merger.py
+│   │   ├── test_database.py                  # Tests for database.py
+│   │   ├── test_event_log.py                 # Tests for event_log.py
+│   │   ├── test_external_data_sync.py        # Tests for external_data_sync.py
+│   │   ├── test_healthcheck.py               # Tests for healthcheck.py
+│   │   ├── test_llm_extraction.py            # Tests for llm_extraction.py
+│   │   ├── test_llm_extraction_dispatch.py   # Tests for provider dispatch
+│   │   ├── test_llm_providers_base.py        # Tests for llm_providers/base.py
+│   │   ├── test_main.py                      # Tests for main.py
+│   │   ├── test_ncbi_gene_fetch.py           # Tests for ncbi_gene_fetch.py
+│   │   ├── test_notification_config.py       # Tests for notification config
+│   │   ├── test_notifications.py             # Tests for notifications.py
+│   │   ├── test_pdf_retrieval.py             # Tests for pdf_retrieval.py
+│   │   ├── test_prompts.py                   # Tests for prompts.py
+│   │   ├── test_pubmed_citations.py          # Tests for pubmed_citations.py
+│   │   ├── test_pubmed_search.py             # Tests for pubmed_search.py
+│   │   ├── test_quality_metrics.py           # Tests for quality_metrics.py
+│   │   ├── test_rate_limiter.py              # Tests for rate_limiter.py
+│   │   ├── test_report.py                    # Tests for report.py
+│   │   ├── test_uniprot_fetch.py             # Tests for uniprot_fetch.py
+│   │   └── test_validation.py                # Tests for validation.py
+│   ├── pipeline_app/             # NiceGUI pipeline-app pytest suite — 413 tests, 17 files
+│   │   ├── conftest.py                   # Shared fixtures (tmp_config_dir)
+│   │   ├── test_config.py                # Tests for pipeline_app/config.py
+│   │   ├── test_empty_state.py           # Tests for empty_state component
+│   │   ├── test_file_browser.py          # Tests for File Browser page
+│   │   ├── test_file_content.py          # Tests for file_content component
+│   │   ├── test_fs_nav.py                # Tests for fs_nav component
+│   │   ├── test_log_viewer_severity.py   # Tests for log_viewer severity filter
+│   │   ├── test_main.py                  # Tests for pipeline_app/main.py
+│   │   ├── test_main_breadcrumbs.py      # Tests for main breadcrumbs
+│   │   ├── test_path_picker.py           # Tests for path_picker component
+│   │   ├── test_results_viewer.py        # Tests for Results Viewer page
+│   │   ├── test_runner.py                # Tests for runner.py
+│   │   ├── test_runner_args.py           # Tests for runner CLI arg building
+│   │   ├── test_stage_tracker.py         # Tests for stage_tracker component
+│   │   ├── test_stat_card.py             # Tests for stat_card component
+│   │   ├── test_theme.py                 # Tests for theme
+│   │   ├── test_tuning_history.py        # Tests for Tuning History page
+│   │   └── test_tuning_runner.py         # Tests for TuningRunner
+│   ├── pipeline_app_hpc/         # HPC pipeline-app pytest suite — 130 tests, 15 files
+│   │   ├── conftest.py
+│   │   └── test_*.py             # Covers CLI, config, extract, HPC card, integration, lifecycle, main, readiness, runner, sbatch (+ template), SSH, tuning runner, tunnel, vLLM provider
+│   └── scripts/                  # Standalone-scripts pytest suite — 144 tests
+│       ├── fixtures/             # JATS XML + MeSH samples loaded by path (not network)
+│       └── test_*.py             # Currently covers scripts/distill_pubmed_keywords.py
 └── www/                          # Static web assets
     ├── custom.css                # Custom styles (source)
     ├── custom.js                 # Custom JavaScript (source)
@@ -377,11 +445,12 @@ rshiny_dashboard/
 git clone https://github.com/mathieubpoiriericm/icm-dashboard.git
 cd icm-dashboard
 
-# 2. Install the maRco helper package
-Rscript -e 'devtools::install("maRco")'
+# 2. Install R dependencies — preferred: restore from the lockfile
+Rscript -e 'renv::restore()'
+# (or, for a minimal manual install, see the Installation section below)
 
-# 3. Install dependencies (see Installation for full list)
-Rscript -e 'install.packages(c("shiny", "bslib", "DT", "data.table", "qs"))'
+# 3. Install the maRco helper package
+Rscript -e 'devtools::install("maRco")'
 
 # 4. Run the app
 Rscript -e 'shiny::runApp()'
@@ -415,51 +484,63 @@ devtools::install("maRco")
 <details>
 <summary><strong>Click to expand full R package list</strong></summary>
 
+The canonical R dependency list lives in
+[`R_PACKAGE_MANIFEST.md`](R_PACKAGE_MANIFEST.md) (generated from the
+source files). For reproducible builds the Docker image restores from
+`renv.lock`; for local installs:
+
 ```r
 # Install required CRAN packages
 install.packages(c(
-  "shiny",
   "bslib",
-  "dplyr",
-  "purrr",
-  "stringr",
-  "DT",
-  "tools",
-  "data.table",
-  "sysfonts",
-  "showtext",
-  "fastmap",
-  "memoise",
   "cachem",
+  "data.table",
+  "DBI",
   "digest",
+  "dplyr",
+  "DT",
+  "fastmap",
+  "future",
+  "future.apply",
+  "ggplot2",
+  "ggrepel",
+  "ggtext",
   "htmltools",
   "httr2",
-  "xml2",
-  "rlang",
-  "readr",
-  "tidyselect",
-  "DBI",
-  "RPostgres",
-  "rentrez",
-  "RefManageR",
-  "rbibutils",
-  "testthat",
-  "shinytest2",
-  "qs",
-  "parallel",
   "jsonlite",
-  "shinyWidgets",
   "leaflet",
+  "memoise",
+  "parallelly",
+  "patchwork",
+  "purrr",
+  "qs",
+  "ragg",
+  "readr",
+  "RPostgres",
+  "scales",
+  "shiny",
+  "shinytest2",
+  "shinyWidgets",
+  "showtext",
+  "stringr",
+  "sysfonts",
+  "systemfonts",
+  "testthat",
   "tidygeocoder",
-  "future",
-  "future.apply"
+  "tidyr"
 ))
-
-# Install Bioconductor packages
-if (!require("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-BiocManager::install(c("biomaRt", "UniprotR"))
 ```
+
+Visualization-only packages (`ggplot2`, `ggrepel`, `ggtext`,
+`patchwork`, `ragg`, `scales`, `systemfonts`, `tidyr`) are required by
+`scripts/plot_tuning_runs.R` but not by the dashboard itself; you can
+omit them if you don't run the tuning plots.
+
+> `devtools::install("maRco")` brings in additional bioinformatics
+> packages (`rentrez`, `RefManageR`, `rbibutils`, plus Bioconductor's
+> `biomaRt` and `UniprotR`) transitively via maRco's `DESCRIPTION` —
+> they aren't required to launch the Shiny app but are needed by the
+> ETL helpers in the maRco package.
 
 </details>
 
@@ -478,6 +559,7 @@ httpx>=0.24.0
 
 # XML parsing
 lxml>=4.9.0
+lxml-stubs>=0.5.1
 
 # LLM API
 anthropic>=0.25.0
@@ -511,7 +593,7 @@ argcomplete>=3.0.0
 # CLI output formatting
 rich>=13.0.0
 
-# PDF extraction
+# PDF extraction (optional)
 PyMuPDF>=1.23.0
 
 # Notifications
@@ -523,10 +605,17 @@ jinja2>=3.1.6
 matplotlib>=3.8.0
 scikit-learn>=1.4.0
 
+# NiceGUI framework (pipeline app + HPC pipeline app)
+nicegui>=2.0.0
+
 # Dev tools — linting & type-checking
 ruff>=0.9.0
 ty>=0.0.1a0
 ```
+
+For reproducible builds, pinned versions are captured in
+`requirements.lock` and `uv.lock` (used by `uv` and the Docker
+pipeline image).
 
 </details>
 
@@ -547,10 +636,10 @@ ty>=0.0.1a0
 
    ```bash
    # Initialize core schema
-   psql -U csvd_user -d csvd_dashboard -f sql/setup.sql
+   psql -U csvd_user -d csvd_dashboard -f sql/01_setup.sql
 
    # Add external data cache tables
-   psql -U csvd_user -d csvd_dashboard -f sql/add_external_data_tables.sql
+   psql -U csvd_user -d csvd_dashboard -f sql/02_add_external_data_tables.sql
    ```
 
    (Under the docker-compose deployment these are applied automatically on
@@ -558,6 +647,40 @@ ty>=0.0.1a0
    `/docker-entrypoint-initdb.d`.)
 
 </details>
+
+---
+
+## Development
+
+### Linting and formatting
+
+Python (the `pipeline/`, `pipeline_app/`, `pipeline_app_hpc/`,
+`scripts/`, `tests/` trees):
+
+```bash
+ruff check pipeline pipeline_app pipeline_app_hpc scripts tests   # Lint
+ruff format pipeline pipeline_app pipeline_app_hpc scripts tests  # Format
+ruff check --fix pipeline pipeline_app pipeline_app_hpc scripts   # Auto-fix
+ty check pipeline pipeline_app pipeline_app_hpc scripts           # Type-check
+```
+
+R:
+
+```bash
+Rscript -e 'lintr::lint_dir("R/")'        # All R files
+Rscript -e 'lintr::lint("R/some_file.R")'  # Single file
+```
+
+Markdown:
+
+```bash
+/opt/homebrew/bin/markdownlint-cli2 "**/*.md"
+```
+
+Config for all of the above lives in `pyproject.toml` (ruff/ty), `.lintr`,
+and `.markdownlint-cli2.yaml`. The `icm-hpc/` tree is a separate
+HPC-side project with its own `pyproject.toml` (Python `>=3.12,<3.13`)
+and is **not** linted from the host venv.
 
 ---
 
@@ -577,8 +700,26 @@ ty>=0.0.1a0
 | `NCBI_API_KEY` | NCBI Entrez API key | Pipeline only |
 | `ENTREZ_EMAIL` | Email for NCBI Entrez API (required by NCBI policy) | Pipeline only |
 | `UNPAYWALL_EMAIL` | Email for Unpaywall open-access PDF API | Pipeline only |
-| `PIPELINE_*` | Override any pipeline config parameter (e.g. `PIPELINE_LLM_MODEL`) | Pipeline only |
-| `PRELOAD_TABLE2` | Set to FALSE to disable Table 2 preloading (default: TRUE) | Docker/memory optimization |
+| `PRELOAD_TABLE2` | Set to `FALSE` to disable Table 2 preloading (default: `TRUE`) | Docker/memory optimization |
+
+Any field on `pipeline/config.py:PipelineConfig` can be overridden via a
+`PIPELINE_*` env var. The most commonly tuned ones:
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `PIPELINE_LLM_PROVIDER` | `anthropic` | Provider key (reserved for future providers) |
+| `PIPELINE_LLM_MODEL` | `claude-opus-4-7` | Model identifier |
+| `PIPELINE_LLM_EFFORT` | `high` | Adaptive thinking effort (`low` / `high` / `max`) |
+| `PIPELINE_PROMPT_VERSION` | `v5` | Prompt template version (A/B tuning) |
+| `PIPELINE_CONFIDENCE_THRESHOLD` | `0.65` | Minimum LLM confidence to retain a gene |
+| `PIPELINE_RPM_LIMIT` / `PIPELINE_TPM_LIMIT` | `50` / `100000` | Rate limiter buckets |
+| `PIPELINE_MAX_CONCURRENT_PAPERS` | `5` | Parallel paper processing |
+| `PIPELINE_CT_*` | various | Clinical-trials fetch tuning (`PAGE_SIZE`, `MAX_CONCURRENCY`, `MAX_RETRIES`, `SEARCH_TERMS`) |
+| `PIPELINE_DB_POOL_MIN` / `PIPELINE_DB_POOL_MAX` | `2` / `10` | asyncpg connection pool sizing |
+| `PIPELINE_NOTIFY_URLS` | `""` | Comma-separated Apprise URLs (ntfy/Gmail) |
+| `PIPELINE_HEALTHCHECK_URL` | `""` | Healthchecks.io dead-man's-switch URL |
+
+See `pipeline/config.py` for the full set (~25 variables total).
 
 </details>
 
@@ -586,16 +727,31 @@ ty>=0.0.1a0
 
 ## Usage
 
-Run the application:
+Run the Shiny dashboard:
 
 ```r
-shiny::runApp()
+shiny::runApp()                       # http://127.0.0.1:3838
 ```
 
 Or from the command line:
 
 ```bash
 Rscript -e "shiny::runApp()"
+```
+
+Run the pipeline operator UIs:
+
+```bash
+python pipeline_app/main.py       # local pipeline      — http://127.0.0.1:8080
+python pipeline_app_hpc/main.py   # HPC pipeline        — http://127.0.0.1:8081
+```
+
+Run the ETL pipeline directly (see [Data Pipeline](#data-pipeline)
+for the full CLI):
+
+```bash
+python pipeline/main.py                                     # PubMed, default 7-day window
+python pipeline/main.py --pubmed --clinical-trials --sync-external-data
 ```
 
 ---
@@ -653,6 +809,14 @@ echo "0 3 * * 1 /<repo>/scripts/run_pipeline.sh" | crontab -
 the server's public IP (or use `cloudflared` alongside); Zero Trust
 policies are unchanged from the previous deployment.
 
+**Two-tier ingress:** Public 443 traffic does not land on this host
+directly. It arrives at a separate Proxmox gateway VM running
+Traefik v3, which terminates Cloudflare's TLS and reverse-proxies
+per-hostname over the LAN to the Caddy service shown above. The same
+Cloudflare Origin CA certificate is presented at both tiers, and
+Traefik's upstream transport sets `serverName` to the dashboard
+hostname so Caddy's single site block matches the SNI.
+
 **Volumes:**
 
 | Volume | Owner | Purpose |
@@ -676,9 +840,120 @@ current deployment keeps things minimal — logs only.
 
 ---
 
+## HPC Pipeline App
+
+`pipeline_app_hpc/` is a NiceGUI dev/operator UI (port **8081**) that
+runs the same Python ETL against the ICM HPC cluster instead of
+locally. It mirrors the page structure of `pipeline_app/` (Configure &
+Run, Run History, Results Viewer, Tuning, Tuning History, File
+Browser) and adds an HPC card to the configure page that drives a
+remote vLLM provider through Slurm.
+
+```bash
+python pipeline_app_hpc/main.py    # http://127.0.0.1:8081
+python -m pipeline_app_hpc.cli     # headless invocation
+```
+
+### Runner orchestration
+
+The HPC runner is layered on top of the local runner pattern and adds:
+
+| Module | Responsibility |
+| ------ | -------------- |
+| `pipeline_app_hpc/hpc/ssh.py` | `SshControlMaster` multiplexes a single SSH connection across all HPC operations |
+| `pipeline_app_hpc/hpc/sbatch.py` | Slurm submission + status polling (uses the templates under `pipeline_app_hpc/sbatch/`) |
+| `pipeline_app_hpc/hpc/tunnel.py` | Local-port → remote vLLM tunnel through the SSH ControlMaster |
+| `pipeline_app_hpc/hpc/readiness.py` | Waits for the vLLM HTTP endpoint to become healthy |
+| `pipeline_app_hpc/hpc/lifecycle.py` | `VllmServer` state machine (snapshotted via `VllmServerSnapshot` / `VllmServerState`) |
+| `pipeline_app_hpc/providers/vllm_provider.py` | OpenAI-compatible client wired into the pipeline LLM provider protocol |
+
+Shutdown is bounded by `SHUTDOWN_TIMEOUT_SECONDS ≈ 12s` in
+`pipeline_app_hpc/main.py` so Ctrl+C doesn't hang behind a stubborn
+subprocess. See [`docs/hpc-pipeline-app-runtime.md`](docs/hpc-pipeline-app-runtime.md)
+for the full runtime contract.
+
+---
+
+## HPC Probe Explorer
+
+`hpc-explorer/` is a Vite + React 19 + TypeScript static visualization
+of one ICM compute-node probe. A pre-build step parses
+`icm-hpc/probing_results/master_probe_RESULTS_GPU.txt` into
+`src/data/probe.ts` so the SPA can render the topology without a
+backend.
+
+```bash
+cd hpc-explorer
+npm install
+npm run dev      # parses ../icm-hpc/probing_results/... then serves
+npm run build    # static build
+npm run parse    # regenerate src/data/probe.ts from the probe txt
+```
+
+---
+
+## Fine-Tuning Loop
+
+`scripts/finetune/` builds a chat-formatted dataset from the
+pipeline's confidence-scored extractions and fine-tunes Claude-adjacent
+open models with QLoRA on the ICM HPC cluster:
+
+1. **`build_dataset.py`** — Runs on Mac. Reads
+   `logs/json/pipeline_report_*.json` plus PDFs in
+   `data/test_data/pdf/`, filters by confidence, and writes MLX-LM
+   chat JSONL.
+2. **`icm_finetune.sbatch` + `train_unsloth.py`** — QLoRA fine-tune on
+   HPC via Unsloth + TRL.
+3. **`icm_fa2_build.sbatch`** — Flash-Attention 2 wheel build (one-shot
+   environment setup).
+4. **`icm_smoke.sbatch`** — Smoke test for the trained adapter.
+5. **Serving** — The resulting adapter is served from HPC via vLLM and
+   consumed by the HPC pipeline app above.
+
+> **HPC orchestration quirks** (not in the stack doc):
+>
+> - Working SLURM args: `--qos=qos6 --mem=64G`. (`m120_c1` QoS rejects
+>   submissions with `mem ≥ 200G`.)
+> - The USR1 checkpoint trap (`--signal=B:USR1@120`) saves a clean
+>   adapter on time-limit. SLURM may report the job as `FAILED`
+>   because bash `wait` returns 138 when interrupted — trust the
+>   checkpoint, not the SLURM state.
+
+See [`docs/icm-hpc-finetuning-stack.md`](docs/icm-hpc-finetuning-stack.md)
+(canonical, with modules / package versions / NCCL config) and
+[`docs/icm-hpc-finetuning-stack-plain.md`](docs/icm-hpc-finetuning-stack-plain.md)
+(plain-English version).
+
+### ICM HPC artifacts (`icm-hpc/`)
+
+Host-side artifacts checked in for reproducibility:
+
+- `pyproject.toml` — pinned QLoRA stack (Python `>=3.12,<3.13`, CUDA
+  12.6 Torch + Unsloth + TRL + bitsandbytes). Not linted from the host
+  venv.
+- `probing_scripts/` — `master_probe.sh`, `finetune_stack_probe.sh`,
+  `storage_probe.sh`, sbatch variants
+- `probing_results/` — captured probe outputs (consumed by
+  `hpc-explorer`)
+- `slurm_script/`, `report/`, `support_ticket/`,
+  `hpc_stack_troubleshooting/` — operational notes
+
+---
+
 ## Data Pipeline
 
 The dashboard uses a two-stage data pipeline: a Python ETL pipeline that extracts gene data from PubMed literature, followed by an R script that transforms the data into optimized QS files for the Shiny app.
+
+### LLM provider abstraction
+
+Extraction runs through a pluggable provider in
+`pipeline/llm_providers/`. The protocol is defined in `base.py`; the
+only built-in provider is `anthropic_provider.py` (Claude via the
+Anthropic SDK, with streaming, adaptive thinking, and prompt
+caching). HPC runs swap in a separate `VllmProvider` defined in
+`pipeline_app_hpc/providers/vllm_provider.py` — an OpenAI-compatible
+client that targets a tunneled vLLM endpoint. The provider is
+selected at startup via `PIPELINE_LLM_PROVIDER` (default `"anthropic"`).
 
 ### Pipeline Architecture
 
@@ -850,13 +1125,15 @@ LLM output feeds into a 3-stage validation pipeline (`pipeline/validation.py`):
 
 ### Cost & Rate Limiting
 
-**Pricing (USD)** (from `pipeline/report.py`):
+**Pricing (USD)** (from `pipeline/llm_providers/anthropic_provider.py:_MODEL_PRICING`):
 
 | Model | Input (per 1M tokens) | Output (per 1M tokens) |
 | ----- | --------------------- | ---------------------- |
 | Claude Opus 4.7 | $5.00 | $25.00 |
+| Claude Sonnet 4.6 | $3.00 | $15.00 |
+| Claude Haiku 4.5 | $1.00 | $5.00 |
 
-**Prompt caching multipliers**: cache writes at 2x base input price ($10.00/MTok), cache reads at 0.1x ($0.50/MTok). After the first paper, subsequent papers in the same 1-hour window benefit from cached system blocks.
+**Prompt caching multipliers**: cache writes at 2x base input price (Opus: $10.00/MTok), cache reads at 0.1x (Opus: $0.50/MTok). After the first paper, subsequent papers in the same 1-hour window benefit from cached system blocks.
 
 **Cost formula**: `(input_tokens × input_price + cache_write_tokens × input_price × 2.0 + cache_read_tokens × input_price × 0.1 + output_tokens × output_price) / 1,000,000`
 
@@ -936,9 +1213,18 @@ An interactive Leaflet map showing global research sites for NCT-registered clin
 
 ## Testing
 
-### R Tests
+The repository ships **102 R tests** and **1,230 Python tests** spread
+across four pytest paths (canonical list in `pyproject.toml:testpaths`):
 
-Run the R test suite (97 testthat + shinytest2 tests):
+| Path | Files | Tests | Scope |
+| ---- | ----- | ----- | ----- |
+| `tests/test_all.R` | 1 | 102 | R Shiny app: utils, filters, tooltips, data prep, checkbox module, shinytest2 integration |
+| `tests/pipeline/` | 27 | 543 | Python ETL pipeline (`pipeline/`) |
+| `tests/pipeline_app/` | 17 | 413 | Local NiceGUI pipeline app (`pipeline_app/`) |
+| `tests/pipeline_app_hpc/` | 15 | 130 | HPC NiceGUI pipeline app (`pipeline_app_hpc/`) — SSH, sbatch, vLLM lifecycle |
+| `tests/scripts/` | 1+ | 144 | Standalone scripts (currently `scripts/distill_pubmed_keywords.py`) |
+
+### R Tests
 
 ```bash
 Rscript -e 'testthat::test_file("tests/test_all.R")'
@@ -946,17 +1232,33 @@ Rscript -e 'testthat::test_file("tests/test_all.R")'
 
 ### Python Tests
 
-Run the pipeline test suite (21 pytest files, 443 tests):
-
 ```bash
-# Run all pipeline tests
+# Run a specific suite
 pytest tests/pipeline/
+pytest tests/pipeline_app/
+pytest tests/pipeline_app_hpc/
+pytest tests/scripts/
+
+# Or all four at once (pyproject.toml `testpaths` defaults to these)
+pytest
 
 # Verbose with stop-on-first-failure
-pytest tests/pipeline/ -x -v
+pytest -x -v
 ```
 
-Configuration: `asyncio_mode="auto"`, 30s timeout. Markers: `@pytest.mark.slow`, `@pytest.mark.integration`.
+Configuration (`pyproject.toml`): `asyncio_mode = "auto"`, 30s timeout.
+Markers:
+
+```bash
+pytest -m "not slow"          # Skip slow tests
+pytest -m "not integration"   # Skip integration tests
+```
+
+Shared fixtures live in `tests/pipeline/conftest.py`,
+`tests/pipeline_app/conftest.py`, and the root `conftest.py`
+(adds project root to `sys.path`). The HPC suite uses the same
+`tmp_config_dir` fixture pattern as `pipeline_app/` but monkeypatched
+against `pipeline_app_hpc.config`.
 
 ---
 
@@ -1013,9 +1315,14 @@ Detailed documentation is available in the `docs/` directory:
 
 | Document | Description |
 | ---------- | ------------- |
-| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
-| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
-| ![Updated!](https://img.shields.io/badge/-Updated!-green.svg) [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
+| [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
+| [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
+| [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
+| [HPC Pipeline App Runtime](docs/hpc-pipeline-app-runtime.md) | Runtime contract for the HPC pipeline app (SSH, tunnel, vLLM readiness) |
+| [ICM HPC Fine-Tuning Stack](docs/icm-hpc-finetuning-stack.md) | Canonical reference for modules, package pins, NCCL config, and the QLoRA/Unsloth chain |
+| [ICM HPC Fine-Tuning Stack — Plain](docs/icm-hpc-finetuning-stack-plain.md) | Plain-English walkthrough of the same fine-tuning stack |
+
+The canonical R dependency list lives in [`R_PACKAGE_MANIFEST.md`](R_PACKAGE_MANIFEST.md).
 
 ---
 
