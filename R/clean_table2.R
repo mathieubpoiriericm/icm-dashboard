@@ -23,9 +23,9 @@
 #   A cleaned data.frame ready for display.
 clean_table2 <- function(
   con = NULL,
-  dbname = .env_default("DB_NAME", "csvd_dashboard"),
-  host = .env_default("DB_HOST", "localhost"),
-  port = .env_int_default("DB_PORT", 5432),
+  dbname = env_default("DB_NAME", "csvd_dashboard"),
+  host = env_default("DB_HOST", "localhost"),
+  port = env_int_default("DB_PORT", 5432),
   user = Sys.getenv("DB_USER"),
   password = Sys.getenv("DB_PASSWORD")
 ) {

@@ -24,7 +24,9 @@ RUN R -e "install.packages(c('DBI', 'RPostgres', 'data.table', 'qs2', 'jsonlite'
 
 # Pipeline source code
 COPY pipeline/ pipeline/
-COPY R/ R/
+# Only the R files trigger_update.R sources — keeps the layer stable when
+# Shiny-only files (ui.R, server*.R, tooltips.R, etc.) change.
+COPY R/env.R R/constants.R R/utils.R R/clean_table1.R R/clean_table2.R R/read_external_data.R R/
 COPY scripts/ scripts/
 COPY sql/ sql/
 

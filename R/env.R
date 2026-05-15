@@ -1,7 +1,13 @@
-# Environment loading helpers
+# env.R
+# Environment variable loading and access helpers
+
+# =============================================================================
+# .ENV LOADING
+# =============================================================================
 
 load_project_env <- function(path = ".env") {
   if (!file.exists(path)) {
+    message(sprintf("No .env file at '%s'; using process environment only", path))
     return(invisible(FALSE))
   }
 
@@ -18,11 +24,10 @@ load_project_env <- function(path = ".env") {
     if (!grepl("^[A-Za-z_][A-Za-z0-9_]*$", key)) next
 
     quote_char <- substr(value, 1L, 1L)
-    if (
-      nchar(value) >= 2L &&
-        quote_char %in% c("'", "\"") &&
-        substr(value, nchar(value), nchar(value)) == quote_char
-    ) {
+    has_matched_quotes <- nchar(value) >= 2L &&
+      quote_char %in% c("'", "\"") &&
+      substr(value, nchar(value), nchar(value)) == quote_char
+    if (has_matched_quotes) {
       value <- substr(value, 2L, nchar(value) - 1L)
     }
 
@@ -30,4 +35,20 @@ load_project_env <- function(path = ".env") {
   }
 
   invisible(TRUE)
+}
+
+# =============================================================================
+# ENVIRONMENT ACCESSORS
+# =============================================================================
+
+# Unlike Sys.getenv(name, unset = default), this also falls back to `default`
+# when the variable is set to an empty string (e.g., `DB_NAME=` in .env).
+env_default <- function(name, default) {
+  value <- Sys.getenv(name, unset = NA_character_)
+  if (is.na(value) || identical(value, "")) default else value
+}
+
+env_int_default <- function(name, default) {
+  value <- suppressWarnings(as.integer(env_default(name, as.character(default))))
+  if (is.na(value)) default else value
 }
