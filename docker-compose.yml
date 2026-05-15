@@ -4,9 +4,14 @@ services:
     restart: unless-stopped
     environment:
       PRELOAD_TABLE2: ${PRELOAD_TABLE2:-TRUE}
+      # Use the Compose service name inside Docker; .env remains host-friendly.
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
     volumes:
       - ./data/qs:/srv/shiny-server/data/qs:ro
-      - ./.Renviron:/home/shiny/.Renviron:ro
     networks:
       - svd_net
     healthcheck:

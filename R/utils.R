@@ -5,6 +5,16 @@
 # DATABASE UTILITIES
 # =============================================================================
 
+.env_default <- function(name, default) {
+  value <- Sys.getenv(name, unset = NA_character_)
+  if (is.na(value) || identical(value, "")) default else value
+}
+
+.env_int_default <- function(name, default) {
+  value <- suppressWarnings(as.integer(.env_default(name, as.character(default))))
+  if (is.na(value)) default else value
+}
+
 # Execute Function with Database Connection
 #
 # Manages database connection lifecycle. If a connection is provided, uses it
@@ -25,9 +35,9 @@
 with_db_connection <- function(
   fn,
   con = NULL,
-  dbname = "csvd_dashboard",
-  host = "localhost",
-  port = 5432,
+  dbname = .env_default("DB_NAME", "csvd_dashboard"),
+  host = .env_default("DB_HOST", "localhost"),
+  port = .env_int_default("DB_PORT", 5432),
   user = Sys.getenv("DB_USER"),
   password = Sys.getenv("DB_PASSWORD")
 ) {

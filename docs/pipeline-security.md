@@ -258,12 +258,12 @@ NCBI calls are gated by a separate semaphore at `ncbi_rate_limit` requests/sec (
 > [!CAUTION]
 > `.env` contains API keys and database passwords. It **must not** be world-readable.
 
-### Pipeline secrets (`.env`, `.Renviron`)
+### Pipeline secrets (`.env`)
 
 | Control | Detail |
 | --- | --- |
-| Storage | `.env` (Python pipeline), `.Renviron` (R scripts) |
-| Version control | Both files are gitignored |
+| Storage | `.env` (Python pipeline, R scripts, and docker compose) |
+| Version control | The file is gitignored |
 | File permissions | `.env` requires `chmod 600`, `logs/` requires `chmod 700` |
 | Log sanitization | No credentials are logged anywhere in the pipeline |
 | Reference | See [`.env.example`](../.env.example) for variables and setup |
@@ -359,7 +359,7 @@ def _is_within(path: Path, anchor: Path) -> bool:
 | Pipeline execution model | `profiles: ["run"]` keeps the pipeline out of `docker compose up`; it is spawned only by the weekly cron wrapper, one-shot, then exits |
 | Network isolation | All services share a single user-defined `svd_net` bridge; only `caddy` publishes ports (80/443) — `postgres` and `dashboard` are not reachable from the host |
 | QS volume coupling | `qs_data` is mounted RW on `pipeline` and RO on `dashboard` (`:ro`) — dashboard cannot mutate the shared data |
-| Secrets | `.env` (pipeline) and `.Renviron` (dashboard R runtime) are bind-mounted read-only; both are gitignored and should be `chmod 600` |
+| Secrets | `.env` is the single source of truth for pipeline, R, and compose configuration; it is gitignored and should be `chmod 600` |
 | TLS | Caddy serves the Cloudflare Origin CA cert/key from `./certs/` (gitignored); traffic from Cloudflare is terminated at Caddy |
 | Image pinning | All `image:` tags in `docker-compose.yml` are pinned (`rshiny-dashboard:3.0.0`, `svd-pipeline:3.0.0`, `postgres:18`, `caddy:2-alpine`). No `:latest` references. |
 

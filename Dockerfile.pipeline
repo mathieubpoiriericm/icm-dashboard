@@ -24,6 +24,7 @@ RUN R -e "install.packages(c('DBI', 'RPostgres', 'data.table', 'qs2', 'jsonlite'
 
 # Pipeline source code
 COPY pipeline/ pipeline/
+COPY R/ R/
 COPY scripts/ scripts/
 COPY sql/ sql/
 

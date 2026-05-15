@@ -24,9 +24,9 @@
 #   A cleaned data.frame with processed columns ready for display.
 clean_table1 <- function(
   con = NULL,
-  dbname = "csvd_dashboard",
-  host = "localhost",
-  port = 5432,
+  dbname = .env_default("DB_NAME", "csvd_dashboard"),
+  host = .env_default("DB_HOST", "localhost"),
+  port = .env_int_default("DB_PORT", 5432),
   user = Sys.getenv("DB_USER"),
   password = Sys.getenv("DB_PASSWORD")
 ) {

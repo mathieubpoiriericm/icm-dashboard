@@ -9,6 +9,9 @@ options(
   warn = 1 # Print warnings as they occur
 )
 
+source("R/env.R")
+load_project_env()
+
 # Load required packages with error handling
 message("Loading R packages...")
 

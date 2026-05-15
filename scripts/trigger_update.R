@@ -24,6 +24,8 @@ message("Starting dashboard data update...")
 message(sprintf("Working directory: %s", getwd()))
 
 # Source required utility functions
+source("R/env.R")
+load_project_env()
 source("R/constants.R")
 source("R/utils.R")
 source("R/clean_table1.R")

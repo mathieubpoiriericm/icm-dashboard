@@ -165,8 +165,7 @@ Interactive Leaflet map displaying global research sites for NCT-registered tria
 
 ```text
 rshiny_dashboard/
-├── .env.example                  # Example pipeline environment variables
-├── .Renviron.example             # Example R environment variables
+├── .env.example                  # Example project environment variables
 ├── app.R                         # Main application entry point
 ├── Caddyfile                     # Reverse proxy config (Cloudflare Origin CA cert)
 ├── conftest.py                   # Root pytest config (adds project root to sys.path)
@@ -695,9 +694,9 @@ Cloudflare Access.
 - Docker 20.10+ with the Compose V2 plugin
 - Cloudflare Origin CA certificate + key (from Cloudflare dashboard →
   SSL/TLS → Origin Server → Create Certificate)
-- `.env` with `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST=postgres`,
+- `.env` with `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST=localhost`,
   `ANTHROPIC_API_KEY`, `NCBI_API_KEY`, `ENTREZ_EMAIL`, `UNPAYWALL_EMAIL`
-- `.Renviron` with the same DB + NCBI vars (read by `trigger_update.R`)
+  (docker-compose overrides `DB_HOST` to `postgres` inside containers)
 
 **Steps:**
 
