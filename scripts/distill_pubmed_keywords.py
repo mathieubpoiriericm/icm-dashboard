@@ -70,6 +70,7 @@ import math
 import os
 import re
 import sys
+import tempfile
 import time
 import warnings
 from collections import Counter
@@ -212,6 +213,7 @@ _PDAT_RANGE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{4}:\d{4}$")
 # slashes or "../" segments would let a tampered MODS record write
 # outside the cache directory.
 _PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,12}$")
+_PMCID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^(?:PMC)?\d{1,12}$", re.I)
 
 # Namespace wildcard — MODS files declare xmlns="http://www.loc.gov/mods/v3"
 # but {*} keeps the queries robust if a record is namespace-stripped.
@@ -572,19 +574,37 @@ def _is_valid_pmid(pmid: str | None) -> bool:
     return pmid is not None and _PMID_PATTERN.fullmatch(pmid) is not None
 
 
-def _atomic_write_json(path: Path, payload: Any) -> None:
-    """Write JSON to ``path`` via tmp+rename so an interrupted write can't
-    leave a half-written file the next read would reject as corrupt.
+def _atomic_write(path: Path, writer: Callable[[Path], None]) -> None:
+    """Atomically replace ``path`` with content produced by ``writer``.
+
+    Creates a uniquely-named tmp file in the same directory, hands its
+    path to ``writer`` (which opens it via ``open`` / ``gzip.open`` /
+    etc.), then renames over the destination. If ``writer`` raises, the
+    tmp file is unlinked and the exception re-raised — so a crashed
+    write can't leave a half-written file the next read would reject.
     """
-    tmp_path = path.with_name(path.name + ".tmp")
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f"{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    os.close(fd)
+    tmp_path = Path(tmp_name)
     try:
-        with tmp_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
+        writer(tmp_path)
         tmp_path.replace(path)
-    except Exception:
+    except BaseException:
         with contextlib.suppress(OSError):
             tmp_path.unlink()
         raise
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    """Write JSON to ``path`` atomically (see ``_atomic_write``)."""
+
+    def _write(tmp: Path) -> None:
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+
+    _atomic_write(path, _write)
 
 
 def _unique_valid_pmids(pmids: Iterable[str]) -> list[str]:
@@ -605,6 +625,35 @@ def _unique_valid_pmids(pmids: Iterable[str]) -> list[str]:
             continue
         valid.append(pmid)
     return list(dict.fromkeys(valid))
+
+
+def _local_name(elem: etree._Element) -> str:
+    """Return an element's local tag name without its namespace."""
+    return elem.tag.rsplit("}", 1)[-1] if isinstance(elem.tag, str) else ""
+
+
+def _coerce_to_bytes(raw: Any, context: str) -> bytes | None:
+    """Coerce an Entrez reader payload to ``bytes`` for XML parsing.
+
+    ``Bio.Entrez`` reader callbacks return ``bytes`` for most XML
+    responses but may yield ``str`` or ``bytearray`` depending on the
+    handle, and ``_ncbi_retry`` can return ``None`` on persistent
+    failure (with its own retry-exhaustion log). Returns ``None`` for
+    ``None`` input silently — the retry layer already logged. Returns
+    ``None`` with a warning when the type is genuinely unrecognized.
+    Empty ``bytes`` pass through so callers can attach a
+    domain-specific "empty response" message.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        return raw
+    if isinstance(raw, str):
+        return raw.encode("utf-8")
+    if isinstance(raw, bytearray):
+        return bytes(raw)
+    logger.warning(f"{context} returned {type(raw).__name__}, expected bytes")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -632,23 +681,36 @@ def parse_mods_file(path: Path) -> PaperText | None:
         return None
 
     root = tree.getroot()
-    mods_el = root.find(f".//{_NS}mods")
-    if mods_el is None:
-        mods_el = root  # tolerate records lacking the <modsCollection> wrapper
+    if _local_name(root) == "mods":
+        # ``Element.find(".//mods")`` does not include the element itself.
+        # Prefer the root here so nested related-item MODS blocks cannot
+        # steal the article title when the collection wrapper is absent.
+        mods_el = root
+    else:
+        # For <modsCollection>, prefer a direct child before falling back to
+        # a deeper wrapper search. That avoids accidentally selecting a
+        # nested host/journal <mods> block if one appears before the article.
+        direct_mods = root.find(f"./{_NS}mods")
+        mods_el = direct_mods if direct_mods is not None else root.find(f".//{_NS}mods")
+        if mods_el is None:
+            mods_el = root  # tolerate namespace-stripped/partial records
 
     title_info = mods_el.find(f"./{_NS}titleInfo")
     title_el = title_info.find(f"./{_NS}title") if title_info is not None else None
     subtitle_el = (
         title_info.find(f"./{_NS}subTitle") if title_info is not None else None
     )
-    abstract_el = mods_el.find(f"./{_NS}abstract")
     pmid_el = mods_el.find(f"./{_NS}identifier[@type='pubmed']")
 
     title_parts = [
         s for s in (_element_text(title_el), _element_text(subtitle_el)) if s
     ]
     title = ": ".join(title_parts)
-    abstract = _element_text(abstract_el)
+    abstract = " ".join(
+        part
+        for part in (_element_text(el) for el in mods_el.findall(f"./{_NS}abstract"))
+        if part
+    )
 
     if not title and not abstract:
         logger.debug(f"No title or abstract in {path.name}")
@@ -799,6 +861,9 @@ def _rank_terms(
     The ``display`` mapping converts the internal hash key (typically a
     tuple of stems) to the surface string shown to the user.
     """
+    if not math.isfinite(min_llr) or min_llr < 0:
+        raise ValueError(f"min_llr must be a finite non-negative number, got {min_llr}")
+
     if top_n <= 0 or total_fg <= 0:
         return []
 
@@ -1067,8 +1132,9 @@ def build_baseline_cache(
             )
             _ncbi_sleep(resolved_key)
 
-            if isinstance(raw, str):
-                raw = raw.encode("utf-8")
+            raw = _coerce_to_bytes(raw, f"Baseline batch {start}-{start + len(batch)}")
+            if raw is None:
+                continue
             try:
                 root = etree.fromstring(raw, parser=_SAFE_PARSER)
             except etree.XMLSyntaxError as e:
@@ -1135,17 +1201,12 @@ def build_baseline_cache(
         "acronyms": dict(acros),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Tmp+rename so an interrupted write can't leave a half-written gzip
-    # that subsequent loads would reject as corrupt.
-    tmp_path = output_path.with_name(output_path.name + ".tmp")
-    try:
-        with gzip.open(tmp_path, "wt", encoding="utf-8") as gz:
+
+    def _write_gzipped(tmp: Path) -> None:
+        with gzip.open(tmp, "wt", encoding="utf-8") as gz:
             json.dump(payload, gz)
-        tmp_path.replace(output_path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            tmp_path.unlink()
-        raise
+
+    _atomic_write(output_path, _write_gzipped)
     logger.info(f"Wrote baseline cache to {output_path}")
     return output_path
 
@@ -1369,23 +1430,57 @@ def _descriptors_to_jsonable(items: list[MeshDescriptor]) -> list[dict[str, Any]
     ]
 
 
-def _descriptors_from_jsonable(items: list[dict[str, Any]]) -> list[MeshDescriptor]:
-    return [
-        MeshDescriptor(
-            term=str(d["term"]),
-            ui=str(d.get("ui", "")),
-            major=bool(d.get("major", False)),
-            qualifiers=tuple(
+def _cached_bool(value: Any, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be boolean")
+    return value
+
+
+def _cached_str(value: Any, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value
+
+
+def _descriptors_from_jsonable(items: Any) -> list[MeshDescriptor]:
+    if not isinstance(items, list):
+        raise ValueError("descriptors must be a list")
+
+    descriptors: list[MeshDescriptor] = []
+    for d in items:
+        if not isinstance(d, Mapping):
+            raise ValueError("descriptor entries must be objects")
+        term = d.get("term")
+        if not isinstance(term, str) or not term.strip():
+            raise ValueError("descriptor term must be a non-empty string")
+        qualifiers_raw = d.get("qualifiers", [])
+        if not isinstance(qualifiers_raw, list):
+            raise ValueError("descriptor qualifiers must be a list")
+
+        qualifiers: list[MeshQualifier] = []
+        for q in qualifiers_raw:
+            if not isinstance(q, Mapping):
+                raise ValueError("qualifier entries must be objects")
+            q_term = q.get("term")
+            if not isinstance(q_term, str) or not q_term.strip():
+                raise ValueError("qualifier term must be a non-empty string")
+            qualifiers.append(
                 MeshQualifier(
-                    term=str(q["term"]),
-                    ui=str(q.get("ui", "")),
-                    major=bool(q.get("major", False)),
+                    term=q_term,
+                    ui=_cached_str(q.get("ui", ""), "qualifier ui"),
+                    major=_cached_bool(q.get("major", False), "qualifier major"),
                 )
-                for q in d.get("qualifiers", [])
-            ),
+            )
+
+        descriptors.append(
+            MeshDescriptor(
+                term=term,
+                ui=_cached_str(d.get("ui", ""), "descriptor ui"),
+                major=_cached_bool(d.get("major", False), "descriptor major"),
+                qualifiers=tuple(qualifiers),
+            )
         )
-        for d in items
-    ]
+    return descriptors
 
 
 def fetch_mesh_terms(
@@ -1423,12 +1518,16 @@ def fetch_mesh_terms(
             try:
                 with cache_path.open(encoding="utf-8") as f:
                     cached = json.load(f)
+                if not isinstance(cached, Mapping):
+                    raise ValueError("cache payload must be an object")
                 cached_pmid = cached.get("pmid")
-                if cached_pmid is not None and str(cached_pmid) != pmid:
+                if not isinstance(cached_pmid, str) or cached_pmid != pmid:
                     raise ValueError(
                         f"cache PMID {cached_pmid!r} does not match {pmid!r}"
                     )
-                out[pmid] = _descriptors_from_jsonable(cached.get("descriptors", []))
+                if "descriptors" not in cached:
+                    raise ValueError("cache payload missing descriptors")
+                out[pmid] = _descriptors_from_jsonable(cached["descriptors"])
             except (
                 json.JSONDecodeError,
                 OSError,
@@ -1467,7 +1566,7 @@ def fetch_mesh_terms(
                 _reader=lambda h: h.read(),
             )
             _ncbi_sleep(resolved_key)
-            return raw if isinstance(raw, bytes) else str(raw).encode("utf-8")
+            return raw
 
         fetcher = _default_fetcher
 
@@ -1481,6 +1580,11 @@ def fetch_mesh_terms(
                 logger.warning(
                     f"MeSH efetch batch {start}-{start + len(batch)} failed: {e}"
                 )
+                continue
+            raw = _coerce_to_bytes(
+                raw, f"MeSH efetch batch {start}-{start + len(batch)}"
+            )
+            if raw is None:
                 continue
             try:
                 parsed = parse_pubmed_xml_for_mesh(raw)
@@ -1587,7 +1691,7 @@ def _classify_jats_section(sec: etree._Element) -> str | None:
     Acknowledgments, Author Contributions, References, Supplementary)
     are intentionally dropped from the foreground corpus.
     """
-    sectype = (sec.get("sec-type") or "").lower()
+    sectype = (sec.get("sec-type") or "").strip().lower()
     if sectype and sectype in _JATS_IMRAD_SECTYPES:
         return _JATS_IMRAD_SECTYPES[sectype]
     title_el = sec.find(f"./{_NS}title")
@@ -1603,21 +1707,22 @@ def _classify_jats_section(sec: etree._Element) -> str | None:
 def _walk_jats_sections(
     container: etree._Element,
     parts_by_label: dict[str, list[str]],
+    inherited_label: str | None = None,
 ) -> None:
     """Recursively classify ``<sec>`` descendants under ``container``.
 
-    A classified ``<sec>`` absorbs all its descendant ``<p>`` text. An
-    unclassified ``<sec>`` (typically a publisher wrapper like "Main
-    Text" or a non-IMRaD region) is descended into so any inner
-    IMRaD-tagged sections still contribute.
+    Direct paragraphs in an explicitly classified ``<sec>`` go to that
+    label. Direct paragraphs in an unclassified subsection inherit the
+    nearest classified ancestor, which keeps Methods subheadings like
+    "Participants" or "Statistical analysis" attached to Methods. A
+    nested section with its own IMRaD classification overrides the
+    inherited label so, for malformed or unusual JATS, Results text does
+    not get absorbed into a parent Introduction/Methods bucket.
     """
     for sec in container.findall(f"./{_NS}sec"):
-        label = _classify_jats_section(sec)
-        if label is None:
-            _walk_jats_sections(sec, parts_by_label)
-            continue
+        label = _classify_jats_section(sec) or inherited_label
         paragraphs: list[str] = []
-        for p in sec.findall(f".//{_NS}p"):
+        for p in _section_owned_paragraphs(sec):
             # Indentation in source JATS XML leaks newlines + spaces into
             # paragraph text (e.g. "white matter\n      injury").
             # Collapse runs of whitespace to single spaces inside each
@@ -1626,20 +1731,46 @@ def _walk_jats_sections(
             text = re.sub(r"\s+", " ", _element_text(p))
             if text:
                 paragraphs.append(text)
-        if paragraphs:
+        if label is not None and paragraphs:
             parts_by_label.setdefault(label, []).append("\n\n".join(paragraphs))
+        _walk_jats_sections(sec, parts_by_label, inherited_label=label)
+
+
+def _section_owned_paragraphs(sec: etree._Element) -> list[etree._Element]:
+    """Return paragraphs belonging to ``sec`` but not nested child sections.
+
+    Walks children once and skips into nested ``<sec>`` subtrees so the
+    outer ``_walk_jats_sections`` recursion can pick those up under their
+    own label. Paragraphs inside non-section wrappers (``<list>``,
+    ``<list-item>``, …) are kept.
+    """
+    paragraphs: list[etree._Element] = []
+
+    def _collect(node: etree._Element) -> None:
+        for child in node:
+            local = _local_name(child)
+            if local == "sec":
+                continue
+            if local == "p":
+                paragraphs.append(child)
+            _collect(child)
+
+    _collect(sec)
+    return paragraphs
 
 
 def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
     """Extract IMRaD section bodies from PMC JATS XML.
 
-    Walks ``<body>/<sec>`` recursively: classified sections absorb all
-    descendant ``<p>`` text, unclassified outer wrappers (e.g. a
-    publisher's "Main Text" sec without a sec-type) are descended into
-    so their inner IMRaD-tagged children still contribute. When the
-    same label appears multiple times in one article — e.g. two
-    ``<sec sec-type="methods">`` blocks for "Materials and Methods" and
-    "Statistical Methods" — they're joined with a blank line between.
+    Walks ``<body>/<sec>`` recursively: classified sections contribute
+    their direct paragraphs, unclassified subsections inherit the nearest
+    classified ancestor, and explicitly classified nested sections route
+    to their own label. Unclassified outer wrappers (e.g. a publisher's
+    "Main Text" sec without a sec-type) are descended into so their inner
+    IMRaD-tagged children still contribute. When the same label appears
+    multiple times in one article — e.g. two ``<sec sec-type="methods">``
+    blocks for "Materials and Methods" and "Statistical Methods" — they're
+    joined with a blank line between.
 
     Returns a 4-key dict (introduction/methods/results/discussion);
     missing labels hold "". Raises ``etree.XMLSyntaxError`` on
@@ -1647,7 +1778,7 @@ def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
     cache + retry next run) from genuinely empty bodies.
     """
     root = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
-    body = root.find(f".//{_NS}body")
+    body = root if _local_name(root) == "body" else root.find(f".//{_NS}body")
     if body is None:
         return {"introduction": "", "methods": "", "results": "", "discussion": ""}
 
@@ -1660,6 +1791,16 @@ def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
         "results": "\n\n".join(parts_by_label.get("results", [])),
         "discussion": "\n\n".join(parts_by_label.get("discussion", [])),
     }
+
+
+def _cached_section_text(sections: Mapping[str, Any], name: str, pmid: str) -> str:
+    value = sections.get(name, "")
+    if not isinstance(value, str):
+        raise ValueError(
+            f"section {name!r} for PMID {pmid} must be a string, "
+            f"got {type(value).__name__}"
+        )
+    return value
 
 
 def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
@@ -1702,15 +1843,22 @@ def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
         logger.warning(f"Malformed fulltext cache for PMID {pmid}; will refetch")
         return None
     try:
+        pmcid = _normalize_pmcid(payload.get("pmcid"))
+        introduction = _cached_section_text(sections, "introduction", pmid)
+        methods = _cached_section_text(sections, "methods", pmid)
+        results = _cached_section_text(sections, "results", pmid)
+        discussion = _cached_section_text(sections, "discussion", pmid)
+        if pmcid is None and any((introduction, methods, results, discussion)):
+            raise ValueError("negative fulltext cache contains section text")
         return FulltextRecord(
             pmid=str(payload["pmid"]),
-            pmcid=(str(payload["pmcid"]) if payload.get("pmcid") else None),
-            introduction=str(sections.get("introduction", "")),
-            methods=str(sections.get("methods", "")),
-            results=str(sections.get("results", "")),
-            discussion=str(sections.get("discussion", "")),
+            pmcid=pmcid,
+            introduction=introduction,
+            methods=methods,
+            results=results,
+            discussion=discussion,
         )
-    except (KeyError, TypeError, AttributeError) as e:
+    except (KeyError, TypeError, AttributeError, ValueError) as e:
         logger.warning(f"Malformed fulltext cache for PMID {pmid}: {e}; will refetch")
         return None
 
@@ -1791,13 +1939,29 @@ def _default_pmids_to_pmcids(
     return out
 
 
+def _normalize_pmcid(value: Any) -> str | None:
+    """Return a canonical ``PMC123`` identifier, or None for confirmed absence."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"PMCID must be a string or None, got {type(value).__name__}")
+    pmcid = value.strip()
+    if not pmcid:
+        return None
+    if _PMCID_PATTERN.fullmatch(pmcid) is None:
+        raise ValueError(f"malformed PMCID {value!r}")
+    if pmcid.upper().startswith("PMC"):
+        return f"PMC{pmcid[3:]}"
+    return f"PMC{pmcid}"
+
+
 def _default_fetch_pmc_jats(pmcid: str, *, api_key: str | None) -> bytes | None:
     """Fetch JATS XML for a PMCID via ``Bio.Entrez.efetch(db="pmc")``."""
     from Bio import Entrez
 
     # PMC efetch accepts either the bare numeric id or the PMC-prefixed
     # form; strip the prefix for compatibility with older biopython.
-    numeric = pmcid.removeprefix("PMC") if pmcid.startswith("PMC") else pmcid
+    numeric = pmcid[3:] if pmcid.upper().startswith("PMC") else pmcid
 
     raw = _ncbi_retry(
         Entrez.efetch,
@@ -1809,9 +1973,8 @@ def _default_fetch_pmc_jats(pmcid: str, *, api_key: str | None) -> bytes | None:
     )
     _ncbi_sleep(api_key)
 
-    if isinstance(raw, str):
-        return raw.encode("utf-8")
-    return raw if raw else None
+    coerced = _coerce_to_bytes(raw, f"PMC efetch for {pmcid}")
+    return coerced if coerced else None
 
 
 def fetch_fulltext_batch(
@@ -1890,6 +2053,7 @@ def fetch_fulltext_batch(
         if progress_callback is not None:
             progress_callback(total, total)
         return out
+    pmid_to_pmcid = {str(k).strip(): v for k, v in pmid_to_pmcid.items()}
 
     cached_count = total - len(missing)
     for i, pmid in enumerate(missing, start=1):
@@ -1901,7 +2065,11 @@ def fetch_fulltext_batch(
                     f"elink response did not include PMID {pmid}; will retry next run"
                 )
                 continue
-            pmcid = pmid_to_pmcid[pmid]
+            try:
+                pmcid = _normalize_pmcid(pmid_to_pmcid[pmid])
+            except ValueError as e:
+                logger.warning(f"Malformed PMCID for PMID {pmid}: {e}; skipping")
+                continue
             if pmcid is None:
                 # NCBI confirmed this PMID has no PMC mirror. Safe to cache
                 # the negative result so we don't re-elink it every run.
@@ -1918,6 +2086,11 @@ def fetch_fulltext_batch(
 
             if not xml_bytes:
                 logger.warning(f"Empty efetch response for PMID {pmid} (PMCID {pmcid})")
+                continue
+            xml_bytes = _coerce_to_bytes(
+                xml_bytes, f"efetch for PMID {pmid} (PMCID {pmcid})"
+            )
+            if xml_bytes is None:
                 continue
 
             try:
@@ -2194,6 +2367,14 @@ def build_query_variants(
     }
 
 
+def _query_formats_to_emit(result: DistillationResult, query_format: str) -> list[str]:
+    if query_format != "all":
+        return [query_format]
+    if not result.mesh_terms:
+        return ["titleabstract"]
+    return list(_QUERY_FORMAT_VARIANTS)
+
+
 def _print_section(
     title: str,
     scores: list[KeywordScore],
@@ -2234,7 +2415,7 @@ def write_text_report(
     _print_section("Acronyms", result.acronyms, stream)
 
     variants = result.query_variants
-    formats = list(_QUERY_FORMAT_VARIANTS) if query_format == "all" else [query_format]
+    formats = _query_formats_to_emit(result, query_format)
     print("\n--- Suggested PubMed query ---", file=stream)
     for fmt in formats:
         q = variants.get(fmt, "")
@@ -2384,7 +2565,7 @@ def _render_rich_report(
         console.print(_render_score_table(title, scores, show_llr=show_llr))
 
     variants = result.query_variants
-    formats = list(_QUERY_FORMAT_VARIANTS) if query_format == "all" else [query_format]
+    formats = _query_formats_to_emit(result, query_format)
     console.print()
     console.print(f"[bold {_PRIMARY_COLOR}]Suggested PubMed query[/]")
     for fmt in formats:
@@ -2427,6 +2608,8 @@ def _non_negative_float(value: str) -> float:
         parsed = float(value)
     except ValueError as e:
         raise argparse.ArgumentTypeError(f"invalid float: {value!r}") from e
+    if not math.isfinite(parsed):
+        raise argparse.ArgumentTypeError(f"value must be finite, got {value!r}")
     if parsed < 0:
         raise argparse.ArgumentTypeError(f"value must be non-negative, got {parsed}")
     return parsed
@@ -2649,7 +2832,7 @@ def main(argv: list[str] | None = None) -> int:
                         task, completed=c, total=t
                     ),
                 )
-        except (RuntimeError, ValueError) as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error(str(e))
             return 1
         return 0
@@ -2680,59 +2863,53 @@ def main(argv: list[str] | None = None) -> int:
             logger.error(str(e))
             return 1
 
-        if not args.no_fulltext:
-            pmids_for_fulltext = [p.pmid for p in papers if p.pmid]
-            if pmids_for_fulltext:
-                ft_task = progress.add_task(
-                    "Fetching PMC fulltext", total=len(pmids_for_fulltext)
+        valid_pmids = _unique_valid_pmids(p.pmid for p in papers if p.pmid)
+
+        if not args.no_fulltext and valid_pmids:
+            ft_task = progress.add_task("Fetching PMC fulltext", total=len(valid_pmids))
+            try:
+                fulltext_records = fetch_fulltext_batch(
+                    valid_pmids,
+                    args.fulltext_cache,
+                    email=os.getenv("ENTREZ_EMAIL"),
+                    api_key=(os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY")),
+                    progress_callback=lambda c, t: progress.update(
+                        ft_task, completed=c, total=t
+                    ),
                 )
-                try:
-                    fulltext_records = fetch_fulltext_batch(
-                        pmids_for_fulltext,
-                        args.fulltext_cache,
-                        email=os.getenv("ENTREZ_EMAIL"),
-                        api_key=(os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY")),
-                        progress_callback=lambda c, t: progress.update(
-                            ft_task, completed=c, total=t
-                        ),
-                    )
-                except RuntimeError as e:
-                    logger.warning(
-                        f"Full-text harvest disabled — {e}. "
-                        f"Run with --no-fulltext to silence."
-                    )
-                    fulltext_records = {}
-                for paper in papers:
-                    if paper.pmid and (record := fulltext_records.get(paper.pmid)):
-                        paper.fulltext = record.as_text()
-                with_text = sum(
-                    1 for r in fulltext_records.values() if r.pmcid is not None
+            except (OSError, RuntimeError) as e:
+                logger.warning(
+                    f"Full-text harvest disabled — {e}. "
+                    f"Run with --no-fulltext to silence."
                 )
-                logger.info(
-                    f"Full-text enrichment: "
-                    f"{with_text}/{len(pmids_for_fulltext)} "
-                    f"papers have PMC versions; "
-                    f"{len(pmids_for_fulltext) - with_text} contribute "
-                    f"title+abstract only."
-                )
+                fulltext_records = {}
+            for paper in papers:
+                if paper.pmid and (record := fulltext_records.get(paper.pmid)):
+                    paper.fulltext = record.as_text()
+            with_text = sum(1 for r in fulltext_records.values() if r.pmcid is not None)
+            logger.info(
+                f"Full-text enrichment: "
+                f"{with_text}/{len(valid_pmids)} "
+                f"papers have PMC versions; "
+                f"{len(valid_pmids) - with_text} contribute "
+                f"title+abstract only."
+            )
 
         mesh_map: dict[str, list[MeshDescriptor]] | None = None
-        if not args.no_mesh:
-            pmids = [p.pmid for p in papers if p.pmid]
-            if pmids:
-                mesh_task = progress.add_task("Fetching MeSH terms", total=len(pmids))
-                try:
-                    mesh_map = fetch_mesh_terms(
-                        pmids,
-                        args.mesh_cache,
-                        progress_callback=lambda c, t: progress.update(
-                            mesh_task, completed=c, total=t
-                        ),
-                    )
-                except RuntimeError as e:
-                    logger.warning(
-                        f"MeSH harvest disabled — {e}. Run with --no-mesh to silence."
-                    )
+        if not args.no_mesh and valid_pmids:
+            mesh_task = progress.add_task("Fetching MeSH terms", total=len(valid_pmids))
+            try:
+                mesh_map = fetch_mesh_terms(
+                    valid_pmids,
+                    args.mesh_cache,
+                    progress_callback=lambda c, t: progress.update(
+                        mesh_task, completed=c, total=t
+                    ),
+                )
+            except (OSError, RuntimeError) as e:
+                logger.warning(
+                    f"MeSH harvest disabled — {e}. Run with --no-mesh to silence."
+                )
 
     result = distill_keywords(
         papers,

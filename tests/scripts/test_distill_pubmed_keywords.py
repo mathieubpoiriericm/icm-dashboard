@@ -29,6 +29,7 @@ from scripts.distill_pubmed_keywords import (
     _foreground_counts_for,
     _llr_score,
     _ncbi_retry,
+    _non_negative_float,
     _rank_terms,
     _render_query,
     aggregate_mesh,
@@ -284,6 +285,20 @@ class TestRankTermsLLR:
             )
             == []
         )
+
+    @pytest.mark.parametrize("bad_min_llr", [float("nan"), float("inf"), -0.1])
+    def test_bad_min_llr_raises(self, bad_min_llr: float) -> None:
+        with pytest.raises(ValueError, match="min_llr"):
+            _rank_terms(
+                Counter({("gene",): 3}),
+                Counter({("gene",): 2}),
+                Counter({("gene",): 0}),
+                total_fg=3,
+                total_bg=1_000,
+                min_df=1,
+                top_n=10,
+                min_llr=bad_min_llr,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -812,6 +827,81 @@ class TestMeshCache:
         assert calls == [["15905468"]]
         assert result["15905468"][0].term != "Wrong"
 
+    def test_cache_string_major_flag_is_refetched(self, tmp_path: Path) -> None:
+        # bool("False") is True in Python; cached flags must be real JSON
+        # booleans or a hand-edited/corrupt cache can silently promote
+        # minor headings to major topics.
+        (tmp_path / "15905468.json").write_text(
+            json.dumps(
+                {
+                    "pmid": "15905468",
+                    "descriptors": [
+                        {
+                            "term": "Wrong",
+                            "ui": "D0",
+                            "major": "False",
+                            "qualifiers": [],
+                        }
+                    ],
+                    "fetched_at": "2025-01-01T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+        fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+        calls: list[list[str]] = []
+
+        def stub_fetcher(batch: list[str]) -> bytes:
+            calls.append(list(batch))
+            return fixture
+
+        result = fetch_mesh_terms(
+            ["15905468"], cache_dir=tmp_path, fetcher=stub_fetcher
+        )
+
+        assert calls == [["15905468"]]
+        assert result["15905468"][0].term != "Wrong"
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"pmid": "15905468", "fetched_at": "2025-01-01T00:00:00"},
+            {
+                "descriptors": [
+                    {"term": "Wrong", "ui": "D0", "major": False, "qualifiers": []}
+                ],
+                "fetched_at": "2025-01-01T00:00:00",
+            },
+            {
+                "pmid": "15905468",
+                "descriptors": [
+                    {"term": "Wrong", "ui": ["D0"], "major": False, "qualifiers": []}
+                ],
+                "fetched_at": "2025-01-01T00:00:00",
+            },
+        ],
+    )
+    def test_malformed_cache_schema_is_refetched(
+        self, tmp_path: Path, payload: dict
+    ) -> None:
+        (tmp_path / "15905468.json").write_text(
+            json.dumps(payload),
+            encoding="utf-8",
+        )
+        fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
+        calls: list[list[str]] = []
+
+        def stub_fetcher(batch: list[str]) -> bytes:
+            calls.append(list(batch))
+            return fixture
+
+        result = fetch_mesh_terms(
+            ["15905468"], cache_dir=tmp_path, fetcher=stub_fetcher
+        )
+
+        assert calls == [["15905468"]]
+        assert result["15905468"][0].term != "Wrong"
+
     def test_rejects_non_positive_batch_size(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="batch_size"):
             fetch_mesh_terms(["15905468"], cache_dir=tmp_path, batch_size=0)
@@ -855,6 +945,54 @@ class TestParseMods:
         paper = parse_mods_file(path)
         assert paper is not None
         assert paper.pmid == "15905468"
+
+    def test_root_mods_is_not_replaced_by_nested_related_mods(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "root-mods.xml"
+        path.write_text(
+            '<?xml version="1.0"?>\n'
+            '<mods xmlns="http://www.loc.gov/mods/v3">\n'
+            "  <titleInfo><title>Article title</title></titleInfo>\n"
+            "  <abstract>Article abstract.</abstract>\n"
+            '  <identifier type="pubmed">15905468</identifier>\n'
+            '  <relatedItem type="host">\n'
+            "    <mods><titleInfo><title>Journal title</title></titleInfo></mods>\n"
+            "  </relatedItem>\n"
+            "</mods>\n",
+            encoding="utf-8",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "Article title"
+        assert paper.abstract == "Article abstract."
+        assert paper.pmid == "15905468"
+
+    def test_multiple_abstract_elements_are_joined(self, tmp_path: Path) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "multi-abstract.xml"
+        path.write_text(
+            '<?xml version="1.0"?>\n'
+            '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
+            "  <mods>\n"
+            "    <titleInfo><title>T</title></titleInfo>\n"
+            "    <abstract>First part.</abstract>\n"
+            "    <abstract>Second part.</abstract>\n"
+            '    <identifier type="pubmed">15905468</identifier>\n'
+            "  </mods>\n"
+            "</modsCollection>\n",
+            encoding="utf-8",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.abstract == "First part. Second part."
 
 
 # ---------------------------------------------------------------------------
@@ -1112,6 +1250,85 @@ class TestParseJatsForSections:
         combined = " ".join(sections.values()).lower()
         assert "acknowledgments section should still be dropped" not in combined
 
+    def test_nested_classified_section_overrides_parent_label(self) -> None:
+        xml = b"""
+        <article>
+          <body>
+            <sec sec-type="introduction">
+              <title>Introduction</title>
+              <p>Introductory small vessel disease context.</p>
+              <sec sec-type="methods">
+                <title>Methods</title>
+                <p>Nested imaging protocol text.</p>
+              </sec>
+            </sec>
+          </body>
+        </article>
+        """
+        sections = parse_jats_for_sections(xml)
+
+        assert "introductory small vessel disease" in sections["introduction"].lower()
+        assert "nested imaging protocol" not in sections["introduction"].lower()
+        assert "nested imaging protocol" in sections["methods"].lower()
+
+    def test_unclassified_subsection_inherits_parent_label(self) -> None:
+        xml = b"""
+        <article>
+          <body>
+            <sec sec-type=" methods ">
+              <title>Methods</title>
+              <p>Parent protocol text.</p>
+              <sec>
+                <title>Participants</title>
+                <p>Inherited participant details.</p>
+              </sec>
+            </sec>
+          </body>
+        </article>
+        """
+        sections = parse_jats_for_sections(xml)
+
+        assert "parent protocol text" in sections["methods"].lower()
+        assert "inherited participant details" in sections["methods"].lower()
+
+    def test_paragraphs_inside_non_section_containers_are_kept(self) -> None:
+        xml = b"""
+        <article>
+          <body>
+            <sec sec-type="methods">
+              <title>Methods</title>
+              <list>
+                <list-item>
+                  <p>List-based acquisition protocol details.</p>
+                </list-item>
+              </list>
+              <sec sec-type="results">
+                <title>Results</title>
+                <p>Nested result text.</p>
+              </sec>
+            </sec>
+          </body>
+        </article>
+        """
+        sections = parse_jats_for_sections(xml)
+
+        assert "list-based acquisition protocol" in sections["methods"].lower()
+        assert "nested result text" not in sections["methods"].lower()
+        assert "nested result text" in sections["results"].lower()
+
+    def test_body_root_is_parsed(self) -> None:
+        xml = b"""
+        <body>
+          <sec sec-type="discussion">
+            <title>Discussion</title>
+            <p>Standalone body root text.</p>
+          </sec>
+        </body>
+        """
+        sections = parse_jats_for_sections(xml)
+
+        assert "standalone body root text" in sections["discussion"].lower()
+
 
 # ---------------------------------------------------------------------------
 # fetch_fulltext_batch — cache + injected fetchers
@@ -1199,6 +1416,31 @@ class TestFetchFulltextBatch:
         assert payload["pmcid"] == "PMC1234567"
         assert "small vessel disease" in payload["sections"]["introduction"].lower()
 
+    def test_normalizes_numeric_pmcid_before_fetch_and_cache(
+        self, tmp_path: Path
+    ) -> None:
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+        efetch_calls: list[str] = []
+
+        def stub_elink(batch: list[str]) -> dict[str, str | None]:
+            return dict.fromkeys(batch, "1234567")
+
+        def stub_efetch(pmcid: str) -> bytes | None:
+            efetch_calls.append(pmcid)
+            return jats_bytes
+
+        out = fetch_fulltext_batch(
+            ["15905468"],
+            tmp_path,
+            fetcher_elink=stub_elink,
+            fetcher_efetch=stub_efetch,
+        )
+
+        assert efetch_calls == ["PMC1234567"]
+        assert out["15905468"].pmcid == "PMC1234567"
+        payload = json.loads((tmp_path / "15905468.json").read_text(encoding="utf-8"))
+        assert payload["pmcid"] == "PMC1234567"
+
     def test_caches_negative_result_when_no_pmc(self, tmp_path: Path) -> None:
         # When elink returns no PMCID for the PMID, we cache a sentinel
         # (pmcid=None) so subsequent runs don't re-elink the same PMID.
@@ -1268,6 +1510,33 @@ class TestFetchFulltextBatch:
         assert calls[-1] == (2, 2)
         assert not (tmp_path / "123.json").exists()
         assert not (tmp_path / "456.json").exists()
+
+    def test_accepts_integer_elink_mapping_keys(self, tmp_path: Path) -> None:
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+
+        out = fetch_fulltext_batch(
+            ["123"],
+            tmp_path,
+            fetcher_elink=lambda _batch: {123: "PMC1234567"},
+            fetcher_efetch=lambda _pmcid: jats_bytes,
+        )
+
+        assert out["123"].pmcid == "PMC1234567"
+        assert (tmp_path / "123.json").exists()
+
+    def test_skips_malformed_pmcid_without_negative_cache(self, tmp_path: Path) -> None:
+        efetch_calls: list[str] = []
+
+        out = fetch_fulltext_batch(
+            ["123"],
+            tmp_path,
+            fetcher_elink=lambda _batch: {"123": "PMC../escape"},
+            fetcher_efetch=lambda pmcid: efetch_calls.append(pmcid) or None,
+        )
+
+        assert out == {}
+        assert efetch_calls == []
+        assert not (tmp_path / "123.json").exists()
 
     def test_skips_cache_write_on_xml_parse_error(self, tmp_path: Path) -> None:
         def stub_elink(batch: list[str]) -> dict[str, str | None]:
@@ -1380,6 +1649,116 @@ class TestFetchFulltextBatch:
 
         assert elink_calls == [["777"]]
         assert "small vessel disease" in out["777"].introduction.lower()
+
+    def test_refetches_on_non_string_cached_section(self, tmp_path: Path) -> None:
+        (tmp_path / "777.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": FULLTEXT_SCHEMA_VERSION,
+                    "pmid": "777",
+                    "pmcid": "PMC777",
+                    "sections": {"introduction": ["not", "text"]},
+                    "fetched_at": "2025-01-01T00:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+        elink_calls: list[list[str]] = []
+
+        def stub_elink(batch: list[str]) -> dict[str, str | None]:
+            elink_calls.append(list(batch))
+            return dict.fromkeys(batch, "PMC777")
+
+        out = fetch_fulltext_batch(
+            ["777"],
+            tmp_path,
+            fetcher_elink=stub_elink,
+            fetcher_efetch=lambda _pmcid: jats_bytes,
+        )
+
+        assert elink_calls == [["777"]]
+        assert "not', 'text" not in out["777"].as_text()
+        assert "small vessel disease" in out["777"].introduction.lower()
+
+    def test_refetches_on_malformed_cached_pmcid(self, tmp_path: Path) -> None:
+        (tmp_path / "777.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": FULLTEXT_SCHEMA_VERSION,
+                    "pmid": "777",
+                    "pmcid": "PMC../escape",
+                    "sections": {"introduction": "stale"},
+                    "fetched_at": "2025-01-01T00:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+        elink_calls: list[list[str]] = []
+
+        def stub_elink(batch: list[str]) -> dict[str, str | None]:
+            elink_calls.append(list(batch))
+            return dict.fromkeys(batch, "PMC777")
+
+        out = fetch_fulltext_batch(
+            ["777"],
+            tmp_path,
+            fetcher_elink=stub_elink,
+            fetcher_efetch=lambda _pmcid: jats_bytes,
+        )
+
+        assert elink_calls == [["777"]]
+        assert out["777"].pmcid == "PMC777"
+        assert out["777"].introduction != "stale"
+
+    def test_refetches_on_negative_cache_with_section_text(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "777.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": FULLTEXT_SCHEMA_VERSION,
+                    "pmid": "777",
+                    "pmcid": None,
+                    "sections": {"introduction": "impossible cached text"},
+                    "fetched_at": "2025-01-01T00:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
+        elink_calls: list[list[str]] = []
+
+        def stub_elink(batch: list[str]) -> dict[str, str | None]:
+            elink_calls.append(list(batch))
+            return dict.fromkeys(batch, "PMC777")
+
+        out = fetch_fulltext_batch(
+            ["777"],
+            tmp_path,
+            fetcher_elink=stub_elink,
+            fetcher_efetch=lambda _pmcid: jats_bytes,
+        )
+
+        assert elink_calls == [["777"]]
+        assert out["777"].pmcid == "PMC777"
+        assert out["777"].introduction != "impossible cached text"
+
+    def test_accepts_string_efetch_response(self, tmp_path: Path) -> None:
+        jats_text = (_FIXTURES / "jats_sample.xml").read_text(encoding="utf-8")
+
+        out = fetch_fulltext_batch(
+            ["15905468"],
+            tmp_path,
+            fetcher_elink=lambda batch: dict.fromkeys(batch, "PMC1234567"),
+            fetcher_efetch=lambda _pmcid: jats_text,
+        )
+
+        assert "small vessel disease" in out["15905468"].introduction.lower()
 
     def test_pmid_absent_from_elink_response_is_not_cached(
         self, tmp_path: Path
@@ -1534,6 +1913,12 @@ class TestNcbiRetry:
 
         with pytest.raises(OSError, match="persistent failure"):
             _ncbi_retry(fake_fn, _reader=always_fails)
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+def test_non_negative_float_rejects_non_finite(value: str) -> None:
+    with pytest.raises(Exception, match="finite"):
+        _non_negative_float(value)
 
 
 class TestDefaultPmidsToPmcids:
@@ -1789,6 +2174,129 @@ def test_main_missing_baseline_fails_before_fulltext_fetch(
     assert calls == []
 
 
+def test_main_fulltext_cache_oserror_degrades_to_title_abstract(
+    _stub_corpus: Path,
+    tmp_path: Path,
+) -> None:
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_minimal_baseline(baseline_path)
+    fulltext_cache_file = tmp_path / "fulltext-cache-is-file"
+    fulltext_cache_file.write_text("not a directory", encoding="utf-8")
+    out_path = tmp_path / "out.json"
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--fulltext-cache",
+            str(fulltext_cache_file),
+            "--no-mesh",
+            "--json",
+            "--output",
+            str(out_path),
+        ]
+    )
+
+    assert rc == 0
+    assert json.loads(out_path.read_text(encoding="utf-8"))["papers"] == 1
+
+
+def test_main_mesh_cache_oserror_degrades_to_no_mesh(
+    _stub_corpus: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_minimal_baseline(baseline_path)
+    mesh_cache_file = tmp_path / "mesh-cache-is-file"
+    mesh_cache_file.write_text("not a directory", encoding="utf-8")
+    out_path = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        "scripts.distill_pubmed_keywords.fetch_fulltext_batch", lambda *a, **k: {}
+    )
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--mesh-cache",
+            str(mesh_cache_file),
+            "--json",
+            "--output",
+            str(out_path),
+        ]
+    )
+
+    assert rc == 0
+    assert json.loads(out_path.read_text(encoding="utf-8"))["mesh_terms"] == []
+
+
+def test_main_build_baseline_oserror_returns_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_as_dir = tmp_path / "baseline-output-dir"
+    output_as_dir.mkdir()
+
+    def fake_configure(*, email=None, api_key=None):  # noqa: ANN001
+        return None
+
+    def fake_retry(fn, *args, _reader, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if getattr(fn, "__name__", "") == "esearch":
+            return {"IdList": ["123"]}
+        return b"""
+        <PubmedArticleSet>
+          <PubmedArticle>
+            <MedlineCitation>
+              <Article>
+                <ArticleTitle>Title</ArticleTitle>
+                <Abstract><AbstractText>Abstract.</AbstractText></Abstract>
+              </Article>
+            </MedlineCitation>
+          </PubmedArticle>
+        </PubmedArticleSet>
+        """
+
+    class _FakeEntrez:
+        @staticmethod
+        def esearch(**_kwargs):  # noqa: ANN202
+            return None
+
+        @staticmethod
+        def efetch(**_kwargs):  # noqa: ANN202
+            return None
+
+        @staticmethod
+        def read(_handle):  # noqa: ANN202, ANN001
+            return {}
+
+    monkeypatch.setitem(
+        __import__("sys").modules, "Bio", type("M", (), {"Entrez": _FakeEntrez})
+    )
+    monkeypatch.setattr(
+        "scripts.distill_pubmed_keywords._configure_entrez", fake_configure
+    )
+    monkeypatch.setattr("scripts.distill_pubmed_keywords._ncbi_retry", fake_retry)
+    monkeypatch.setattr("scripts.distill_pubmed_keywords._ncbi_sleep", lambda _k: None)
+
+    rc = main(
+        [
+            "--build-baseline",
+            "--baseline-size",
+            "1",
+            "--baseline-cache",
+            str(output_as_dir),
+        ]
+    )
+
+    assert rc == 1
+
+
 # ---------------------------------------------------------------------------
 # Rich rendering — _render_query token styling
 # ---------------------------------------------------------------------------
@@ -2024,6 +2532,38 @@ def test_output_file_contains_no_ansi_escapes(
     assert rc == 0
     content = out_path.read_bytes()
     assert b"\x1b[" not in content, "file output must be ANSI-free"
+
+
+def test_no_mesh_default_query_output_is_titleabstract_only(
+    _stub_corpus: Path,
+    tmp_path: Path,
+) -> None:
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_minimal_baseline(baseline_path)
+    out_path = tmp_path / "report.txt"
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--no-fulltext",
+            "--no-mesh",
+            "--min-df",
+            "1",
+            "--min-llr",
+            "0",
+            "--output",
+            str(out_path),
+        ]
+    )
+
+    assert rc == 0
+    content = out_path.read_text(encoding="utf-8")
+    assert "[titleabstract]" in content
+    assert "[structured]" not in content
+    assert "[mesh]" not in content
 
 
 def test_json_output_file_contains_no_ansi_escapes(
