@@ -178,7 +178,6 @@ rshiny_dashboard/
 ├── pyproject.toml                # Python tooling config (ruff, pytest, ty)
 ├── README.md                     # Project documentation
 ├── R_PACKAGE_MANIFEST.md         # Canonical R dependency list
-├── renv.lock                     # R dependency lockfile (used by Docker)
 ├── requirements.txt              # Python dependencies (version floors)
 ├── requirements.lock             # Pinned Python deps (uv-managed)
 ├── uv.lock                       # uv resolver lockfile
@@ -445,9 +444,10 @@ rshiny_dashboard/
 git clone https://github.com/mathieubpoiriericm/icm-dashboard.git
 cd icm-dashboard
 
-# 2. Install R dependencies — preferred: restore from the lockfile
-Rscript -e 'renv::restore()'
-# (or, for a minimal manual install, see the Installation section below)
+# 2. Install R dependencies
+Rscript -e 'install.packages(c("bslib", "cachem", "data.table", "DBI", "digest", "dplyr", "DT", "fastmap", "future", "future.apply", "htmltools", "httr2", "jsonlite", "leaflet", "memoise", "parallelly", "purrr", "qs2", "RPostgres", "shiny", "shinyWidgets", "showtext", "stringr", "sysfonts", "tidygeocoder"), repos = "https://cloud.r-project.org")'
+# (or, for the full package set including test and plotting dependencies,
+# see the Installation section below)
 
 # 3. Run the app
 Rscript -e 'shiny::runApp()'
@@ -477,8 +477,8 @@ The dashboard will open in your browser at `http://127.0.0.1:3838`.
 
 The canonical R dependency list lives in
 [`R_PACKAGE_MANIFEST.md`](R_PACKAGE_MANIFEST.md) (generated from the
-source files). For reproducible builds the Docker image restores from
-`renv.lock`; for local installs:
+source files). The Docker image and local setup install these packages
+directly from CRAN:
 
 ```r
 # Install required CRAN packages
@@ -504,7 +504,7 @@ install.packages(c(
   "parallelly",
   "patchwork",
   "purrr",
-  "qs",
+  "qs2",
   "ragg",
   "readr",
   "RPostgres",
@@ -519,7 +519,7 @@ install.packages(c(
   "testthat",
   "tidygeocoder",
   "tidyr"
-))
+), repos = "https://cloud.r-project.org")
 ```
 
 Visualization-only packages (`ggplot2`, `ggrepel`, `ggtext`,
@@ -1300,8 +1300,8 @@ Detailed documentation is available in the `docs/` directory:
 
 | Document | Description |
 | ---------- | ------------- |
-| [Dashboard Overview](docs/dashboard-overview.md) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
-| [Python ETL Pipeline](docs/python-etl-pipeline.md) | Architecture, data flow, and configuration of the Python extraction pipeline |
+| [Dashboard Overview](docs/dashboard-overview.md) ![Updated](https://img.shields.io/badge/Updated-green.svg) | Runtime architecture, data flow, filtering infrastructure, and frontend stack |
+| [Python ETL Pipeline](docs/python-etl-pipeline.md) ![Updated](https://img.shields.io/badge/Updated-green.svg) | Architecture, data flow, and configuration of the Python extraction pipeline |
 | [Pipeline Security](docs/pipeline-security.md) | Security audit findings, threat model, and hardening measures |
 | [HPC Pipeline App Runtime](docs/hpc-pipeline-app-runtime.md) | Runtime contract for the HPC pipeline app (SSH, tunnel, vLLM readiness) |
 | [ICM HPC Fine-Tuning Stack](docs/icm-hpc-finetuning-stack.md) | Canonical reference for modules, package pins, NCCL config, and the QLoRA/Unsloth chain |

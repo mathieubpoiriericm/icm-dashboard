@@ -33,7 +33,7 @@ install.packages(c(
   "parallelly",
   "patchwork",
   "purrr",
-  "qs",
+  "qs2",
   "ragg",
   "readr",
   "RPostgres",
@@ -90,7 +90,7 @@ c(
 | `parallelly` | `R/fetch_trial_locations.R` |
 | `patchwork` | `scripts/plot_tuning_runs.R` |
 | `purrr` | `app.R`, `R/tooltips.R` |
-| `qs` | `app.R`, `R/data_prep.R`, `R/fetch_trial_locations.R`, `scripts/trigger_update.R` |
+| `qs2` | `app.R`, `R/data_prep.R`, `R/fetch_trial_locations.R`, `scripts/trigger_update.R` |
 | `ragg` | `scripts/plot_tuning_runs.R` |
 | `readr` | `scripts/plot_tuning_runs.R` |
 | `RPostgres` | `R/utils.R` |

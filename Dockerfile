@@ -31,14 +31,48 @@ RUN apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=2 update \
 RUN rm -rf /opt/shiny-server/samples
 RUN rm -rf /srv/shiny-server/*
 
-# Install R dependencies from renv.lock for reproducible builds
-COPY renv.lock /tmp/renv.lock
+# Install R dependencies from the source-derived package manifest.
 RUN R -e "\
   options(timeout = 60, download.file.method = 'libcurl'); \
-  install.packages('renv'); \
-  renv::restore(lockfile = '/tmp/renv.lock', prompt = FALSE)" \
-  && R -e "if (!requireNamespace('qs2', quietly = TRUE)) stop('qs2 package failed to install')" \
-  && rm /tmp/renv.lock
+  install.packages(c( \
+    'bslib', \
+    'cachem', \
+    'data.table', \
+    'DBI', \
+    'digest', \
+    'dplyr', \
+    'DT', \
+    'fastmap', \
+    'future', \
+    'future.apply', \
+    'ggplot2', \
+    'ggrepel', \
+    'ggtext', \
+    'htmltools', \
+    'httr2', \
+    'jsonlite', \
+    'leaflet', \
+    'memoise', \
+    'parallelly', \
+    'patchwork', \
+    'purrr', \
+    'qs2', \
+    'ragg', \
+    'readr', \
+    'RPostgres', \
+    'scales', \
+    'shiny', \
+    'shinytest2', \
+    'shinyWidgets', \
+    'showtext', \
+    'stringr', \
+    'sysfonts', \
+    'systemfonts', \
+    'testthat', \
+    'tidygeocoder', \
+    'tidyr' \
+  ), repos = 'https://cloud.r-project.org')" \
+  && R -e "if (!requireNamespace('qs2', quietly = TRUE)) stop('qs2 package failed to install')"
 
 COPY app.R /srv/shiny-server
 COPY R /srv/shiny-server/R
