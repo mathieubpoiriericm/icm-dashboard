@@ -20,6 +20,7 @@ AGENTS.md
 # Files and directories
 data
 docs/other
+hpc-explorer/
 icm-hpc/
 logs
 history.json

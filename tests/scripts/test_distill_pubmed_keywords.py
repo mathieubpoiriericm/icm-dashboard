@@ -1022,16 +1022,27 @@ class TestMeshCache:
 
 
 def _write_mods(
-    path: Path, *, pmid: str, title: str = "T", abstract: str = "A."
+    path: Path, *, pmid: str | None, title: str = "T", abstract: str = "A."
 ) -> None:
-    """Write a minimal MODS XML record with the given PMID, title, and abstract."""
+    """Write a minimal MODS XML record.
+
+    ``pmid=None`` omits the ``<identifier type="pubmed">`` element
+    entirely, modelling MODS records that lack a PubMed identifier
+    (e.g. files converted from BibTeX where the PMID is not in the
+    source bibliography).
+    """
+    identifier_line = (
+        f'    <identifier type="pubmed">{pmid}</identifier>\n'
+        if pmid is not None
+        else ""
+    )
     path.write_text(
         '<?xml version="1.0"?>\n'
         '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
         "  <mods>\n"
         f"    <titleInfo><title>{title}</title></titleInfo>\n"
         f"    <abstract>{abstract}</abstract>\n"
-        f'    <identifier type="pubmed">{pmid}</identifier>\n'
+        f"{identifier_line}"
         "  </mods>\n"
         "</modsCollection>\n",
         encoding="utf-8",
@@ -1086,6 +1097,48 @@ class TestParseMods:
         assert paper is not None
         assert paper.title == "Article title"
         assert paper.abstract == "Article abstract."
+        assert paper.pmid == "15905468"
+
+    def test_falls_back_to_filename_pmid_when_mods_has_none(
+        self, tmp_path: Path
+    ) -> None:
+        # MODS records converted from BibTeX often lack an inner
+        # PubMed identifier. When the filename stem is a valid PMID
+        # (as the user has named them), surface it so PMC fulltext and
+        # MeSH enrichment can run for these papers too.
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "23867200.xml"
+        _write_mods(path, pmid=None)
+        paper = parse_mods_file(path)
+        assert paper is not None
+        assert paper.pmid == "23867200"
+
+    def test_filename_pmid_fallback_rejects_non_numeric_stem(
+        self, tmp_path: Path
+    ) -> None:
+        # The fallback must still validate the stem via _is_valid_pmid;
+        # otherwise non-numeric filenames would be interpolated into
+        # cache paths.
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "wardlaw2013.xml"
+        _write_mods(path, pmid=None)
+        paper = parse_mods_file(path)
+        assert paper is not None
+        assert paper.pmid is None
+
+    def test_mods_pmid_takes_precedence_over_filename(
+        self, tmp_path: Path
+    ) -> None:
+        # The inner MODS identifier is the explicit/authoritative source;
+        # the filename only fills in when the MODS lacks one.
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "99999.xml"
+        _write_mods(path, pmid="15905468")
+        paper = parse_mods_file(path)
+        assert paper is not None
         assert paper.pmid == "15905468"
 
     def test_multiple_abstract_elements_are_joined(self, tmp_path: Path) -> None:
@@ -2387,6 +2440,52 @@ def test_main_default_invokes_fulltext_fetch(
     assert received_pmids == [["12345"]]
 
 
+def test_main_xml_extra_filename_pmid_fallback_routes_to_fetches(
+    _stub_corpus: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A MODS file lacking an inner PubMed identifier but named by PMID
+    still reaches fetch_fulltext_batch — closing the loop on the user's
+    real xml_extra scenario (BibTeX-converted MODS, PMID only in filename)."""
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_minimal_baseline(baseline_path)
+    fulltext_cache = tmp_path / "ft"
+
+    extra_dir = tmp_path / "xml_extra"
+    extra_dir.mkdir()
+    _write_mods(extra_dir / "23867200.xml", pmid=None, title="Filename-fallback paper")
+
+    received_pmids: list[list[str]] = []
+
+    def spy(pmids, cache_dir, **_kwargs):  # noqa: ANN001, ANN003
+        received_pmids.append(list(pmids))
+        return {}
+
+    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--xml-extra-dir",
+            str(extra_dir),
+            "--baseline-cache",
+            str(baseline_path),
+            "--fulltext-cache",
+            str(fulltext_cache),
+            "--no-mesh",
+            "--json",
+            "--output",
+            str(tmp_path / "out.json"),
+        ]
+    )
+
+    assert rc == 0
+    assert len(received_pmids) == 1
+    assert "23867200" in received_pmids[0]
+
+
 def test_main_xml_extra_dir_contributes_to_corpus(
     _stub_corpus: Path,
     tmp_path: Path,
@@ -2659,6 +2758,37 @@ def _capture_rich_report(
     )
     _render_rich_report(result, query_format=query_format, console=console)
     return console.export_text()
+
+
+def test_section_title_does_not_wrap_for_narrow_tables() -> None:
+    """When the keyword table auto-sizes narrow (short terms), Rich must
+    not wrap the section title across multiple lines — the section name
+    and its ``showing N`` count belong on the same line."""
+    # Single-char terms force the Term column to minimum width. With
+    # the title set on the Table, Rich saw a title wider than the
+    # auto-sized table and wrapped it (e.g. "Top distinctive unigrams"
+    # on one line, "30" centered below).
+    short_terms = [
+        KeywordScore(term=t, document_frequency=1, total_count=1, llr=8.42)
+        for t in ("a", "b", "c", "d", "e")
+    ]
+    result = DistillationResult(
+        papers=5,
+        unigrams=short_terms,
+        bigrams=[],
+        trigrams=[],
+        acronyms=[],
+        mesh_terms=[],
+    )
+
+    text = _capture_rich_report(result)
+
+    title_lines = [ln for ln in text.splitlines() if "Top distinctive unigrams" in ln]
+    assert title_lines, f"Title line not found in output:\n{text}"
+    assert "showing 5" in title_lines[0], (
+        f"Section title wrapped — title and count landed on separate lines.\n"
+        f"Title line: {title_lines[0]!r}\nFull output:\n{text}"
+    )
 
 
 class TestRichReportCopyPaste:

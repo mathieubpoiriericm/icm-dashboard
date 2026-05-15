@@ -847,6 +847,14 @@ def parse_mods_file(path: Path) -> PaperText | None:
         # enrichment which require a valid PMID.
         logger.warning(f"Ignoring non-numeric PMID {pmid_text!r} in {path.name}")
         pmid_text = None
+    if pmid_text is None and _is_valid_pmid(path.stem):
+        # MODS converted from BibTeX often lack an inner PubMed identifier;
+        # users compensate by naming the file after the PMID.
+        pmid_text = path.stem
+        logger.info(
+            f"Using filename PMID {pmid_text} for {path.name}"
+            " (no PubMed identifier in MODS)"
+        )
 
     return PaperText(
         pmid=pmid_text,
@@ -2640,16 +2648,18 @@ def to_json(
 
 
 def _render_score_table(
-    title: str,
     scores: list[KeywordScore],
     *,
     show_llr: bool = True,
 ) -> Table:
-    """Build a rich Table for one keyword section."""
+    """Build a rich Table for one keyword section.
+
+    The section heading is rendered by the caller, not via ``Table.title``:
+    auto-sized narrow tables (short terms) would otherwise force Rich to
+    wrap the heading across two lines.
+    """
     table = Table(
-        title=f"[bold {_PRIMARY_COLOR}]{title}[/] — showing {len(scores)}",
         box=box.HEAVY_HEAD,
-        title_justify="center",
         header_style="bold",
         show_edge=True,
         expand=False,
@@ -2741,7 +2751,8 @@ def _render_rich_report(
         if not scores:
             console.print(f"[bold {_PRIMARY_COLOR}]{title}[/] — [dim](none)[/]")
             continue
-        console.print(_render_score_table(title, scores, show_llr=show_llr))
+        console.print(f"[bold {_PRIMARY_COLOR}]{title}[/] — showing {len(scores)}")
+        console.print(_render_score_table(scores, show_llr=show_llr))
 
     variants = result.query_variants
     formats = _query_formats_to_emit(result, query_format)
