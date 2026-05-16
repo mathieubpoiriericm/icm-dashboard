@@ -54,7 +54,6 @@ import re
 import sys
 import tempfile
 import time
-import warnings
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -531,9 +530,6 @@ class BaselineCounts:
     surface-form tokens (no stemming).
     """
 
-    schema_version: int
-    built_at: str
-    params: dict[str, Any]
     total_docs: int
     unigrams: Counter[tuple[str, ...]]
     bigrams: Counter[tuple[str, ...]]
@@ -556,6 +552,24 @@ class DistillationResult:
     acronyms: list[KeywordScore]
     mesh_terms: list[KeywordScore] = field(default_factory=list)
     query_variants: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class RankingInputs:
+    """Per-n-gram foreground counts and optional baseline reference.
+
+    Bundles the five values ``_rank_terms`` needs to score a single
+    n-gram size (or the acronym slot) so the caller can build one record
+    instead of threading five positional arguments through the signature.
+    ``bg_counts`` / ``total_bg`` are ``None`` when no baseline is
+    available — ``_rank_terms`` then falls back to DF ranking.
+    """
+
+    fg_counts: Counter[Any]
+    fg_doc_freq: Counter[Any]
+    total_fg: int
+    bg_counts: Counter[Any] | None = None
+    total_bg: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -852,11 +866,7 @@ def _llr_score(a: float, b: float, c: float, d: float) -> float:
 
 
 def _rank_terms(
-    fg_counts: Counter[Any],
-    fg_doc_freq: Counter[Any],
-    bg_counts: Counter[Any] | None,
-    total_fg: int,
-    total_bg: int | None,
+    inputs: RankingInputs,
     *,
     min_df: int,
     top_n: int,
@@ -875,23 +885,19 @@ def _rank_terms(
     if not math.isfinite(min_llr) or min_llr < 0:
         raise ValueError(f"min_llr must be a finite non-negative number, got {min_llr}")
 
-    if top_n <= 0 or total_fg <= 0:
+    if top_n <= 0 or inputs.total_fg <= 0:
         return []
 
-    if bg_counts is None or total_bg is None or total_bg == 0:
-        return _rank_terms_df(
-            fg_counts,
-            fg_doc_freq,
-            min_df=min_df,
-            top_n=top_n,
-            display=display,
-        )
+    if inputs.bg_counts is None or inputs.total_bg is None or inputs.total_bg == 0:
+        return _rank_terms_df(inputs, min_df=min_df, top_n=top_n, display=display)
 
+    total_fg = inputs.total_fg
+    total_bg = inputs.total_bg
     scored: list[KeywordScore] = []
-    for key, fg in fg_counts.items():
-        if fg_doc_freq[key] < min_df:
+    for key, fg in inputs.fg_counts.items():
+        if inputs.fg_doc_freq[key] < min_df:
             continue
-        bg = bg_counts.get(key, 0)
+        bg = inputs.bg_counts.get(key, 0)
         # Sign filter: keep terms more frequent in foreground than baseline.
         if (fg / total_fg) <= (bg / total_bg):
             continue
@@ -904,7 +910,7 @@ def _rank_terms(
         scored.append(
             KeywordScore(
                 term=term,
-                document_frequency=fg_doc_freq[key],
+                document_frequency=inputs.fg_doc_freq[key],
                 total_count=fg,
                 llr=llr,
             )
@@ -915,8 +921,7 @@ def _rank_terms(
 
 
 def _rank_terms_df(
-    fg_counts: Counter[Any],
-    fg_doc_freq: Counter[Any],
+    inputs: RankingInputs,
     *,
     min_df: int,
     top_n: int,
@@ -927,8 +932,8 @@ def _rank_terms_df(
         return []
 
     scored: list[KeywordScore] = []
-    for key, fg in fg_counts.items():
-        if fg_doc_freq[key] < min_df:
+    for key, fg in inputs.fg_counts.items():
+        if inputs.fg_doc_freq[key] < min_df:
             continue
         term = (
             display[key] if display is not None and key in display else _stringify(key)
@@ -936,7 +941,7 @@ def _rank_terms_df(
         scored.append(
             KeywordScore(
                 term=term,
-                document_frequency=fg_doc_freq[key],
+                document_frequency=inputs.fg_doc_freq[key],
                 total_count=fg,
             )
         )
@@ -1311,9 +1316,8 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
     built_at_value = payload["built_at"]
     if not isinstance(built_at_value, str) or not built_at_value.strip():
         raise _baseline_error("Baseline cache field 'built_at' is malformed.")
-    built_at_str = built_at_value.strip()
     try:
-        built_at = _dt.datetime.fromisoformat(built_at_str)
+        built_at = _dt.datetime.fromisoformat(built_at_value.strip())
     except ValueError as e:
         raise _baseline_error("Baseline cache field 'built_at' is malformed.") from e
     if built_at.tzinfo is None:
@@ -1325,8 +1329,7 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
             f"Consider rebuilding with --build-baseline."
         )
 
-    params = payload["params"]
-    if not isinstance(params, Mapping):
+    if not isinstance(payload["params"], Mapping):
         raise _baseline_error("Baseline cache field 'params' is malformed.")
 
     total_docs = _coerce_baseline_count("total_docs", payload["total_docs"])
@@ -1361,9 +1364,6 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
             )
 
     return BaselineCounts(
-        schema_version=version,
-        built_at=built_at_str,
-        params=dict(params),
         total_docs=total_docs,
         unigrams=unigrams,
         bigrams=bigrams,
@@ -1698,25 +1698,39 @@ def aggregate_mesh(
 # ---------------------------------------------------------------------------
 
 
-def _build_display_map(
+def _foreground_stats_for(
     paper_stem_token_pairs: list[list[tuple[str, str]]],
     n: int,
     *,
-    filter_content: bool = False,
-) -> dict[tuple[str, ...], str]:
-    """Map each stem-ngram-key to its modal surface n-gram form.
+    filter_content: bool,
+) -> tuple[
+    Counter[tuple[str, ...]],
+    Counter[tuple[str, ...]],
+    dict[tuple[str, ...], str],
+]:
+    """Compute (term-frequency, document-frequency, display map) for n-grams.
 
-    Aggregates by stem so plural variants share a count, but displays
-    the most-frequently-observed surface form (so output reads as
-    English, not stems). When ``filter_content`` is set, the display
-    candidates use the same stopword/content filter as foreground
-    counting, so filtered labels like "Results" cannot become the
-    displayed form for a kept singular content token.
+    Aggregates by stem so plural variants share a count; ``display`` maps
+    each stem-key to its modal surface n-gram form so output reads as
+    English, not stems.
+
+    When ``filter_content`` is set, an n-gram is dropped when any token
+    fails the stopword/length/numeric filter — applied to the foreground
+    but never to the baseline (so LLR sees consistent denominators). Both
+    stem and surface form are checked against ``_STOPWORDS``: stemming
+    collapses plural-only section labels ("results"→"result") to a stem
+    that isn't a stopword, so checking the surface too is what keeps the
+    bare "Methods:"/"Results:" prefixes filtered. The same filter applies
+    to surface-form aggregation, so filtered labels like "Results" cannot
+    become the displayed form for a kept singular content token.
     """
+    tf: Counter[tuple[str, ...]] = Counter()
+    df: Counter[tuple[str, ...]] = Counter()
     surface_counts: dict[tuple[str, ...], Counter[tuple[str, ...]]] = {}
     for tokens in paper_stem_token_pairs:
         if len(tokens) < n:
             continue
+        in_paper: set[tuple[str, ...]] = set()
         for i in range(len(tokens) - n + 1):
             pair_slice = tokens[i : i + n]
             if filter_content and not all(
@@ -1725,64 +1739,33 @@ def _build_display_map(
                 continue
             stems = tuple(s for s, _ in pair_slice)
             surfaces = tuple(t for _, t in pair_slice)
+            tf[stems] += 1
+            in_paper.add(stems)
             surface_counts.setdefault(stems, Counter())[surfaces] += 1
-    return {
+        df.update(in_paper)
+    display = {
         stems: " ".join(surfaces.most_common(1)[0][0])
         for stems, surfaces in surface_counts.items()
     }
-
-
-def _foreground_counts_for(
-    paper_stem_token_pairs: list[list[tuple[str, str]]],
-    n: int,
-    *,
-    filter_content: bool,
-) -> tuple[Counter[tuple[str, ...]], Counter[tuple[str, ...]]]:
-    """Compute (per-paper-summed counts, document-frequency) for n-grams.
-
-    If ``filter_content`` is set, an n-gram is dropped when any token
-    fails the stopword/length/numeric filter — applied to foreground
-    but never to the baseline (so LLR sees consistent denominators).
-    Both stem and surface form are checked against ``_STOPWORDS``:
-    stemming collapses plural-only section labels ("results"→"result")
-    to a stem that isn't a stopword, so checking the surface too is
-    what keeps the bare "Methods:"/"Results:" prefixes filtered.
-    """
-    tf: Counter[tuple[str, ...]] = Counter()
-    df: Counter[tuple[str, ...]] = Counter()
-    for tokens in paper_stem_token_pairs:
-        if len(tokens) < n:
-            continue
-        clean = []
-        for i in range(len(tokens) - n + 1):
-            pair_slice = tokens[i : i + n]
-            stems = tuple(s for s, _ in pair_slice)
-            if filter_content and not all(
-                _is_content_token(s) and t not in _STOPWORDS for s, t in pair_slice
-            ):
-                continue
-            clean.append(stems)
-        tf.update(clean)
-        df.update(set(clean))
-    return tf, df
+    return tf, df, display
 
 
 def _foreground_acronyms(
-    papers: list[PaperText],
+    paper_tokens: list[list[str]],
 ) -> tuple[Counter[str], Counter[str]]:
     """Detect ALL-CAPS short tokens — returns (TF, DF) across papers."""
     tf: Counter[str] = Counter()
     df: Counter[str] = Counter()
-    for paper in papers:
-        tokens = _tokenize(paper.combined)
-        in_paper = {
-            tok
-            for tok in tokens
-            if MIN_ACRONYM_LENGTH <= len(tok) <= MAX_ACRONYM_LENGTH
-            and tok.isupper()
-            and tok.lower() not in _STOPWORDS
-        }
-        tf.update(tok for tok in tokens if tok in in_paper)
+    for tokens in paper_tokens:
+        in_paper: set[str] = set()
+        for tok in tokens:
+            if (
+                MIN_ACRONYM_LENGTH <= len(tok) <= MAX_ACRONYM_LENGTH
+                and tok.isupper()
+                and tok.lower() not in _STOPWORDS
+            ):
+                tf[tok] += 1
+                in_paper.add(tok)
         df.update(in_paper)
     return tf, df
 
@@ -1799,8 +1782,9 @@ def distill_keywords(
     phrase_top: int = DEFAULT_PHRASE_TOP,
 ) -> DistillationResult:
     """Rank distinctive keywords from a corpus, optionally with MeSH."""
+    paper_tokens: list[list[str]] = [_tokenize(p.combined) for p in papers]
     paper_stem_token_pairs: list[list[tuple[str, str]]] = [
-        [(stem_key(t), t.lower()) for t in _tokenize(p.combined)] for p in papers
+        [(stem_key(t), t.lower()) for t in tokens] for tokens in paper_tokens
     ]
 
     # Pair each n-gram size with its matching baseline counter + total.
@@ -1817,15 +1801,18 @@ def distill_keywords(
 
     rankings: dict[int, list[KeywordScore]] = {}
     for n in (1, 2, 3):
-        tf, df = _foreground_counts_for(paper_stem_token_pairs, n, filter_content=True)
-        display = _build_display_map(paper_stem_token_pairs, n, filter_content=True)
+        tf, df, display = _foreground_stats_for(
+            paper_stem_token_pairs, n, filter_content=True
+        )
         bg_counts, total_bg = baseline_by_n[n - 1]
         rankings[n] = _rank_terms(
-            tf,
-            df,
-            bg_counts=bg_counts,
-            total_fg=sum(tf.values()),
-            total_bg=total_bg,
+            RankingInputs(
+                fg_counts=tf,
+                fg_doc_freq=df,
+                total_fg=sum(tf.values()),
+                bg_counts=bg_counts,
+                total_bg=total_bg,
+            ),
             min_df=min_df,
             top_n=top_n,
             min_llr=min_llr,
@@ -1833,35 +1820,39 @@ def distill_keywords(
         )
 
     # Acronyms — surface-form keys (no stemming).
-    acro_tf, acro_df = _foreground_acronyms(papers)
+    acro_tf, acro_df = _foreground_acronyms(paper_tokens)
     acronyms = _rank_terms(
-        acro_tf,
-        acro_df,
-        bg_counts=baseline.acronyms if baseline is not None else None,
-        total_fg=sum(acro_tf.values()),
-        total_bg=baseline.total_acronyms if baseline is not None else None,
+        RankingInputs(
+            fg_counts=acro_tf,
+            fg_doc_freq=acro_df,
+            total_fg=sum(acro_tf.values()),
+            bg_counts=baseline.acronyms if baseline is not None else None,
+            total_bg=baseline.total_acronyms if baseline is not None else None,
+        ),
         min_df=min_df,
         top_n=top_n,
         min_llr=min_llr,
-        display=None,
     )
 
     mesh_terms: list[KeywordScore] = []
     if mesh_descriptors:
         mesh_terms = aggregate_mesh(mesh_descriptors, top_n=mesh_top)
 
-    result = DistillationResult(
+    return DistillationResult(
         papers=len(papers),
         unigrams=rankings[1],
         bigrams=rankings[2],
         trigrams=rankings[3],
         acronyms=acronyms,
         mesh_terms=mesh_terms,
+        query_variants=build_query_variants(
+            mesh_terms=mesh_terms,
+            bigrams=rankings[2],
+            trigrams=rankings[3],
+            mesh_top=mesh_top,
+            phrase_top=phrase_top,
+        ),
     )
-    result.query_variants = build_query_variants(
-        result, mesh_top=mesh_top, phrase_top=phrase_top
-    )
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1869,10 +1860,12 @@ def distill_keywords(
 # ---------------------------------------------------------------------------
 
 
-def _merged_phrases(result: DistillationResult) -> list[KeywordScore]:
+def _merged_phrases(
+    bigrams: list[KeywordScore], trigrams: list[KeywordScore]
+) -> list[KeywordScore]:
     """Bigrams + trigrams ranked together — used for the T/A query."""
     return sorted(
-        result.trigrams + result.bigrams,
+        trigrams + bigrams,
         key=lambda k: (-k.llr, -k.document_frequency, k.term),
     )
 
@@ -1940,17 +1933,19 @@ def format_structured_query(
 
 
 def build_query_variants(
-    result: DistillationResult,
     *,
+    mesh_terms: list[KeywordScore],
+    bigrams: list[KeywordScore],
+    trigrams: list[KeywordScore],
     mesh_top: int,
     phrase_top: int,
 ) -> dict[str, str]:
-    phrases = _merged_phrases(result)
+    phrases = _merged_phrases(bigrams, trigrams)
     return {
         "structured": format_structured_query(
-            result.mesh_terms, phrases, mesh_top=mesh_top, phrase_top=phrase_top
+            mesh_terms, phrases, mesh_top=mesh_top, phrase_top=phrase_top
         ),
-        "mesh": format_mesh_query(result.mesh_terms, mesh_top),
+        "mesh": format_mesh_query(mesh_terms, mesh_top),
         "titleabstract": format_titleabstract_query(phrases, phrase_top),
     }
 
@@ -2259,12 +2254,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--query-top",
-        type=_non_negative_int,
-        default=None,
-        help="Deprecated alias for --phrase-top.",
-    )
-    parser.add_argument(
         "--mesh-top",
         type=_non_negative_int,
         default=DEFAULT_MESH_TOP,
@@ -2333,17 +2322,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _resolve_phrase_top(args: argparse.Namespace) -> int:
-    if args.query_top is not None:
-        warnings.warn(
-            "--query-top is deprecated; use --phrase-top",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return int(args.query_top)
-    return int(args.phrase_top)
-
-
 def _build_progress() -> Progress:
     """Construct the rich.Progress used for slow network/IO stages.
 
@@ -2386,10 +2364,7 @@ def main(argv: list[str] | None = None) -> int:
 
     load_dotenv()
 
-    # Resolved once here so the deprecation warning for --query-top
-    # fires at most once per invocation (the panel and the distill call
-    # both need this value).
-    phrase_top = _resolve_phrase_top(args)
+    phrase_top = int(args.phrase_top)
 
     # The config panel is only useful for interactive runs. Suppress it
     # for --build-baseline, file output, and any non-TTY stdout (pipes,

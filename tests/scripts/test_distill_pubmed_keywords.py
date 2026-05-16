@@ -24,9 +24,9 @@ from scripts.distill_pubmed_keywords import (
     MeshDescriptor,
     MeshQualifier,
     PaperText,
-    _build_display_map,
+    RankingInputs,
     _foreground_acronyms,
-    _foreground_counts_for,
+    _foreground_stats_for,
     _llr_score,
     _ncbi_retry,
     _non_negative_float,
@@ -125,14 +125,14 @@ class TestModalSurface:
             [("gene", "gene"), ("gene", "gene"), ("gene", "genes")],
             [("gene", "genes")],
         ]
-        display = _build_display_map(papers, 1)
+        _, _, display = _foreground_stats_for(papers, 1, filter_content=False)
         assert display[("gene",)] == "gene"
 
     def test_unigram_plural_wins_when_more_common(self) -> None:
         papers = [
             [("gene", "genes"), ("gene", "genes"), ("gene", "gene")],
         ]
-        display = _build_display_map(papers, 1)
+        _, _, display = _foreground_stats_for(papers, 1, filter_content=False)
         assert display[("gene",)] == "genes"
 
     def test_bigram_surface_form(self) -> None:
@@ -140,7 +140,7 @@ class TestModalSurface:
             [("white", "white"), ("matter", "matter")],
             [("white", "white"), ("matter", "matter")],
         ]
-        display = _build_display_map(papers, 2)
+        _, _, display = _foreground_stats_for(papers, 2, filter_content=False)
         assert display[("white", "matter")] == "white matter"
 
     def test_filtered_surface_forms_cannot_win_modal_display(self) -> None:
@@ -150,8 +150,8 @@ class TestModalSurface:
             [("result", "result")],
         ]
 
-        unfiltered = _build_display_map(papers, 1)
-        filtered = _build_display_map(papers, 1, filter_content=True)
+        _, _, unfiltered = _foreground_stats_for(papers, 1, filter_content=False)
+        _, _, filtered = _foreground_stats_for(papers, 1, filter_content=True)
 
         assert unfiltered[("result",)] == "results"
         assert filtered[("result",)] == "result"
@@ -210,120 +210,82 @@ class TestRankTermsLLR:
         #   fg rate = 10/1000 = 1% ; bg rate = 5000/10000 = 50% → drop.
         # "rare" is over-represented in foreground:
         #   fg rate = 990/1000 = 99% ; bg rate = 2/10000 ≈ 0.02% → keep.
-        fg = Counter({("common",): 10, ("rare",): 990})
-        df = Counter({("common",): 1, ("rare",): 5})
-        bg = Counter({("common",): 5_000, ("rare",): 2})
-        result = _rank_terms(
-            fg,
-            df,
-            bg,
+        inputs = RankingInputs(
+            fg_counts=Counter({("common",): 10, ("rare",): 990}),
+            fg_doc_freq=Counter({("common",): 1, ("rare",): 5}),
             total_fg=1_000,
+            bg_counts=Counter({("common",): 5_000, ("rare",): 2}),
             total_bg=10_000,
-            min_df=1,
-            top_n=10,
-            min_llr=0.0,
         )
+        result = _rank_terms(inputs, min_df=1, top_n=10, min_llr=0.0)
         terms = [r.term for r in result]
         assert "rare" in terms
         assert "common" not in terms
 
     def test_fallback_to_df_when_no_baseline(self) -> None:
-        fg = Counter({("x",): 5, ("y",): 2})
-        df = Counter({("x",): 3, ("y",): 2})
-        result = _rank_terms(
-            fg,
-            df,
-            None,
+        inputs = RankingInputs(
+            fg_counts=Counter({("x",): 5, ("y",): 2}),
+            fg_doc_freq=Counter({("x",): 3, ("y",): 2}),
             total_fg=7,
-            total_bg=None,
-            min_df=1,
-            top_n=10,
-            min_llr=0.0,
         )
+        result = _rank_terms(inputs, min_df=1, top_n=10, min_llr=0.0)
         assert result[0].term == "x"
         assert result[0].llr == 0.0  # no LLR computed in DF fallback
 
     def test_min_df_threshold(self) -> None:
-        fg = Counter({("kept",): 3, ("dropped",): 1})
-        df = Counter({("kept",): 2, ("dropped",): 1})
-        bg = Counter({("kept",): 0, ("dropped",): 0})
-        result = _rank_terms(
-            fg,
-            df,
-            bg,
+        inputs = RankingInputs(
+            fg_counts=Counter({("kept",): 3, ("dropped",): 1}),
+            fg_doc_freq=Counter({("kept",): 2, ("dropped",): 1}),
             total_fg=4,
+            bg_counts=Counter({("kept",): 0, ("dropped",): 0}),
             total_bg=1_000,
-            min_df=2,
-            top_n=10,
-            min_llr=0.0,
         )
+        result = _rank_terms(inputs, min_df=2, top_n=10, min_llr=0.0)
         terms = [r.term for r in result]
         assert "kept" in terms
         assert "dropped" not in terms
 
     def test_display_lookup_overrides_term_string(self) -> None:
-        fg = Counter({("gene",): 3})
-        df = Counter({("gene",): 2})
-        bg = Counter({("gene",): 1})
-        display = {("gene",): "GENES"}
-        result = _rank_terms(
-            fg,
-            df,
-            bg,
+        inputs = RankingInputs(
+            fg_counts=Counter({("gene",): 3}),
+            fg_doc_freq=Counter({("gene",): 2}),
             total_fg=3,
+            bg_counts=Counter({("gene",): 1}),
             total_bg=1_000,
-            min_df=1,
-            top_n=10,
-            min_llr=0.0,
-            display=display,
+        )
+        result = _rank_terms(
+            inputs, min_df=1, top_n=10, min_llr=0.0, display={("gene",): "GENES"}
         )
         assert result[0].term == "GENES"
 
     def test_non_positive_top_n_returns_empty(self) -> None:
-        fg = Counter({("gene",): 3})
-        df = Counter({("gene",): 2})
-        bg = Counter({("gene",): 1})
+        with_bg = RankingInputs(
+            fg_counts=Counter({("gene",): 3}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=3,
+            bg_counts=Counter({("gene",): 1}),
+            total_bg=1_000,
+        )
+        no_bg = RankingInputs(
+            fg_counts=Counter({("gene",): 3}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=3,
+        )
 
-        assert (
-            _rank_terms(
-                fg,
-                df,
-                bg,
-                total_fg=3,
-                total_bg=1_000,
-                min_df=1,
-                top_n=0,
-                min_llr=0.0,
-            )
-            == []
-        )
-        assert (
-            _rank_terms(
-                fg,
-                df,
-                None,
-                total_fg=3,
-                total_bg=None,
-                min_df=1,
-                top_n=-1,
-                min_llr=0.0,
-            )
-            == []
-        )
+        assert _rank_terms(with_bg, min_df=1, top_n=0, min_llr=0.0) == []
+        assert _rank_terms(no_bg, min_df=1, top_n=-1, min_llr=0.0) == []
 
     @pytest.mark.parametrize("bad_min_llr", [float("nan"), float("inf"), -0.1])
     def test_bad_min_llr_raises(self, bad_min_llr: float) -> None:
+        inputs = RankingInputs(
+            fg_counts=Counter({("gene",): 3}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=3,
+            bg_counts=Counter({("gene",): 0}),
+            total_bg=1_000,
+        )
         with pytest.raises(ValueError, match="min_llr"):
-            _rank_terms(
-                Counter({("gene",): 3}),
-                Counter({("gene",): 2}),
-                Counter({("gene",): 0}),
-                total_fg=3,
-                total_bg=1_000,
-                min_df=1,
-                top_n=10,
-                min_llr=bad_min_llr,
-            )
+            _rank_terms(inputs, min_df=1, top_n=10, min_llr=bad_min_llr)
 
 
 # ---------------------------------------------------------------------------
@@ -555,11 +517,11 @@ class TestBuildQuery:
 
 
 def _write_baseline_payload(
-    path: Path, *, built_at: str, override: dict | None = None
+    path: Path, *, built_at: str | None = None, override: dict | None = None
 ) -> None:
     payload = {
         "schema_version": BASELINE_SCHEMA_VERSION,
-        "built_at": built_at,
+        "built_at": built_at or dt.datetime.now(dt.UTC).isoformat(),
         "params": {"size_requested": 100},
         "total_docs": 10,
         "total_unigrams": 8,
@@ -1099,9 +1061,7 @@ class TestParseMods:
         assert paper is not None
         assert paper.pmid is None
 
-    def test_mods_pmid_takes_precedence_over_filename(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mods_pmid_takes_precedence_over_filename(self, tmp_path: Path) -> None:
         # The inner MODS identifier is the explicit/authoritative source;
         # the filename only fills in when the MODS lacks one.
         from scripts.distill_pubmed_keywords import parse_mods_file
@@ -1148,7 +1108,7 @@ class TestForegroundCounts:
             [("gene", "gene"), ("gene", "gene"), ("marker", "marker")],
             [("gene", "gene"), ("marker", "marker")],
         ]
-        tf, df = _foreground_counts_for(pairs, n=1, filter_content=True)
+        tf, df, _ = _foreground_stats_for(pairs, n=1, filter_content=True)
         assert tf[("gene",)] == 3
         assert df[("gene",)] == 2  # appears in 2 distinct papers
         assert tf[("marker",)] == 2
@@ -1160,7 +1120,7 @@ class TestForegroundCounts:
         pairs = [
             [("the", "the"), ("gene", "gene"), ("variant", "variant")],
         ]
-        tf, df = _foreground_counts_for(pairs, n=2, filter_content=True)
+        tf, _df, _ = _foreground_stats_for(pairs, n=2, filter_content=True)
         assert ("the", "gene") not in tf
         assert ("gene", "variant") in tf
 
@@ -1175,7 +1135,7 @@ class TestForegroundCounts:
             [("intervention", "interventions"), ("gene", "gene")],
             [("measurement", "measurements"), ("gene", "gene")],
         ]
-        tf, _ = _foreground_counts_for(pairs, n=1, filter_content=True)
+        tf, _df, _ = _foreground_stats_for(pairs, n=1, filter_content=True)
         assert ("result",) not in tf
         assert ("method",) not in tf
         assert ("intervention",) not in tf
@@ -1183,26 +1143,22 @@ class TestForegroundCounts:
         assert ("gene",) in tf
 
     def test_acronym_detection(self) -> None:
-        papers = [
-            PaperText(pmid="1", title="WMH and CADASIL", abstract="MRI"),
-            PaperText(pmid="2", title="WMH study", abstract="MRI and SVD"),
+        paper_tokens = [
+            ["WMH", "and", "CADASIL", "MRI"],
+            ["WMH", "study", "MRI", "and", "SVD"],
         ]
-        tf, df = _foreground_acronyms(papers)
+        tf, df = _foreground_acronyms(paper_tokens)
         assert tf["WMH"] == 2
         assert df["WMH"] == 2
         assert tf["MRI"] == 2
         assert tf["CADASIL"] == 1
 
     def test_structured_abstract_labels_are_not_acronyms(self) -> None:
-        papers = [
-            PaperText(
-                pmid="1",
-                title="FINDINGS and FUNDING",
-                abstract="WMH was measured by MRI.",
-            )
+        paper_tokens = [
+            ["FINDINGS", "and", "FUNDING", "WMH", "was", "measured", "by", "MRI"]
         ]
 
-        tf, df = _foreground_acronyms(papers)
+        tf, df = _foreground_acronyms(paper_tokens)
 
         assert "FINDINGS" not in tf
         assert "FUNDING" not in tf
@@ -1221,7 +1177,7 @@ class TestForegroundCounts:
             ]
         ]
 
-        tf, _ = _foreground_counts_for(pairs, n=2, filter_content=True)
+        tf, _df, _ = _foreground_stats_for(pairs, n=2, filter_content=True)
 
         assert ("supplementary", "table") not in tf
         assert ("table", "white") not in tf
@@ -1238,7 +1194,7 @@ class TestForegroundCounts:
             ]
         ]
 
-        tf, _ = _foreground_counts_for(pairs, n=3, filter_content=True)
+        tf, _df, _ = _foreground_stats_for(pairs, n=3, filter_content=True)
 
         assert ("doi", "org", "dryad") not in tf
         assert ("org", "dryad", "lacunar") not in tf
@@ -1269,9 +1225,6 @@ class TestDistillKeywords:
         # cSVD-distinctive terms — every term in the foreground should
         # then be ranked as highly distinctive.
         baseline = BaselineCounts(
-            schema_version=BASELINE_SCHEMA_VERSION,
-            built_at=dt.datetime.now(dt.UTC).isoformat(),
-            params={},
             total_docs=1_000,
             unigrams=Counter({("unrelated",): 5_000}),
             bigrams=Counter({("foo", "bar"): 500}),
@@ -1302,9 +1255,6 @@ class TestDistillKeywords:
             PaperText(pmid="111", title="t", abstract="a"),
         ]
         baseline = BaselineCounts(
-            schema_version=BASELINE_SCHEMA_VERSION,
-            built_at=dt.datetime.now(dt.UTC).isoformat(),
-            params={},
             total_docs=1,
             unigrams=Counter(),
             bigrams=Counter(),
@@ -1433,33 +1383,12 @@ def _stub_corpus(tmp_path: Path) -> Path:
     return xml_dir
 
 
-def _write_minimal_baseline(path: Path) -> None:
-    """Write a gzip baseline cache `load_baseline_cache` will accept."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema_version": BASELINE_SCHEMA_VERSION,
-        "built_at": dt.datetime.now(dt.UTC).isoformat(),
-        "params": {},
-        "total_docs": 1,
-        "total_unigrams": 1,
-        "total_bigrams": 0,
-        "total_trigrams": 0,
-        "total_acronyms": 0,
-        "unigrams": {"x": 1},
-        "bigrams": {},
-        "trigrams": {},
-        "acronyms": {},
-    }
-    with gzip.open(path, "wt", encoding="utf-8") as gz:
-        json.dump(payload, gz)
-
-
 def test_main_accepts_title_abstract_only_run(
     _stub_corpus: Path,
     tmp_path: Path,
 ) -> None:
     baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
+    _write_baseline_payload(baseline_path)
 
     rc = main(
         [
@@ -1502,7 +1431,7 @@ def test_main_mesh_cache_oserror_degrades_to_no_mesh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
+    _write_baseline_payload(baseline_path)
     mesh_cache_file = tmp_path / "mesh-cache-is-file"
     mesh_cache_file.write_text("not a directory", encoding="utf-8")
     out_path = tmp_path / "out.json"
@@ -1709,8 +1638,7 @@ class TestRichReportCopyPaste:
                 "structured": structured,
                 "mesh": "CADASIL[MeSH Terms]",
                 "titleabstract": (
-                    '"white matter"[Title/Abstract] OR '
-                    '"small vessel"[Title/Abstract]'
+                    '"white matter"[Title/Abstract] OR "small vessel"[Title/Abstract]'
                 ),
             },
         )
@@ -1900,7 +1828,7 @@ def test_output_file_contains_no_ansi_escapes(
     tmp_path: Path,
 ) -> None:
     baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
+    _write_baseline_payload(baseline_path)
     out_path = tmp_path / "report.txt"
 
     rc = main(
@@ -1924,7 +1852,7 @@ def test_no_mesh_default_query_output_is_titleabstract_only(
     tmp_path: Path,
 ) -> None:
     baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
+    _write_baseline_payload(baseline_path)
     out_path = tmp_path / "report.txt"
 
     rc = main(
@@ -1955,7 +1883,7 @@ def test_json_output_file_contains_no_ansi_escapes(
     tmp_path: Path,
 ) -> None:
     baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
+    _write_baseline_payload(baseline_path)
     out_path = tmp_path / "out.json"
 
     rc = main(
