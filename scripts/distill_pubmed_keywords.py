@@ -79,11 +79,11 @@ from rich.text import Text
 
 logger = logging.getLogger(__name__)
 
-# Stdout console for the human-readable report. Rich auto-detects
-# non-TTY streams and emits plain ASCII (no ANSI), so shell redirects
-# like ``script.py > out.txt`` still produce clean text. ``highlight``
-# is off so numbers/strings in our table cells aren't auto-restyled —
-# we control all cell styling explicitly.
+# Stdout console for the interactive human-readable report. Non-TTY
+# stdout uses ``write_text_report`` instead so redirects/pipes receive a
+# simple, box-free text format. ``highlight`` is off so numbers/strings
+# in our table cells aren't auto-restyled — we control all cell styling
+# explicitly.
 _console: Final[Console] = Console(stderr=False, highlight=False)
 
 # Shared stderr console for both RichHandler and rich.Progress. Both
@@ -646,6 +646,16 @@ def _local_name(elem: etree._Element) -> str:
     return elem.tag.rsplit("}", 1)[-1] if isinstance(elem.tag, str) else ""
 
 
+def _direct_children_named(elem: etree._Element, name: str) -> list[etree._Element]:
+    """Return direct child elements whose local tag name matches ``name``."""
+    return [child for child in elem if _local_name(child) == name]
+
+
+def _normalized_identifier_type(identifier_type: str | None) -> str:
+    """Return a compact identifier type key for tolerant MODS matching."""
+    return re.sub(r"[^a-z0-9]+", "", (identifier_type or "").casefold())
+
+
 def _coerce_to_bytes(raw: Any, context: str) -> bytes | None:
     """Coerce an Entrez reader payload to ``bytes`` for XML parsing.
 
@@ -679,7 +689,81 @@ def _element_text(elem: etree._Element | None) -> str:
     """Concatenate all text within an element (handles mixed content)."""
     if elem is None:
         return ""
-    return "".join(t for t in elem.itertext() if isinstance(t, str)).strip()
+    return _collapse_whitespace(
+        "".join(t for t in elem.itertext() if isinstance(t, str))
+    )
+
+
+def _select_primary_title_info(mods_el: etree._Element) -> etree._Element | None:
+    """Return the best article-level ``titleInfo`` element.
+
+    MODS allows alternate, translated, and abbreviated title blocks. The
+    untyped titleInfo is the primary title in normal article records, so
+    prefer a populated untyped block when present. If the primary block is
+    empty, fall back to another populated block rather than losing the title
+    entirely.
+    """
+    candidates = _direct_children_named(mods_el, "titleInfo")
+    if not candidates:
+        return None
+
+    populated = [
+        candidate
+        for candidate in candidates
+        if _element_text(candidate.find(f"./{_NS}title"))
+        or _element_text(candidate.find(f"./{_NS}subTitle"))
+    ]
+    search_space = populated or candidates
+    for candidate in search_space:
+        if not (candidate.get("type") or "").strip():
+            return candidate
+    return search_space[0]
+
+
+def _pmid_identifier_elements(mods_el: etree._Element) -> list[etree._Element]:
+    """Return direct MODS identifier elements that appear to carry a PMID."""
+    pmid_type_keys = {"pmid", "pubmed", "pubmedid"}
+    matches: list[etree._Element] = []
+    for identifier in _direct_children_named(mods_el, "identifier"):
+        if _normalized_identifier_type(identifier.get("type")) in pmid_type_keys:
+            matches.append(identifier)
+    return matches
+
+
+def _mods_has_title_or_abstract(mods_el: etree._Element) -> bool:
+    """Return True when a MODS element has article text worth parsing."""
+    title_info = _select_primary_title_info(mods_el)
+    if title_info is not None:
+        title_el = title_info.find(f"./{_NS}title")
+        subtitle_el = title_info.find(f"./{_NS}subTitle")
+        if _element_text(title_el) or _element_text(subtitle_el):
+            return True
+    return any(_element_text(el) for el in mods_el.findall(f"./{_NS}abstract"))
+
+
+def _select_mods_element(root: etree._Element) -> etree._Element:
+    """Return the best article-level MODS element beneath ``root``."""
+    if _local_name(root) == "mods":
+        # ``Element.find(".//mods")`` does not include the element itself.
+        # Prefer the root here so nested related-item MODS blocks cannot
+        # steal the article title when the collection wrapper is absent.
+        return root
+
+    # For <modsCollection>, prefer a direct child before falling back to a
+    # deeper wrapper search. If an exporter leaves a leading empty direct
+    # <mods/> block, use the first direct child that actually has article text
+    # instead of dropping the file.
+    direct_mods = _direct_children_named(root, "mods")
+    for candidate in direct_mods:
+        if _mods_has_title_or_abstract(candidate):
+            return candidate
+    if direct_mods:
+        return direct_mods[0]
+
+    mods_el = root.find(f".//{_NS}mods")
+    if mods_el is not None:
+        return mods_el
+    return root  # tolerate namespace-stripped/partial records
 
 
 def parse_mods_file(path: Path) -> PaperText | None:
@@ -695,27 +779,13 @@ def parse_mods_file(path: Path) -> PaperText | None:
         return None
 
     root = tree.getroot()
-    if _local_name(root) == "mods":
-        # ``Element.find(".//mods")`` does not include the element itself.
-        # Prefer the root here so nested related-item MODS blocks cannot
-        # steal the article title when the collection wrapper is absent.
-        mods_el = root
-    else:
-        # For <modsCollection>, prefer a direct child before falling back to
-        # a deeper wrapper search. That avoids accidentally selecting a
-        # nested host/journal <mods> block if one appears before the article.
-        direct_mods = root.find(f"./{_NS}mods")
-        mods_el = direct_mods if direct_mods is not None else root.find(f".//{_NS}mods")
-        if mods_el is None:
-            mods_el = root  # tolerate namespace-stripped/partial records
+    mods_el = _select_mods_element(root)
 
-    title_info = mods_el.find(f"./{_NS}titleInfo")
+    title_info = _select_primary_title_info(mods_el)
     title_el = title_info.find(f"./{_NS}title") if title_info is not None else None
     subtitle_el = (
         title_info.find(f"./{_NS}subTitle") if title_info is not None else None
     )
-    pmid_el = mods_el.find(f"./{_NS}identifier[@type='pubmed']")
-
     title_parts = [
         s for s in (_element_text(title_el), _element_text(subtitle_el)) if s
     ]
@@ -730,14 +800,17 @@ def parse_mods_file(path: Path) -> PaperText | None:
         logger.debug(f"No title or abstract in {path.name}")
         return None
 
-    pmid_text = _element_text(pmid_el) or None
-    if pmid_text is not None and not _is_valid_pmid(pmid_text):
+    pmid_text = None
+    for pmid_el in _pmid_identifier_elements(mods_el):
+        candidate = _element_text(pmid_el)
+        if not candidate:
+            continue
+        if _is_valid_pmid(candidate):
+            pmid_text = candidate
+            break
         # Reject malformed PMIDs at the corpus boundary — they would
-        # later be interpolated into cache filenames. The paper still
-        # loads (title+abstract are usable), just without MeSH enrichment
-        # which requires a valid PMID.
-        logger.warning(f"Ignoring non-numeric PMID {pmid_text!r} in {path.name}")
-        pmid_text = None
+        # later be interpolated into cache filenames.
+        logger.warning(f"Ignoring non-numeric PMID {candidate!r} in {path.name}")
     if pmid_text is None and _is_valid_pmid(path.stem):
         # MODS converted from BibTeX often lack an inner PubMed identifier;
         # users compensate by naming the file after the PMID.
@@ -884,6 +957,8 @@ def _rank_terms(
     """
     if not math.isfinite(min_llr) or min_llr < 0:
         raise ValueError(f"min_llr must be a finite non-negative number, got {min_llr}")
+    if min_df < 0:
+        raise ValueError(f"min_df must be non-negative, got {min_df}")
 
     if top_n <= 0 or inputs.total_fg <= 0:
         return []
@@ -1322,7 +1397,10 @@ def load_baseline_cache(path: Path) -> BaselineCounts:
         raise _baseline_error("Baseline cache field 'built_at' is malformed.") from e
     if built_at.tzinfo is None:
         built_at = built_at.replace(tzinfo=_dt.UTC)
-    age_days = (_dt.datetime.now(_dt.UTC) - built_at).days
+    now = _dt.datetime.now(_dt.UTC)
+    if built_at - now > _dt.timedelta(days=1):
+        raise _baseline_error("Baseline cache field 'built_at' is in the future.")
+    age_days = max(0, (now - built_at).days)
     if age_days > BASELINE_STALE_DAYS:
         logger.warning(
             f"Baseline cache is {age_days} days old (> {BASELINE_STALE_DAYS}). "
@@ -1568,8 +1646,16 @@ def fetch_mesh_terms(
         return out
 
     if fetcher is None:
-        resolved_key = _configure_entrez(email=email, api_key=api_key)
-        from Bio import Entrez
+        try:
+            resolved_key = _configure_entrez(email=email, api_key=api_key)
+            from Bio import Entrez
+        except (ImportError, RuntimeError) as e:
+            logger.warning(
+                f"MeSH fetch unavailable: {e}; using cached descriptors only"
+            )
+            if progress_callback is not None:
+                progress_callback(total, total)
+            return out
 
         def _default_fetcher(batch: list[str]) -> bytes:
             raw = _ncbi_retry(
@@ -1893,10 +1979,13 @@ def _format_pubmed_query(
     if top <= 0:
         return ""
     clauses: list[str] = []
+    seen: set[str] = set()
     for score in scores:
         clause = _pubmed_clause(score.term, field)
-        if not clause:
+        dedupe_key = clause.casefold()
+        if not clause or dedupe_key in seen:
             continue
+        seen.add(dedupe_key)
         clauses.append(clause)
         if len(clauses) >= top:
             break
@@ -2480,11 +2569,19 @@ def main(argv: list[str] | None = None) -> int:
             logger.error(f"Could not write to {args.output}: {e}")
             return 1
         logger.info(f"Wrote text report to {args.output}")
-    else:
+    elif _console.is_terminal:
         _render_rich_report(
             result,
             query_format=args.query_format,
             console=_console,
+        )
+    else:
+        write_text_report(
+            result,
+            mesh_top=args.mesh_top,
+            phrase_top=phrase_top,
+            query_format=args.query_format,
+            stream=sys.stdout,
         )
     return 0
 

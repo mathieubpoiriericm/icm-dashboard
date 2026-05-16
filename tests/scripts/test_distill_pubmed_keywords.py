@@ -287,6 +287,15 @@ class TestRankTermsLLR:
         with pytest.raises(ValueError, match="min_llr"):
             _rank_terms(inputs, min_df=1, top_n=10, min_llr=bad_min_llr)
 
+    def test_negative_min_df_raises(self) -> None:
+        inputs = RankingInputs(
+            fg_counts=Counter({("gene",): 3}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=3,
+        )
+        with pytest.raises(ValueError, match="min_df"):
+            _rank_terms(inputs, min_df=-1, top_n=10, min_llr=0.0)
+
 
 # ---------------------------------------------------------------------------
 # MeSH XML parsing
@@ -510,6 +519,24 @@ class TestBuildQuery:
             '"microbleeds"[Title/Abstract]'
         )
 
+    def test_sanitized_duplicate_query_terms_do_not_consume_top_slots(self) -> None:
+        scores = [
+            KeywordScore(term='white "matter"', document_frequency=3, total_count=3),
+            KeywordScore(term="white matter", document_frequency=2, total_count=2),
+            KeywordScore(term="microbleeds", document_frequency=1, total_count=1),
+        ]
+        q = format_titleabstract_query(scores, top=2)
+        assert q == ('"white matter"[Title/Abstract] OR "microbleeds"[Title/Abstract]')
+
+    def test_case_variant_query_terms_do_not_consume_top_slots(self) -> None:
+        scores = [
+            KeywordScore(term="White Matter", document_frequency=3, total_count=3),
+            KeywordScore(term="white matter", document_frequency=2, total_count=2),
+            KeywordScore(term="microbleeds", document_frequency=1, total_count=1),
+        ]
+        q = format_titleabstract_query(scores, top=2)
+        assert q == ('"White Matter"[Title/Abstract] OR "microbleeds"[Title/Abstract]')
+
 
 # ---------------------------------------------------------------------------
 # Baseline cache I/O
@@ -682,6 +709,14 @@ class TestBaselineCache:
         with caplog.at_level(logging.WARNING):
             load_baseline_cache(path)
         assert any("days old" in r.message for r in caplog.records)
+
+    def test_future_built_at_raises(self, tmp_path: Path) -> None:
+        path = tmp_path / "baseline.json.gz"
+        future = (dt.datetime.now(dt.UTC) + dt.timedelta(days=2)).isoformat()
+        _write_baseline_payload(path, built_at=future)
+
+        with pytest.raises(RuntimeError, match="future"):
+            load_baseline_cache(path)
 
     def test_naive_built_at_is_tolerated(self, tmp_path: Path) -> None:
         # A baseline cache produced by a tool that emitted a timezone-naive
@@ -953,6 +988,62 @@ class TestMeshCache:
         with pytest.raises(ValueError, match="batch_size"):
             fetch_mesh_terms(["15905468"], cache_dir=tmp_path, batch_size=0)
 
+    def test_missing_entrez_credentials_keeps_cached_mesh(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "111.json").write_text(
+            json.dumps(
+                {
+                    "pmid": "111",
+                    "descriptors": [
+                        {
+                            "term": "Brain",
+                            "ui": "D001921",
+                            "major": True,
+                            "qualifiers": [],
+                        }
+                    ],
+                    "fetched_at": "2025-01-01T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def missing_credentials(*, email=None, api_key=None):  # noqa: ANN001
+            raise RuntimeError("ENTREZ_EMAIL is required")
+
+        monkeypatch.setattr(
+            "scripts.distill_pubmed_keywords._configure_entrez",
+            missing_credentials,
+        )
+        progress: list[tuple[int, int]] = []
+
+        result = fetch_mesh_terms(
+            ["111", "222"],
+            cache_dir=tmp_path,
+            progress_callback=lambda c, t: progress.append((c, t)),
+        )
+
+        assert list(result) == ["111"]
+        assert result["111"][0].term == "Brain"
+        assert progress[-1] == (2, 2)
+
+
+def _write_mods_xml(path: Path, inner: str) -> None:
+    """Write a MODS XML record with the given ``<mods>`` block as inner content.
+
+    Wraps ``inner`` in the standard ``<?xml?>`` declaration and
+    ``<modsCollection xmlns=...>`` envelope so tests can focus on the
+    structure they're exercising.
+    """
+    path.write_text(
+        f'<?xml version="1.0"?>\n'
+        f'<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
+        f"{inner}\n"
+        f"</modsCollection>\n",
+        encoding="utf-8",
+    )
+
 
 def _write_mods(
     path: Path, *, pmid: str | None, title: str = "T", abstract: str = "A."
@@ -969,16 +1060,13 @@ def _write_mods(
         if pmid is not None
         else ""
     )
-    path.write_text(
-        '<?xml version="1.0"?>\n'
-        '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
+    _write_mods_xml(
+        path,
         "  <mods>\n"
         f"    <titleInfo><title>{title}</title></titleInfo>\n"
         f"    <abstract>{abstract}</abstract>\n"
         f"{identifier_line}"
-        "  </mods>\n"
-        "</modsCollection>\n",
-        encoding="utf-8",
+        "  </mods>",
     )
 
 
@@ -1093,6 +1181,147 @@ class TestParseMods:
 
         assert paper is not None
         assert paper.abstract == "First part. Second part."
+
+    def test_primary_title_info_preferred_over_alternate(self, tmp_path: Path) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "alternate-title.xml"
+        _write_mods_xml(
+            path,
+            "  <mods>\n"
+            '    <titleInfo type="abbreviated"><title>Abbrev</title></titleInfo>\n'
+            "    <titleInfo><title>Full article title</title></titleInfo>\n"
+            "    <abstract>A.</abstract>\n"
+            '    <identifier type="pubmed">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "Full article title"
+
+    def test_empty_primary_title_falls_back_to_populated_alternate(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "empty-primary-title.xml"
+        _write_mods_xml(
+            path,
+            "  <mods>\n"
+            "    <titleInfo><title>   </title></titleInfo>\n"
+            '    <titleInfo type="alternative">'
+            "<title>Recovered title</title></titleInfo>\n"
+            "    <abstract>A.</abstract>\n"
+            '    <identifier type="pubmed">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "Recovered title"
+
+    def test_pmid_identifier_type_is_case_insensitive_and_accepts_pmid(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "pmid-type.xml"
+        _write_mods_xml(
+            path,
+            "  <mods>\n"
+            "    <titleInfo><title>T</title></titleInfo>\n"
+            "    <abstract>A.</abstract>\n"
+            '    <identifier type="PMID">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.pmid == "15905468"
+
+    def test_pmid_identifier_accepts_pubmed_id_label(self, tmp_path: Path) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "pubmed-id-type.xml"
+        _write_mods_xml(
+            path,
+            "  <mods>\n"
+            "    <titleInfo><title>T</title></titleInfo>\n"
+            "    <abstract>A.</abstract>\n"
+            '    <identifier type="PubMed ID">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.pmid == "15905468"
+
+    def test_later_valid_pmid_wins_after_malformed_identifier(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "multiple-pmids.xml"
+        _write_mods_xml(
+            path,
+            "  <mods>\n"
+            "    <titleInfo><title>T</title></titleInfo>\n"
+            "    <abstract>A.</abstract>\n"
+            '    <identifier type="pubmed">../escape</identifier>\n'
+            '    <identifier type="pmid">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.pmid == "15905468"
+
+    def test_xml_text_whitespace_is_collapsed(self, tmp_path: Path) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "whitespace.xml"
+        _write_mods_xml(
+            path,
+            "  <mods>\n"
+            "    <titleInfo><title>White\n      matter</title></titleInfo>\n"
+            "    <abstract>First\n\n      second.</abstract>\n"
+            '    <identifier type="pubmed">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "White matter"
+        assert paper.abstract == "First second."
+
+    def test_mods_collection_skips_leading_empty_direct_mods(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "leading-empty-mods.xml"
+        _write_mods_xml(
+            path,
+            "  <mods />\n"
+            "  <mods>\n"
+            "    <titleInfo><title>Recovered article</title></titleInfo>\n"
+            "    <abstract>A.</abstract>\n"
+            '    <identifier type="pubmed">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "Recovered article"
+        assert paper.pmid == "15905468"
 
 
 # ---------------------------------------------------------------------------
@@ -1876,6 +2105,35 @@ def test_no_mesh_default_query_output_is_titleabstract_only(
     assert "[titleabstract]" in content
     assert "[structured]" not in content
     assert "[mesh]" not in content
+
+
+def test_non_tty_stdout_uses_plain_text_report(
+    _stub_corpus: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_baseline_payload(baseline_path)
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--no-mesh",
+            "--min-df",
+            "1",
+            "--min-llr",
+            "0",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "--- Top distinctive" in captured.out
+    assert "┏" not in captured.out
+    assert "╭" not in captured.out
 
 
 def test_json_output_file_contains_no_ansi_escapes(
