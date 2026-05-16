@@ -115,7 +115,7 @@ DEFAULT_BASELINE_SIZE: Final[int] = 10_000
 DEFAULT_BASELINE_BATCH: Final[int] = 200
 DEFAULT_MESH_BATCH: Final[int] = 50
 BASELINE_STALE_DAYS: Final[int] = 365
-BASELINE_SCHEMA_VERSION: Final[int] = 4
+BASELINE_SCHEMA_VERSION: Final[int] = 1
 _BASELINE_REBUILD_HINT: Final[str] = "Rebuild with --build-baseline."
 # Drop n-grams with baseline count < this from the cache file to keep
 # it under ~50MB. Side effect: LLR for cSVD n-grams that happen to occur
