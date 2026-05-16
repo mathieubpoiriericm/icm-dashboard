@@ -1,12 +1,9 @@
 """Distill PubMed-API-ready keywords from a curated MODS bibliography.
 
 Reads MODS XML files in the primary directory (default
-``data/bibentry/xml/``) and, when present, also the supplementary
-directory ``data/bibentry/xml_extra/`` — papers kept out of the
-dashboard but still useful for keyword distillation. Tokenises titles
-+ abstracts (and, when available, PMC full-text body sections), then
-ranks unigrams, bigrams,
-trigrams and ALL-CAPS acronyms by **Dunning's log-likelihood ratio** of
+``data/bibentry/xml/``). Tokenises titles + abstracts, then ranks
+unigrams, bigrams, trigrams and ALL-CAPS acronyms by **Dunning's
+log-likelihood ratio** of
 foreground vs. a one-time PubMed baseline snapshot. LLR surfaces terms
 that are *distinctive* to the corpus rather than merely frequent —
 which is what makes them useful as PubMed search keywords.
@@ -22,28 +19,11 @@ combines MeSH and Title/Abstract clauses:
 
     (mesh1)[MeSH Terms] OR ... AND ("phrase1"[Title/Abstract] OR ...)
 
-**PMC full-text enrichment** (on by default, ``--no-fulltext`` to
-disable). For each seed PMID we resolve a PMCID via ``Entrez.elink``,
-fetch the JATS XML via ``Entrez.efetch(db="pmc")``, and extract the
-Introduction / Methods / Results / Discussion sections by ``sec-type``
-attribute (with ``<title>``-text synonyms as backup). The result is
-cached per-PMID under ``data/bibentry/fulltext/``; subsequent runs are
-offline for cached PMIDs. Papers without a PMC version contribute
-title+abstract only.
-
-*Methodological note*: the cached PubMed baseline still reflects
-title+abstract only of ~10k random PubMed records, so foreground
-papers now contribute strictly more tokens than baseline papers do.
-Rankings shift toward methods/results vocabulary that's
-underrepresented in abstracts (procedural verbs, imaging-modality
-names, assay terms). Additionally, the foreground applies stopword
-and content filtering at counting time while the baseline does not,
-so the LLR contingency-table denominators are not strictly
-commensurable. Both biases inflate LLR scores in the foreground's
-favor — fine for ranking purposes (terms still sort by
-distinctiveness) but the chi-square p-value interpretation of any
-absolute LLR threshold no longer strictly holds. Treat
-``DEFAULT_MIN_LLR`` as a heuristic cutoff, not a significance test.
+*Methodological note*: the foreground and cached PubMed baseline both
+use title+abstract text. The foreground still applies stopword and
+content filtering at counting time while the baseline does not, so
+``DEFAULT_MIN_LLR`` remains a pragmatic ranking cutoff rather than a
+strict significance test.
 
 The baseline cache must be built once before first ranking run; runs
 are offline thereafter and the cache should be refreshed roughly
@@ -55,9 +35,7 @@ Usage:
     python scripts/distill_pubmed_keywords.py --build-baseline
     python scripts/distill_pubmed_keywords.py
     python scripts/distill_pubmed_keywords.py --xml-dir data/bibentry/xml
-    python scripts/distill_pubmed_keywords.py --xml-extra-dir data/bibentry/xml_extra
     python scripts/distill_pubmed_keywords.py --no-mesh
-    python scripts/distill_pubmed_keywords.py --no-fulltext
     python scripts/distill_pubmed_keywords.py --json --output keywords.json
     python scripts/distill_pubmed_keywords.py --query-format structured
 """
@@ -78,7 +56,7 @@ import tempfile
 import time
 import warnings
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, TextIO
@@ -123,14 +101,10 @@ _stderr_console: Final[Console] = Console(stderr=True)
 # regardless of the caller's working directory.
 _PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 DEFAULT_XML_DIR: Final[Path] = _PROJECT_ROOT / "data" / "bibentry" / "xml"
-DEFAULT_XML_EXTRA_DIR: Final[Path] = _PROJECT_ROOT / "data" / "bibentry" / "xml_extra"
 DEFAULT_BASELINE_CACHE: Final[Path] = (
     _PROJECT_ROOT / "data" / "bibentry" / "baseline" / "pubmed_baseline.json.gz"
 )
 DEFAULT_MESH_CACHE_DIR: Final[Path] = _PROJECT_ROOT / "data" / "bibentry" / "mesh"
-DEFAULT_FULLTEXT_CACHE_DIR: Final[Path] = (
-    _PROJECT_ROOT / "data" / "bibentry" / "fulltext"
-)
 
 DEFAULT_TOP_N: Final[int] = 30
 DEFAULT_MIN_DF: Final[int] = 2
@@ -141,8 +115,7 @@ DEFAULT_BASELINE_SIZE: Final[int] = 10_000
 DEFAULT_BASELINE_BATCH: Final[int] = 200
 DEFAULT_MESH_BATCH: Final[int] = 50
 BASELINE_STALE_DAYS: Final[int] = 365
-BASELINE_SCHEMA_VERSION: Final[int] = 3
-FULLTEXT_SCHEMA_VERSION: Final[int] = 3
+BASELINE_SCHEMA_VERSION: Final[int] = 4
 _BASELINE_REBUILD_HINT: Final[str] = "Rebuild with --build-baseline."
 # Drop n-grams with baseline count < this from the cache file to keep
 # it under ~50MB. Side effect: LLR for cSVD n-grams that happen to occur
@@ -154,10 +127,8 @@ BASELINE_NGRAM_MIN_COUNT: Final[int] = 2
 DEFAULT_MIN_LLR: Final[float] = 6.63
 # Heuristic cutoff (originally chosen because chi-square p<0.01 at df=1
 # corresponds to a test statistic of 6.63). Baseline and foreground apply
-# different content filters and use title+abstract vs title+abstract+
-# fulltext respectively, so the strict chi-square interpretation no longer
-# holds — treat this as a ranking threshold rather than a significance
-# test. See the module docstring's methodological note.
+# different content filters, so the strict chi-square interpretation is
+# still approximate. See the module docstring's methodological note.
 
 # Query-format choices — `_QUERY_FORMATS[0]` is "all" (default).
 _QUERY_FORMATS: Final[tuple[str, ...]] = (
@@ -219,7 +190,6 @@ _PDAT_RANGE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{4}:\d{4}$")
 # slashes or "../" segments would let a tampered MODS record write
 # outside the cache directory.
 _PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,12}$")
-_PMCID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^(?:PMC)?\d{1,12}$", re.I)
 
 _WHITESPACE_RE: Final[re.Pattern[str]] = re.compile(r"\s+")
 
@@ -233,10 +203,6 @@ def _has_whitespace_or_empty(s: str) -> bool:
     """True when ``s`` is empty or contains any whitespace character."""
     return not s or any(c.isspace() for c in s)
 
-
-# NCBI elink protocol identifiers for the PubMed → PMC traversal.
-_ELINK_DB_PMC: Final[str] = "pmc"
-_ELINK_LINKNAME_PMC: Final[str] = "pubmed_pmc"
 
 # Namespace wildcard — MODS files declare xmlns="http://www.loc.gov/mods/v3"
 # but {*} keeps the queries robust if a record is namespace-stripped.
@@ -408,7 +374,6 @@ _STOPWORDS: Final[frozenset[str]] = frozenset(
         "https",
         "www",
         "pmid",
-        "pmcid",
         "dryad",
         "figshare",
         "zenodo",
@@ -481,69 +446,6 @@ _ES_PLURAL_SUFFIXES: Final[tuple[str, ...]] = (
     "zes",
 )
 
-# JATS <sec sec-type="..."> attribute values we treat as IMRaD. Keys are
-# lowercased sec-type strings; values are the canonical label used by
-# both the parser and the cache schema. JATS allows pipe-separated
-# compound types like "materials|methods", which is why those appear as
-# distinct keys rather than being computed.
-_JATS_IMRAD_SECTYPES: Final[dict[str, str]] = {
-    "intro": "introduction",
-    "introduction": "introduction",
-    "methods": "methods",
-    "materials|methods": "methods",
-    "subjects|methods": "methods",
-    "results": "results",
-    "discussion": "discussion",
-    "conclusions": "discussion",
-}
-
-# Fallback when <sec sec-type> is absent: classify by the section's
-# <title> text. Patterns are case-insensitive and anchored at the start
-# so "Methods" matches but "Statistical methods" doesn't accidentally
-# pull in something we shouldn't (statistical subsections live inside a
-# parent Methods section that already classified upstream).
-_JATS_TITLE_SYNONYMS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
-    (re.compile(r"^\s*introduction\b", re.I), "introduction"),
-    (re.compile(r"^\s*background\b", re.I), "introduction"),
-    (
-        re.compile(
-            r"^\s*(materials\s+and\s+methods|subjects\s+and\s+methods|"
-            r"experimental\s+procedures|methods)\b",
-            re.I,
-        ),
-        "methods",
-    ),
-    (re.compile(r"^\s*(results|findings)\b", re.I), "results"),
-    (re.compile(r"^\s*(discussion|conclusions?)\b", re.I), "discussion"),
-)
-
-# JATS display objects often contain captions, table cells, formula labels,
-# or supplementary metadata rather than prose. Keeping them out avoids
-# ranking table/figure boilerplate as if it were article body text.
-_JATS_NON_PROSE_CONTAINERS: Final[frozenset[str]] = frozenset(
-    {
-        "alternatives",
-        "array",
-        "caption",
-        "disp-formula",
-        "fig",
-        "fig-group",
-        "graphic",
-        "inline-graphic",
-        "media",
-        "supplementary-material",
-        "table",
-        "table-wrap",
-        "table-wrap-foot",
-        "tbody",
-        "td",
-        "tfoot",
-        "th",
-        "thead",
-        "tr",
-    }
-)
-
 # Generic MeSH headings that describe the population or indexing frame
 # rather than the paper's biomedical topic. If left in, high-frequency
 # headings like "Humans" and "Female" crowd out useful query terms.
@@ -577,40 +479,15 @@ _MESH_STOP_TERMS_CASEFOLD: Final[frozenset[str]] = frozenset(
 
 @dataclass(slots=True)
 class PaperText:
-    """Title + abstract (+ optional PMC full-text) for one paper."""
+    """Title + abstract text for one paper."""
 
     pmid: str | None
     title: str
     abstract: str
-    fulltext: str = ""
 
     @property
     def combined(self) -> str:
-        return f"{self.title} {self.abstract} {self.fulltext}".strip()
-
-
-@dataclass(slots=True, frozen=True)
-class FulltextRecord:
-    """PMC full-text harvest result for one PMID.
-
-    ``pmcid is None`` doubles as the "no PMC mirror" sentinel — those
-    records are cached on disk too, so we don't re-elink missing PMIDs
-    on subsequent runs. Section fields default to "" for that case.
-    """
-
-    pmid: str
-    pmcid: str | None
-    introduction: str = ""
-    methods: str = ""
-    results: str = ""
-    discussion: str = ""
-
-    def as_text(self) -> str:
-        return "\n\n".join(
-            s
-            for s in (self.introduction, self.methods, self.results, self.discussion)
-            if s
-        ).strip()
+        return f"{self.title} {self.abstract}".strip()
 
 
 @dataclass(slots=True)
@@ -843,8 +720,8 @@ def parse_mods_file(path: Path) -> PaperText | None:
     if pmid_text is not None and not _is_valid_pmid(pmid_text):
         # Reject malformed PMIDs at the corpus boundary — they would
         # later be interpolated into cache filenames. The paper still
-        # loads (title+abstract are usable), just without MeSH/full-text
-        # enrichment which require a valid PMID.
+        # loads (title+abstract are usable), just without MeSH enrichment
+        # which requires a valid PMID.
         logger.warning(f"Ignoring non-numeric PMID {pmid_text!r} in {path.name}")
         pmid_text = None
     if pmid_text is None and _is_valid_pmid(path.stem):
@@ -864,29 +741,19 @@ def parse_mods_file(path: Path) -> PaperText | None:
 
 
 def load_corpus(
-    xml_dirs: Sequence[Path],
+    xml_dir: Path,
     *,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[PaperText]:
-    """Parse every ``*.xml`` file across the given directories into PaperText records.
+    """Parse every ``*.xml`` file in ``xml_dir`` into PaperText records.
 
-    Files within each directory are processed in sorted order; directories
-    are processed in the order given. Raises ``FileNotFoundError`` if any
-    directory is missing.
+    Files are processed in sorted order. Raises ``FileNotFoundError`` if
+    the directory is missing.
     """
-    if not xml_dirs:
-        raise ValueError("load_corpus: at least one XML directory is required")
-    for d in xml_dirs:
-        if not d.is_dir():
-            raise FileNotFoundError(f"XML directory not found: {d}")
+    if not xml_dir.is_dir():
+        raise FileNotFoundError(f"XML directory not found: {xml_dir}")
 
-    files: list[Path] = []
-    per_dir_counts: list[tuple[Path, int]] = []
-    for d in xml_dirs:
-        d_files = sorted(d.glob("*.xml"))
-        per_dir_counts.append((d, len(d_files)))
-        files.extend(d_files)
-
+    files = sorted(xml_dir.glob("*.xml"))
     total = len(files)
     papers: list[PaperText] = []
     for i, f in enumerate(files, start=1):
@@ -895,8 +762,7 @@ def load_corpus(
             papers.append(parsed)
         if progress_callback is not None:
             progress_callback(i, total)
-    breakdown = ", ".join(f"{n} in {d}" for d, n in per_dir_counts)
-    logger.info(f"Parsed {len(papers)} paper(s) from {total} XML file(s) ({breakdown})")
+    logger.info(f"Parsed {len(papers)} paper(s) from {total} XML file(s) in {xml_dir}")
     return papers
 
 
@@ -1749,8 +1615,7 @@ def fetch_mesh_terms(
                 if pmid not in parsed:
                     # NCBI omitted this PMID from the response (truncation,
                     # partial response, ...). Don't cache anything — a cached
-                    # empty would suppress retries indefinitely. Same recovery
-                    # semantics as fetch_fulltext_batch's elink-absent handler.
+                    # empty would suppress retries indefinitely.
                     logger.warning(
                         f"PubMed response did not include PMID {pmid}; "
                         f"will retry next run"
@@ -1826,469 +1691,6 @@ def aggregate_mesh(
     ]
     scored.sort(key=lambda k: (-k.document_frequency, -k.total_count, k.term))
     return scored[:top_n]
-
-
-# ---------------------------------------------------------------------------
-# PMC FULLTEXT RETRIEVAL
-# ---------------------------------------------------------------------------
-
-
-def _classify_jats_section(sec: etree._Element) -> str | None:
-    """Map one JATS ``<sec>`` element to an IMRaD label, or None.
-
-    Tries ``@sec-type`` first (the explicit JATS markup), then falls
-    back to ``<title>`` text matching against the synonym table. Returns
-    None when neither pathway matches — those sections (typically
-    Acknowledgments, Author Contributions, References, Supplementary)
-    are intentionally dropped from the foreground corpus.
-    """
-    sectype = (sec.get("sec-type") or "").strip().lower()
-    if sectype and sectype in _JATS_IMRAD_SECTYPES:
-        return _JATS_IMRAD_SECTYPES[sectype]
-    title_el = sec.find(f"./{_NS}title")
-    if title_el is None:
-        return None
-    title_text = _element_text(title_el)
-    for pattern, label in _JATS_TITLE_SYNONYMS:
-        if pattern.search(title_text):
-            return label
-    return None
-
-
-def _walk_jats_sections(
-    container: etree._Element,
-    parts_by_label: dict[str, list[str]],
-    inherited_label: str | None = None,
-) -> None:
-    """Recursively classify ``<sec>`` descendants under ``container``.
-
-    Direct paragraphs in an explicitly classified ``<sec>`` go to that
-    label. Direct paragraphs in an unclassified subsection inherit the
-    nearest classified ancestor, which keeps Methods subheadings like
-    "Participants" or "Statistical analysis" attached to Methods. A
-    nested section with its own IMRaD classification overrides the
-    inherited label so, for malformed or unusual JATS, Results text does
-    not get absorbed into a parent Introduction/Methods bucket.
-    """
-    for sec in container.findall(f"./{_NS}sec"):
-        label = _classify_jats_section(sec) or inherited_label
-        paragraphs: list[str] = []
-        for p in _section_owned_paragraphs(sec):
-            # Indentation in source JATS XML leaks newlines + spaces into
-            # paragraph text (e.g. "white matter\n      injury").
-            # Collapse runs of whitespace to single spaces inside each
-            # paragraph; paragraph boundaries are re-introduced by the
-            # "\n\n".join below.
-            text = _collapse_whitespace(_element_text(p))
-            if text:
-                paragraphs.append(text)
-        if label is not None and paragraphs:
-            parts_by_label.setdefault(label, []).append("\n\n".join(paragraphs))
-        _walk_jats_sections(sec, parts_by_label, inherited_label=label)
-
-
-def _section_owned_paragraphs(sec: etree._Element) -> list[etree._Element]:
-    """Return paragraphs belonging to ``sec`` but not nested child sections.
-
-    Walks children once and skips into nested ``<sec>`` subtrees so the
-    outer ``_walk_jats_sections`` recursion can pick those up under their
-    own label. Paragraphs inside non-section wrappers (``<list>``,
-    ``<list-item>``, …) are kept.
-    """
-    paragraphs: list[etree._Element] = []
-
-    def _collect(node: etree._Element) -> None:
-        for child in node:
-            local = _local_name(child)
-            if local == "sec" or local in _JATS_NON_PROSE_CONTAINERS:
-                continue
-            if local == "p":
-                paragraphs.append(child)
-            _collect(child)
-
-    _collect(sec)
-    return paragraphs
-
-
-def parse_jats_for_sections(xml_bytes: bytes) -> dict[str, str]:
-    """Extract IMRaD section bodies from PMC JATS XML.
-
-    Walks ``<body>/<sec>`` recursively: classified sections contribute
-    their direct paragraphs, unclassified subsections inherit the nearest
-    classified ancestor, and explicitly classified nested sections route
-    to their own label. Unclassified outer wrappers (e.g. a publisher's
-    "Main Text" sec without a sec-type) are descended into so their inner
-    IMRaD-tagged children still contribute. When the same label appears
-    multiple times in one article — e.g. two ``<sec sec-type="methods">``
-    blocks for "Materials and Methods" and "Statistical Methods" — they're
-    joined with a blank line between.
-
-    Returns a 4-key dict (introduction/methods/results/discussion);
-    missing labels hold "". Raises ``etree.XMLSyntaxError`` on
-    malformed XML so the caller can distinguish parse failures (skip
-    cache + retry next run) from genuinely empty bodies.
-    """
-    root = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
-    body = root if _local_name(root) == "body" else root.find(f".//{_NS}body")
-    if body is None:
-        return {"introduction": "", "methods": "", "results": "", "discussion": ""}
-
-    parts_by_label: dict[str, list[str]] = {}
-    _walk_jats_sections(body, parts_by_label)
-
-    return {
-        "introduction": "\n\n".join(parts_by_label.get("introduction", [])),
-        "methods": "\n\n".join(parts_by_label.get("methods", [])),
-        "results": "\n\n".join(parts_by_label.get("results", [])),
-        "discussion": "\n\n".join(parts_by_label.get("discussion", [])),
-    }
-
-
-def _cached_section_text(sections: Mapping[str, Any], name: str, pmid: str) -> str:
-    value = sections.get(name, "")
-    if not isinstance(value, str):
-        raise ValueError(
-            f"section {name!r} for PMID {pmid} must be a string, "
-            f"got {type(value).__name__}"
-        )
-    return value
-
-
-def _read_fulltext_cache(cache_dir: Path, pmid: str) -> FulltextRecord | None:
-    """Return the cached record for ``pmid``, or None if absent/corrupt.
-
-    Schema-version mismatch and JSON-decode errors log a warning and
-    return None so the caller can refetch (same recovery semantics as
-    the MeSH cache).
-    """
-    if not _is_valid_pmid(pmid):
-        return None
-    cache_path = cache_dir / f"{pmid}.json"
-    if not cache_path.exists():
-        return None
-    try:
-        with cache_path.open(encoding="utf-8") as f:
-            payload = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Corrupt fulltext cache for PMID {pmid}: {e}; will refetch")
-        return None
-    if not isinstance(payload, Mapping):
-        logger.warning(f"Malformed fulltext cache for PMID {pmid}; will refetch")
-        return None
-    cached_pmid = payload.get("pmid")
-    if cached_pmid is not None and str(cached_pmid) != pmid:
-        logger.warning(
-            f"Fulltext cache PMID mismatch for {pmid}: "
-            f"payload has {cached_pmid!r}; will refetch"
-        )
-        return None
-    if payload.get("schema_version") != FULLTEXT_SCHEMA_VERSION:
-        logger.warning(
-            f"Fulltext cache schema mismatch for PMID {pmid} "
-            f"({payload.get('schema_version')!r} != {FULLTEXT_SCHEMA_VERSION}); "
-            f"will refetch"
-        )
-        return None
-    sections = payload.get("sections")
-    if not isinstance(sections, Mapping):
-        logger.warning(f"Malformed fulltext cache for PMID {pmid}; will refetch")
-        return None
-    try:
-        pmcid = _normalize_pmcid(payload.get("pmcid"))
-        introduction = _cached_section_text(sections, "introduction", pmid)
-        methods = _cached_section_text(sections, "methods", pmid)
-        results = _cached_section_text(sections, "results", pmid)
-        discussion = _cached_section_text(sections, "discussion", pmid)
-        if pmcid is None and any((introduction, methods, results, discussion)):
-            raise ValueError("negative fulltext cache contains section text")
-        return FulltextRecord(
-            pmid=str(payload["pmid"]),
-            pmcid=pmcid,
-            introduction=introduction,
-            methods=methods,
-            results=results,
-            discussion=discussion,
-        )
-    except (KeyError, TypeError, AttributeError, ValueError) as e:
-        logger.warning(f"Malformed fulltext cache for PMID {pmid}: {e}; will refetch")
-        return None
-
-
-def _write_fulltext_cache(cache_dir: Path, record: FulltextRecord) -> None:
-    """Persist one ``FulltextRecord`` as JSON. Logs and continues on OSError."""
-    if not _is_valid_pmid(record.pmid):
-        logger.warning(
-            f"Refusing to write fulltext cache for non-numeric PMID {record.pmid!r}"
-        )
-        return
-    cache_path = cache_dir / f"{record.pmid}.json"
-    payload = {
-        "schema_version": FULLTEXT_SCHEMA_VERSION,
-        "pmid": record.pmid,
-        "pmcid": record.pmcid,
-        "sections": {
-            "introduction": record.introduction,
-            "methods": record.methods,
-            "results": record.results,
-            "discussion": record.discussion,
-        },
-        "fetched_at": _dt.datetime.now(_dt.UTC).isoformat(),
-    }
-    try:
-        _atomic_write_json(cache_path, payload)
-    except OSError as e:
-        logger.warning(f"Could not write fulltext cache for PMID {record.pmid}: {e}")
-
-
-def _pmcid_from_elink_record(record: Mapping[str, Any]) -> str | None:
-    """Return ``PMC{id}`` for the first link in this elink record, or ``None``.
-
-    ``None`` is the "confirmed no PMC mirror" signal (the caller distinguishes
-    this from "PMID absent from response" — see ``_default_pmids_to_pmcids``).
-    """
-    for linkset in record.get("LinkSetDb", []) or []:
-        if str(linkset.get("DbTo", "")).strip().lower() != _ELINK_DB_PMC:
-            continue
-        if str(linkset.get("LinkName", "")).strip().lower() != _ELINK_LINKNAME_PMC:
-            continue
-        for link in linkset.get("Link", []) or []:
-            linked_id = str(link.get("Id", "")).strip()
-            if linked_id.isdigit() and 1 <= len(linked_id) <= 12:
-                return f"PMC{linked_id}"
-    return None
-
-
-def _default_pmids_to_pmcids(
-    pmids: list[str], *, api_key: str | None
-) -> dict[str, str | None]:
-    """Resolve PMIDs to PMCIDs via one ``Entrez.elink`` call per PMID.
-
-    Per-PMID is deliberate: NCBI's elink endpoint returns malformed
-    chunked HTTP responses (``IncompleteRead`` after exactly 167 bytes —
-    just the XML preamble) when called with repeated ``&id=`` parameters
-    beyond ~11 ids. Biopython expands ``id=<list>`` into repeated
-    ``&id=`` params via ``urlencode(doseq=True)``, so passing the whole
-    batch in one call hits the bug. The comma-joined single-``id`` form
-    (``id="A,B,C"``) is reliable, but NCBI then collapses all sources
-    into a single LinkSet — losing the per-PMID mapping this function
-    has to return — so we can't use it here.
-
-    With API key the rate limit is ~10 req/s; ``_ncbi_sleep`` enforces
-    110ms between calls so this stays well under the cap. Each PMID's
-    failure is swallowed (and the PMID is omitted from the result map)
-    so a single bad id does not abort the whole batch — the caller
-    treats absent PMIDs as "retry next run".
-
-    Returns ``{pmid: pmcid_or_None}`` for PMIDs NCBI returned a LinkSet
-    for. PMIDs *absent* from the response are absent from the returned
-    map (vs ``None``, which encodes a confirmed no-PMC-mirror result)
-    so the caller can retry truncated/missing PMIDs on a subsequent run
-    instead of permanently negative-caching them.
-    """
-    from Bio import Entrez
-
-    out: dict[str, str | None] = {}
-    for pmid in pmids:
-        try:
-            records = _ncbi_retry(
-                Entrez.elink,
-                dbfrom="pubmed",
-                db=_ELINK_DB_PMC,
-                id=pmid,
-                linkname=_ELINK_LINKNAME_PMC,
-                _reader=Entrez.read,
-            )
-        except Exception as exc:  # noqa: BLE001 — Entrez raises various I/O types
-            logger.warning(
-                f"elink failed for PMID {pmid} after retries: {exc}; "
-                f"will retry next run"
-            )
-            continue
-        finally:
-            _ncbi_sleep(api_key)
-
-        for record in records or []:
-            id_list = record.get("IdList", []) or []
-            if id_list and str(id_list[0]) == pmid:
-                out[pmid] = _pmcid_from_elink_record(record)
-                break
-    return out
-
-
-def _normalize_pmcid(value: Any) -> str | None:
-    """Return a canonical ``PMC123`` identifier, or None for confirmed absence."""
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"PMCID must be a string or None, got {type(value).__name__}")
-    pmcid = value.strip()
-    if not pmcid:
-        return None
-    if _PMCID_PATTERN.fullmatch(pmcid) is None:
-        raise ValueError(f"malformed PMCID {value!r}")
-    if pmcid.upper().startswith("PMC"):
-        return f"PMC{pmcid[3:]}"
-    return f"PMC{pmcid}"
-
-
-def _default_fetch_pmc_jats(pmcid: str, *, api_key: str | None) -> bytes | None:
-    """Fetch JATS XML for a PMCID via ``Bio.Entrez.efetch(db="pmc")``."""
-    from Bio import Entrez
-
-    # PMC efetch accepts either the bare numeric id or the PMC-prefixed
-    # form; strip the prefix for compatibility with older biopython.
-    numeric = pmcid[3:] if pmcid.upper().startswith("PMC") else pmcid
-
-    raw = _ncbi_retry(
-        Entrez.efetch,
-        db="pmc",
-        id=numeric,
-        rettype="xml",
-        retmode="xml",
-        _reader=lambda h: h.read(),
-    )
-    _ncbi_sleep(api_key)
-
-    coerced = _coerce_to_bytes(raw, f"PMC efetch for {pmcid}")
-    return coerced if coerced else None
-
-
-def fetch_fulltext_batch(
-    pmids: Iterable[str],
-    cache_dir: Path,
-    *,
-    email: str | None = None,
-    api_key: str | None = None,
-    fetcher_elink: Any = None,
-    fetcher_efetch: Any = None,
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> dict[str, FulltextRecord]:
-    """Return ``{pmid: FulltextRecord}`` for the given PMIDs.
-
-    Reads from per-PMID JSON cache when present; for missing PMIDs,
-    resolves PMID->PMCID via a single batched elink, then fetches JATS
-    via efetch for each PMID with a PMC mirror, writing each result
-    back to the cache. Negative results (no PMC mirror) are cached too
-    so we don't re-elink them every run. Network failures log a warning
-    and skip that PMID (no cache entry, will retry next run).
-
-    ``fetcher_elink`` is a callable ``(list[str]) -> dict[str, str |
-    None]``; ``fetcher_efetch`` is ``(pmcid: str) -> bytes | None``.
-    Both are test-injection points; when None, Entrez is configured and
-    the matching ``_default_*`` helper is used.
-    """
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    pmid_list = _unique_valid_pmids(pmids)
-    out: dict[str, FulltextRecord] = {}
-    missing: list[str] = []
-
-    for pmid in pmid_list:
-        cached = _read_fulltext_cache(cache_dir, pmid)
-        if cached is not None:
-            out[pmid] = cached
-        else:
-            missing.append(pmid)
-
-    total = len(pmid_list)
-    if progress_callback is not None:
-        progress_callback(total - len(missing), total)
-
-    if not missing:
-        return out
-
-    resolved_key = api_key
-    if fetcher_elink is None or fetcher_efetch is None:
-        resolved_key = _configure_entrez(email=email, api_key=api_key)
-
-    if fetcher_elink is None:
-
-        def _default_elink(batch: list[str]) -> dict[str, str | None]:
-            return _default_pmids_to_pmcids(batch, api_key=resolved_key)
-
-        fetcher_elink = _default_elink
-
-    if fetcher_efetch is None:
-
-        def _default_efetch(pmcid: str) -> bytes | None:
-            return _default_fetch_pmc_jats(pmcid, api_key=resolved_key)
-
-        fetcher_efetch = _default_efetch
-
-    try:
-        pmid_to_pmcid = fetcher_elink(missing)
-    except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
-        logger.warning(f"elink batch failed for {len(missing)} PMIDs: {e}")
-        if progress_callback is not None:
-            progress_callback(total, total)
-        return out
-    if not isinstance(pmid_to_pmcid, Mapping):
-        logger.warning(
-            f"elink batch returned malformed payload for {len(missing)} PMIDs; "
-            f"expected mapping, got {type(pmid_to_pmcid).__name__}"
-        )
-        if progress_callback is not None:
-            progress_callback(total, total)
-        return out
-    pmid_to_pmcid = {str(k).strip(): v for k, v in pmid_to_pmcid.items()}
-
-    cached_count = total - len(missing)
-    for i, pmid in enumerate(missing, start=1):
-        try:
-            if pmid not in pmid_to_pmcid:
-                # NCBI omitted this PMID from the elink response (truncation,
-                # partial response, ...). Don't cache anything — retry next run.
-                logger.warning(
-                    f"elink response did not include PMID {pmid}; will retry next run"
-                )
-                continue
-            try:
-                pmcid = _normalize_pmcid(pmid_to_pmcid[pmid])
-            except ValueError as e:
-                logger.warning(f"Malformed PMCID for PMID {pmid}: {e}; skipping")
-                continue
-            if pmcid is None:
-                # NCBI confirmed this PMID has no PMC mirror. Safe to cache
-                # the negative result so we don't re-elink it every run.
-                record = FulltextRecord(pmid=pmid, pmcid=None)
-                _write_fulltext_cache(cache_dir, record)
-                out[pmid] = record
-                continue
-
-            try:
-                xml_bytes = fetcher_efetch(pmcid)
-            except Exception as e:  # noqa: BLE001 — Entrez raises various I/O types
-                logger.warning(f"efetch failed for PMID {pmid} (PMCID {pmcid}): {e}")
-                continue
-
-            if not xml_bytes:
-                logger.warning(f"Empty efetch response for PMID {pmid} (PMCID {pmcid})")
-                continue
-            xml_bytes = _coerce_to_bytes(
-                xml_bytes, f"efetch for PMID {pmid} (PMCID {pmcid})"
-            )
-            if xml_bytes is None:
-                continue
-
-            try:
-                sections = parse_jats_for_sections(xml_bytes)
-            except etree.XMLSyntaxError as e:
-                # Don't cache: a poisoned cache of empty sections would
-                # suppress retries indefinitely (same reasoning as the MeSH
-                # batch's XML-error handling).
-                logger.warning(
-                    f"JATS parse error for PMID {pmid} (PMCID {pmcid}): {e}; "
-                    f"skipping cache (will retry next run)"
-                )
-                continue
-
-            record = FulltextRecord(pmid=pmid, pmcid=pmcid, **sections)
-            _write_fulltext_cache(cache_dir, record)
-            out[pmid] = record
-        finally:
-            if progress_callback is not None:
-                progress_callback(cached_count + i, total)
-
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2700,7 +2102,6 @@ def _render_config_panel(args: argparse.Namespace, *, phrase_top: int) -> Panel:
     grid.add_column(style="bold")
 
     grid.add_row("xml-dir", str(args.xml_dir))
-    grid.add_row("xml-extra-dir", str(args.xml_extra_dir))
     grid.add_row(
         "top-n / min-df / min-llr",
         f"{args.top_n}  /  {args.min_df}  /  {args.min_llr:.2f}",
@@ -2709,11 +2110,7 @@ def _render_config_panel(args: argparse.Namespace, *, phrase_top: int) -> Panel:
         "mesh-top / phrase-top",
         f"{args.mesh_top}  /  {phrase_top}",
     )
-    grid.add_row(
-        "mesh / fulltext",
-        f"{'on' if not args.no_mesh else 'off'}  /  "
-        f"{'on' if not args.no_fulltext else 'off'}",
-    )
+    grid.add_row("mesh", "on" if not args.no_mesh else "off")
     grid.add_row("baseline-cache", str(args.baseline_cache))
     grid.add_row("query-format", args.query_format)
 
@@ -2831,17 +2228,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"Directory of MODS XML files (default: {DEFAULT_XML_DIR})",
     )
     parser.add_argument(
-        "--xml-extra-dir",
-        type=Path,
-        default=DEFAULT_XML_EXTRA_DIR,
-        help=(
-            "Supplementary MODS XML directory merged into the corpus "
-            f"(default: {DEFAULT_XML_EXTRA_DIR}). A missing dir is skipped "
-            "with an info log line, so the default works whether or not "
-            "this directory has been populated."
-        ),
-    )
-    parser.add_argument(
         "--top-n",
         type=_non_negative_int,
         default=DEFAULT_TOP_N,
@@ -2897,19 +2283,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-mesh",
         action="store_true",
         help="Skip MeSH harvest; emit only the Title/Abstract query variant.",
-    )
-    parser.add_argument(
-        "--no-fulltext",
-        action="store_true",
-        help="Skip PMC full-text harvest; use title+abstract only.",
-    )
-    parser.add_argument(
-        "--fulltext-cache",
-        type=Path,
-        default=DEFAULT_FULLTEXT_CACHE_DIR,
-        help=(
-            f"Per-PMID PMC full-text cache dir (default: {DEFAULT_FULLTEXT_CACHE_DIR})"
-        ),
     )
     parser.add_argument(
         "--baseline-cache",
@@ -3050,21 +2423,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
 
-    xml_dirs: list[Path] = [args.xml_dir]
-    # Supplementary dir is best-effort so the default invocation works
-    # whether or not the user has populated it.
-    if args.xml_extra_dir.is_dir():
-        xml_dirs.append(args.xml_extra_dir)
-    else:
-        logger.info(
-            f"Supplementary xml-extra-dir {args.xml_extra_dir} not found; skipping."
-        )
-
     with _build_progress() as progress:
         load_task = progress.add_task("Loading corpus", total=None)
         try:
             papers = load_corpus(
-                xml_dirs,
+                args.xml_dir,
                 progress_callback=lambda c, t: progress.update(
                     load_task, completed=c, total=t
                 ),
@@ -3087,36 +2450,6 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         valid_pmids = _unique_valid_pmids(p.pmid for p in papers if p.pmid)
-
-        if not args.no_fulltext and valid_pmids:
-            ft_task = progress.add_task("Fetching PMC fulltext", total=len(valid_pmids))
-            try:
-                fulltext_records = fetch_fulltext_batch(
-                    valid_pmids,
-                    args.fulltext_cache,
-                    email=os.getenv("ENTREZ_EMAIL"),
-                    api_key=(os.getenv("NCBI_API_KEY") or os.getenv("ENTREZ_KEY")),
-                    progress_callback=lambda c, t: progress.update(
-                        ft_task, completed=c, total=t
-                    ),
-                )
-            except (OSError, RuntimeError) as e:
-                logger.warning(
-                    f"Full-text harvest disabled — {e}. "
-                    f"Run with --no-fulltext to silence."
-                )
-                fulltext_records = {}
-            for paper in papers:
-                if paper.pmid and (record := fulltext_records.get(paper.pmid)):
-                    paper.fulltext = record.as_text()
-            with_text = sum(1 for r in fulltext_records.values() if r.pmcid is not None)
-            logger.info(
-                f"Full-text enrichment: "
-                f"{with_text}/{len(valid_pmids)} "
-                f"papers have PMC versions; "
-                f"{len(valid_pmids) - with_text} contribute "
-                f"title+abstract only."
-            )
 
         mesh_map: dict[str, list[MeshDescriptor]] | None = None
         if not args.no_mesh and valid_pmids:

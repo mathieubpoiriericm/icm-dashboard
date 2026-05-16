@@ -1,8 +1,7 @@
 """Unit tests for scripts/distill_pubmed_keywords.py.
 
-Network-touching paths are exercised via the ``fetcher`` injection
-point on ``fetch_mesh_terms`` and ``fetch_fulltext_batch`` so the
-suite runs fully offline.
+Network-touching MeSH paths are exercised via the ``fetcher`` injection
+point on ``fetch_mesh_terms`` so the suite runs fully offline.
 """
 
 from __future__ import annotations
@@ -19,10 +18,8 @@ import pytest
 from rich.console import Console
 from scripts.distill_pubmed_keywords import (
     BASELINE_SCHEMA_VERSION,
-    FULLTEXT_SCHEMA_VERSION,
     BaselineCounts,
     DistillationResult,
-    FulltextRecord,
     KeywordScore,
     MeshDescriptor,
     MeshQualifier,
@@ -33,14 +30,12 @@ from scripts.distill_pubmed_keywords import (
     _llr_score,
     _ncbi_retry,
     _non_negative_float,
-    _pmcid_from_elink_record,
     _rank_terms,
     _render_query,
     _render_rich_report,
     aggregate_mesh,
     build_baseline_cache,
     distill_keywords,
-    fetch_fulltext_batch,
     fetch_mesh_terms,
     format_mesh_query,
     format_structured_query,
@@ -48,34 +43,11 @@ from scripts.distill_pubmed_keywords import (
     load_baseline_cache,
     load_corpus,
     main,
-    parse_jats_for_sections,
     parse_pubmed_xml_for_mesh,
     stem_key,
 )
 
 _FIXTURES = Path(__file__).parent / "fixtures"
-
-
-@pytest.fixture(autouse=True)
-def _isolate_xml_extra_default(
-    tmp_path_factory: pytest.TempPathFactory,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Stop main()-based tests from picking up the real xml_extra dir.
-
-    The CLI default for ``--xml-extra-dir`` resolves to
-    ``data/bibentry/xml_extra/`` inside the project, which actually
-    exists on developer machines. Without this fixture, every test that
-    invokes ``main()`` would inadvertently load whatever XML files live
-    there, polluting assertions like ``received_pmids == [["12345"]]``.
-    Pointing the constant at a never-created tmp path makes the
-    best-effort skip branch in ``main()`` engage.
-    """
-    nowhere = tmp_path_factory.mktemp("no_xml_extra") / "absent"
-    monkeypatch.setattr(
-        "scripts.distill_pubmed_keywords.DEFAULT_XML_EXTRA_DIR",
-        nowhere,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -853,8 +825,7 @@ class TestMeshCache:
         # response), the function must not write a permanent empty
         # descriptors cache entry for it — that would silently drop the
         # paper's MeSH contribution on every future run with no recovery.
-        # Mirrors test_pmid_absent_from_elink_response_is_not_cached for
-        # the fulltext path.
+        # A missing PMID should be retried rather than cached as empty.
         fixture = _FIXTURES.joinpath("mesh_sample.xml").read_bytes()
 
         def stub_fetcher(batch: list[str]) -> bytes:
@@ -1104,8 +1075,8 @@ class TestParseMods:
     ) -> None:
         # MODS records converted from BibTeX often lack an inner
         # PubMed identifier. When the filename stem is a valid PMID
-        # (as the user has named them), surface it so PMC fulltext and
-        # MeSH enrichment can run for these papers too.
+        # (as the user has named them), surface it so MeSH enrichment
+        # can run for these papers too.
         from scripts.distill_pubmed_keywords import parse_mods_file
 
         path = tmp_path / "23867200.xml"
@@ -1240,7 +1211,7 @@ class TestForegroundCounts:
         assert tf["WMH"] == 1
         assert tf["MRI"] == 1
 
-    def test_fulltext_artifact_labels_are_filtered_from_phrases(self) -> None:
+    def test_document_artifact_labels_are_filtered_from_phrases(self) -> None:
         pairs = [
             [
                 ("supplementary", "supplementary"),
@@ -1378,741 +1349,6 @@ def test_mesh_qualifier_dataclass() -> None:
     assert q.major is True
 
 
-# ---------------------------------------------------------------------------
-# parse_jats_for_sections — IMRaD extraction from JATS XML
-# ---------------------------------------------------------------------------
-
-
-class TestParseJatsForSections:
-    def test_extracts_all_imrad_sections(self) -> None:
-        xml_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        sections = parse_jats_for_sections(xml_bytes)
-        assert set(sections.keys()) == {
-            "introduction",
-            "methods",
-            "results",
-            "discussion",
-        }
-        assert "small vessel disease" in sections["introduction"].lower()
-        assert "magnetic resonance imaging" in sections["methods"].lower()
-        assert "intercellular adhesion molecule" in sections["results"].lower()
-        assert "prospective design" in sections["discussion"].lower()
-
-    def test_handles_synonym_titles(self) -> None:
-        xml_bytes = (_FIXTURES / "jats_synonym_titles.xml").read_bytes()
-        sections = parse_jats_for_sections(xml_bytes)
-        # "Background" maps to introduction.
-        assert "subarachnoid haemorrhage" in sections["introduction"].lower()
-        # "Subjects and Methods" + "Experimental Procedures" both map to
-        # methods and are joined with a blank line.
-        assert "diffusion tensor imaging" in sections["methods"].lower()
-        assert "haematoxylin" in sections["methods"].lower()
-        # "Findings" maps to results.
-        assert "fractional anisotropy" in sections["results"].lower()
-        # "Conclusions" maps to discussion.
-        assert "subclinical white matter injury" in sections["discussion"].lower()
-
-    def test_skips_unlabeled_sections(self) -> None:
-        # The sample fixture has an Acknowledgments section without
-        # sec-type and an unlabeled References section. Neither should
-        # appear in any IMRaD bucket.
-        xml_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        sections = parse_jats_for_sections(xml_bytes)
-        combined = " ".join(sections.values()).lower()
-        assert "austrian stroke prevention study participants" not in combined
-        assert "this section should be dropped by the parser" not in combined
-
-    def test_concatenates_duplicate_sectypes(self) -> None:
-        # jats_sample.xml has two <sec sec-type="methods"> blocks
-        # ("Materials and Methods" and "Statistical Methods"). Both
-        # should contribute and be joined with a blank line.
-        xml_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        sections = parse_jats_for_sections(xml_bytes)
-        methods = sections["methods"]
-        # Content from the first methods block.
-        assert "elisa" in methods.lower()
-        # Content from the second methods block.
-        assert "stata" in methods.lower()
-        # The two distinct paragraph runs must be separated by a blank line.
-        assert "\n\n" in methods
-
-    def test_returns_four_keys_even_when_empty(self) -> None:
-        # JATS-shaped XML with a body but no <sec>: every label is "".
-        xml = b"<article><body></body></article>"
-        sections = parse_jats_for_sections(xml)
-        assert sections == {
-            "introduction": "",
-            "methods": "",
-            "results": "",
-            "discussion": "",
-        }
-
-    def test_raises_on_malformed_xml(self) -> None:
-        # Caller relies on XMLSyntaxError to distinguish parse failures
-        # (skip cache, retry) from empty bodies (cache as "none").
-        from lxml import etree  # type: ignore[import-untyped]
-
-        with pytest.raises(etree.XMLSyntaxError):
-            parse_jats_for_sections(b"<not-xml>this isn't")
-
-    def test_descends_into_unclassified_outer_sec(self) -> None:
-        # Some publishers wrap IMRaD content in an outer unnamed
-        # <sec><title>Main Text</title>...</sec>. The parser must descend
-        # into the wrapper rather than dropping the entire subtree.
-        xml_bytes = (_FIXTURES / "jats_nested_wrapper.xml").read_bytes()
-        sections = parse_jats_for_sections(xml_bytes)
-        assert "small vessel disease" in sections["introduction"].lower()
-        assert "magnetic resonance imaging" in sections["methods"].lower()
-        assert "white matter hyperintensity" in sections["results"].lower()
-        assert "prospective" in sections["discussion"].lower()
-        # The Acknowledgments sibling outside the wrapper must still be
-        # dropped (no IMRaD classification, no nested IMRaD inside it).
-        combined = " ".join(sections.values()).lower()
-        assert "acknowledgments section should still be dropped" not in combined
-
-    def test_nested_classified_section_overrides_parent_label(self) -> None:
-        xml = b"""
-        <article>
-          <body>
-            <sec sec-type="introduction">
-              <title>Introduction</title>
-              <p>Introductory small vessel disease context.</p>
-              <sec sec-type="methods">
-                <title>Methods</title>
-                <p>Nested imaging protocol text.</p>
-              </sec>
-            </sec>
-          </body>
-        </article>
-        """
-        sections = parse_jats_for_sections(xml)
-
-        assert "introductory small vessel disease" in sections["introduction"].lower()
-        assert "nested imaging protocol" not in sections["introduction"].lower()
-        assert "nested imaging protocol" in sections["methods"].lower()
-
-    def test_unclassified_subsection_inherits_parent_label(self) -> None:
-        xml = b"""
-        <article>
-          <body>
-            <sec sec-type=" methods ">
-              <title>Methods</title>
-              <p>Parent protocol text.</p>
-              <sec>
-                <title>Participants</title>
-                <p>Inherited participant details.</p>
-              </sec>
-            </sec>
-          </body>
-        </article>
-        """
-        sections = parse_jats_for_sections(xml)
-
-        assert "parent protocol text" in sections["methods"].lower()
-        assert "inherited participant details" in sections["methods"].lower()
-
-    def test_paragraphs_inside_non_section_containers_are_kept(self) -> None:
-        xml = b"""
-        <article>
-          <body>
-            <sec sec-type="methods">
-              <title>Methods</title>
-              <list>
-                <list-item>
-                  <p>List-based acquisition protocol details.</p>
-                </list-item>
-              </list>
-              <sec sec-type="results">
-                <title>Results</title>
-                <p>Nested result text.</p>
-              </sec>
-            </sec>
-          </body>
-        </article>
-        """
-        sections = parse_jats_for_sections(xml)
-
-        assert "list-based acquisition protocol" in sections["methods"].lower()
-        assert "nested result text" not in sections["methods"].lower()
-        assert "nested result text" in sections["results"].lower()
-
-    def test_display_object_paragraphs_are_skipped(self) -> None:
-        xml = b"""
-        <article>
-          <body>
-            <sec sec-type="results">
-              <title>Results</title>
-              <p>Prose result about white matter injury.</p>
-              <table-wrap>
-                <caption><p>Supplementary table caption should be ignored.</p></caption>
-                <table>
-                  <tbody>
-                    <tr><td><p>Table cell boilerplate should be ignored.</p></td></tr>
-                  </tbody>
-                </table>
-              </table-wrap>
-              <fig>
-                <caption><p>Figure caption should be ignored.</p></caption>
-              </fig>
-            </sec>
-          </body>
-        </article>
-        """
-
-        sections = parse_jats_for_sections(xml)
-
-        assert "prose result" in sections["results"].lower()
-        assert "supplementary table caption" not in sections["results"].lower()
-        assert "table cell boilerplate" not in sections["results"].lower()
-        assert "figure caption" not in sections["results"].lower()
-
-    def test_body_root_is_parsed(self) -> None:
-        xml = b"""
-        <body>
-          <sec sec-type="discussion">
-            <title>Discussion</title>
-            <p>Standalone body root text.</p>
-          </sec>
-        </body>
-        """
-        sections = parse_jats_for_sections(xml)
-
-        assert "standalone body root text" in sections["discussion"].lower()
-
-
-# ---------------------------------------------------------------------------
-# fetch_fulltext_batch — cache + injected fetchers
-# ---------------------------------------------------------------------------
-
-
-def _write_cached_record(cache_dir: Path, record: FulltextRecord) -> None:
-    """Helper: write a JSON file that `_read_fulltext_cache` will accept."""
-    payload = {
-        "schema_version": FULLTEXT_SCHEMA_VERSION,
-        "pmid": record.pmid,
-        "pmcid": record.pmcid,
-        "sections": {
-            "introduction": record.introduction,
-            "methods": record.methods,
-            "results": record.results,
-            "discussion": record.discussion,
-        },
-        "fetched_at": dt.datetime.now(dt.UTC).isoformat(),
-    }
-    (cache_dir / f"{record.pmid}.json").write_text(
-        json.dumps(payload), encoding="utf-8"
-    )
-
-
-class TestFetchFulltextBatch:
-    def test_reads_cache_without_invoking_fetcher(self, tmp_path: Path) -> None:
-        _write_cached_record(
-            tmp_path,
-            FulltextRecord(
-                pmid="111",
-                pmcid="PMC1",
-                introduction="cached intro",
-                methods="cached methods",
-                results="cached results",
-                discussion="cached discussion",
-            ),
-        )
-
-        elink_calls: list[list[str]] = []
-        efetch_calls: list[str] = []
-
-        def fail_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(batch)
-            raise AssertionError("fetcher should not be called on cache hit")
-
-        def fail_efetch(_pmcid: str) -> bytes | None:
-            efetch_calls.append(_pmcid)
-            raise AssertionError("fetcher should not be called on cache hit")
-
-        out = fetch_fulltext_batch(
-            ["111"],
-            tmp_path,
-            fetcher_elink=fail_elink,
-            fetcher_efetch=fail_efetch,
-        )
-        assert "111" in out
-        assert out["111"].introduction == "cached intro"
-        assert elink_calls == []
-        assert efetch_calls == []
-
-    def test_writes_cache_on_successful_fetch(self, tmp_path: Path) -> None:
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            return dict.fromkeys(batch, "PMC1234567")
-
-        def stub_efetch(_pmcid: str) -> bytes | None:
-            return jats_bytes
-
-        out = fetch_fulltext_batch(
-            ["15905468"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=stub_efetch,
-        )
-        assert out["15905468"].pmcid == "PMC1234567"
-        assert "small vessel disease" in out["15905468"].introduction.lower()
-
-        cache_path = tmp_path / "15905468.json"
-        assert cache_path.exists()
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
-        assert payload["schema_version"] == FULLTEXT_SCHEMA_VERSION
-        assert payload["pmid"] == "15905468"
-        assert payload["pmcid"] == "PMC1234567"
-        assert "small vessel disease" in payload["sections"]["introduction"].lower()
-
-    def test_normalizes_numeric_pmcid_before_fetch_and_cache(
-        self, tmp_path: Path
-    ) -> None:
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        efetch_calls: list[str] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            return dict.fromkeys(batch, "1234567")
-
-        def stub_efetch(pmcid: str) -> bytes | None:
-            efetch_calls.append(pmcid)
-            return jats_bytes
-
-        out = fetch_fulltext_batch(
-            ["15905468"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=stub_efetch,
-        )
-
-        assert efetch_calls == ["PMC1234567"]
-        assert out["15905468"].pmcid == "PMC1234567"
-        payload = json.loads((tmp_path / "15905468.json").read_text(encoding="utf-8"))
-        assert payload["pmcid"] == "PMC1234567"
-
-    def test_caches_negative_result_when_no_pmc(self, tmp_path: Path) -> None:
-        # When elink returns no PMCID for the PMID, we cache a sentinel
-        # (pmcid=None) so subsequent runs don't re-elink the same PMID.
-        elink_calls: list[list[str]] = []
-        efetch_calls: list[str] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch)
-
-        def stub_efetch(_pmcid: str) -> bytes | None:
-            efetch_calls.append(_pmcid)
-            raise AssertionError("efetch must not run when elink returned None")
-
-        first = fetch_fulltext_batch(
-            ["999"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=stub_efetch,
-        )
-        assert first["999"].pmcid is None
-        assert first["999"].introduction == ""
-        assert (tmp_path / "999.json").exists()
-        assert elink_calls == [["999"]]
-
-        # Second invocation hits the negative cache, so elink isn't
-        # called a second time.
-        second = fetch_fulltext_batch(
-            ["999"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=stub_efetch,
-        )
-        assert second["999"].pmcid is None
-        assert elink_calls == [["999"]]  # unchanged
-        assert efetch_calls == []
-
-    def test_skips_on_fetcher_error(self, tmp_path: Path) -> None:
-        def broken_elink(_batch: list[str]) -> dict[str, str | None]:
-            raise RuntimeError("simulated NCBI failure")
-
-        def unused_efetch(_pmcid: str) -> bytes | None:
-            raise AssertionError("efetch should not run when elink failed")
-
-        out = fetch_fulltext_batch(
-            ["123"],
-            tmp_path,
-            fetcher_elink=broken_elink,
-            fetcher_efetch=unused_efetch,
-        )
-        # No cache file written; PMID missing from output map.
-        assert "123" not in out
-        assert not (tmp_path / "123.json").exists()
-
-    def test_skips_on_malformed_elink_payload(self, tmp_path: Path) -> None:
-        calls: list[tuple[int, int]] = []
-
-        out = fetch_fulltext_batch(
-            ["123", "456"],
-            tmp_path,
-            fetcher_elink=lambda _batch: None,
-            fetcher_efetch=lambda _pmcid: None,
-            progress_callback=lambda c, t: calls.append((c, t)),
-        )
-
-        assert out == {}
-        assert calls[-1] == (2, 2)
-        assert not (tmp_path / "123.json").exists()
-        assert not (tmp_path / "456.json").exists()
-
-    def test_accepts_integer_elink_mapping_keys(self, tmp_path: Path) -> None:
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-
-        out = fetch_fulltext_batch(
-            ["123"],
-            tmp_path,
-            fetcher_elink=lambda _batch: {123: "PMC1234567"},
-            fetcher_efetch=lambda _pmcid: jats_bytes,
-        )
-
-        assert out["123"].pmcid == "PMC1234567"
-        assert (tmp_path / "123.json").exists()
-
-    def test_skips_malformed_pmcid_without_negative_cache(self, tmp_path: Path) -> None:
-        efetch_calls: list[str] = []
-
-        out = fetch_fulltext_batch(
-            ["123"],
-            tmp_path,
-            fetcher_elink=lambda _batch: {"123": "PMC../escape"},
-            fetcher_efetch=lambda pmcid: efetch_calls.append(pmcid) or None,
-        )
-
-        assert out == {}
-        assert efetch_calls == []
-        assert not (tmp_path / "123.json").exists()
-
-    def test_skips_cache_write_on_xml_parse_error(self, tmp_path: Path) -> None:
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            return dict.fromkeys(batch, "PMC777")
-
-        def malformed_efetch(_pmcid: str) -> bytes | None:
-            return b"<not-jats>truncated"
-
-        out = fetch_fulltext_batch(
-            ["555"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=malformed_efetch,
-        )
-        # Same reasoning as the MeSH batch's parse-error handler: don't
-        # poison the cache with empty sections.
-        assert "555" not in out
-        assert not (tmp_path / "555.json").exists()
-
-    def test_batches_elink_for_multiple_missing_pmids(self, tmp_path: Path) -> None:
-        # The whole point of batching is one elink call per
-        # fetch_fulltext_batch invocation, regardless of how many PMIDs
-        # are missing from cache.
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            # Only the first PMID resolves to PMC; second has no mirror.
-            return {batch[0]: "PMC1", batch[1]: None}
-
-        def stub_efetch(_pmcid: str) -> bytes | None:
-            return jats_bytes
-
-        out = fetch_fulltext_batch(
-            ["111", "222"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=stub_efetch,
-        )
-        assert elink_calls == [["111", "222"]]
-        assert out["111"].pmcid == "PMC1"
-        assert out["222"].pmcid is None
-
-    def test_refetches_on_schema_mismatch(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        # Stale cache claims schema_version=0; the loader must warn and
-        # treat the entry as missing so the fetcher is invoked.
-        (tmp_path / "777.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": 0,
-                    "pmid": "777",
-                    "pmcid": "PMC777",
-                    "sections": {"introduction": "stale"},
-                    "fetched_at": "2020-01-01T00:00:00+00:00",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch, "PMC777")
-
-        def stub_efetch(_pmcid: str) -> bytes | None:
-            return jats_bytes
-
-        with caplog.at_level(logging.WARNING):
-            out = fetch_fulltext_batch(
-                ["777"],
-                tmp_path,
-                fetcher_elink=stub_elink,
-                fetcher_efetch=stub_efetch,
-            )
-        assert elink_calls == [["777"]]
-        assert out["777"].pmcid == "PMC777"
-        assert "schema mismatch" in caplog.text.lower()
-
-    def test_refetches_on_missing_sections_mapping(self, tmp_path: Path) -> None:
-        (tmp_path / "777.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": FULLTEXT_SCHEMA_VERSION,
-                    "pmid": "777",
-                    "pmcid": "PMC777",
-                    "fetched_at": "2025-01-01T00:00:00+00:00",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch, "PMC777")
-
-        out = fetch_fulltext_batch(
-            ["777"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=lambda _pmcid: jats_bytes,
-        )
-
-        assert elink_calls == [["777"]]
-        assert "small vessel disease" in out["777"].introduction.lower()
-
-    def test_refetches_on_non_string_cached_section(self, tmp_path: Path) -> None:
-        (tmp_path / "777.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": FULLTEXT_SCHEMA_VERSION,
-                    "pmid": "777",
-                    "pmcid": "PMC777",
-                    "sections": {"introduction": ["not", "text"]},
-                    "fetched_at": "2025-01-01T00:00:00+00:00",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch, "PMC777")
-
-        out = fetch_fulltext_batch(
-            ["777"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=lambda _pmcid: jats_bytes,
-        )
-
-        assert elink_calls == [["777"]]
-        assert "not', 'text" not in out["777"].as_text()
-        assert "small vessel disease" in out["777"].introduction.lower()
-
-    def test_refetches_on_malformed_cached_pmcid(self, tmp_path: Path) -> None:
-        (tmp_path / "777.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": FULLTEXT_SCHEMA_VERSION,
-                    "pmid": "777",
-                    "pmcid": "PMC../escape",
-                    "sections": {"introduction": "stale"},
-                    "fetched_at": "2025-01-01T00:00:00+00:00",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch, "PMC777")
-
-        out = fetch_fulltext_batch(
-            ["777"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=lambda _pmcid: jats_bytes,
-        )
-
-        assert elink_calls == [["777"]]
-        assert out["777"].pmcid == "PMC777"
-        assert out["777"].introduction != "stale"
-
-    def test_refetches_on_negative_cache_with_section_text(
-        self, tmp_path: Path
-    ) -> None:
-        (tmp_path / "777.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": FULLTEXT_SCHEMA_VERSION,
-                    "pmid": "777",
-                    "pmcid": None,
-                    "sections": {"introduction": "impossible cached text"},
-                    "fetched_at": "2025-01-01T00:00:00+00:00",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch, "PMC777")
-
-        out = fetch_fulltext_batch(
-            ["777"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=lambda _pmcid: jats_bytes,
-        )
-
-        assert elink_calls == [["777"]]
-        assert out["777"].pmcid == "PMC777"
-        assert out["777"].introduction != "impossible cached text"
-
-    def test_accepts_string_efetch_response(self, tmp_path: Path) -> None:
-        jats_text = (_FIXTURES / "jats_sample.xml").read_text(encoding="utf-8")
-
-        out = fetch_fulltext_batch(
-            ["15905468"],
-            tmp_path,
-            fetcher_elink=lambda batch: dict.fromkeys(batch, "PMC1234567"),
-            fetcher_efetch=lambda _pmcid: jats_text,
-        )
-
-        assert "small vessel disease" in out["15905468"].introduction.lower()
-
-    def test_pmid_absent_from_elink_response_is_not_cached(
-        self, tmp_path: Path
-    ) -> None:
-        # If NCBI's elink response omits a PMID (truncation, partial
-        # response), the caller must not write a permanent negative
-        # cache entry for it — that would silently drop the paper's
-        # full-text contribution on every future run with no recovery.
-        # Absent-from-map encodes "NCBI didn't answer"; None encodes
-        # "NCBI confirmed no PMC mirror".
-        def partial_elink(batch: list[str]) -> dict[str, str | None]:
-            # Only the first PMID gets a response; the second is silently
-            # dropped, simulating a truncated NCBI reply.
-            return {batch[0]: None}
-
-        def unused_efetch(_pmcid: str) -> bytes | None:
-            raise AssertionError("efetch should not run for any PMID here")
-
-        out = fetch_fulltext_batch(
-            ["111", "222"],
-            tmp_path,
-            fetcher_elink=partial_elink,
-            fetcher_efetch=unused_efetch,
-        )
-        # PMID 111 had a confirmed no-PMC response → negative cache.
-        assert out["111"].pmcid is None
-        assert (tmp_path / "111.json").exists()
-        # PMID 222 was absent from the response → no cache, retry next run.
-        assert "222" not in out
-        assert not (tmp_path / "222.json").exists()
-
-    def test_refuses_non_numeric_pmids_before_fetch(self, tmp_path: Path) -> None:
-        elink_calls: list[list[str]] = []
-
-        def fail_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(batch)
-            raise AssertionError("invalid PMID must not reach elink")
-
-        out = fetch_fulltext_batch(
-            ["../escape"],
-            tmp_path,
-            fetcher_elink=fail_elink,
-            fetcher_efetch=lambda _pmcid: None,
-        )
-
-        assert out == {}
-        assert elink_calls == []
-        assert not (tmp_path.parent / "escape.json").exists()
-
-    def test_duplicate_pmids_are_deduped_before_elink(self, tmp_path: Path) -> None:
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-        progress: list[tuple[int, int]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch, "PMC1")
-
-        out = fetch_fulltext_batch(
-            ["15905468", "15905468"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=lambda _pmcid: jats_bytes,
-            progress_callback=lambda c, t: progress.append((c, t)),
-        )
-
-        assert elink_calls == [["15905468"]]
-        assert set(out) == {"15905468"}
-        assert progress[-1] == (1, 1)
-
-    def test_cache_pmid_mismatch_is_refetched(self, tmp_path: Path) -> None:
-        _write_cached_record(
-            tmp_path,
-            FulltextRecord(
-                pmid="222",
-                pmcid="PMC222",
-                introduction="wrong cached intro",
-            ),
-        )
-        # Move the mismatched payload under the requested PMID filename.
-        (tmp_path / "111.json").write_text(
-            (tmp_path / "222.json").read_text(encoding="utf-8"),
-            encoding="utf-8",
-        )
-
-        jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-        elink_calls: list[list[str]] = []
-
-        def stub_elink(batch: list[str]) -> dict[str, str | None]:
-            elink_calls.append(list(batch))
-            return dict.fromkeys(batch, "PMC111")
-
-        out = fetch_fulltext_batch(
-            ["111"],
-            tmp_path,
-            fetcher_elink=stub_elink,
-            fetcher_efetch=lambda _pmcid: jats_bytes,
-        )
-
-        assert elink_calls == [["111"]]
-        assert out["111"].pmid == "111"
-        assert out["111"].introduction != "wrong cached intro"
-
-
 class TestNcbiRetry:
     def test_reader_retried_when_mid_read_fails(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2171,163 +1407,18 @@ def test_non_negative_float_rejects_non_finite(value: str) -> None:
         _non_negative_float(value)
 
 
-class TestDefaultPmidsToPmcids:
-    def test_pmcid_from_elink_record_ignores_non_pmc_links(self) -> None:
-        record = {
-            "LinkSetDb": [
-                {
-                    "DbTo": "pubmed",
-                    "LinkName": "pubmed_pubmed",
-                    "Link": [{"Id": "999"}],
-                },
-                {
-                    "DbTo": "pmc",
-                    "LinkName": "pubmed_pmc",
-                    "Link": [{"Id": "1234567"}],
-                },
-            ]
-        }
-
-        assert _pmcid_from_elink_record(record) == "PMC1234567"
-
-    def test_pmcid_from_elink_record_ignores_malformed_link_ids(self) -> None:
-        record = {
-            "LinkSetDb": [
-                {
-                    "DbTo": "pmc",
-                    "LinkName": "pubmed_pmc",
-                    "Link": [{"Id": "PMC../escape"}, {"Id": "../escape"}],
-                }
-            ]
-        }
-
-        assert _pmcid_from_elink_record(record) is None
-
-    def test_pmcid_from_elink_record_requires_pmc_link_metadata(self) -> None:
-        record = {
-            "LinkSetDb": [
-                {
-                    "Link": [{"Id": "1234567"}],
-                }
-            ]
-        }
-
-        assert _pmcid_from_elink_record(record) is None
-
-    def test_parses_pmcid_from_linkset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Per-PMID dispatch is deliberate — see the function's docstring
-        # for the NCBI chunked-response bug that forced it.
-        import scripts.distill_pubmed_keywords as mod
-
-        class _FakeHandle:
-            def __init__(self, pmid: str) -> None:
-                self.pmid = pmid
-
-            def close(self) -> None:
-                pass
-
-        per_pmid_records: dict[str, list[dict]] = {
-            "111": [
-                {
-                    "IdList": ["111"],
-                    "LinkSetDb": [
-                        {
-                            "DbTo": "pmc",
-                            "LinkName": "pubmed_pmc",
-                            "Link": [{"Id": "1234567"}],
-                        }
-                    ],
-                }
-            ],
-            "222": [
-                {
-                    "IdList": ["222"],
-                    "LinkSetDb": [],  # confirmed no PMC mirror
-                }
-            ],
-            # PMID "333" intentionally returns no record (truncated reply
-            # / NCBI omission) — must end up absent from the output map.
-            "333": [],
-        }
-        elink_calls: list[str] = []
-
-        class _FakeEntrez:
-            @staticmethod
-            def elink(**kwargs: object) -> _FakeHandle:
-                pmid = str(kwargs.get("id"))
-                elink_calls.append(pmid)
-                return _FakeHandle(pmid)
-
-            @staticmethod
-            def read(handle: _FakeHandle) -> list[dict]:
-                return per_pmid_records[handle.pmid]
-
-        monkeypatch.setitem(
-            __import__("sys").modules, "Bio", type("M", (), {"Entrez": _FakeEntrez})
-        )
-        # _ncbi_sleep is a no-op for tests
-        monkeypatch.setattr(mod, "_ncbi_sleep", lambda _k: None)
-
-        out = mod._default_pmids_to_pmcids(["111", "222", "333"], api_key=None)
-        assert out["111"] == "PMC1234567"
-        assert out["222"] is None
-        # PMID 333 must be absent (not pre-filled with None) so the
-        # caller can retry it instead of negative-caching forever.
-        assert "333" not in out
-        # Per-PMID dispatch: one elink call per input PMID.
-        assert elink_calls == ["111", "222", "333"]
-
-
 # ---------------------------------------------------------------------------
-# PaperText.fulltext + FulltextRecord.as_text
+# PaperText.combined
 # ---------------------------------------------------------------------------
 
 
-def test_paper_text_combined_includes_fulltext() -> None:
-    paper = PaperText(
-        pmid="1",
-        title="A study of vessels",
-        abstract="We measured things.",
-        fulltext="Body text covering Methods and Results.",
-    )
-    assert paper.combined == (
-        "A study of vessels We measured things. Body text covering Methods and Results."
-    )
-
-
-def test_paper_text_combined_omits_empty_fulltext() -> None:
-    # Pre-fulltext callers (and papers without PMC) should produce the
-    # same combined string as the v1 script — no trailing spaces.
+def test_paper_text_combined_uses_title_and_abstract_only() -> None:
     paper = PaperText(pmid="1", title="Title", abstract="Abstract.")
     assert paper.combined == "Title Abstract."
 
 
-def test_fulltext_record_as_text_orders_imrad() -> None:
-    # Pass kwargs out of IMRaD order; as_text must still emit them in
-    # Introduction -> Methods -> Results -> Discussion.
-    record = FulltextRecord(
-        pmid="1",
-        pmcid="PMC1",
-        discussion="D-text",
-        results="R-text",
-        methods="M-text",
-        introduction="I-text",
-    )
-    assert record.as_text() == "I-text\n\nM-text\n\nR-text\n\nD-text"
-
-
-def test_fulltext_record_as_text_skips_empty_sections() -> None:
-    record = FulltextRecord(
-        pmid="1",
-        pmcid="PMC1",
-        introduction="intro only",
-        discussion="discussion only",
-    )
-    assert record.as_text() == "intro only\n\ndiscussion only"
-
-
 # ---------------------------------------------------------------------------
-# main() — CLI flag wiring for --no-fulltext
+# main() — CLI wiring
 # ---------------------------------------------------------------------------
 
 
@@ -2363,21 +1454,12 @@ def _write_minimal_baseline(path: Path) -> None:
         json.dump(payload, gz)
 
 
-def test_main_no_fulltext_flag_skips_fetch(
+def test_main_accepts_title_abstract_only_run(
     _stub_corpus: Path,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     baseline_path = tmp_path / "baseline.json.gz"
     _write_minimal_baseline(baseline_path)
-
-    calls: list[tuple[tuple, dict]] = []
-
-    def spy(*args, **kwargs):  # noqa: ANN002, ANN003
-        calls.append((args, kwargs))
-        return {}
-
-    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
 
     rc = main(
         [
@@ -2385,7 +1467,6 @@ def test_main_no_fulltext_flag_skips_fetch(
             str(_stub_corpus),
             "--baseline-cache",
             str(baseline_path),
-            "--no-fulltext",
             "--no-mesh",
             "--json",
             "--output",
@@ -2393,163 +1474,12 @@ def test_main_no_fulltext_flag_skips_fetch(
         ]
     )
     assert rc == 0
-    assert calls == []
 
 
-def test_main_default_invokes_fulltext_fetch(
+def test_main_missing_baseline_fails(
     _stub_corpus: Path,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
-    fulltext_cache = tmp_path / "ft"
-
-    received_pmids: list[list[str]] = []
-
-    def spy(pmids, cache_dir, **_kwargs):  # noqa: ANN001, ANN003
-        received_pmids.append(list(pmids))
-        return {
-            "12345": FulltextRecord(
-                pmid="12345",
-                pmcid="PMC1",
-                introduction="intro text",
-                methods="methods text",
-                results="results text",
-                discussion="discussion text",
-            )
-        }
-
-    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
-
-    rc = main(
-        [
-            "--xml-dir",
-            str(_stub_corpus),
-            "--baseline-cache",
-            str(baseline_path),
-            "--fulltext-cache",
-            str(fulltext_cache),
-            "--no-mesh",
-            "--json",
-            "--output",
-            str(tmp_path / "out.json"),
-        ]
-    )
-    assert rc == 0
-    assert received_pmids == [["12345"]]
-
-
-def test_main_xml_extra_filename_pmid_fallback_routes_to_fetches(
-    _stub_corpus: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A MODS file lacking an inner PubMed identifier but named by PMID
-    still reaches fetch_fulltext_batch — closing the loop on the user's
-    real xml_extra scenario (BibTeX-converted MODS, PMID only in filename)."""
-    baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
-    fulltext_cache = tmp_path / "ft"
-
-    extra_dir = tmp_path / "xml_extra"
-    extra_dir.mkdir()
-    _write_mods(extra_dir / "23867200.xml", pmid=None, title="Filename-fallback paper")
-
-    received_pmids: list[list[str]] = []
-
-    def spy(pmids, cache_dir, **_kwargs):  # noqa: ANN001, ANN003
-        received_pmids.append(list(pmids))
-        return {}
-
-    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
-
-    rc = main(
-        [
-            "--xml-dir",
-            str(_stub_corpus),
-            "--xml-extra-dir",
-            str(extra_dir),
-            "--baseline-cache",
-            str(baseline_path),
-            "--fulltext-cache",
-            str(fulltext_cache),
-            "--no-mesh",
-            "--json",
-            "--output",
-            str(tmp_path / "out.json"),
-        ]
-    )
-
-    assert rc == 0
-    assert len(received_pmids) == 1
-    assert "23867200" in received_pmids[0]
-
-
-def test_main_xml_extra_dir_contributes_to_corpus(
-    _stub_corpus: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Explicit --xml-extra-dir adds its PMIDs to the run, alongside --xml-dir."""
-    baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
-    fulltext_cache = tmp_path / "ft"
-
-    extra_dir = tmp_path / "xml_extra"
-    extra_dir.mkdir()
-    _write_mods(
-        extra_dir / "extra.xml",
-        pmid="67890",
-        title="Extra title",
-        abstract="Extra abstract.",
-    )
-
-    received_pmids: list[list[str]] = []
-
-    def spy(pmids, cache_dir, **_kwargs):  # noqa: ANN001, ANN003
-        received_pmids.append(list(pmids))
-        return {}
-
-    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
-
-    out_path = tmp_path / "out.json"
-    rc = main(
-        [
-            "--xml-dir",
-            str(_stub_corpus),
-            "--xml-extra-dir",
-            str(extra_dir),
-            "--baseline-cache",
-            str(baseline_path),
-            "--fulltext-cache",
-            str(fulltext_cache),
-            "--no-mesh",
-            "--json",
-            "--output",
-            str(out_path),
-        ]
-    )
-
-    assert rc == 0
-    assert len(received_pmids) == 1
-    assert set(received_pmids[0]) == {"12345", "67890"}
-    assert json.loads(out_path.read_text(encoding="utf-8"))["papers"] == 2
-
-
-def test_main_missing_baseline_fails_before_fulltext_fetch(
-    _stub_corpus: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[tuple, dict]] = []
-
-    def spy(*args, **kwargs):  # noqa: ANN002, ANN003
-        calls.append((args, kwargs))
-        return {}
-
-    monkeypatch.setattr("scripts.distill_pubmed_keywords.fetch_fulltext_batch", spy)
-
     rc = main(
         [
             "--xml-dir",
@@ -2564,36 +1494,6 @@ def test_main_missing_baseline_fails_before_fulltext_fetch(
     )
 
     assert rc == 1
-    assert calls == []
-
-
-def test_main_fulltext_cache_oserror_degrades_to_title_abstract(
-    _stub_corpus: Path,
-    tmp_path: Path,
-) -> None:
-    baseline_path = tmp_path / "baseline.json.gz"
-    _write_minimal_baseline(baseline_path)
-    fulltext_cache_file = tmp_path / "fulltext-cache-is-file"
-    fulltext_cache_file.write_text("not a directory", encoding="utf-8")
-    out_path = tmp_path / "out.json"
-
-    rc = main(
-        [
-            "--xml-dir",
-            str(_stub_corpus),
-            "--baseline-cache",
-            str(baseline_path),
-            "--fulltext-cache",
-            str(fulltext_cache_file),
-            "--no-mesh",
-            "--json",
-            "--output",
-            str(out_path),
-        ]
-    )
-
-    assert rc == 0
-    assert json.loads(out_path.read_text(encoding="utf-8"))["papers"] == 1
 
 
 def test_main_mesh_cache_oserror_degrades_to_no_mesh(
@@ -2606,10 +1506,6 @@ def test_main_mesh_cache_oserror_degrades_to_no_mesh(
     mesh_cache_file = tmp_path / "mesh-cache-is-file"
     mesh_cache_file.write_text("not a directory", encoding="utf-8")
     out_path = tmp_path / "out.json"
-
-    monkeypatch.setattr(
-        "scripts.distill_pubmed_keywords.fetch_fulltext_batch", lambda *a, **k: {}
-    )
 
     rc = main(
         [
@@ -2954,56 +1850,6 @@ def test_fetch_mesh_terms_progress_completes_on_omitted_pmid(tmp_path: Path) -> 
     assert calls[-1] == (1, 1)
 
 
-def test_fetch_fulltext_batch_invokes_progress_callback(tmp_path: Path) -> None:
-    """fetch_fulltext_batch should fire the callback once per PMID
-    iteration plus once for the cache-hit pre-pass."""
-    jats_bytes = (_FIXTURES / "jats_sample.xml").read_bytes()
-
-    def stub_elink(batch: list[str]) -> dict[str, str | None]:
-        # First PMID resolves to a PMC mirror; second has no mirror;
-        # third missing from response — exercise all three code paths.
-        return {"15905468": "PMC1234567", "23649698": None}
-
-    def stub_efetch(_pmcid: str) -> bytes | None:
-        return jats_bytes
-
-    calls: list[tuple[int, int]] = []
-    fetch_fulltext_batch(
-        ["15905468", "23649698", "99999999"],
-        tmp_path,
-        fetcher_elink=stub_elink,
-        fetcher_efetch=stub_efetch,
-        progress_callback=lambda c, t: calls.append((c, t)),
-    )
-
-    # Pre-pass: nothing cached yet, so the cache-hit count is 0.
-    assert calls[0] == (0, 3)
-    # Final completion must equal total — the try/finally ensures the
-    # callback ticks even when the PMID is dropped from elink.
-    assert calls[-1] == (3, 3)
-    assert all(calls[i][0] <= calls[i + 1][0] for i in range(len(calls) - 1))
-    assert {t for _, t in calls} == {3}
-
-
-def test_fetch_fulltext_batch_progress_completes_on_elink_error(
-    tmp_path: Path,
-) -> None:
-    def broken_elink(_batch: list[str]) -> dict[str, str | None]:
-        raise RuntimeError("simulated NCBI failure")
-
-    calls: list[tuple[int, int]] = []
-    out = fetch_fulltext_batch(
-        ["111", "222"],
-        tmp_path,
-        fetcher_elink=broken_elink,
-        fetcher_efetch=lambda _pmcid: None,
-        progress_callback=lambda c, t: calls.append((c, t)),
-    )
-
-    assert out == {}
-    assert calls[-1] == (2, 2)
-
-
 def test_load_corpus_invokes_progress_callback_monotonically(
     tmp_path: Path,
 ) -> None:
@@ -3029,7 +1875,7 @@ def test_load_corpus_invokes_progress_callback_monotonically(
         )
 
     calls: list[tuple[int, int]] = []
-    papers = load_corpus([xml_dir], progress_callback=lambda c, t: calls.append((c, t)))
+    papers = load_corpus(xml_dir, progress_callback=lambda c, t: calls.append((c, t)))
 
     assert [c[0] for c in calls] == [1, 2, 3]
     assert all(t == 3 for _, t in calls)
@@ -3037,30 +1883,11 @@ def test_load_corpus_invokes_progress_callback_monotonically(
     assert len(papers) == 2
 
 
-def test_load_corpus_merges_multiple_dirs(tmp_path: Path) -> None:
-    """Files from the supplementary dir reach the corpus alongside the primary."""
-    primary = tmp_path / "xml"
-    extra = tmp_path / "xml_extra"
-    primary.mkdir()
-    extra.mkdir()
-
-    _write_mods(primary / "1.xml", pmid="1001", title="Primary paper")
-    _write_mods(extra / "2.xml", pmid="2002", title="Extra paper")
-
-    papers = load_corpus([primary, extra])
-
-    pmids = {p.pmid for p in papers}
-    assert pmids == {"1001", "2002"}
-
-
-def test_load_corpus_raises_when_any_dir_missing(tmp_path: Path) -> None:
-    """All dirs in the iterable must exist — the function raises on the first miss."""
-    primary = tmp_path / "xml"
-    primary.mkdir()
+def test_load_corpus_raises_when_dir_missing(tmp_path: Path) -> None:
     missing = tmp_path / "absent"
 
     with pytest.raises(FileNotFoundError, match=str(missing)):
-        load_corpus([primary, missing])
+        load_corpus(missing)
 
 
 # ---------------------------------------------------------------------------
@@ -3082,7 +1909,6 @@ def test_output_file_contains_no_ansi_escapes(
             str(_stub_corpus),
             "--baseline-cache",
             str(baseline_path),
-            "--no-fulltext",
             "--no-mesh",
             "--output",
             str(out_path),
@@ -3107,7 +1933,6 @@ def test_no_mesh_default_query_output_is_titleabstract_only(
             str(_stub_corpus),
             "--baseline-cache",
             str(baseline_path),
-            "--no-fulltext",
             "--no-mesh",
             "--min-df",
             "1",
@@ -3139,7 +1964,6 @@ def test_json_output_file_contains_no_ansi_escapes(
             str(_stub_corpus),
             "--baseline-cache",
             str(baseline_path),
-            "--no-fulltext",
             "--no-mesh",
             "--json",
             "--output",
