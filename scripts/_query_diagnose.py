@@ -51,8 +51,12 @@ _PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 DEFAULT_DIAGNOSE_CACHE_DIR: Final[Path] = (
     _PROJECT_ROOT / "data" / "bibentry" / "_diagnose_cache"
 )
-DEFAULT_ESEARCH_RETMAX: Final[int] = 10000
 DEFAULT_EFETCH_BATCH: Final[int] = 50
+# PubMed esearch returns at most 9,999 records per call — a hard NCBI
+# cap. ``retstart > 9998`` is rejected, so pagination cannot bypass it
+# (NCBI's docs point larger result sets to the EDirect CLI).
+# https://www.ncbi.nlm.nih.gov/books/NBK25499/
+PUBMED_ESEARCH_HARD_CAP: Final[int] = 9999
 
 _QUOTED_TERM_RE: Final[re.Pattern[str]] = re.compile(r'"([^"]+)"')
 
@@ -206,7 +210,7 @@ def _cache_key(*parts: str) -> str:
 def esearch_pmids(
     query: str,
     *,
-    retmax: int = DEFAULT_ESEARCH_RETMAX,
+    retmax: int = PUBMED_ESEARCH_HARD_CAP,
     mindate: str | None = None,
     maxdate: str | None = None,
     cache_dir: Path | None = None,
@@ -225,6 +229,16 @@ def esearch_pmids(
     ``retmax``, the returned ``EsearchResult.truncated`` is True and
     overlap percentages computed against this list are unreliable.
     """
+    # Clamp before the cache lookup so retmax=15000 and retmax=100000
+    # share a single cache entry (both fetch the same 9,999 PMIDs).
+    if retmax > PUBMED_ESEARCH_HARD_CAP:
+        logger.warning(
+            f"PubMed esearch caps results at {PUBMED_ESEARCH_HARD_CAP} per "
+            f"search; clamping requested retmax={retmax}. Narrow "
+            "--diagnose-since to get full coverage of broader queries."
+        )
+        retmax = PUBMED_ESEARCH_HARD_CAP
+
     cache_dir = cache_dir or DEFAULT_DIAGNOSE_CACHE_DIR
     key = _cache_key(
         "esearch", query, str(retmax), mindate or "", maxdate or ""
@@ -598,12 +612,13 @@ def render_diagnose_report(
                 f"| {label} | {len(qres.pmids)} | {qres.total_count} | {flag} |\n"
             )
         lines.append(
-            "\n> ⚠️ **One or more queries hit `retmax`** — overlap "
-            "percentages below are computed against the truncated PMID "
-            "lists and are **not reliable** as global recall estimates. "
-            "Re-run with a tighter `--diagnose-since` window or raise "
-            "`DEFAULT_ESEARCH_RETMAX` in `scripts/_query_diagnose.py` to "
-            "get an accurate comparison.\n\n"
+            "\n> ⚠️ **One or more queries hit PubMed's 9,999-record "
+            "cap** — overlap percentages below are computed against "
+            "truncated PMID lists and are **not reliable** as global "
+            "recall estimates. PubMed's esearch hard-limits results at "
+            "9,999, so the fix is to narrow `--diagnose-since` to a "
+            "window where both queries return ≤ 9,999, then compare "
+            "those slices.\n\n"
         )
     else:
         lines.append("| Query | Total PMIDs |\n|---|---|\n")
@@ -706,6 +721,7 @@ def run_diagnose(
     production_label: str = "SVD_QUERY",
     diagnose_since: str | None = None,
     diagnose_until: str | None = None,
+    retmax: int | None = None,
     top_k: int = 15,
     structural_issues: list[str] | None = None,
     cache_dir: Path | None = None,
@@ -714,11 +730,14 @@ def run_diagnose(
 ) -> str:
     """End-to-end diagnostic: esearch both queries, sample diffs, render report.
 
-    Pass ``esearch_fetcher`` / ``efetch_fetcher`` to inject test doubles —
+    ``retmax=None`` uses ``PUBMED_ESEARCH_HARD_CAP``. Pass
+    ``esearch_fetcher`` / ``efetch_fetcher`` to inject test doubles —
     the default fetchers hit NCBI via ``Bio.Entrez``.
     """
+    effective_retmax = retmax if retmax is not None else PUBMED_ESEARCH_HARD_CAP
     distilled_result = esearch_pmids(
         distilled_query,
+        retmax=effective_retmax,
         mindate=diagnose_since,
         maxdate=diagnose_until,
         cache_dir=cache_dir,
@@ -726,6 +745,7 @@ def run_diagnose(
     )
     production_result = esearch_pmids(
         production_query,
+        retmax=effective_retmax,
         mindate=diagnose_since,
         maxdate=diagnose_until,
         cache_dir=cache_dir,

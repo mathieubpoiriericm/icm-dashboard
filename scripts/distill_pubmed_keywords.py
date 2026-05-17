@@ -2521,6 +2521,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--diagnose-until",
+        type=str,
+        default=None,
+        metavar="YYYY/MM/DD",
+        help=(
+            "Latest publication date for --diagnose comparison (default: "
+            "no upper bound). Combine with --diagnose-since to slice a "
+            "narrow window when broad queries hit PubMed's 9,999-record "
+            "cap."
+        ),
+    )
+    parser.add_argument(
         "--diagnose-top-k",
         type=_non_negative_int,
         default=15,
@@ -2528,6 +2540,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Number of papers from each side of the overlap to show in "
             "the --diagnose report (default: 15)."
+        ),
+    )
+    parser.add_argument(
+        "--diagnose-retmax",
+        type=_non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "Maximum PMIDs to fetch per --diagnose esearch call (default "
+            "and max: 9999 — PubMed's hard cap, larger values are clamped). "
+            "Lower for fast sanity checks; to get past the cap on broad "
+            "queries, narrow --diagnose-since instead."
         ),
     )
     return parser.parse_args(argv)
@@ -2608,6 +2632,8 @@ def _run_diagnose(args: argparse.Namespace, result: DistillationResult) -> int:
             distilled_label=f"distilled ({variant})",
             production_label="SVD_QUERY",
             diagnose_since=diagnose_since,
+            diagnose_until=args.diagnose_until,
+            retmax=args.diagnose_retmax,
             top_k=args.diagnose_top_k,
             structural_issues=structural_issues,
         )

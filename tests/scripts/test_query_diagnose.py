@@ -7,6 +7,7 @@ Network-touching paths are exercised via the ``fetcher`` injection points on
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -295,6 +296,24 @@ class TestEsearchPmids:
         result = esearch_pmids("q", cache_dir=tmp_path, fetcher=fake_fetcher)
         assert result.total_count == 2
         assert not result.truncated
+
+    def test_retmax_clamped_to_pubmed_cap(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # PubMed esearch rejects retmax > 9999. We clamp + warn rather
+        # than letting NCBI reject the call.
+        captured: dict = {}
+
+        def fake_fetcher(**kwargs: object) -> dict:
+            captured.update(kwargs)
+            return {"IdList": ["1", "2"], "Count": "2"}
+
+        with caplog.at_level(logging.WARNING):
+            esearch_pmids(
+                "q", retmax=100000, cache_dir=tmp_path, fetcher=fake_fetcher
+            )
+        assert captured["retmax"] == "9999"
+        assert any("clamping" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
