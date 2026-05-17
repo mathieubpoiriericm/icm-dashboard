@@ -2161,8 +2161,7 @@ def test_main_validate_writes_markdown_and_json(
             recall_floor=RecallFloor(retrieved=1, total_gold=1, missing=[]),
         )
         return ValidationReport(
-            distilled=qv,
-            production=qv,
+            query=qv,
             relevant_mesh_set=["Stroke"],
             gold_pmids=["1"],
             sample_size=10,
@@ -2204,9 +2203,9 @@ def test_main_validate_writes_markdown_and_json(
     assert captured["sample_size"] == 10
     assert captured["validate_since"] == "2024/01/01"
     assert captured["use_llm_fallback"] is False
-    assert captured["production_label"] == "SVD_QUERY"
     # The distilled query is non-empty.
-    assert captured["distilled_query"]
+    assert captured["query"]
+    assert captured["label"].startswith("distilled")
     # The markdown report and JSON sidecar both landed in the output dir.
     md_files = list(validate_dir.glob("*.md"))
     json_files = list(validate_dir.glob("*.json"))

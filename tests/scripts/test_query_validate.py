@@ -535,7 +535,7 @@ def _qv(
 
 
 def _report() -> ValidationReport:
-    distilled = _qv(
+    qv = _qv(
         label="distilled",
         pmids=["1", "2", "3"],
         scores=[
@@ -545,18 +545,8 @@ def _report() -> ValidationReport:
         ],
         recall=RecallFloor(retrieved=2, total_gold=3, missing=["999"]),
     )
-    production = _qv(
-        label="SVD_QUERY",
-        pmids=["1", "4"],
-        scores=[
-            RelevanceScore("1", True, "mesh", 1.0, "MeSH match: Stroke", "Stroke"),
-            RelevanceScore("4", True, "mesh", 1.0, "MeSH match: CADASIL", "CADASIL"),
-        ],
-        recall=RecallFloor(retrieved=3, total_gold=3, missing=[]),
-    )
     return ValidationReport(
-        distilled=distilled,
-        production=production,
+        query=qv,
         relevant_mesh_set=["CADASIL", "Stroke"],
         gold_pmids=["1", "2", "999"],
         sample_size=200,
@@ -571,26 +561,23 @@ class TestRenderValidateReport:
     def test_all_sections_present(self) -> None:
         out = render_validate_report(_report())
         assert "PubMed query relevance validation" in out
-        assert "## Queries" in out
+        assert "## Query — distilled" in out
         assert "## Precision" in out
         assert "## Recall floor" in out
         assert "## Score sources" in out
         assert "## Retrieved totals" in out
         assert "## Relevant-MeSH set" in out
-        assert "## Sample papers — distilled" in out
-        assert "## Sample papers — SVD_QUERY" in out
+        assert "## Sample papers" in out
         assert "## Interpretation" in out
 
     def test_precision_rendered(self) -> None:
         out = render_validate_report(_report())
-        # distilled: 2 relevant / 3 scoreable → 66.7%
+        # 2 relevant / 3 scoreable → 66.7%
         assert "66.7%" in out
-        # SVD_QUERY: 2 relevant / 2 scoreable → 100.0%
-        assert "100.0%" in out
 
     def test_missing_pmids_shown(self) -> None:
         out = render_validate_report(_report())
-        assert "999" in out  # missing from distilled
+        assert "999" in out
 
     def test_relevant_mesh_set_listed(self) -> None:
         out = render_validate_report(_report())
@@ -663,12 +650,11 @@ class TestEmitValidateJson:
         assert payload["seed"] == 0
         assert payload["llm_model"] == "claude-haiku-4-5-20251001"
         assert payload["relevant_mesh_set"] == ["CADASIL", "Stroke"]
-        assert payload["queries"]["distilled"]["precision"] == pytest.approx(2 / 3)
-        assert payload["queries"]["production"]["precision"] == 1.0
-        # Scores serialized
-        assert len(payload["queries"]["distilled"]["scores"]) == 3
-        assert payload["queries"]["distilled"]["scores"][0]["pmid"] == "1"
-        assert payload["queries"]["distilled"]["scores"][0]["matched_mesh"] == "Stroke"
+        assert payload["query"]["precision"] == pytest.approx(2 / 3)
+        assert payload["query"]["label"] == "distilled"
+        assert len(payload["query"]["scores"]) == 3
+        assert payload["query"]["scores"][0]["pmid"] == "1"
+        assert payload["query"]["scores"][0]["matched_mesh"] == "Stroke"
 
 
 # ---------------------------------------------------------------------------
@@ -695,17 +681,14 @@ class TestRunValidate:
         xml_dir = self._setup_xml_dir(tmp_path)
         cache_dir = tmp_path / "cache"
 
-        def fake_esearch(**kwargs: Any) -> dict[str, Any]:
-            term = str(kwargs.get("term", ""))
-            if "distilled" in term:
-                return {"IdList": ["11111", "22222"], "Count": "2"}
+        def fake_esearch(**_kwargs: Any) -> dict[str, Any]:
+            # Mix of MeSH-indexed (11111) and unindexed (33333) papers
+            # so both scoring paths run.
             return {"IdList": ["11111", "33333"], "Count": "2"}
 
         def fake_efetch(batch: list[str]) -> bytes:
             return _RELEVANCE_XML
 
-        # Inject a deterministic LLM scorer so PMID 33333 (no MeSH)
-        # gets a verdict without touching the Anthropic SDK.
         def fake_llm(record: PaperRecord) -> LlmVerdict | None:
             return LlmVerdict(
                 relevant="cSVD" in record.abstract or "lacunar" in record.abstract,
@@ -714,8 +697,7 @@ class TestRunValidate:
             )
 
         report = run_validate(
-            distilled_query="distilled query",
-            production_query="production query",
+            query="distilled query",
             sample_size=10,
             mesh_threshold=3,
             mesh_dir=mesh_dir,
@@ -726,29 +708,17 @@ class TestRunValidate:
             llm_scorer=fake_llm,
         )
 
-        # Both queries got scored.
-        assert len(report.distilled.scores) == 2
-        assert len(report.production.scores) == 2
+        assert len(report.query.scores) == 2
 
-        # The Stroke-tagged sample papers (11111 has CADASIL via MeSH;
-        # 22222 has Hypertension only — no relevant MeSH) should be
-        # scored via the mesh path.
-        distilled_sources = {s.source for s in report.distilled.scores}
-        assert "mesh" in distilled_sources
+        sources = [(s.pmid, s.source) for s in report.query.scores]
+        # PMID 11111 has CADASIL MeSH → MeSH path
+        assert ("11111", "mesh") in sources
+        # PMID 33333 has no MeSH → LLM fallback
+        assert ("33333", "llm") in sources
 
-        # PMID 33333 has no MeSH → LLM fallback.
-        production_sources = [(s.pmid, s.source) for s in report.production.scores]
-        assert ("33333", "llm") in production_sources
+        assert report.query.recall_floor.total_gold == 1
+        assert report.query.recall_floor.recall == 1.0
 
-        # Recall floor uses the no-date esearch result; bibliography
-        # gold has just 11111.
-        assert report.distilled.recall_floor.total_gold == 1
-        assert report.production.recall_floor.total_gold == 1
-        # Both queries retrieve PMID 11111, so recall is 1.0
-        assert report.distilled.recall_floor.recall == 1.0
-        assert report.production.recall_floor.recall == 1.0
-
-        # Relevant-MeSH set includes the empirical "Stroke" + the floor.
         assert "Stroke" in report.relevant_mesh_set
         assert "CADASIL" in report.relevant_mesh_set
 
@@ -763,8 +733,7 @@ class TestRunValidate:
             return _RELEVANCE_XML
 
         report = run_validate(
-            distilled_query="dq",
-            production_query="pq",
+            query="dq",
             sample_size=5,
             mesh_threshold=3,
             mesh_dir=mesh_dir,

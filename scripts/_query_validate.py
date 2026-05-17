@@ -1,8 +1,6 @@
 """PubMed query relevance validation — empirical MeSH + LLM hybrid scoring.
 
-Sister module to ``scripts/_query_diagnose.py``. Where ``_query_diagnose``
-treats ``SVD_QUERY`` as the gold standard and reports PMID overlap, this
-module measures the **absolute cSVD-relevance** of each retrieved paper
+Measures the **absolute cSVD-relevance** of each paper a query retrieves,
 using a two-tier scorer:
 
 1. **NLM MeSH headings** (free, deterministic). A paper is relevant if
@@ -15,11 +13,9 @@ using a two-tier scorer:
    title + abstract against a binary relevance prompt. Per-PMID disk
    cache so re-runs are free.
 
-Both the distilled query and ``SVD_QUERY`` are scored on the same
-sample size and reported side-by-side. A second esearch run without
-date restriction is used to compute a recall floor against the
-bibliography PMIDs (sanity check: did the query retrieve known cSVD
-papers?).
+A second esearch run without date restriction computes a recall floor
+against the bibliography PMIDs (sanity check: did the query retrieve
+known cSVD papers?).
 
 Network and LLM paths are injectable via the ``esearch_fetcher``,
 ``efetch_fetcher``, and ``llm_scorer`` arguments on ``run_validate`` so
@@ -242,10 +238,9 @@ class QueryValidation:
 
 @dataclass(slots=True)
 class ValidationReport:
-    """Side-by-side validation of distilled vs. production queries."""
+    """Validation of one PubMed query for cSVD relevance."""
 
-    distilled: QueryValidation
-    production: QueryValidation
+    query: QueryValidation
     relevant_mesh_set: list[str]
     gold_pmids: list[str]
     sample_size: int
@@ -836,15 +831,6 @@ def _format_pct(value: float | None) -> str:
     return f"{value * 100:.1f}%"
 
 
-def _format_precision_row(qv: QueryValidation) -> str:
-    if qv.precision is None:
-        return f"| {qv.label} | {qv.scoreable_sample}/{len(qv.scores)} | n/a |"
-    return (
-        f"| {qv.label} | {qv.relevant_count}/{qv.scoreable_sample} | "
-        f"{_format_pct(qv.precision)} |"
-    )
-
-
 def _format_sample_paper_row(score: RelevanceScore) -> str:
     verdict = "✓" if score.relevant else "✗"
     reason = score.reason.replace("|", "\\|")[:140]
@@ -855,7 +841,8 @@ def _format_sample_paper_row(score: RelevanceScore) -> str:
 
 
 def render_validate_report(report: ValidationReport) -> str:
-    """Render the side-by-side Markdown validation report."""
+    """Render the Markdown validation report for the distilled query."""
+    qv = report.query
     lines: list[str] = []
     lines.append(f"# PubMed query relevance validation — {report.timestamp}\n\n")
 
@@ -863,56 +850,51 @@ def render_validate_report(report: ValidationReport) -> str:
     window_b = report.validate_until or "(any)"
     lines.append(
         f"**Sampling window (pdat):** {window_a} → {window_b}. "
-        f"**Sample size:** {report.sample_size} PMIDs per query "
+        f"**Sample size:** {report.sample_size} PMIDs "
         f"(seed={report.seed}). **LLM fallback:** {report.llm_model}.\n\n"
     )
 
-    lines.append("## Queries\n\n")
-    lines.append(f"### A — {report.distilled.label}\n\n")
-    lines.append("```\n" + report.distilled.query + "\n```\n\n")
-    lines.append(f"### B — {report.production.label}\n\n")
-    lines.append("```\n" + report.production.query + "\n```\n\n")
+    lines.append(f"## Query — {qv.label}\n\n")
+    lines.append("```\n" + qv.query + "\n```\n\n")
 
     lines.append("## Precision\n\n")
-    lines.append("| Query | Relevant / Scoreable | Precision |\n")
-    lines.append("|---|---|---|\n")
-    lines.append(_format_precision_row(report.distilled) + "\n")
-    lines.append(_format_precision_row(report.production) + "\n\n")
+    lines.append("| Relevant / Scoreable | Precision |\n")
+    lines.append("|---|---|\n")
+    if qv.precision is None:
+        lines.append(f"| {qv.scoreable_sample}/{len(qv.scores)} | n/a |\n\n")
+    else:
+        lines.append(
+            f"| {qv.relevant_count}/{qv.scoreable_sample} | "
+            f"{_format_pct(qv.precision)} |\n\n"
+        )
 
+    rf = qv.recall_floor
+    missing_preview = ", ".join(rf.missing[:5])
+    if len(rf.missing) > 5:
+        missing_preview += f", … (+{len(rf.missing) - 5} more)"
+    if not missing_preview:
+        missing_preview = "_(none)_"
     lines.append("## Recall floor (bibliography PMIDs retrieved)\n\n")
-    lines.append("| Query | Retrieved / Gold | Recall | Missing |\n")
-    lines.append("|---|---|---|---|\n")
-    for qv in (report.distilled, report.production):
-        rf = qv.recall_floor
-        missing_preview = ", ".join(rf.missing[:5])
-        if len(rf.missing) > 5:
-            missing_preview += f", … (+{len(rf.missing) - 5} more)"
-        if not missing_preview:
-            missing_preview = "_(none)_"
-        lines.append(
-            f"| {qv.label} | {rf.retrieved}/{rf.total_gold} | "
-            f"{_format_pct(rf.recall)} | {missing_preview} |\n"
-        )
-    lines.append("\n")
-
-    lines.append("## Score sources (where each verdict came from)\n\n")
-    lines.append("| Query | MeSH-scored | LLM-scored | Unscoreable | Total |\n")
-    lines.append("|---|---|---|---|---|\n")
-    for qv in (report.distilled, report.production):
-        c = qv.source_counts()
-        lines.append(
-            f"| {qv.label} | {c['mesh']} | {c['llm']} | {c['unscoreable']} | "
-            f"{len(qv.scores)} |\n"
-        )
-    lines.append("\n")
-
-    lines.append("## Retrieved totals\n\n")
-    lines.append("| Query | Total PMIDs (in window) | Truncated? |\n")
+    lines.append("| Retrieved / Gold | Recall | Missing |\n")
     lines.append("|---|---|---|\n")
-    for qv in (report.distilled, report.production):
-        flag = "⚠️ retmax cap hit" if qv.truncated else "no"
-        lines.append(f"| {qv.label} | {qv.total_pmids} | {flag} |\n")
-    lines.append("\n")
+    lines.append(
+        f"| {rf.retrieved}/{rf.total_gold} | "
+        f"{_format_pct(rf.recall)} | {missing_preview} |\n\n"
+    )
+
+    c = qv.source_counts()
+    lines.append("## Score sources (where each verdict came from)\n\n")
+    lines.append("| MeSH-scored | LLM-scored | Unscoreable | Total |\n")
+    lines.append("|---|---|---|---|\n")
+    lines.append(
+        f"| {c['mesh']} | {c['llm']} | {c['unscoreable']} | {len(qv.scores)} |\n\n"
+    )
+
+    flag = "⚠️ retmax cap hit" if qv.truncated else "no"
+    lines.append("## Retrieved totals\n\n")
+    lines.append("| Total PMIDs (in window) | Truncated? |\n")
+    lines.append("|---|---|\n")
+    lines.append(f"| {qv.total_pmids} | {flag} |\n\n")
 
     lines.append(
         f"## Relevant-MeSH set used ({len(report.relevant_mesh_set)} terms)\n\n"
@@ -926,11 +908,10 @@ def render_validate_report(report: ValidationReport) -> str:
         lines.append(f"- {term}\n")
     lines.append("\n")
 
-    for qv in (report.distilled, report.production):
-        lines.append(f"## Sample papers — {qv.label}\n\n")
-        if not qv.scores:
-            lines.append("_(no sample papers — query returned 0 results)_\n\n")
-            continue
+    lines.append("## Sample papers\n\n")
+    if not qv.scores:
+        lines.append("_(no sample papers — query returned 0 results)_\n\n")
+    else:
         lines.append(
             "| PMID | Relevant? | Source | Confidence | Reason |\n"
             "|---|---|---|---|---|\n"
@@ -945,49 +926,39 @@ def render_validate_report(report: ValidationReport) -> str:
 
 
 def _validate_interpretation_guide(report: ValidationReport) -> str:
-    d = report.distilled
-    p = report.production
+    qv = report.query
     notes: list[str] = []
-    if d.precision is None or p.precision is None:
+    if qv.precision is None:
         notes.append(
-            "- One or both queries had no scoreable sample (no MeSH and "
-            "no LLM verdict). Precision is undefined for those rows."
-        )
-    elif d.precision >= p.precision:
-        notes.append(
-            f"- The distilled query is **at least as precise as** "
-            f"`{p.label}` on this sample "
-            f"({_format_pct(d.precision)} vs {_format_pct(p.precision)})."
+            "- No scoreable sample (no MeSH coverage and no LLM verdict). "
+            "Set `ANTHROPIC_API_KEY` to enable the LLM fallback, or pick a "
+            "validation window with better MeSH coverage."
         )
     else:
         notes.append(
-            f"- The distilled query is **less precise** than `{p.label}` "
-            f"on this sample "
-            f"({_format_pct(d.precision)} vs {_format_pct(p.precision)}). "
-            "Consider narrowing the Title/Abstract clause, enabling "
-            "`--dedupe-substrings`, or tightening the anchor phrase."
+            f"- Sampled {qv.scoreable_sample} papers; {qv.relevant_count} "
+            f"judged cSVD-relevant → precision {_format_pct(qv.precision)}."
         )
-    if d.recall_floor.total_gold > 0:
-        if d.recall_floor.recall < 1.0:
+    if qv.recall_floor.total_gold > 0:
+        if qv.recall_floor.recall < 1.0:
+            missed = qv.recall_floor.total_gold - qv.recall_floor.retrieved
             notes.append(
-                f"- The distilled query misses "
-                f"{d.recall_floor.total_gold - d.recall_floor.retrieved} "
-                f"of the {d.recall_floor.total_gold} bibliography papers. "
-                "Inspect the Missing column above; the distilled query "
-                "should retrieve its own seed corpus when run without "
-                "date restriction."
+                f"- Query misses {missed} of the {qv.recall_floor.total_gold} "
+                f"bibliography papers ({_format_pct(qv.recall_floor.recall)} "
+                f"recall). Inspect the Missing column — a data-driven query "
+                f"should retrieve its own seed corpus when run without date "
+                f"restriction."
             )
         else:
             notes.append(
-                "- The distilled query retrieves every bibliography "
-                "paper — recall-floor sanity check passes."
+                "- Query retrieves every bibliography paper — recall-floor "
+                "sanity check passes."
             )
-    if d.scoreable_sample < len(d.scores) * 0.5:
+    if qv.scores and qv.scoreable_sample < len(qv.scores) * 0.5:
         notes.append(
-            "- More than half of the distilled-query sample was "
-            "unscoreable. Either set `ANTHROPIC_API_KEY` or pick a "
-            "validation window with better MeSH coverage "
-            "(e.g. `--validate-since` two or more years ago)."
+            "- More than half of the sample was unscoreable. Either set "
+            "`ANTHROPIC_API_KEY` or pick a validation window with better "
+            "MeSH coverage (e.g. `--validate-since` two or more years ago)."
         )
     body = "\n".join(notes) if notes else "- (no automated notes)"
     return "\n## Interpretation\n\n" + body + "\n"
@@ -1004,10 +975,7 @@ def emit_validate_json(report: ValidationReport, path: Path) -> None:
         "llm_model": report.llm_model,
         "relevant_mesh_set": sorted(report.relevant_mesh_set),
         "gold_pmids": list(report.gold_pmids),
-        "queries": {
-            "distilled": _query_validation_to_dict(report.distilled),
-            "production": _query_validation_to_dict(report.production),
-        },
+        "query": _query_validation_to_dict(report.query),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(path, payload)
@@ -1123,10 +1091,8 @@ def _validate_one_query(
 
 def run_validate(
     *,
-    distilled_query: str,
-    production_query: str,
-    distilled_label: str = "distilled",
-    production_label: str = "SVD_QUERY",
+    query: str,
+    label: str = "distilled",
     sample_size: int = DEFAULT_VALIDATE_SAMPLE,
     seed: int = DEFAULT_VALIDATE_SEED,
     validate_since: str | None = None,
@@ -1158,23 +1124,9 @@ def run_validate(
         scorer = LlmRelevanceScorer(model=llm_model, cache_dir=cache_dir)
         effective_scorer = scorer.score
 
-    distilled = _validate_one_query(
-        label=distilled_label,
-        query=distilled_query,
-        sample_size=sample_size,
-        seed=seed,
-        since=validate_since,
-        until=validate_until,
-        relevant_mesh_set=relevant_mesh_set,
-        gold_pmids=gold_pmids,
-        llm_scorer=effective_scorer,
-        cache_dir=cache_dir,
-        esearch_fetcher=esearch_fetcher,
-        efetch_fetcher=efetch_fetcher,
-    )
-    production = _validate_one_query(
-        label=production_label,
-        query=production_query,
+    qv = _validate_one_query(
+        label=label,
+        query=query,
         sample_size=sample_size,
         seed=seed,
         since=validate_since,
@@ -1188,8 +1140,7 @@ def run_validate(
     )
 
     return ValidationReport(
-        distilled=distilled,
-        production=production,
+        query=qv,
         relevant_mesh_set=sorted(relevant_mesh_set),
         gold_pmids=gold_pmids,
         sample_size=sample_size,

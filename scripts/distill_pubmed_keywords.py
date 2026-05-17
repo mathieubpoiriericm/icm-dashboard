@@ -2640,11 +2640,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--validate",
         action="store_true",
         help=(
-            "Score the distilled query AND pipeline.pubmed_search.SVD_QUERY "
-            "on absolute cSVD-relevance (empirical MeSH match + Claude LLM "
-            "fallback) and emit a side-by-side Markdown report plus a JSON "
-            "sidecar. Distinct from --diagnose, which only compares PMID "
-            "overlap."
+            "Score the distilled query for cSVD-relevance (empirical MeSH "
+            "match + Claude LLM fallback) and emit a Markdown report plus "
+            "a JSON sidecar."
         ),
     )
     parser.add_argument(
@@ -2773,19 +2771,7 @@ def _run_diagnose(args: argparse.Namespace, result: DistillationResult) -> int:
         return 1
     from scripts._query_diagnose import run_diagnose
 
-    if args.query_format == _QUERY_FORMAT_ALL:
-        # Prefer the hybrid variant when an anchor was supplied — that's
-        # the closest structural match to SVD_QUERY and the one the user
-        # most likely wants to validate. Fall back to the existing
-        # MeSH-aware picker when no anchor is set.
-        if result.query_variants.get(_QUERY_FORMAT_HYBRID):
-            variant = _QUERY_FORMAT_HYBRID
-        elif result.mesh_terms:
-            variant = _QUERY_FORMAT_STRUCTURED
-        else:
-            variant = _QUERY_FORMAT_TITLEABSTRACT
-    else:
-        variant = args.query_format
+    variant = _resolve_query_variant(args, result)
     distilled_query = result.query_variants.get(variant, "")
     if not distilled_query:
         logger.error(
@@ -2853,13 +2839,14 @@ def _resolve_validate_output_paths(
     return output_arg, output_arg.with_suffix(".json")
 
 
-def _resolve_validate_variant(
+def _resolve_query_variant(
     args: argparse.Namespace, result: DistillationResult
 ) -> str:
-    """Variant name to validate.
+    """Variant name to use when ``--query-format=all`` is in effect.
 
     Prefers hybrid (closest structurally to ``SVD_QUERY``) over structured
     over plain titleabstract; an explicit ``--query-format`` is honored.
+    Shared by ``_run_diagnose`` and ``_run_validate``.
     """
     if args.query_format != _QUERY_FORMAT_ALL:
         return args.query_format
@@ -2872,11 +2859,6 @@ def _resolve_validate_variant(
 
 def _run_validate(args: argparse.Namespace, result: DistillationResult) -> int:
     """Run the relevance validation and emit Markdown + JSON sidecar."""
-    try:
-        from pipeline.pubmed_search import SVD_QUERY
-    except ImportError as exc:
-        logger.error(f"Could not import SVD_QUERY for relevance validation: {exc}")
-        return 1
     from scripts._query_validate import (
         DEFAULT_LLM_MODEL,
         DEFAULT_VALIDATE_MESH_THRESHOLD,
@@ -2887,7 +2869,7 @@ def _run_validate(args: argparse.Namespace, result: DistillationResult) -> int:
         run_validate,
     )
 
-    variant_used = _resolve_validate_variant(args, result)
+    variant_used = _resolve_query_variant(args, result)
     distilled_query = result.query_variants.get(variant_used, "")
     if not distilled_query:
         logger.error(
@@ -2922,10 +2904,8 @@ def _run_validate(args: argparse.Namespace, result: DistillationResult) -> int:
 
     try:
         report = run_validate(
-            distilled_query=distilled_query,
-            production_query=SVD_QUERY,
-            distilled_label=f"distilled ({variant_used})",
-            production_label="SVD_QUERY",
+            query=distilled_query,
+            label=f"distilled ({variant_used})",
             sample_size=sample_size,
             seed=seed,
             validate_since=validate_since,
