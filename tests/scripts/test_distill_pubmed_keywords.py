@@ -31,9 +31,12 @@ from scripts.distill_pubmed_keywords import (
     _merged_phrases,
     _ncbi_retry,
     _non_negative_float,
+    _parse_args,
     _rank_terms,
+    _rank_terms_df,
     _render_query,
     _render_rich_report,
+    _resolve_validate_output_paths,
     aggregate_mesh,
     build_baseline_cache,
     build_query_variants,
@@ -299,6 +302,76 @@ class TestRankTermsLLR:
         with pytest.raises(ValueError, match="min_df"):
             _rank_terms(inputs, min_df=-1, top_n=10, min_llr=0.0)
 
+        with pytest.raises(ValueError, match="min_df"):
+            _rank_terms_df(inputs, min_df=-1, top_n=10)
+
+    def test_inconsistent_counts_raise_clear_error(self) -> None:
+        too_much_foreground = RankingInputs(
+            fg_counts=Counter({("gene",): 4}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=3,
+            bg_counts=Counter({("gene",): 0}),
+            total_bg=1_000,
+        )
+        with pytest.raises(ValueError, match="exceeds total_fg"):
+            _rank_terms(too_much_foreground, min_df=1, top_n=10, min_llr=0.0)
+
+        too_much_baseline = RankingInputs(
+            fg_counts=Counter({("gene",): 3}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=3,
+            bg_counts=Counter({("gene",): 1_001}),
+            total_bg=1_000,
+        )
+        with pytest.raises(ValueError, match="exceeds total_bg"):
+            _rank_terms(too_much_baseline, min_df=1, top_n=10, min_llr=0.0)
+
+    def test_aggregate_count_inconsistencies_raise(self) -> None:
+        foreground_sum_too_high = RankingInputs(
+            fg_counts=Counter({("gene",): 2, ("marker",): 2}),
+            fg_doc_freq=Counter({("gene",): 2, ("marker",): 2}),
+            total_fg=3,
+            bg_counts=Counter(),
+            total_bg=1_000,
+        )
+        with pytest.raises(ValueError, match="Sum of foreground counts"):
+            _rank_terms(foreground_sum_too_high, min_df=1, top_n=10, min_llr=0.0)
+
+        baseline_sum_too_high = RankingInputs(
+            fg_counts=Counter({("gene",): 2}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=2,
+            bg_counts=Counter({("gene",): 600, ("marker",): 600}),
+            total_bg=1_000,
+        )
+        with pytest.raises(ValueError, match="Sum of baseline counts"):
+            _rank_terms(baseline_sum_too_high, min_df=1, top_n=10, min_llr=0.0)
+
+        zero_total_with_baseline_counts = RankingInputs(
+            fg_counts=Counter({("gene",): 2}),
+            fg_doc_freq=Counter({("gene",): 2}),
+            total_fg=2,
+            bg_counts=Counter({("gene",): 1}),
+            total_bg=0,
+        )
+        with pytest.raises(ValueError, match="Sum of baseline counts"):
+            _rank_terms(
+                zero_total_with_baseline_counts, min_df=1, top_n=10, min_llr=0.0
+            )
+
+    def test_non_positive_term_counts_are_ignored(self) -> None:
+        inputs = RankingInputs(
+            fg_counts=Counter({("kept",): 2, ("zero",): 0, ("negative",): -1}),
+            fg_doc_freq=Counter({("kept",): 2, ("zero",): 2, ("negative",): 2}),
+            total_fg=2,
+            bg_counts=Counter(),
+            total_bg=1_000,
+        )
+
+        result = _rank_terms(inputs, min_df=1, top_n=10, min_llr=0.0)
+
+        assert [r.term for r in result] == ["kept"]
+
 
 # ---------------------------------------------------------------------------
 # MeSH XML parsing
@@ -453,6 +526,19 @@ class TestAggregateMesh:
         assert [r.term for r in result] == ["White Matter"]
         assert result[0].document_frequency == 2
         assert result[0].total_count == 3
+
+    def test_mesh_terms_are_counted_case_insensitively(self) -> None:
+        pmid_to_descriptors = {
+            "p1": [MeshDescriptor(term="White Matter", ui="D014867", major=False)],
+            "p2": [MeshDescriptor(term="white matter", ui="D014867", major=True)],
+            "p3": [MeshDescriptor(term="WHITE MATTER", ui="D014867", major=False)],
+        }
+
+        result = aggregate_mesh(pmid_to_descriptors, top_n=10)
+
+        assert [r.term for r in result] == ["White Matter"]
+        assert result[0].document_frequency == 3
+        assert result[0].total_count == 4
 
     def test_non_positive_top_n_returns_empty(self) -> None:
         pmid_to_descriptors = {
@@ -634,6 +720,23 @@ class TestFormatHybridQuery:
         assert '"Small Vessel Disease"[Title/Abstract]' not in q
         assert '"CADASIL"[Title/Abstract]' in q
 
+    def test_hybrid_substring_dedup_uses_sanitized_phrase_text(self) -> None:
+        scores = [
+            KeywordScore(
+                term='small   "vessel"\n disease',
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
+        ]
+
+        q = format_hybrid_query(
+            "cerebral   small vessel disease", scores, phrase_top=10
+        )
+
+        assert '"small vessel disease"[Title/Abstract]' not in q
+        assert '"CADASIL"[Title/Abstract]' in q
+
     def test_hybrid_falls_back_to_bare_anchor_when_pool_fully_subsumed(
         self,
     ) -> None:
@@ -731,6 +834,26 @@ class TestMergedPhrasesExtras:
         terms = [k.term for k in pool]
         assert terms == ["small vessel disease"]
 
+    def test_dedupe_substrings_uses_sanitized_pubmed_terms(self) -> None:
+        bigrams = [
+            _ks('small   "vessel"', 70.0),
+            _ks("vessel disease", 60.0),
+        ]
+        trigrams = [_ks("small vessel disease", 90.0)]
+        pool = _merged_phrases(bigrams, trigrams, dedupe_substrings_flag=True)
+        terms = [k.term for k in pool]
+        assert terms == ["small vessel disease"]
+
+    def test_dedupe_substrings_collapses_duplicate_sanitized_terms(self) -> None:
+        bigrams = [
+            _ks('white   "matter"', 90.0),
+            _ks("white matter", 80.0),
+            _ks("lacunar infarct", 70.0),
+        ]
+        pool = _merged_phrases(bigrams, [], dedupe_substrings_flag=True)
+
+        assert [k.term for k in pool] == ['white   "matter"', "lacunar infarct"]
+
     def test_dedupe_off_keeps_all(self) -> None:
         bigrams = [
             _ks("small vessel", 70.0),
@@ -757,6 +880,38 @@ class TestMergedPhrasesExtras:
         assert "notch3" in terms
         assert "alpha beta" in terms
         assert "gamma delta" not in terms  # capped
+
+    def test_phrase_top_refills_after_substring_dedupe(self) -> None:
+        bigrams = [
+            _ks("small vessel", 80.0),
+            _ks("vessel disease", 70.0),
+            _ks("lacunar infarct", 60.0),
+        ]
+        trigrams = [_ks("small vessel disease", 90.0)]
+
+        pool = _merged_phrases(
+            bigrams,
+            trigrams,
+            phrase_top=2,
+            dedupe_substrings_flag=True,
+        )
+
+        assert [k.term for k in pool] == ["small vessel disease", "lacunar infarct"]
+
+    def test_phrase_top_zero_drops_phrases_but_keeps_requested_extras(self) -> None:
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams = [_ks("small vessel disease", 80.0)]
+        acronyms = [_ks("CADASIL", 200.0)]
+
+        pool = _merged_phrases(
+            bigrams,
+            trigrams,
+            phrase_top=0,
+            acronyms=acronyms,
+            include_acronyms=1,
+        )
+
+        assert [k.term for k in pool] == ["CADASIL"]
 
 
 class TestBuildQueryVariantsWithExtras:
@@ -875,6 +1030,18 @@ class TestBuildQueryVariantsWithExtras:
             assert without[key] == with_anchor[key]
         assert without["hybrid"] == ""
         assert with_anchor["hybrid"] != ""
+
+    def test_phrase_top_zero_suppresses_phrase_queries(self) -> None:
+        variants = build_query_variants(
+            mesh_terms=[],
+            bigrams=[_ks("white matter", 50.0)],
+            trigrams=[_ks("small vessel disease", 90.0)],
+            mesh_top=10,
+            phrase_top=0,
+        )
+
+        assert variants["titleabstract"] == ""
+        assert variants["structured"] == ""
 
 
 class TestDistillKeywordsWithExtras:
@@ -1173,6 +1340,66 @@ class TestBaselineCache:
                 10,
                 tmp_path / "baseline.json.gz",
                 pdat_range="2024:2020",
+            )
+
+    @pytest.mark.parametrize(
+        ("esearch_response", "match"),
+        [
+            ([], "malformed baseline response"),
+            ({"IdList": "15905468"}, "malformed IdList"),
+        ],
+    )
+    def test_build_rejects_malformed_esearch_response(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        esearch_response: object,
+        match: str,
+    ) -> None:
+        class _FakeEntrez:
+            @staticmethod
+            def esearch(**_kwargs: object) -> None:
+                return None
+
+            @staticmethod
+            def efetch(**_kwargs: object) -> None:
+                return None
+
+            @staticmethod
+            def read(_handle: object) -> object:
+                return {}
+
+        def fake_configure(
+            *, email: str | None = None, api_key: str | None = None
+        ) -> None:
+            return None
+
+        def fake_retry(
+            _fn: object,
+            *args: object,
+            _reader: object,
+            **kwargs: object,
+        ) -> object:
+            return esearch_response
+
+        monkeypatch.setitem(
+            __import__("sys").modules,
+            "Bio",
+            type("M", (), {"Entrez": _FakeEntrez}),
+        )
+        monkeypatch.setattr(
+            "scripts.distill_pubmed_keywords._configure_entrez", fake_configure
+        )
+        monkeypatch.setattr("scripts.distill_pubmed_keywords._ncbi_retry", fake_retry)
+        monkeypatch.setattr(
+            "scripts.distill_pubmed_keywords._ncbi_sleep", lambda _k: None
+        )
+
+        with pytest.raises(RuntimeError, match=match):
+            build_baseline_cache(
+                10,
+                tmp_path / "baseline.json.gz",
+                pdat_range="2020:2024",
             )
 
 
@@ -1748,6 +1975,85 @@ class TestParseMods:
         assert paper.title == "Recovered article"
         assert paper.pmid == "15905468"
 
+    def test_mods_collection_falls_through_empty_direct_mods_to_nested_article(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "nested-after-empty-direct-mods.xml"
+        path.write_text(
+            '<?xml version="1.0"?>\n'
+            '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
+            "  <mods />\n"
+            "  <record>\n"
+            "    <mods>\n"
+            "      <titleInfo><title>Nested article</title></titleInfo>\n"
+            "      <abstract>A.</abstract>\n"
+            '      <identifier type="pubmed">15905468</identifier>\n'
+            "    </mods>\n"
+            "  </record>\n"
+            "</modsCollection>\n",
+            encoding="utf-8",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "Nested article"
+        assert paper.pmid == "15905468"
+
+    def test_mods_collection_prefers_direct_article_signal_over_title_only_record(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "direct-title-only-before-article.xml"
+        _write_mods_xml(
+            path,
+            "  <mods>\n"
+            "    <titleInfo><title>Journal title only</title></titleInfo>\n"
+            "  </mods>\n"
+            "  <mods>\n"
+            "    <titleInfo><title>Article title</title></titleInfo>\n"
+            "    <abstract>Article abstract.</abstract>\n"
+            '    <identifier type="pubmed">15905468</identifier>\n'
+            "  </mods>",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "Article title"
+        assert paper.abstract == "Article abstract."
+        assert paper.pmid == "15905468"
+
+    def test_mods_collection_prefers_nested_article_signal_over_host_title(
+        self, tmp_path: Path
+    ) -> None:
+        from scripts.distill_pubmed_keywords import parse_mods_file
+
+        path = tmp_path / "nested-host-before-article.xml"
+        path.write_text(
+            '<?xml version="1.0"?>\n'
+            '<modsCollection xmlns="http://www.loc.gov/mods/v3">\n'
+            "  <wrapper>\n"
+            "    <mods><titleInfo><title>Host journal</title></titleInfo></mods>\n"
+            "    <mods>\n"
+            "      <titleInfo><title>Nested article</title></titleInfo>\n"
+            "      <abstract>A.</abstract>\n"
+            '      <identifier type="pubmed">15905468</identifier>\n'
+            "    </mods>\n"
+            "  </wrapper>\n"
+            "</modsCollection>\n",
+            encoding="utf-8",
+        )
+
+        paper = parse_mods_file(path)
+
+        assert paper is not None
+        assert paper.title == "Nested article"
+        assert paper.pmid == "15905468"
+
 
 # ---------------------------------------------------------------------------
 # Foreground counting helpers
@@ -2074,6 +2380,13 @@ def test_main_hybrid_without_anchor_phrase_errors(_stub_corpus: Path) -> None:
     assert excinfo.value.code == 2
 
 
+def test_parse_args_build_baseline_ignores_query_specific_validation() -> None:
+    args = _parse_args(["--build-baseline", "--query-format", "hybrid"])
+
+    assert args.build_baseline is True
+    assert args.query_format == "hybrid"
+
+
 def test_main_anchor_phrase_whitespace_only_errors(_stub_corpus: Path) -> None:
     with pytest.raises(SystemExit) as excinfo:
         main(
@@ -2084,6 +2397,19 @@ def test_main_anchor_phrase_whitespace_only_errors(_stub_corpus: Path) -> None:
                 "hybrid",
                 "--anchor-phrase",
                 "   ",
+            ]
+        )
+    assert excinfo.value.code == 2
+
+
+def test_main_diagnose_and_validate_together_errors(_stub_corpus: Path) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(
+            [
+                "--xml-dir",
+                str(_stub_corpus),
+                "--diagnose",
+                "--validate",
             ]
         )
     assert excinfo.value.code == 2
@@ -2216,6 +2542,29 @@ def test_main_validate_writes_markdown_and_json(
     # Markdown content carries the validation header.
     md_text = md_files[0].read_text(encoding="utf-8")
     assert "PubMed query relevance validation" in md_text
+
+
+def test_validate_output_json_path_gets_markdown_sibling(tmp_path: Path) -> None:
+    md_path, json_path = _resolve_validate_output_paths(tmp_path / "report.json")
+
+    assert md_path == tmp_path / "report.md"
+    assert json_path == tmp_path / "report.json"
+    assert md_path != json_path
+
+
+def test_validate_output_existing_dotted_directory_gets_timestamped_files(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "query.validate"
+    output_dir.mkdir()
+
+    md_path, json_path = _resolve_validate_output_paths(output_dir)
+
+    assert md_path.parent == output_dir
+    assert json_path.parent == output_dir
+    assert md_path.suffix == ".md"
+    assert json_path.suffix == ".json"
+    assert md_path.stem == json_path.stem
 
 
 def test_main_missing_baseline_fails(

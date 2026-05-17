@@ -757,6 +757,15 @@ def _mods_has_title_or_abstract(mods_el: etree._Element) -> bool:
     return any(_element_text(el) for el in mods_el.findall(f"./{_NS}abstract"))
 
 
+def _mods_has_article_signal(mods_el: etree._Element) -> bool:
+    """Return True for MODS records that look like article-level records."""
+    if any(_element_text(el) for el in mods_el.findall(f"./{_NS}abstract")):
+        return True
+    return any(
+        _is_valid_pmid(_element_text(el)) for el in _pmid_identifier_elements(mods_el)
+    )
+
+
 def _select_mods_element(root: etree._Element) -> etree._Element:
     """Return the best article-level MODS element beneath ``root``."""
     if _local_name(root) == "mods":
@@ -771,14 +780,32 @@ def _select_mods_element(root: etree._Element) -> etree._Element:
     # instead of dropping the file.
     direct_mods = _direct_children_named(root, "mods")
     for candidate in direct_mods:
+        if _mods_has_title_or_abstract(candidate) and _mods_has_article_signal(
+            candidate
+        ):
+            return candidate
+    for candidate in direct_mods:
+        if _mods_has_title_or_abstract(candidate):
+            return candidate
+
+    direct_mod_ids = {id(el) for el in direct_mods}
+    descendant_mods = root.findall(f".//{_NS}mods")
+    for candidate in descendant_mods:
+        if id(candidate) in direct_mod_ids:
+            continue
+        if _mods_has_title_or_abstract(candidate) and _mods_has_article_signal(
+            candidate
+        ):
+            return candidate
+    for candidate in descendant_mods:
+        if id(candidate) in direct_mod_ids:
+            continue
         if _mods_has_title_or_abstract(candidate):
             return candidate
     if direct_mods:
         return direct_mods[0]
-
-    mods_el = root.find(f".//{_NS}mods")
-    if mods_el is not None:
-        return mods_el
+    if descendant_mods:
+        return descendant_mods[0]
     return root  # tolerate namespace-stripped/partial records
 
 
@@ -954,6 +981,28 @@ def _llr_score(a: float, b: float, c: float, d: float) -> float:
     )
 
 
+def _validate_ranking_counts(
+    counts: Mapping[Any, int],
+    total: int,
+    *,
+    label: str,
+    total_label: str,
+) -> None:
+    """Reject negative totals or counts whose positive sum exceeds the total.
+
+    Non-positive per-term counts are skipped by the ranking loops, so the
+    invariant only needs to hold for the positive contributions.
+    """
+    if total < 0:
+        raise ValueError(f"{total_label} must be non-negative, got {total}")
+    total_positive = sum(v for v in counts.values() if v > 0)
+    if total_positive > total:
+        raise ValueError(
+            f"Sum of {label} counts exceeds {total_label} "
+            f"({total_positive} > {total})"
+        )
+
+
 def _rank_terms(
     inputs: RankingInputs,
     *,
@@ -976,20 +1025,32 @@ def _rank_terms(
     if min_df < 0:
         raise ValueError(f"min_df must be non-negative, got {min_df}")
 
+    if inputs.bg_counts is None or inputs.total_bg is None:
+        return _rank_terms_df(inputs, min_df=min_df, top_n=top_n, display=display)
+
+    _validate_ranking_counts(
+        inputs.fg_counts, inputs.total_fg, label="foreground", total_label="total_fg"
+    )
+    _validate_ranking_counts(
+        inputs.bg_counts, inputs.total_bg, label="baseline", total_label="total_bg"
+    )
+
     if top_n <= 0 or inputs.total_fg <= 0:
         return []
-
-    if inputs.bg_counts is None or inputs.total_bg is None or inputs.total_bg == 0:
+    if inputs.total_bg == 0:
         return _rank_terms_df(inputs, min_df=min_df, top_n=top_n, display=display)
 
     total_fg = inputs.total_fg
     total_bg = inputs.total_bg
     scored: list[KeywordScore] = []
     for key, fg in inputs.fg_counts.items():
+        if fg <= 0:
+            continue
         if inputs.fg_doc_freq[key] < min_df:
             continue
         bg = inputs.bg_counts.get(key, 0)
-        # Sign filter: keep terms more frequent in foreground than baseline.
+        if bg < 0:
+            raise ValueError(f"Baseline count for {key!r} is negative ({bg})")
         if (fg / total_fg) <= (bg / total_bg):
             continue
         llr = _llr_score(fg, bg, total_fg - fg, total_bg - bg)
@@ -1019,11 +1080,18 @@ def _rank_terms_df(
     display: Mapping[Any, str] | None = None,
 ) -> list[KeywordScore]:
     """Fallback ranking by document frequency — used when no baseline."""
+    if min_df < 0:
+        raise ValueError(f"min_df must be non-negative, got {min_df}")
+    _validate_ranking_counts(
+        inputs.fg_counts, inputs.total_fg, label="foreground", total_label="total_fg"
+    )
     if top_n <= 0:
         return []
 
     scored: list[KeywordScore] = []
     for key, fg in inputs.fg_counts.items():
+        if fg <= 0:
+            continue
         if inputs.fg_doc_freq[key] < min_df:
             continue
         term = (
@@ -1213,7 +1281,15 @@ def build_baseline_cache(
     )
     _ncbi_sleep(resolved_key)
 
-    pmids = list(results.get("IdList", []))
+    if not isinstance(results, Mapping):
+        raise RuntimeError(
+            "PubMed esearch returned a malformed baseline response "
+            f"({type(results).__name__}); expected a mapping."
+        )
+    raw_pmids = results.get("IdList", [])
+    if isinstance(raw_pmids, str | bytes) or not isinstance(raw_pmids, Iterable):
+        raise RuntimeError("PubMed esearch baseline response has a malformed IdList.")
+    pmids = _unique_valid_pmids(str(pmid) for pmid in raw_pmids)
     if not pmids:
         raise RuntimeError(
             f"PubMed esearch returned no PMIDs for query: {query[:80]}..."
@@ -1772,24 +1848,31 @@ def aggregate_mesh(
 
     doc_freq: Counter[str] = Counter()
     weight: Counter[str] = Counter()
+    surface_counts: dict[str, Counter[str]] = {}
     for descriptors in pmid_to_descriptors.values():
         per_paper_weight: dict[str, int] = {}
+        per_paper_surface: dict[str, str] = {}
         for d in descriptors:
             if not d.term or d.term.casefold() in _MESH_STOP_TERMS_CASEFOLD:
                 continue
+            key = d.term.casefold()
             w = 2 if d.major else 1
-            if w > per_paper_weight.get(d.term, 0):
-                per_paper_weight[d.term] = w
-        for term, w in per_paper_weight.items():
-            weight[term] += w
-            doc_freq[term] += 1
+            if w > per_paper_weight.get(key, 0):
+                per_paper_weight[key] = w
+                per_paper_surface[key] = d.term
+            elif key not in per_paper_surface:
+                per_paper_surface[key] = d.term
+        for key, w in per_paper_weight.items():
+            weight[key] += w
+            doc_freq[key] += 1
+            surface_counts.setdefault(key, Counter())[per_paper_surface[key]] += 1
     scored = [
         KeywordScore(
-            term=term,
-            document_frequency=doc_freq[term],
-            total_count=weight[term],
+            term=surface_counts[key].most_common(1)[0][0],
+            document_frequency=doc_freq[key],
+            total_count=weight[key],
         )
-        for term in doc_freq
+        for key in doc_freq
     ]
     scored.sort(key=lambda k: (-k.document_frequency, -k.total_count, k.term))
     return scored[:top_n]
@@ -1993,8 +2076,8 @@ def _merged_phrases(
         trigrams + bigrams,
         key=lambda k: (-k.llr, -k.document_frequency, k.term),
     )
-    if phrase_top is not None and phrase_top > 0:
-        phrases = phrases[:phrase_top]
+    if phrase_top is not None and not dedupe_substrings_flag:
+        phrases = phrases[: max(0, phrase_top)]
 
     extras: list[KeywordScore] = []
     if include_unigrams > 0 and unigrams:
@@ -2008,21 +2091,50 @@ def _merged_phrases(
     if dedupe_substrings_flag and pool:
         from scripts._query_diagnose import dedupe_substrings
 
-        kept = set(dedupe_substrings([k.term for k in pool]))
-        pool = [k for k in pool if k.term in kept]
+        # Dedupe over rendered PubMed text (not raw terms) so duplicate
+        # clauses can't slip in under different surface strings.
+        sanitized_terms = [_pubmed_phrase_text(k.term) for k in pool]
+        kept_counts = Counter(dedupe_substrings(sanitized_terms))
+        deduped_pool: list[KeywordScore] = []
+        for score, sanitized in zip(pool, sanitized_terms, strict=True):
+            if not sanitized or kept_counts[sanitized] <= 0:
+                continue
+            deduped_pool.append(score)
+            kept_counts[sanitized] -= 1
+        pool = deduped_pool
+        if phrase_top is not None:
+            phrase_limit = max(0, phrase_top)
+            phrase_count = 0
+            extra_ids = {id(score) for score in extras}
+            capped_pool: list[KeywordScore] = []
+            for score in pool:
+                is_extra = id(score) in extra_ids
+                if is_extra:
+                    capped_pool.append(score)
+                    continue
+                if phrase_count >= phrase_limit:
+                    continue
+                capped_pool.append(score)
+                phrase_count += 1
+            pool = capped_pool
 
     return pool
 
 
-def _pubmed_clause(term: str, field: str) -> str:
-    """Return one quoted PubMed clause, or "" when the term is empty.
+def _pubmed_phrase_text(term: str) -> str:
+    """Return the sanitized phrase text used inside PubMed quotes.
 
     PubMed phrase syntax is quote-delimited. Terms are normally generated by
     tokenizers or MeSH descriptors, but direct callers and future descriptors
     can still contain embedded quotes/newlines; sanitize those so one bad term
     cannot unbalance the whole Boolean query.
     """
-    cleaned = _collapse_whitespace(term.replace('"', " "))
+    return _collapse_whitespace(term.replace('"', " "))
+
+
+def _pubmed_clause(term: str, field: str) -> str:
+    """Return one quoted PubMed clause, or "" when the term is empty."""
+    cleaned = _pubmed_phrase_text(term)
     if not cleaned:
         return ""
     return f'"{cleaned}"[{field}]'
@@ -2108,8 +2220,12 @@ def format_hybrid_query(
     anchor_clause = _pubmed_clause(anchor_phrase, "Title/Abstract")
     if not anchor_clause:
         return ""
-    anchor_lower = anchor_phrase.casefold()
-    filtered = [s for s in phrase_scores if s.term.casefold() not in anchor_lower]
+    anchor_lower = _pubmed_phrase_text(anchor_phrase).casefold()
+    filtered = [
+        s
+        for s in phrase_scores
+        if _pubmed_phrase_text(s.term).casefold() not in anchor_lower
+    ]
     pool_clause = format_titleabstract_query(filtered, phrase_top)
     if not pool_clause:
         return anchor_clause
@@ -2722,12 +2838,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     args = parser.parse_args(argv)
+    if args.build_baseline:
+        return args
     if args.anchor_phrase is not None:
         args.anchor_phrase = args.anchor_phrase.strip()
         if not args.anchor_phrase:
             parser.error("--anchor-phrase must not be empty or whitespace-only")
     if args.query_format == _QUERY_FORMAT_HYBRID and not args.anchor_phrase:
         parser.error("--query-format=hybrid requires --anchor-phrase")
+    if args.diagnose and args.validate:
+        parser.error("--diagnose and --validate cannot be used together")
     return args
 
 
@@ -2831,17 +2951,16 @@ def _resolve_validate_output_paths(
     default_name = f"query_validate_{timestamp}"
 
     if output_arg is None:
-        base = DEFAULT_VALIDATE_OUTPUT_DIR / default_name
-        return base.with_suffix(".md"), base.with_suffix(".json")
-    if output_arg.suffix == "":
+        output_arg = DEFAULT_VALIDATE_OUTPUT_DIR
+    if output_arg.is_dir() or output_arg.suffix == "":
         base = output_arg / default_name
         return base.with_suffix(".md"), base.with_suffix(".json")
+    if output_arg.suffix.casefold() == ".json":
+        return output_arg.with_suffix(".md"), output_arg
     return output_arg, output_arg.with_suffix(".json")
 
 
-def _resolve_query_variant(
-    args: argparse.Namespace, result: DistillationResult
-) -> str:
+def _resolve_query_variant(args: argparse.Namespace, result: DistillationResult) -> str:
     """Variant name to use when ``--query-format=all`` is in effect.
 
     Prefers hybrid (closest structurally to ``SVD_QUERY``) over structured
@@ -2919,10 +3038,10 @@ def _run_validate(args: argparse.Namespace, result: DistillationResult) -> int:
         logger.error(f"Validation failed: {exc}")
         return 1
 
-    md_path, json_path = _resolve_validate_output_paths(args.validate_output)
-    md_path.parent.mkdir(parents=True, exist_ok=True)
-    markdown = render_validate_report(report)
     try:
+        md_path, json_path = _resolve_validate_output_paths(args.validate_output)
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown = render_validate_report(report)
         md_path.write_text(markdown, encoding="utf-8")
         emit_validate_json(report, json_path)
     except OSError as exc:
