@@ -38,6 +38,14 @@ Usage:
     python scripts/distill_pubmed_keywords.py --no-mesh
     python scripts/distill_pubmed_keywords.py --json --output keywords.json
     python scripts/distill_pubmed_keywords.py --query-format structured
+
+The no-flag invocation produces the empirically validated configuration
+documented in ``docs/query-validation-report.qmd``: the hybrid variant
+is anchored on ``cerebral small vessel disease`` and three seed phrases
+(``loci``, ``intracerebral haemorrhage``, ``intracerebral hemorrhage``)
+are appended to the Title/Abstract pool. Override either with
+``--anchor-phrase`` and ``--seed-phrases`` when distilling for a
+different disease scope.
 """
 
 from __future__ import annotations
@@ -55,7 +63,7 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, TextIO
@@ -128,6 +136,20 @@ DEFAULT_MIN_LLR: Final[float] = 6.63
 # corresponds to a test statistic of 6.63). Baseline and foreground apply
 # different content filters, so the strict chi-square interpretation is
 # still approximate. See the module docstring's methodological note.
+
+# Empirically-validated defaults for the hybrid query variant.
+# See docs/query-validation-report.qmd for the full evidence trail.
+# The anchor was confirmed against the bibliography gold standard; the
+# seed phrases recover four gold PMIDs (31430377, 34987231, 35328582,
+# 39216230) that the unaugmented hybrid pool misses, with no precision
+# cost. Override with --anchor-phrase / --seed-phrases when distilling
+# for a different disease scope.
+DEFAULT_ANCHOR_PHRASE: Final[str] = "cerebral small vessel disease"
+DEFAULT_SEED_PHRASES: Final[tuple[str, ...]] = (
+    "loci",
+    "intracerebral haemorrhage",
+    "intracerebral hemorrhage",
+)
 
 # Query-format choices. ``_QUERY_FORMAT_ALL`` is the CLI default and means
 # "emit every variant"; the others map 1:1 to keys in the
@@ -1972,6 +1994,7 @@ def distill_keywords(
     include_acronyms: int = 0,
     dedupe_substrings_flag: bool = False,
     anchor_phrase: str | None = None,
+    seed_phrases: Sequence[str] | None = None,
 ) -> DistillationResult:
     """Rank distinctive keywords from a corpus, optionally with MeSH."""
     paper_tokens: list[list[str]] = [_tokenize(p.combined) for p in papers]
@@ -2049,6 +2072,7 @@ def distill_keywords(
             include_acronyms=include_acronyms,
             dedupe_substrings_flag=dedupe_substrings_flag,
             anchor_phrase=anchor_phrase,
+            seed_phrases=seed_phrases,
         ),
     )
 
@@ -2068,12 +2092,18 @@ def _merged_phrases(
     include_unigrams: int = 0,
     include_acronyms: int = 0,
     dedupe_substrings_flag: bool = False,
+    seed_phrases: Sequence[str] | None = None,
 ) -> list[KeywordScore]:
     """Build the keyword pool for the Title/Abstract clause.
 
     ``phrase_top`` caps the bigram+trigram contribution *before*
     ``include_unigrams`` / ``include_acronyms`` append extras, so the
     extras are additive rather than competing for the same slot count.
+
+    ``seed_phrases`` are appended to the pool after the cap and after
+    substring-dedupe so they are guaranteed to appear in the rendered
+    clause regardless of distillation ranking. They are deduplicated
+    only against entries already in the pool (case-insensitive).
     """
     phrases = sorted(
         trigrams + bigrams,
@@ -2124,7 +2154,24 @@ def _merged_phrases(
                 capped.append((score, is_extra))
             pool = capped
 
-    return [score for score, _ in pool]
+    result: list[KeywordScore] = [score for score, _ in pool]
+    for raw in seed_phrases or ():
+        sanitized = _pubmed_phrase_text(raw)
+        if not sanitized:
+            continue
+        # Zero stats signal an authored insertion rather than a distilled
+        # term — downstream renderers dedupe by clause text so any seed
+        # already present in the distilled pool is silently dropped at
+        # render time (see _format_pubmed_query's ``seen`` set).
+        result.append(
+            KeywordScore(
+                term=sanitized,
+                document_frequency=0,
+                total_count=0,
+                llr=0.0,
+            )
+        )
+    return result
 
 
 def _pubmed_phrase_text(term: str) -> str:
@@ -2251,6 +2298,7 @@ def build_query_variants(
     include_acronyms: int = 0,
     dedupe_substrings_flag: bool = False,
     anchor_phrase: str | None = None,
+    seed_phrases: Sequence[str] | None = None,
 ) -> dict[str, str]:
     pool = _merged_phrases(
         bigrams,
@@ -2261,6 +2309,7 @@ def build_query_variants(
         include_unigrams=include_unigrams,
         include_acronyms=include_acronyms,
         dedupe_substrings_flag=dedupe_substrings_flag,
+        seed_phrases=seed_phrases,
     )
     # When extras are appended (unigrams/acronyms), the pool already
     # contains the desired entries; pass len(pool) so the caller's
@@ -2615,14 +2664,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--anchor-phrase",
         type=str,
-        default=None,
+        default=DEFAULT_ANCHOR_PHRASE,
         metavar="PHRASE",
         help=(
             "Anchor phrase for the 'hybrid' query variant — rendered as "
             '"<PHRASE>"[Title/Abstract] AND ("topic" OR ...). Supports '
-            "4-grams the n-gram extractor can't surface (e.g. "
-            "'cerebral small vessel disease'). Required when "
-            "--query-format=hybrid; ignored otherwise."
+            "4-grams the n-gram extractor can't surface. "
+            f"Default: {DEFAULT_ANCHOR_PHRASE!r} (empirically validated "
+            "against the cSVD bibliography gold standard — see "
+            "docs/query-validation-report.qmd). Pass an alternative "
+            "phrase to distill for a different disease scope. To skip "
+            "the hybrid variant entirely, choose a non-hybrid "
+            "--query-format."
+        ),
+    )
+    parser.add_argument(
+        "--seed-phrases",
+        nargs="*",
+        default=list(DEFAULT_SEED_PHRASES),
+        metavar="PHRASE",
+        help=(
+            "Title/Abstract phrases to always include in the query pool, "
+            "appended after distillation ranking and after substring "
+            "dedupe so they survive both. Used to inject vocabulary "
+            "that LLR ranking under-weights (e.g. plural-vs-singular "
+            "variants, British/American spelling pairs). "
+            f"Default: {', '.join(DEFAULT_SEED_PHRASES)} (validated "
+            "against the cSVD bibliography — see "
+            "docs/query-validation-report.qmd). Pass --seed-phrases "
+            "with no arguments to disable."
         ),
     )
     parser.add_argument(
@@ -2846,12 +2916,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.build_baseline:
         return args
-    if args.anchor_phrase is not None:
-        args.anchor_phrase = args.anchor_phrase.strip()
-        if not args.anchor_phrase:
-            parser.error("--anchor-phrase must not be empty or whitespace-only")
-    if args.query_format == _QUERY_FORMAT_HYBRID and not args.anchor_phrase:
-        parser.error("--query-format=hybrid requires --anchor-phrase")
+    args.anchor_phrase = args.anchor_phrase.strip()
+    if not args.anchor_phrase:
+        parser.error("--anchor-phrase must not be empty or whitespace-only")
     if args.diagnose and args.validate:
         parser.error("--diagnose and --validate cannot be used together")
     return args
@@ -3191,6 +3258,7 @@ def main(argv: list[str] | None = None) -> int:
         include_acronyms=args.include_acronyms,
         dedupe_substrings_flag=args.dedupe_substrings,
         anchor_phrase=args.anchor_phrase,
+        seed_phrases=args.seed_phrases,
     )
 
     if args.diagnose:

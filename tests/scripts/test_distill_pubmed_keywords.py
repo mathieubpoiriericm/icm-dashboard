@@ -1043,6 +1043,97 @@ class TestBuildQueryVariantsWithExtras:
         assert variants["titleabstract"] == ""
         assert variants["structured"] == ""
 
+    def test_seed_phrases_inject_into_titleabstract(self) -> None:
+        variants = build_query_variants(
+            mesh_terms=[],
+            bigrams=[_ks("white matter", 50.0)],
+            trigrams=[],
+            mesh_top=10,
+            phrase_top=10,
+            seed_phrases=("loci", "intracerebral haemorrhage"),
+        )
+        ta = variants["titleabstract"]
+        assert '"loci"[Title/Abstract]' in ta
+        assert '"intracerebral haemorrhage"[Title/Abstract]' in ta
+        # Distilled phrases are still present.
+        assert '"white matter"[Title/Abstract]' in ta
+
+    def test_seed_phrases_reach_hybrid_secondary_clause(self) -> None:
+        variants = build_query_variants(
+            mesh_terms=[],
+            bigrams=[_ks("white matter hyperintensities", 60.0)],
+            trigrams=[],
+            mesh_top=10,
+            phrase_top=10,
+            anchor_phrase="cerebral small vessel disease",
+            seed_phrases=("loci", "intracerebral haemorrhage"),
+        )
+        hybrid = variants["hybrid"]
+        expected_prefix = (
+            '"cerebral small vessel disease"[Title/Abstract] AND ('
+        )
+        assert hybrid.startswith(expected_prefix)
+        assert '"loci"[Title/Abstract]' in hybrid
+        assert '"intracerebral haemorrhage"[Title/Abstract]' in hybrid
+
+    def test_seed_phrases_survive_substring_dedupe(self) -> None:
+        # Without seed protection, --dedupe-substrings would drop "loci"
+        # as a substring of "risk loci". Seeds are appended after dedupe,
+        # so both should appear in the rendered clause.
+        variants = build_query_variants(
+            mesh_terms=[],
+            bigrams=[_ks("risk loci", 70.0)],
+            trigrams=[],
+            mesh_top=10,
+            phrase_top=10,
+            dedupe_substrings_flag=True,
+            seed_phrases=("loci",),
+        )
+        ta = variants["titleabstract"]
+        assert '"risk loci"[Title/Abstract]' in ta
+        assert '"loci"[Title/Abstract]' in ta
+
+    def test_seed_phrases_dedupe_against_existing_pool_entries(self) -> None:
+        # When a seed phrase already appears in the distilled pool, the
+        # rendered clause must not contain the same clause twice.
+        variants = build_query_variants(
+            mesh_terms=[],
+            bigrams=[_ks("intracerebral haemorrhage", 80.0)],
+            trigrams=[],
+            mesh_top=10,
+            phrase_top=10,
+            seed_phrases=("intracerebral haemorrhage",),
+        )
+        ta = variants["titleabstract"]
+        assert ta.count('"intracerebral haemorrhage"[Title/Abstract]') == 1
+
+
+class TestSeedPhrasesDefaults:
+    def test_default_seed_phrases_constant(self) -> None:
+        from scripts.distill_pubmed_keywords import DEFAULT_SEED_PHRASES
+
+        assert DEFAULT_SEED_PHRASES == (
+            "loci",
+            "intracerebral haemorrhage",
+            "intracerebral hemorrhage",
+        )
+
+    def test_cli_default_seed_phrases_applied(self) -> None:
+        args = _parse_args([])
+        from scripts.distill_pubmed_keywords import DEFAULT_SEED_PHRASES
+
+        assert tuple(args.seed_phrases) == DEFAULT_SEED_PHRASES
+
+    def test_cli_seed_phrases_explicit_override(self) -> None:
+        args = _parse_args(["--seed-phrases", "alpha", "beta gamma"])
+        assert args.seed_phrases == ["alpha", "beta gamma"]
+
+    def test_cli_seed_phrases_can_be_emptied(self) -> None:
+        # Passing the flag with no values yields an empty list — the
+        # documented opt-out path.
+        args = _parse_args(["--seed-phrases"])
+        assert args.seed_phrases == []
+
 
 class TestDistillKeywordsWithExtras:
     def test_include_acronyms_reaches_query(self) -> None:
@@ -2365,19 +2456,15 @@ def test_main_accepts_title_abstract_only_run(
     assert rc == 0
 
 
-def test_main_hybrid_without_anchor_phrase_errors(_stub_corpus: Path) -> None:
-    # argparse parser.error exits with code 2 — assert the CLI rejects
-    # the combination rather than silently emitting an empty hybrid.
-    with pytest.raises(SystemExit) as excinfo:
-        main(
-            [
-                "--xml-dir",
-                str(_stub_corpus),
-                "--query-format",
-                "hybrid",
-            ]
-        )
-    assert excinfo.value.code == 2
+def test_main_hybrid_without_explicit_anchor_uses_default() -> None:
+    # The --anchor-phrase default was changed from None to the
+    # empirically validated DEFAULT_ANCHOR_PHRASE so the no-flag
+    # invocation produces a non-empty hybrid variant. Verify the parser
+    # supplies the default rather than erroring (the prior behavior).
+    from scripts.distill_pubmed_keywords import DEFAULT_ANCHOR_PHRASE
+
+    args = _parse_args(["--query-format", "hybrid"])
+    assert args.anchor_phrase == DEFAULT_ANCHOR_PHRASE
 
 
 def test_parse_args_build_baseline_ignores_query_specific_validation() -> None:
