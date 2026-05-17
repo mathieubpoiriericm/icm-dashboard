@@ -2636,6 +2636,93 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "queries, narrow --diagnose-since instead."
         ),
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help=(
+            "Score the distilled query AND pipeline.pubmed_search.SVD_QUERY "
+            "on absolute cSVD-relevance (empirical MeSH match + Claude LLM "
+            "fallback) and emit a side-by-side Markdown report plus a JSON "
+            "sidecar. Distinct from --diagnose, which only compares PMID "
+            "overlap."
+        ),
+    )
+    parser.add_argument(
+        "--validate-sample",
+        type=_non_negative_int,
+        default=None,
+        metavar="N",
+        help=("Random sample size per query for --validate scoring (default: 200)."),
+    )
+    parser.add_argument(
+        "--validate-since",
+        type=str,
+        default=None,
+        metavar="YYYY/MM/DD",
+        help=(
+            "Earliest publication date for --validate sampling "
+            "(default: two years before today, so most papers have "
+            "NLM MeSH assigned)."
+        ),
+    )
+    parser.add_argument(
+        "--validate-until",
+        type=str,
+        default=None,
+        metavar="YYYY/MM/DD",
+        help="Latest publication date for --validate sampling (default: today).",
+    )
+    parser.add_argument(
+        "--validate-llm-model",
+        type=str,
+        default=None,
+        metavar="MODEL",
+        help=(
+            "Anthropic model for the --validate LLM fallback (default: "
+            "the module's DEFAULT_LLM_MODEL — Claude Haiku 4.5)."
+        ),
+    )
+    parser.add_argument(
+        "--validate-mesh-threshold",
+        type=_non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "Bibliography-paper count for a MeSH term to count as "
+            "cSVD-relevant during --validate (default: 3)."
+        ),
+    )
+    parser.add_argument(
+        "--validate-no-llm-fallback",
+        action="store_true",
+        help=(
+            "Skip the LLM fallback for --validate; unindexed (no-MeSH) "
+            "papers are reported as 'unscoreable' instead."
+        ),
+    )
+    parser.add_argument(
+        "--validate-seed",
+        type=_non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "Random seed for --validate sample selection (default: 0). "
+            "Pin different values to compare multiple stratifications."
+        ),
+    )
+    parser.add_argument(
+        "--validate-output",
+        type=Path,
+        default=None,
+        metavar="DIR_OR_PATH",
+        help=(
+            "Where to write the --validate Markdown report. If a "
+            "directory (default: logs/query_validate/), a timestamped "
+            "filename is generated and a sibling .json sidecar is "
+            "written. If a .md file path, the JSON sidecar is named "
+            "alongside it."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.anchor_phrase is not None:
         args.anchor_phrase = args.anchor_phrase.strip()
@@ -2668,14 +2755,12 @@ def _structural_issues_for_diagnose(args: argparse.Namespace) -> list[str]:
         )
     if not args.dedupe_substrings:
         issues.append(
-            "Substring-redundant phrases (e.g. `\"small vessel\"` + "
-            "`\"small vessel disease\"` + `\"vessel disease\"`) inflate "
+            'Substring-redundant phrases (e.g. `"small vessel"` + '
+            '`"small vessel disease"` + `"vessel disease"`) inflate '
             "the T/A clause. Fix: `--dedupe-substrings`."
         )
     if not issues:
-        issues.append(
-            "All three current structural fixes are enabled in this run."
-        )
+        issues.append("All three current structural fixes are enabled in this run.")
     return issues
 
 
@@ -2684,9 +2769,7 @@ def _run_diagnose(args: argparse.Namespace, result: DistillationResult) -> int:
     try:
         from pipeline.pubmed_search import SVD_QUERY
     except ImportError as exc:
-        logger.error(
-            f"Could not import SVD_QUERY for diagnostic comparison: {exc}"
-        )
+        logger.error(f"Could not import SVD_QUERY for diagnostic comparison: {exc}")
         return 1
     from scripts._query_diagnose import run_diagnose
 
@@ -2744,6 +2827,129 @@ def _run_diagnose(args: argparse.Namespace, result: DistillationResult) -> int:
         logger.info(f"Wrote diagnostic report to {args.output}")
     else:
         print(markdown)
+    return 0
+
+
+def _resolve_validate_output_paths(
+    output_arg: Path | None,
+) -> tuple[Path, Path]:
+    """Resolve --validate-output into (markdown_path, json_path).
+
+    Both paths share the same stem so the JSON sidecar lives next to
+    its Markdown report. A bare directory (or the default) gets a
+    timestamped filename; an explicit ``.md`` path is used verbatim.
+    """
+    from scripts._query_validate import DEFAULT_VALIDATE_OUTPUT_DIR
+
+    timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_name = f"query_validate_{timestamp}"
+
+    if output_arg is None:
+        base = DEFAULT_VALIDATE_OUTPUT_DIR / default_name
+        return base.with_suffix(".md"), base.with_suffix(".json")
+    if output_arg.suffix == "":
+        base = output_arg / default_name
+        return base.with_suffix(".md"), base.with_suffix(".json")
+    return output_arg, output_arg.with_suffix(".json")
+
+
+def _resolve_validate_variant(
+    args: argparse.Namespace, result: DistillationResult
+) -> str:
+    """Variant name to validate.
+
+    Prefers hybrid (closest structurally to ``SVD_QUERY``) over structured
+    over plain titleabstract; an explicit ``--query-format`` is honored.
+    """
+    if args.query_format != _QUERY_FORMAT_ALL:
+        return args.query_format
+    if result.query_variants.get(_QUERY_FORMAT_HYBRID):
+        return _QUERY_FORMAT_HYBRID
+    if result.mesh_terms:
+        return _QUERY_FORMAT_STRUCTURED
+    return _QUERY_FORMAT_TITLEABSTRACT
+
+
+def _run_validate(args: argparse.Namespace, result: DistillationResult) -> int:
+    """Run the relevance validation and emit Markdown + JSON sidecar."""
+    try:
+        from pipeline.pubmed_search import SVD_QUERY
+    except ImportError as exc:
+        logger.error(f"Could not import SVD_QUERY for relevance validation: {exc}")
+        return 1
+    from scripts._query_validate import (
+        DEFAULT_LLM_MODEL,
+        DEFAULT_VALIDATE_MESH_THRESHOLD,
+        DEFAULT_VALIDATE_SAMPLE,
+        DEFAULT_VALIDATE_SEED,
+        emit_validate_json,
+        render_validate_report,
+        run_validate,
+    )
+
+    variant_used = _resolve_validate_variant(args, result)
+    distilled_query = result.query_variants.get(variant_used, "")
+    if not distilled_query:
+        logger.error(
+            "No distilled query variant available for validation. "
+            "Run without --validate to inspect keyword tables, or set "
+            "--query-format explicitly."
+        )
+        return 1
+
+    if args.validate_since is None:
+        today = _dt.date.today()
+        # Two years gives most papers time to be MeSH-indexed; recent
+        # papers (last few months) tend not to be.
+        validate_since = f"{today.year - 2:04d}/{today.month:02d}/{today.day:02d}"
+    else:
+        validate_since = args.validate_since
+
+    sample_size = (
+        args.validate_sample
+        if args.validate_sample is not None
+        else DEFAULT_VALIDATE_SAMPLE
+    )
+    mesh_threshold = (
+        args.validate_mesh_threshold
+        if args.validate_mesh_threshold is not None
+        else DEFAULT_VALIDATE_MESH_THRESHOLD
+    )
+    seed = (
+        args.validate_seed if args.validate_seed is not None else DEFAULT_VALIDATE_SEED
+    )
+    llm_model = args.validate_llm_model or DEFAULT_LLM_MODEL
+
+    try:
+        report = run_validate(
+            distilled_query=distilled_query,
+            production_query=SVD_QUERY,
+            distilled_label=f"distilled ({variant_used})",
+            production_label="SVD_QUERY",
+            sample_size=sample_size,
+            seed=seed,
+            validate_since=validate_since,
+            validate_until=args.validate_until,
+            mesh_threshold=mesh_threshold,
+            llm_model=llm_model,
+            use_llm_fallback=not args.validate_no_llm_fallback,
+            mesh_dir=args.mesh_cache,
+        )
+    except (OSError, RuntimeError, FileNotFoundError) as exc:
+        logger.error(f"Validation failed: {exc}")
+        return 1
+
+    md_path, json_path = _resolve_validate_output_paths(args.validate_output)
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown = render_validate_report(report)
+    try:
+        md_path.write_text(markdown, encoding="utf-8")
+        emit_validate_json(report, json_path)
+    except OSError as exc:
+        logger.error(f"Could not write validation output: {exc}")
+        return 1
+    logger.info(f"Wrote validation report to {md_path}")
+    logger.info(f"Wrote validation JSON sidecar to {json_path}")
     return 0
 
 
@@ -2884,6 +3090,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.diagnose:
         return _run_diagnose(args, result)
+
+    if args.validate:
+        return _run_validate(args, result)
 
     if args.json:
         payload = to_json(result)

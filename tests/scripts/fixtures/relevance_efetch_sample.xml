@@ -1,0 +1,100 @@
+<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>11111</PMID>
+      <Article>
+        <Journal>
+          <Title>Journal of cSVD Research</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2022</Year>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>White matter hyperintensities in CADASIL patients</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="BACKGROUND">CADASIL is a hereditary cause of cerebral small vessel disease.</AbstractText>
+          <AbstractText Label="METHODS">We imaged 30 patients with confirmed NOTCH3 mutations.</AbstractText>
+          <AbstractText Label="RESULTS">All patients showed extensive white matter hyperintensities.</AbstractText>
+        </Abstract>
+      </Article>
+      <MeshHeadingList>
+        <MeshHeading>
+          <DescriptorName>CADASIL</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName>Humans</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName>Adult</DescriptorName>
+        </MeshHeading>
+      </MeshHeadingList>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>22222</PMID>
+      <Article>
+        <Journal>
+          <Title>Cardiology Today</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2023</Year>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>Hypertension management in primary care</ArticleTitle>
+        <Abstract>
+          <AbstractText>This review covers hypertension management without specific focus on cerebral vasculature.</AbstractText>
+        </Abstract>
+      </Article>
+      <MeshHeadingList>
+        <MeshHeading>
+          <DescriptorName>Hypertension</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName>Primary Health Care</DescriptorName>
+        </MeshHeading>
+      </MeshHeadingList>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>33333</PMID>
+      <Article>
+        <Journal>
+          <Title>Recent Neurology</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2025</Year>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>A novel marker for lacunar stroke recurrence</ArticleTitle>
+        <Abstract>
+          <AbstractText>We report a plasma biomarker associated with lacunar stroke recurrence in cerebral small vessel disease.</AbstractText>
+        </Abstract>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>44444</PMID>
+      <Article>
+        <Journal>
+          <Title>Generic Neuro Journal</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2025</Year>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>Migraine prophylaxis options</ArticleTitle>
+        <Abstract>
+          <AbstractText>A review of pharmacological migraine prophylaxis. Not related to cerebrovascular disease.</AbstractText>
+        </Abstract>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>

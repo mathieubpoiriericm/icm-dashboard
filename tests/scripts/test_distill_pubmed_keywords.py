@@ -551,9 +551,7 @@ class TestFormatHybridQuery:
                 total_count=4,
             ),
         ]
-        q = format_hybrid_query(
-            "cerebral small vessel disease", scores, phrase_top=10
-        )
+        q = format_hybrid_query("cerebral small vessel disease", scores, phrase_top=10)
         assert q == (
             '"cerebral small vessel disease"[Title/Abstract] AND '
             '("CADASIL"[Title/Abstract] OR '
@@ -573,9 +571,7 @@ class TestFormatHybridQuery:
             ),
             KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
         ]
-        q = format_hybrid_query(
-            "cerebral small vessel disease", scores, phrase_top=10
-        )
+        q = format_hybrid_query("cerebral small vessel disease", scores, phrase_top=10)
         assert q == (
             '"cerebral small vessel disease"[Title/Abstract] AND '
             '("CADASIL"[Title/Abstract])'
@@ -590,9 +586,7 @@ class TestFormatHybridQuery:
             ),
             KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
         ]
-        q = format_hybrid_query(
-            "cerebral small vessel disease", scores, phrase_top=10
-        )
+        q = format_hybrid_query("cerebral small vessel disease", scores, phrase_top=10)
         # The mixed-case duplicate must still be filtered out.
         assert '"Cerebral Small Vessel Disease"[Title/Abstract]' not in q
         assert '"CADASIL"[Title/Abstract]' in q
@@ -620,9 +614,7 @@ class TestFormatHybridQuery:
                 total_count=8,
             ),
         ]
-        q = format_hybrid_query(
-            "cerebral small vessel disease", scores, phrase_top=10
-        )
+        q = format_hybrid_query("cerebral small vessel disease", scores, phrase_top=10)
         assert '"small vessel disease"[Title/Abstract]' not in q
         assert '"cerebral small vessel"[Title/Abstract]' not in q
         # Non-substring pool entries survive — they actually filter.
@@ -638,9 +630,7 @@ class TestFormatHybridQuery:
             ),
             KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
         ]
-        q = format_hybrid_query(
-            "cerebral small vessel disease", scores, phrase_top=10
-        )
+        q = format_hybrid_query("cerebral small vessel disease", scores, phrase_top=10)
         assert '"Small Vessel Disease"[Title/Abstract]' not in q
         assert '"CADASIL"[Title/Abstract]' in q
 
@@ -666,9 +656,7 @@ class TestFormatHybridQuery:
                 total_count=8,
             ),
         ]
-        q = format_hybrid_query(
-            "cerebral small vessel disease", scores, phrase_top=10
-        )
+        q = format_hybrid_query("cerebral small vessel disease", scores, phrase_top=10)
         assert q == '"cerebral small vessel disease"[Title/Abstract]'
 
     def test_hybrid_returns_empty_when_anchor_sanitises_away(self) -> None:
@@ -684,9 +672,7 @@ class TestFormatHybridQuery:
 
 
 def _ks(term: str, llr: float, *, df: int = 2, count: int = 2) -> KeywordScore:
-    return KeywordScore(
-        term=term, document_frequency=df, total_count=count, llr=llr
-    )
+    return KeywordScore(term=term, document_frequency=df, total_count=count, llr=llr)
 
 
 class TestMergedPhrasesExtras:
@@ -701,9 +687,7 @@ class TestMergedPhrasesExtras:
         bigrams = [_ks("white matter", 50.0)]
         trigrams = [_ks("small vessel disease", 80.0)]
         unigrams = [_ks("cadasil", 150.0), _ks("notch3", 100.0)]
-        pool = _merged_phrases(
-            bigrams, trigrams, unigrams=unigrams, include_unigrams=2
-        )
+        pool = _merged_phrases(bigrams, trigrams, unigrams=unigrams, include_unigrams=2)
         terms = [k.term for k in pool]
         # Sorted by LLR desc: cadasil(150) > notch3(100) > svd(80) > wm(50)
         assert terms == [
@@ -717,9 +701,7 @@ class TestMergedPhrasesExtras:
         bigrams = [_ks("white matter", 50.0)]
         trigrams: list[KeywordScore] = []
         acronyms = [_ks("CADASIL", 200.0), _ks("WMH", 90.0)]
-        pool = _merged_phrases(
-            bigrams, trigrams, acronyms=acronyms, include_acronyms=2
-        )
+        pool = _merged_phrases(bigrams, trigrams, acronyms=acronyms, include_acronyms=2)
         terms = [k.term for k in pool]
         assert "CADASIL" in terms
         assert "WMH" in terms
@@ -745,9 +727,7 @@ class TestMergedPhrasesExtras:
             _ks("vessel disease", 60.0),
         ]
         trigrams = [_ks("small vessel disease", 90.0)]
-        pool = _merged_phrases(
-            bigrams, trigrams, dedupe_substrings_flag=True
-        )
+        pool = _merged_phrases(bigrams, trigrams, dedupe_substrings_flag=True)
         terms = [k.term for k in pool]
         assert terms == ["small vessel disease"]
 
@@ -2136,9 +2116,107 @@ def test_main_hybrid_with_anchor_phrase_succeeds(
     assert rc == 0
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     hybrid = payload["query_variants"]["hybrid"]
-    assert hybrid.startswith(
-        '"cerebral small vessel disease"[Title/Abstract]'
+    assert hybrid.startswith('"cerebral small vessel disease"[Title/Abstract]')
+
+
+def test_main_validate_writes_markdown_and_json(
+    _stub_corpus: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--validate` should run the validator, write Markdown + JSON, return 0.
+
+    The whole network + LLM pipeline is mocked at ``run_validate`` so the
+    CLI dispatch is exercised end-to-end without hitting NCBI or
+    Anthropic. Verifies the CLI:
+
+    - imports SVD_QUERY and the validator without erroring
+    - picks a non-empty distilled query variant
+    - resolves `--validate-output` and writes the .md + matching .json
+    - returns rc == 0 on success
+    """
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_baseline_payload(baseline_path)
+    validate_dir = tmp_path / "validate-out"
+
+    from scripts._query_validate import (
+        QueryValidation,
+        RecallFloor,
+        RelevanceScore,
+        ValidationReport,
     )
+
+    captured: dict = {}
+
+    def fake_run_validate(**kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        scores = [RelevanceScore("1", True, "mesh", 1.0, "test", "Stroke")]
+        qv = QueryValidation(
+            label="x",
+            query="q",
+            total_pmids=1,
+            truncated=False,
+            sample_pmids=["1"],
+            scores=scores,
+            recall_floor=RecallFloor(retrieved=1, total_gold=1, missing=[]),
+        )
+        return ValidationReport(
+            distilled=qv,
+            production=qv,
+            relevant_mesh_set=["Stroke"],
+            gold_pmids=["1"],
+            sample_size=10,
+            seed=0,
+            validate_since="2024/01/01",
+            validate_until=None,
+            llm_model="claude-haiku-4-5-20251001",
+        )
+
+    monkeypatch.setattr("scripts._query_validate.run_validate", fake_run_validate)
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--no-mesh",
+            # Anchor phrase guarantees a non-empty hybrid variant even
+            # when the 1-paper stub corpus is too thin for LLR to
+            # surface a Title/Abstract clause.
+            "--query-format",
+            "hybrid",
+            "--anchor-phrase",
+            "cerebral small vessel disease",
+            "--validate",
+            "--validate-sample",
+            "10",
+            "--validate-since",
+            "2024/01/01",
+            "--validate-no-llm-fallback",
+            "--validate-output",
+            str(validate_dir),
+        ]
+    )
+
+    assert rc == 0
+    # CLI threaded the user-supplied values through to run_validate.
+    assert captured["sample_size"] == 10
+    assert captured["validate_since"] == "2024/01/01"
+    assert captured["use_llm_fallback"] is False
+    assert captured["production_label"] == "SVD_QUERY"
+    # The distilled query is non-empty.
+    assert captured["distilled_query"]
+    # The markdown report and JSON sidecar both landed in the output dir.
+    md_files = list(validate_dir.glob("*.md"))
+    json_files = list(validate_dir.glob("*.json"))
+    assert len(md_files) == 1
+    assert len(json_files) == 1
+    # Stems match — Markdown and JSON refer to the same run.
+    assert md_files[0].stem == json_files[0].stem
+    # Markdown content carries the validation header.
+    md_text = md_files[0].read_text(encoding="utf-8")
+    assert "PubMed query relevance validation" in md_text
 
 
 def test_main_missing_baseline_fails(
