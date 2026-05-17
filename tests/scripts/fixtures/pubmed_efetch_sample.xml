@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>99999</PMID>
+      <Article>
+        <Journal>
+          <Title>Test Journal</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2023</Year>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>A test title with <i>italics</i> inside</ArticleTitle>
+      </Article>
+      <MeshHeadingList>
+        <MeshHeading>
+          <DescriptorName>Stroke</DescriptorName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName>White Matter</DescriptorName>
+        </MeshHeading>
+      </MeshHeadingList>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>

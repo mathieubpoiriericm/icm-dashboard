@@ -28,6 +28,7 @@ from scripts.distill_pubmed_keywords import (
     _foreground_acronyms,
     _foreground_stats_for,
     _llr_score,
+    _merged_phrases,
     _ncbi_retry,
     _non_negative_float,
     _rank_terms,
@@ -35,6 +36,7 @@ from scripts.distill_pubmed_keywords import (
     _render_rich_report,
     aggregate_mesh,
     build_baseline_cache,
+    build_query_variants,
     distill_keywords,
     fetch_mesh_terms,
     format_mesh_query,
@@ -536,6 +538,254 @@ class TestBuildQuery:
         ]
         q = format_titleabstract_query(scores, top=2)
         assert q == ('"White Matter"[Title/Abstract] OR "microbleeds"[Title/Abstract]')
+
+
+# ---------------------------------------------------------------------------
+# Structural-fix flags: --include-unigrams, --include-acronyms,
+# --dedupe-substrings (see scripts/_query_diagnose.py for the dedupe helper)
+# ---------------------------------------------------------------------------
+
+
+def _ks(term: str, llr: float, *, df: int = 2, count: int = 2) -> KeywordScore:
+    return KeywordScore(
+        term=term, document_frequency=df, total_count=count, llr=llr
+    )
+
+
+class TestMergedPhrasesExtras:
+    def test_default_behavior_unchanged(self) -> None:
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams = [_ks("small vessel disease", 80.0)]
+        pool = _merged_phrases(bigrams, trigrams)
+        terms = [k.term for k in pool]
+        assert terms == ["small vessel disease", "white matter"]
+
+    def test_includes_unigrams_when_requested(self) -> None:
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams = [_ks("small vessel disease", 80.0)]
+        unigrams = [_ks("cadasil", 150.0), _ks("notch3", 100.0)]
+        pool = _merged_phrases(
+            bigrams, trigrams, unigrams=unigrams, include_unigrams=2
+        )
+        terms = [k.term for k in pool]
+        # Sorted by LLR desc: cadasil(150) > notch3(100) > svd(80) > wm(50)
+        assert terms == [
+            "cadasil",
+            "notch3",
+            "small vessel disease",
+            "white matter",
+        ]
+
+    def test_includes_acronyms_when_requested(self) -> None:
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams: list[KeywordScore] = []
+        acronyms = [_ks("CADASIL", 200.0), _ks("WMH", 90.0)]
+        pool = _merged_phrases(
+            bigrams, trigrams, acronyms=acronyms, include_acronyms=2
+        )
+        terms = [k.term for k in pool]
+        assert "CADASIL" in terms
+        assert "WMH" in terms
+
+    def test_include_zero_means_no_extras(self) -> None:
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams: list[KeywordScore] = []
+        unigrams = [_ks("cadasil", 150.0)]
+        acronyms = [_ks("CADASIL", 200.0)]
+        pool = _merged_phrases(
+            bigrams,
+            trigrams,
+            unigrams=unigrams,
+            acronyms=acronyms,
+            include_unigrams=0,
+            include_acronyms=0,
+        )
+        assert [k.term for k in pool] == ["white matter"]
+
+    def test_dedupe_substrings_drops_redundant_phrases(self) -> None:
+        bigrams = [
+            _ks("small vessel", 70.0),
+            _ks("vessel disease", 60.0),
+        ]
+        trigrams = [_ks("small vessel disease", 90.0)]
+        pool = _merged_phrases(
+            bigrams, trigrams, dedupe_substrings_flag=True
+        )
+        terms = [k.term for k in pool]
+        assert terms == ["small vessel disease"]
+
+    def test_dedupe_off_keeps_all(self) -> None:
+        bigrams = [
+            _ks("small vessel", 70.0),
+            _ks("vessel disease", 60.0),
+        ]
+        trigrams = [_ks("small vessel disease", 90.0)]
+        pool = _merged_phrases(bigrams, trigrams)
+        terms = [k.term for k in pool]
+        assert "small vessel" in terms
+        assert "vessel disease" in terms
+
+    def test_phrase_top_caps_only_phrases_not_extras(self) -> None:
+        bigrams = [_ks("alpha beta", 50.0), _ks("gamma delta", 40.0)]
+        trigrams: list[KeywordScore] = []
+        unigrams = [_ks("notch3", 100.0)]
+        pool = _merged_phrases(
+            bigrams,
+            trigrams,
+            phrase_top=1,
+            unigrams=unigrams,
+            include_unigrams=1,
+        )
+        terms = [k.term for k in pool]
+        assert "notch3" in terms
+        assert "alpha beta" in terms
+        assert "gamma delta" not in terms  # capped
+
+
+class TestBuildQueryVariantsWithExtras:
+    def test_include_acronyms_appears_in_titleabstract(self) -> None:
+        mesh: list[KeywordScore] = []
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams: list[KeywordScore] = []
+        unigrams: list[KeywordScore] = []
+        acronyms = [_ks("CADASIL", 200.0)]
+        variants = build_query_variants(
+            mesh_terms=mesh,
+            bigrams=bigrams,
+            trigrams=trigrams,
+            mesh_top=10,
+            phrase_top=10,
+            unigrams=unigrams,
+            acronyms=acronyms,
+            include_acronyms=1,
+        )
+        assert '"CADASIL"[Title/Abstract]' in variants["titleabstract"]
+
+    def test_dedupe_substrings_collapses_in_titleabstract_clause(self) -> None:
+        mesh: list[KeywordScore] = []
+        bigrams = [
+            _ks("small vessel", 70.0),
+            _ks("vessel disease", 60.0),
+        ]
+        trigrams = [_ks("small vessel disease", 90.0)]
+        variants = build_query_variants(
+            mesh_terms=mesh,
+            bigrams=bigrams,
+            trigrams=trigrams,
+            mesh_top=10,
+            phrase_top=10,
+            dedupe_substrings_flag=True,
+        )
+        q = variants["titleabstract"]
+        assert '"small vessel disease"[Title/Abstract]' in q
+        # The shorter substrings should be gone.
+        assert '"small vessel"[Title/Abstract]' not in q
+        assert '"vessel disease"[Title/Abstract]' not in q
+
+    def test_default_behavior_matches_no_extras(self) -> None:
+        # Without the new flags, build_query_variants should produce
+        # output equivalent to its pre-fix behavior (sanity check on
+        # backwards compatibility).
+        mesh: list[KeywordScore] = []
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams = [_ks("small vessel disease", 90.0)]
+        variants = build_query_variants(
+            mesh_terms=mesh,
+            bigrams=bigrams,
+            trigrams=trigrams,
+            mesh_top=10,
+            phrase_top=10,
+        )
+        # Both phrases present in T/A, MeSH empty
+        assert '"small vessel disease"[Title/Abstract]' in variants["titleabstract"]
+        assert '"white matter"[Title/Abstract]' in variants["titleabstract"]
+        assert variants["mesh"] == ""
+
+
+class TestDistillKeywordsWithExtras:
+    def test_include_acronyms_reaches_query(self) -> None:
+        papers = [
+            PaperText(
+                pmid="111",
+                title="CADASIL is a genetic cause of cerebral small vessel disease",
+                abstract="The CADASIL syndrome is caused by NOTCH3 mutations.",
+            ),
+            PaperText(
+                pmid="222",
+                title="CADASIL update",
+                abstract="A review of CADASIL genetics.",
+            ),
+        ]
+        baseline = BaselineCounts(
+            total_docs=1_000,
+            unigrams=Counter({("unrelated",): 5_000}),
+            bigrams=Counter({("foo", "bar"): 500}),
+            trigrams=Counter({("foo", "bar", "baz"): 50}),
+            acronyms=Counter({"FOO": 200}),
+            total_unigrams=100_000,
+            total_bigrams=10_000,
+            total_trigrams=1_000,
+            total_acronyms=500,
+        )
+        result = distill_keywords(
+            papers,
+            baseline=baseline,
+            min_df=1,
+            min_llr=0.0,
+            mesh_descriptors=None,
+            include_acronyms=3,
+        )
+        # CADASIL should be a top acronym and now reach the T/A query.
+        assert "CADASIL" in [s.term for s in result.acronyms]
+        assert '"CADASIL"[Title/Abstract]' in result.query_variants["titleabstract"]
+
+    def test_dedupe_substrings_flag_flows_through(self) -> None:
+        papers = [
+            PaperText(
+                pmid="111",
+                title="small vessel disease and small vessel pathology",
+                abstract="The vessel disease in small vessel disease patients...",
+            ),
+            PaperText(
+                pmid="222",
+                title="small vessel disease overview",
+                abstract="More on small vessel disease and vessel disease...",
+            ),
+        ]
+        baseline = BaselineCounts(
+            total_docs=1_000,
+            unigrams=Counter({("unrelated",): 5_000}),
+            bigrams=Counter({("foo", "bar"): 500}),
+            trigrams=Counter({("foo", "bar", "baz"): 50}),
+            acronyms=Counter(),
+            total_unigrams=100_000,
+            total_bigrams=10_000,
+            total_trigrams=1_000,
+            total_acronyms=500,
+        )
+        result_with = distill_keywords(
+            papers,
+            baseline=baseline,
+            min_df=1,
+            min_llr=0.0,
+            mesh_descriptors=None,
+            dedupe_substrings_flag=True,
+        )
+        result_without = distill_keywords(
+            papers,
+            baseline=baseline,
+            min_df=1,
+            min_llr=0.0,
+            mesh_descriptors=None,
+            dedupe_substrings_flag=False,
+        )
+        # Without dedup, both "small vessel" and "small vessel disease"
+        # should appear; with dedup, only the longer.
+        ta_with = result_with.query_variants["titleabstract"]
+        ta_without = result_without.query_variants["titleabstract"]
+        assert '"small vessel disease"[Title/Abstract]' in ta_with
+        assert '"small vessel"[Title/Abstract]' not in ta_with
+        assert '"small vessel"[Title/Abstract]' in ta_without
 
 
 # ---------------------------------------------------------------------------

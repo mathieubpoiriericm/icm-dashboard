@@ -129,12 +129,18 @@ DEFAULT_MIN_LLR: Final[float] = 6.63
 # different content filters, so the strict chi-square interpretation is
 # still approximate. See the module docstring's methodological note.
 
-# Query-format choices — `_QUERY_FORMATS[0]` is "all" (default).
+# Query-format choices. ``_QUERY_FORMAT_ALL`` is the CLI default and means
+# "emit every variant"; the others map 1:1 to keys in the
+# ``query_variants`` dict returned by ``build_query_variants``.
+_QUERY_FORMAT_ALL: Final[str] = "all"
+_QUERY_FORMAT_STRUCTURED: Final[str] = "structured"
+_QUERY_FORMAT_MESH: Final[str] = "mesh"
+_QUERY_FORMAT_TITLEABSTRACT: Final[str] = "titleabstract"
 _QUERY_FORMATS: Final[tuple[str, ...]] = (
-    "all",
-    "structured",
-    "mesh",
-    "titleabstract",
+    _QUERY_FORMAT_ALL,
+    _QUERY_FORMAT_STRUCTURED,
+    _QUERY_FORMAT_MESH,
+    _QUERY_FORMAT_TITLEABSTRACT,
 )
 _QUERY_FORMAT_VARIANTS: Final[tuple[str, ...]] = _QUERY_FORMATS[1:]
 
@@ -1866,6 +1872,9 @@ def distill_keywords(
     mesh_descriptors: Mapping[str, list[MeshDescriptor]] | None = None,
     mesh_top: int = DEFAULT_MESH_TOP,
     phrase_top: int = DEFAULT_PHRASE_TOP,
+    include_unigrams: int = 0,
+    include_acronyms: int = 0,
+    dedupe_substrings_flag: bool = False,
 ) -> DistillationResult:
     """Rank distinctive keywords from a corpus, optionally with MeSH."""
     paper_tokens: list[list[str]] = [_tokenize(p.combined) for p in papers]
@@ -1937,6 +1946,11 @@ def distill_keywords(
             trigrams=rankings[3],
             mesh_top=mesh_top,
             phrase_top=phrase_top,
+            unigrams=rankings[1],
+            acronyms=acronyms,
+            include_unigrams=include_unigrams,
+            include_acronyms=include_acronyms,
+            dedupe_substrings_flag=dedupe_substrings_flag,
         ),
     )
 
@@ -1947,13 +1961,45 @@ def distill_keywords(
 
 
 def _merged_phrases(
-    bigrams: list[KeywordScore], trigrams: list[KeywordScore]
+    bigrams: list[KeywordScore],
+    trigrams: list[KeywordScore],
+    *,
+    phrase_top: int | None = None,
+    unigrams: list[KeywordScore] | None = None,
+    acronyms: list[KeywordScore] | None = None,
+    include_unigrams: int = 0,
+    include_acronyms: int = 0,
+    dedupe_substrings_flag: bool = False,
 ) -> list[KeywordScore]:
-    """Bigrams + trigrams ranked together — used for the T/A query."""
-    return sorted(
+    """Build the keyword pool for the Title/Abstract clause.
+
+    ``phrase_top`` caps the bigram+trigram contribution *before*
+    ``include_unigrams`` / ``include_acronyms`` append extras, so the
+    extras are additive rather than competing for the same slot count.
+    """
+    phrases = sorted(
         trigrams + bigrams,
         key=lambda k: (-k.llr, -k.document_frequency, k.term),
     )
+    if phrase_top is not None and phrase_top > 0:
+        phrases = phrases[:phrase_top]
+
+    extras: list[KeywordScore] = []
+    if include_unigrams > 0 and unigrams:
+        extras.extend(unigrams[:include_unigrams])
+    if include_acronyms > 0 and acronyms:
+        extras.extend(acronyms[:include_acronyms])
+
+    pool = phrases + extras
+    pool.sort(key=lambda k: (-k.llr, -k.document_frequency, k.term))
+
+    if dedupe_substrings_flag and pool:
+        from scripts._query_diagnose import dedupe_substrings
+
+        kept = set(dedupe_substrings([k.term for k in pool]))
+        pool = [k for k in pool if k.term in kept]
+
+    return pool
 
 
 def _pubmed_clause(term: str, field: str) -> str:
@@ -2028,22 +2074,40 @@ def build_query_variants(
     trigrams: list[KeywordScore],
     mesh_top: int,
     phrase_top: int,
+    unigrams: list[KeywordScore] | None = None,
+    acronyms: list[KeywordScore] | None = None,
+    include_unigrams: int = 0,
+    include_acronyms: int = 0,
+    dedupe_substrings_flag: bool = False,
 ) -> dict[str, str]:
-    phrases = _merged_phrases(bigrams, trigrams)
+    pool = _merged_phrases(
+        bigrams,
+        trigrams,
+        phrase_top=phrase_top,
+        unigrams=unigrams,
+        acronyms=acronyms,
+        include_unigrams=include_unigrams,
+        include_acronyms=include_acronyms,
+        dedupe_substrings_flag=dedupe_substrings_flag,
+    )
+    # When extras are appended (unigrams/acronyms), the pool already
+    # contains the desired entries; pass len(pool) so the caller's
+    # ``top`` cap doesn't truncate the additions away.
+    pool_cap = max(phrase_top, len(pool)) if pool else phrase_top
     return {
-        "structured": format_structured_query(
-            mesh_terms, phrases, mesh_top=mesh_top, phrase_top=phrase_top
+        _QUERY_FORMAT_STRUCTURED: format_structured_query(
+            mesh_terms, pool, mesh_top=mesh_top, phrase_top=pool_cap
         ),
-        "mesh": format_mesh_query(mesh_terms, mesh_top),
-        "titleabstract": format_titleabstract_query(phrases, phrase_top),
+        _QUERY_FORMAT_MESH: format_mesh_query(mesh_terms, mesh_top),
+        _QUERY_FORMAT_TITLEABSTRACT: format_titleabstract_query(pool, pool_cap),
     }
 
 
 def _query_formats_to_emit(result: DistillationResult, query_format: str) -> list[str]:
-    if query_format != "all":
+    if query_format != _QUERY_FORMAT_ALL:
         return [query_format]
     if not result.mesh_terms:
-        return ["titleabstract"]
+        return [_QUERY_FORMAT_TITLEABSTRACT]
     return list(_QUERY_FORMAT_VARIANTS)
 
 
@@ -2258,8 +2322,8 @@ def _render_rich_report(
     # clipboard; `markup=False` also stops Rich from interpreting the
     # bracketed field tags (e.g. `[Title/Abstract]`) as markup, and
     # `soft_wrap=True` keeps the whole query on a single logical line.
-    structured = variants.get("structured", "")
-    if structured and "structured" in formats:
+    structured = variants.get(_QUERY_FORMAT_STRUCTURED, "")
+    if structured and _QUERY_FORMAT_STRUCTURED in formats:
         console.print()
         console.print(f"[bold {_PRIMARY_COLOR}]format: structured — copy-paste[/]")
         console.print(structured, markup=False, soft_wrap=True)
@@ -2354,7 +2418,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--query-format",
         choices=_QUERY_FORMATS,
-        default="all",
+        default=_QUERY_FORMAT_ALL,
         help="Which query variant(s) to emit (default: all)",
     )
     parser.add_argument(
@@ -2408,7 +2472,159 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Write output to this file instead of stdout",
     )
+    parser.add_argument(
+        "--include-unigrams",
+        type=_non_negative_int,
+        default=0,
+        metavar="N",
+        help=(
+            "Append top-N high-LLR unigrams to the Title/Abstract clause "
+            "(default: 0, omitted)."
+        ),
+    )
+    parser.add_argument(
+        "--include-acronyms",
+        type=_non_negative_int,
+        default=0,
+        metavar="M",
+        help=(
+            "Append top-M high-LLR acronyms (e.g. CADASIL, NOTCH3, GWAS) "
+            "to the Title/Abstract clause (default: 0, omitted)."
+        ),
+    )
+    parser.add_argument(
+        "--dedupe-substrings",
+        action="store_true",
+        help=(
+            "Drop Title/Abstract phrases that are case-insensitive "
+            "substrings of longer kept phrases (e.g. drop 'small vessel' "
+            "when 'small vessel disease' is already in the clause)."
+        ),
+    )
+    parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help=(
+            "Compare the distilled query against pipeline.pubmed_search."
+            "SVD_QUERY by running both through NCBI esearch. Emits a "
+            "Markdown report instead of the standard keyword tables."
+        ),
+    )
+    parser.add_argument(
+        "--diagnose-since",
+        type=str,
+        default=None,
+        metavar="YYYY/MM/DD",
+        help=(
+            "Earliest publication date for --diagnose comparison "
+            "(default: five years before today)."
+        ),
+    )
+    parser.add_argument(
+        "--diagnose-top-k",
+        type=_non_negative_int,
+        default=15,
+        metavar="K",
+        help=(
+            "Number of papers from each side of the overlap to show in "
+            "the --diagnose report (default: 15)."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _structural_issues_for_diagnose(args: argparse.Namespace) -> list[str]:
+    """Bullets describing remaining structural weaknesses given the run config.
+
+    Each item names the flag that fixes it so the diagnose report points
+    the reader at concrete next steps. Items already mitigated by the
+    current flag set are omitted.
+    """
+    issues: list[str] = []
+    if args.include_unigrams == 0:
+        issues.append(
+            "Phrase-only Title/Abstract clause excludes high-LLR unigrams "
+            "(e.g. `notch3`, `leukoencephalopathy`). "
+            "Fix: `--include-unigrams N`."
+        )
+    if args.include_acronyms == 0:
+        issues.append(
+            "ALL-CAPS acronyms (CADASIL, NOTCH3, GWAS, WMH) are ranked "
+            "but never appear in the query. "
+            "Fix: `--include-acronyms M`."
+        )
+    if not args.dedupe_substrings:
+        issues.append(
+            "Substring-redundant phrases (e.g. `\"small vessel\"` + "
+            "`\"small vessel disease\"` + `\"vessel disease\"`) inflate "
+            "the T/A clause. Fix: `--dedupe-substrings`."
+        )
+    if not issues:
+        issues.append(
+            "All three current structural fixes are enabled in this run."
+        )
+    return issues
+
+
+def _run_diagnose(args: argparse.Namespace, result: DistillationResult) -> int:
+    """Run the PubMed comparison diagnostic and emit a Markdown report."""
+    try:
+        from pipeline.pubmed_search import SVD_QUERY
+    except ImportError as exc:
+        logger.error(
+            f"Could not import SVD_QUERY for diagnostic comparison: {exc}"
+        )
+        return 1
+    from scripts._query_diagnose import run_diagnose
+
+    if args.query_format == _QUERY_FORMAT_ALL:
+        variant = (
+            _QUERY_FORMAT_STRUCTURED
+            if result.mesh_terms
+            else _QUERY_FORMAT_TITLEABSTRACT
+        )
+    else:
+        variant = args.query_format
+    distilled_query = result.query_variants.get(variant, "")
+    if not distilled_query:
+        logger.error(
+            f"No '{variant}' query variant available for diagnosis. Run "
+            "without --diagnose to inspect keyword tables, or set "
+            "--query-format explicitly."
+        )
+        return 1
+
+    diagnose_since = args.diagnose_since
+    if diagnose_since is None:
+        today = _dt.date.today()
+        diagnose_since = f"{today.year - 5}/01/01"
+
+    structural_issues = _structural_issues_for_diagnose(args)
+
+    try:
+        markdown = run_diagnose(
+            distilled_query=distilled_query,
+            production_query=SVD_QUERY,
+            distilled_label=f"distilled ({variant})",
+            production_label="SVD_QUERY",
+            diagnose_since=diagnose_since,
+            top_k=args.diagnose_top_k,
+            structural_issues=structural_issues,
+        )
+    except (OSError, RuntimeError) as exc:
+        logger.error(f"Diagnostic failed: {exc}")
+        return 1
+
+    if args.output:
+        try:
+            args.output.write_text(markdown, encoding="utf-8")
+        except OSError as exc:
+            logger.error(f"Could not write diagnostic to {args.output}: {exc}")
+            return 1
+        logger.info(f"Wrote diagnostic report to {args.output}")
+    else:
+        print(markdown)
+    return 0
 
 
 def _build_progress() -> Progress:
@@ -2540,7 +2756,13 @@ def main(argv: list[str] | None = None) -> int:
         mesh_descriptors=mesh_map,
         mesh_top=args.mesh_top,
         phrase_top=phrase_top,
+        include_unigrams=args.include_unigrams,
+        include_acronyms=args.include_acronyms,
+        dedupe_substrings_flag=args.dedupe_substrings,
     )
+
+    if args.diagnose:
+        return _run_diagnose(args, result)
 
     if args.json:
         payload = to_json(result)
@@ -2587,4 +2809,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # When invoked as `python scripts/distill_pubmed_keywords.py`, Python
+    # sets sys.path[0] to the script's directory, which prevents the
+    # cross-module imports below (`scripts._query_diagnose`,
+    # `pipeline.pubmed_search`) from resolving. Re-add the project root so
+    # both packages are importable, then run.
+    _project_root = str(Path(__file__).resolve().parent.parent)
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
     sys.exit(main())
