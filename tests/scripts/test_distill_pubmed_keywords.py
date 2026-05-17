@@ -39,6 +39,7 @@ from scripts.distill_pubmed_keywords import (
     build_query_variants,
     distill_keywords,
     fetch_mesh_terms,
+    format_hybrid_query,
     format_mesh_query,
     format_structured_query,
     format_titleabstract_query,
@@ -540,6 +541,142 @@ class TestBuildQuery:
         assert q == ('"White Matter"[Title/Abstract] OR "microbleeds"[Title/Abstract]')
 
 
+class TestFormatHybridQuery:
+    def test_hybrid_renders_anchor_and_topic_pool(self) -> None:
+        scores = [
+            KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
+            KeywordScore(
+                term="white matter hyperintensities",
+                document_frequency=4,
+                total_count=4,
+            ),
+        ]
+        q = format_hybrid_query(
+            "cerebral small vessel disease", scores, phrase_top=10
+        )
+        assert q == (
+            '"cerebral small vessel disease"[Title/Abstract] AND '
+            '("CADASIL"[Title/Abstract] OR '
+            '"white matter hyperintensities"[Title/Abstract])'
+        )
+
+    def test_hybrid_returns_bare_anchor_when_pool_empty(self) -> None:
+        q = format_hybrid_query("cerebral small vessel disease", [], phrase_top=10)
+        assert q == '"cerebral small vessel disease"[Title/Abstract]'
+
+    def test_hybrid_drops_anchor_from_pool_when_duplicated(self) -> None:
+        scores = [
+            KeywordScore(
+                term="cerebral small vessel disease",
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
+        ]
+        q = format_hybrid_query(
+            "cerebral small vessel disease", scores, phrase_top=10
+        )
+        assert q == (
+            '"cerebral small vessel disease"[Title/Abstract] AND '
+            '("CADASIL"[Title/Abstract])'
+        )
+
+    def test_hybrid_anchor_match_is_case_insensitive(self) -> None:
+        scores = [
+            KeywordScore(
+                term="Cerebral Small Vessel Disease",
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
+        ]
+        q = format_hybrid_query(
+            "cerebral small vessel disease", scores, phrase_top=10
+        )
+        # The mixed-case duplicate must still be filtered out.
+        assert '"Cerebral Small Vessel Disease"[Title/Abstract]' not in q
+        assert '"CADASIL"[Title/Abstract]' in q
+
+    def test_hybrid_drops_pool_terms_that_are_substrings_of_anchor(self) -> None:
+        # Pool entries that PubMed positional phrase semantics make
+        # tautologically true (substrings of the anchor) must be dropped
+        # before rendering — otherwise the OR-clause is decorative and
+        # the rendered query misleads the reader.
+        scores = [
+            KeywordScore(
+                term="small vessel disease",
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(
+                term="cerebral small vessel",
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
+            KeywordScore(
+                term="white matter hyperintensities",
+                document_frequency=8,
+                total_count=8,
+            ),
+        ]
+        q = format_hybrid_query(
+            "cerebral small vessel disease", scores, phrase_top=10
+        )
+        assert '"small vessel disease"[Title/Abstract]' not in q
+        assert '"cerebral small vessel"[Title/Abstract]' not in q
+        # Non-substring pool entries survive — they actually filter.
+        assert '"CADASIL"[Title/Abstract]' in q
+        assert '"white matter hyperintensities"[Title/Abstract]' in q
+
+    def test_hybrid_substring_dedup_is_case_insensitive(self) -> None:
+        scores = [
+            KeywordScore(
+                term="Small Vessel Disease",
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(term="CADASIL", document_frequency=5, total_count=5),
+        ]
+        q = format_hybrid_query(
+            "cerebral small vessel disease", scores, phrase_top=10
+        )
+        assert '"Small Vessel Disease"[Title/Abstract]' not in q
+        assert '"CADASIL"[Title/Abstract]' in q
+
+    def test_hybrid_falls_back_to_bare_anchor_when_pool_fully_subsumed(
+        self,
+    ) -> None:
+        # Every pool term is a substring of the anchor → empty pool after
+        # dedupe → render the bare anchor clause.
+        scores = [
+            KeywordScore(
+                term="small vessel disease",
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(
+                term="cerebral small vessel",
+                document_frequency=10,
+                total_count=10,
+            ),
+            KeywordScore(
+                term="cerebral small",
+                document_frequency=8,
+                total_count=8,
+            ),
+        ]
+        q = format_hybrid_query(
+            "cerebral small vessel disease", scores, phrase_top=10
+        )
+        assert q == '"cerebral small vessel disease"[Title/Abstract]'
+
+    def test_hybrid_returns_empty_when_anchor_sanitises_away(self) -> None:
+        scores = [KeywordScore(term="CADASIL", document_frequency=5, total_count=5)]
+        # Bare quotes and whitespace collapse to empty inside _pubmed_clause.
+        assert format_hybrid_query('""', scores, phrase_top=10) == ""
+
+
 # ---------------------------------------------------------------------------
 # Structural-fix flags: --include-unigrams, --include-acronyms,
 # --dedupe-substrings (see scripts/_query_diagnose.py for the dedupe helper)
@@ -700,6 +837,64 @@ class TestBuildQueryVariantsWithExtras:
         assert '"small vessel disease"[Title/Abstract]' in variants["titleabstract"]
         assert '"white matter"[Title/Abstract]' in variants["titleabstract"]
         assert variants["mesh"] == ""
+
+    def test_hybrid_variant_empty_without_anchor(self) -> None:
+        variants = build_query_variants(
+            mesh_terms=[],
+            bigrams=[_ks("white matter", 50.0)],
+            trigrams=[_ks("small vessel disease", 90.0)],
+            mesh_top=10,
+            phrase_top=10,
+        )
+        assert "hybrid" in variants
+        assert variants["hybrid"] == ""
+
+    def test_hybrid_variant_rendered_with_anchor(self) -> None:
+        variants = build_query_variants(
+            mesh_terms=[],
+            bigrams=[_ks("white matter hyperintensities", 60.0)],
+            trigrams=[_ks("small vessel disease", 90.0)],
+            mesh_top=10,
+            phrase_top=10,
+            anchor_phrase="cerebral small vessel disease",
+        )
+        q = variants["hybrid"]
+        assert q.startswith('"cerebral small vessel disease"[Title/Abstract] AND (')
+        # "small vessel disease" is a substring of the anchor — drained by
+        # PubMed positional phrase semantics — so the substring-dedup in
+        # format_hybrid_query drops it from the rendered OR-clause.
+        assert '"small vessel disease"[Title/Abstract]' not in q
+        # The non-substring pool term survives and is what the AND clause
+        # actually filters on.
+        assert '"white matter hyperintensities"[Title/Abstract]' in q
+        # Hybrid must not leak into other variants.
+        ta = variants["titleabstract"]
+        assert '"cerebral small vessel disease"[Title/Abstract]' not in ta
+
+    def test_hybrid_anchor_does_not_disturb_other_variants(self) -> None:
+        mesh = [KeywordScore(term="Brain", document_frequency=5, total_count=5)]
+        bigrams = [_ks("white matter", 50.0)]
+        trigrams = [_ks("small vessel disease", 90.0)]
+        without = build_query_variants(
+            mesh_terms=mesh,
+            bigrams=bigrams,
+            trigrams=trigrams,
+            mesh_top=10,
+            phrase_top=10,
+        )
+        with_anchor = build_query_variants(
+            mesh_terms=mesh,
+            bigrams=bigrams,
+            trigrams=trigrams,
+            mesh_top=10,
+            phrase_top=10,
+            anchor_phrase="cerebral small vessel disease",
+        )
+        # Only the hybrid slot should differ when an anchor is added.
+        for key in ("structured", "mesh", "titleabstract"):
+            assert without[key] == with_anchor[key]
+        assert without["hybrid"] == ""
+        assert with_anchor["hybrid"] != ""
 
 
 class TestDistillKeywordsWithExtras:
@@ -1882,6 +2077,68 @@ def test_main_accepts_title_abstract_only_run(
         ]
     )
     assert rc == 0
+
+
+def test_main_hybrid_without_anchor_phrase_errors(_stub_corpus: Path) -> None:
+    # argparse parser.error exits with code 2 — assert the CLI rejects
+    # the combination rather than silently emitting an empty hybrid.
+    with pytest.raises(SystemExit) as excinfo:
+        main(
+            [
+                "--xml-dir",
+                str(_stub_corpus),
+                "--query-format",
+                "hybrid",
+            ]
+        )
+    assert excinfo.value.code == 2
+
+
+def test_main_anchor_phrase_whitespace_only_errors(_stub_corpus: Path) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(
+            [
+                "--xml-dir",
+                str(_stub_corpus),
+                "--query-format",
+                "hybrid",
+                "--anchor-phrase",
+                "   ",
+            ]
+        )
+    assert excinfo.value.code == 2
+
+
+def test_main_hybrid_with_anchor_phrase_succeeds(
+    _stub_corpus: Path,
+    tmp_path: Path,
+) -> None:
+    baseline_path = tmp_path / "baseline.json.gz"
+    _write_baseline_payload(baseline_path)
+    out_path = tmp_path / "out.json"
+
+    rc = main(
+        [
+            "--xml-dir",
+            str(_stub_corpus),
+            "--baseline-cache",
+            str(baseline_path),
+            "--no-mesh",
+            "--query-format",
+            "hybrid",
+            "--anchor-phrase",
+            "cerebral small vessel disease",
+            "--json",
+            "--output",
+            str(out_path),
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    hybrid = payload["query_variants"]["hybrid"]
+    assert hybrid.startswith(
+        '"cerebral small vessel disease"[Title/Abstract]'
+    )
 
 
 def test_main_missing_baseline_fails(

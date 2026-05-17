@@ -136,13 +136,23 @@ _QUERY_FORMAT_ALL: Final[str] = "all"
 _QUERY_FORMAT_STRUCTURED: Final[str] = "structured"
 _QUERY_FORMAT_MESH: Final[str] = "mesh"
 _QUERY_FORMAT_TITLEABSTRACT: Final[str] = "titleabstract"
-_QUERY_FORMATS: Final[tuple[str, ...]] = (
-    _QUERY_FORMAT_ALL,
+# ``hybrid`` mirrors the production ``SVD_QUERY`` shape:
+# ``"<anchor>"[T/A] AND ("topic"[T/A] OR ...)``. Anchoring on a
+# corpus-defining phrase (typically the 4-gram that the n-gram extractor
+# can't surface, e.g. "cerebral small vessel disease") gives recall parity
+# with the production query while filtering off-topic noise that broad
+# MeSH headings or unanchored T/A pools pull in.
+_QUERY_FORMAT_HYBRID: Final[str] = "hybrid"
+_QUERY_FORMAT_VARIANTS: Final[tuple[str, ...]] = (
     _QUERY_FORMAT_STRUCTURED,
     _QUERY_FORMAT_MESH,
     _QUERY_FORMAT_TITLEABSTRACT,
+    _QUERY_FORMAT_HYBRID,
 )
-_QUERY_FORMAT_VARIANTS: Final[tuple[str, ...]] = _QUERY_FORMATS[1:]
+_QUERY_FORMATS: Final[tuple[str, ...]] = (
+    _QUERY_FORMAT_ALL,
+    *_QUERY_FORMAT_VARIANTS,
+)
 
 # Project palette echoes www/custom.css so the CLI feels visually
 # paired with the dashboard. Primary is a lightened indigo (the
@@ -1875,6 +1885,7 @@ def distill_keywords(
     include_unigrams: int = 0,
     include_acronyms: int = 0,
     dedupe_substrings_flag: bool = False,
+    anchor_phrase: str | None = None,
 ) -> DistillationResult:
     """Rank distinctive keywords from a corpus, optionally with MeSH."""
     paper_tokens: list[list[str]] = [_tokenize(p.combined) for p in papers]
@@ -1951,6 +1962,7 @@ def distill_keywords(
             include_unigrams=include_unigrams,
             include_acronyms=include_acronyms,
             dedupe_substrings_flag=dedupe_substrings_flag,
+            anchor_phrase=anchor_phrase,
         ),
     )
 
@@ -2067,6 +2079,43 @@ def format_structured_query(
     return ""
 
 
+def format_hybrid_query(
+    anchor_phrase: str,
+    phrase_scores: list[KeywordScore],
+    *,
+    phrase_top: int,
+) -> str:
+    """``"anchor"[T/A] AND ("phrase" OR ...)`` Boolean fragment.
+
+    Mirrors the production ``SVD_QUERY`` shape so a paper must contain
+    the cSVD-defining anchor *and* at least one corpus-distinctive
+    topic term. The anchor doubles as a precision filter against
+    overloaded acronyms (e.g. ``SVS`` = Society for Vascular Surgery)
+    and unanchored phrases (e.g. ``"genome-wide association study"``)
+    that catch off-topic GWAS papers across unrelated diseases.
+
+    Pool terms that are case-insensitive substrings of the anchor are
+    dropped before rendering. PubMed phrase search is positional within
+    the T/A field, so a paper matching the anchor already matches any
+    substring of it — keeping those in the OR-clause makes the pool
+    tautological and the rendered query misleading.
+
+    Returns the bare anchor clause when the pool is empty (or fully
+    subsumed by the anchor), and an empty string when the anchor itself
+    sanitises away (defensive — the CLI layer already validates
+    non-empty input).
+    """
+    anchor_clause = _pubmed_clause(anchor_phrase, "Title/Abstract")
+    if not anchor_clause:
+        return ""
+    anchor_lower = anchor_phrase.casefold()
+    filtered = [s for s in phrase_scores if s.term.casefold() not in anchor_lower]
+    pool_clause = format_titleabstract_query(filtered, phrase_top)
+    if not pool_clause:
+        return anchor_clause
+    return f"{anchor_clause} AND ({pool_clause})"
+
+
 def build_query_variants(
     *,
     mesh_terms: list[KeywordScore],
@@ -2079,6 +2128,7 @@ def build_query_variants(
     include_unigrams: int = 0,
     include_acronyms: int = 0,
     dedupe_substrings_flag: bool = False,
+    anchor_phrase: str | None = None,
 ) -> dict[str, str]:
     pool = _merged_phrases(
         bigrams,
@@ -2094,21 +2144,38 @@ def build_query_variants(
     # contains the desired entries; pass len(pool) so the caller's
     # ``top`` cap doesn't truncate the additions away.
     pool_cap = max(phrase_top, len(pool)) if pool else phrase_top
+    hybrid = (
+        format_hybrid_query(anchor_phrase, pool, phrase_top=pool_cap)
+        if anchor_phrase
+        else ""
+    )
     return {
         _QUERY_FORMAT_STRUCTURED: format_structured_query(
             mesh_terms, pool, mesh_top=mesh_top, phrase_top=pool_cap
         ),
         _QUERY_FORMAT_MESH: format_mesh_query(mesh_terms, mesh_top),
         _QUERY_FORMAT_TITLEABSTRACT: format_titleabstract_query(pool, pool_cap),
+        _QUERY_FORMAT_HYBRID: hybrid,
     }
 
 
 def _query_formats_to_emit(result: DistillationResult, query_format: str) -> list[str]:
     if query_format != _QUERY_FORMAT_ALL:
         return [query_format]
+    # Hybrid is only present when --anchor-phrase was passed; downstream
+    # callers skip empty-string entries, so listing it here is safe even
+    # if the anchor was omitted.
     if not result.mesh_terms:
-        return [_QUERY_FORMAT_TITLEABSTRACT]
-    return list(_QUERY_FORMAT_VARIANTS)
+        formats: list[str] = [_QUERY_FORMAT_TITLEABSTRACT]
+    else:
+        formats = [
+            _QUERY_FORMAT_STRUCTURED,
+            _QUERY_FORMAT_MESH,
+            _QUERY_FORMAT_TITLEABSTRACT,
+        ]
+    if result.query_variants.get(_QUERY_FORMAT_HYBRID):
+        formats.append(_QUERY_FORMAT_HYBRID)
+    return formats
 
 
 def _print_section(
@@ -2261,6 +2328,8 @@ def _render_config_panel(args: argparse.Namespace, *, phrase_top: int) -> Panel:
     grid.add_row("mesh", "on" if not args.no_mesh else "off")
     grid.add_row("baseline-cache", str(args.baseline_cache))
     grid.add_row("query-format", args.query_format)
+    if args.anchor_phrase:
+        grid.add_row("anchor-phrase", args.anchor_phrase)
 
     return Panel(
         grid,
@@ -2422,6 +2491,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Which query variant(s) to emit (default: all)",
     )
     parser.add_argument(
+        "--anchor-phrase",
+        type=str,
+        default=None,
+        metavar="PHRASE",
+        help=(
+            "Anchor phrase for the 'hybrid' query variant — rendered as "
+            '"<PHRASE>"[Title/Abstract] AND ("topic" OR ...). Supports '
+            "4-grams the n-gram extractor can't surface (e.g. "
+            "'cerebral small vessel disease'). Required when "
+            "--query-format=hybrid; ignored otherwise."
+        ),
+    )
+    parser.add_argument(
         "--no-mesh",
         action="store_true",
         help="Skip MeSH harvest; emit only the Title/Abstract query variant.",
@@ -2554,7 +2636,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "queries, narrow --diagnose-since instead."
         ),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.anchor_phrase is not None:
+        args.anchor_phrase = args.anchor_phrase.strip()
+        if not args.anchor_phrase:
+            parser.error("--anchor-phrase must not be empty or whitespace-only")
+    if args.query_format == _QUERY_FORMAT_HYBRID and not args.anchor_phrase:
+        parser.error("--query-format=hybrid requires --anchor-phrase")
+    return args
 
 
 def _structural_issues_for_diagnose(args: argparse.Namespace) -> list[str]:
@@ -2602,11 +2691,16 @@ def _run_diagnose(args: argparse.Namespace, result: DistillationResult) -> int:
     from scripts._query_diagnose import run_diagnose
 
     if args.query_format == _QUERY_FORMAT_ALL:
-        variant = (
-            _QUERY_FORMAT_STRUCTURED
-            if result.mesh_terms
-            else _QUERY_FORMAT_TITLEABSTRACT
-        )
+        # Prefer the hybrid variant when an anchor was supplied — that's
+        # the closest structural match to SVD_QUERY and the one the user
+        # most likely wants to validate. Fall back to the existing
+        # MeSH-aware picker when no anchor is set.
+        if result.query_variants.get(_QUERY_FORMAT_HYBRID):
+            variant = _QUERY_FORMAT_HYBRID
+        elif result.mesh_terms:
+            variant = _QUERY_FORMAT_STRUCTURED
+        else:
+            variant = _QUERY_FORMAT_TITLEABSTRACT
     else:
         variant = args.query_format
     distilled_query = result.query_variants.get(variant, "")
@@ -2785,6 +2879,7 @@ def main(argv: list[str] | None = None) -> int:
         include_unigrams=args.include_unigrams,
         include_acronyms=args.include_acronyms,
         dedupe_substrings_flag=args.dedupe_substrings,
+        anchor_phrase=args.anchor_phrase,
     )
 
     if args.diagnose:
