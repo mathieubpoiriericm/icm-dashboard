@@ -31,47 +31,26 @@ RUN apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=2 update \
 RUN rm -rf /opt/shiny-server/samples
 RUN rm -rf /srv/shiny-server/*
 
-# Install R dependencies from the source-derived package manifest.
-RUN R -e "\
-  options(timeout = 60, download.file.method = 'libcurl'); \
-  install.packages(c( \
-    'bslib', \
-    'cachem', \
-    'data.table', \
-    'DBI', \
-    'digest', \
-    'dplyr', \
-    'DT', \
-    'fastmap', \
-    'future', \
-    'future.apply', \
-    'ggplot2', \
-    'ggrepel', \
-    'ggtext', \
-    'htmltools', \
-    'httr2', \
-    'jsonlite', \
-    'leaflet', \
-    'memoise', \
-    'parallelly', \
-    'patchwork', \
-    'purrr', \
-    'qs2', \
-    'ragg', \
-    'readr', \
-    'RPostgres', \
-    'scales', \
-    'shiny', \
-    'shinytest2', \
-    'shinyWidgets', \
-    'showtext', \
-    'stringr', \
-    'sysfonts', \
-    'systemfonts', \
-    'testthat', \
-    'tidygeocoder', \
-    'tidyr' \
-  ), repos = 'https://cloud.r-project.org')" \
+WORKDIR /srv/shiny-server
+
+# Force Posit Package Manager binaries for the rocker base (Ubuntu Noble = R 4.5.x).
+# PPM serves precompiled .deb-style R packages, so restore takes minutes
+# instead of hours of source compilation.
+ENV RENV_CONFIG_REPOS_OVERRIDE=https://packagemanager.posit.co/cran/__linux__/noble/latest \
+    RENV_CONFIG_INSTALL_VERBOSE=TRUE \
+    RENV_PATHS_CACHE=/opt/renv/cache
+
+RUN R -e "options(timeout = 120, download.file.method = 'libcurl'); \
+  install.packages('renv', repos = '${RENV_CONFIG_REPOS_OVERRIDE}')"
+
+# Copy only the files needed for renv::restore() first so Docker can cache
+# the (slow) package-install layer when only app source changes.
+COPY renv.lock renv.lock
+COPY .Rprofile .Rprofile
+COPY renv/activate.R renv/activate.R
+COPY renv/settings.json renv/settings.json
+
+RUN R -e "renv::restore(prompt = FALSE)" \
   && R -e "if (!requireNamespace('qs2', quietly = TRUE)) stop('qs2 package failed to install')"
 
 COPY app.R /srv/shiny-server
