@@ -60,6 +60,7 @@ MARKER_TERMS: Final[tuple[str, ...]] = (
     "stroke",
     "dementia",
     "lacunes",
+    "lacunar stroke",
     "white matter hyperintensities",
     "perivascular spaces",
     "cerebral microbleeds",
