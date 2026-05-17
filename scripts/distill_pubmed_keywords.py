@@ -766,6 +766,25 @@ def _mods_has_article_signal(mods_el: etree._Element) -> bool:
     )
 
 
+def _best_mods_candidate(
+    candidates: list[etree._Element],
+) -> etree._Element | None:
+    """Return the best article-level candidate from ``candidates``, or None.
+
+    Prefers candidates with both title/abstract and an article signal;
+    falls back to the first with title or abstract.
+    """
+    fallback: etree._Element | None = None
+    for candidate in candidates:
+        if not _mods_has_title_or_abstract(candidate):
+            continue
+        if _mods_has_article_signal(candidate):
+            return candidate
+        if fallback is None:
+            fallback = candidate
+    return fallback
+
+
 def _select_mods_element(root: etree._Element) -> etree._Element:
     """Return the best article-level MODS element beneath ``root``."""
     if _local_name(root) == "mods":
@@ -779,29 +798,13 @@ def _select_mods_element(root: etree._Element) -> etree._Element:
     # <mods/> block, use the first direct child that actually has article text
     # instead of dropping the file.
     direct_mods = _direct_children_named(root, "mods")
-    for candidate in direct_mods:
-        if _mods_has_title_or_abstract(candidate) and _mods_has_article_signal(
-            candidate
-        ):
-            return candidate
-    for candidate in direct_mods:
-        if _mods_has_title_or_abstract(candidate):
-            return candidate
-
-    direct_mod_ids = {id(el) for el in direct_mods}
-    descendant_mods = root.findall(f".//{_NS}mods")
-    for candidate in descendant_mods:
-        if id(candidate) in direct_mod_ids:
-            continue
-        if _mods_has_title_or_abstract(candidate) and _mods_has_article_signal(
-            candidate
-        ):
-            return candidate
-    for candidate in descendant_mods:
-        if id(candidate) in direct_mod_ids:
-            continue
-        if _mods_has_title_or_abstract(candidate):
-            return candidate
+    chosen = _best_mods_candidate(direct_mods)
+    descendant_mods: list[etree._Element] = []
+    if chosen is None:
+        descendant_mods = root.findall(f".//{_NS}mods")
+        chosen = _best_mods_candidate(descendant_mods)
+    if chosen is not None:
+        return chosen
     if direct_mods:
         return direct_mods[0]
     if descendant_mods:
@@ -2085,40 +2088,43 @@ def _merged_phrases(
     if include_acronyms > 0 and acronyms:
         extras.extend(acronyms[:include_acronyms])
 
-    pool = phrases + extras
-    pool.sort(key=lambda k: (-k.llr, -k.document_frequency, k.term))
+    # Tag each score with its origin so the post-dedupe cap can distinguish
+    # phrases (subject to phrase_top) from extras (always preserved) without
+    # relying on object identity.
+    pool: list[tuple[KeywordScore, bool]] = [(s, False) for s in phrases] + [
+        (s, True) for s in extras
+    ]
+    pool.sort(
+        key=lambda item: (-item[0].llr, -item[0].document_frequency, item[0].term)
+    )
 
     if dedupe_substrings_flag and pool:
         from scripts._query_diagnose import dedupe_substrings
 
         # Dedupe over rendered PubMed text (not raw terms) so duplicate
         # clauses can't slip in under different surface strings.
-        sanitized_terms = [_pubmed_phrase_text(k.term) for k in pool]
+        sanitized_terms = [_pubmed_phrase_text(score.term) for score, _ in pool]
         kept_counts = Counter(dedupe_substrings(sanitized_terms))
-        deduped_pool: list[KeywordScore] = []
-        for score, sanitized in zip(pool, sanitized_terms, strict=True):
+        deduped: list[tuple[KeywordScore, bool]] = []
+        for item, sanitized in zip(pool, sanitized_terms, strict=True):
             if not sanitized or kept_counts[sanitized] <= 0:
                 continue
-            deduped_pool.append(score)
+            deduped.append(item)
             kept_counts[sanitized] -= 1
-        pool = deduped_pool
+        pool = deduped
         if phrase_top is not None:
             phrase_limit = max(0, phrase_top)
             phrase_count = 0
-            extra_ids = {id(score) for score in extras}
-            capped_pool: list[KeywordScore] = []
-            for score in pool:
-                is_extra = id(score) in extra_ids
-                if is_extra:
-                    capped_pool.append(score)
-                    continue
-                if phrase_count >= phrase_limit:
-                    continue
-                capped_pool.append(score)
-                phrase_count += 1
-            pool = capped_pool
+            capped: list[tuple[KeywordScore, bool]] = []
+            for score, is_extra in pool:
+                if not is_extra:
+                    if phrase_count >= phrase_limit:
+                        continue
+                    phrase_count += 1
+                capped.append((score, is_extra))
+            pool = capped
 
-    return pool
+    return [score for score, _ in pool]
 
 
 def _pubmed_phrase_text(term: str) -> str:
