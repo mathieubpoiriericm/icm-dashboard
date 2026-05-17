@@ -68,7 +68,7 @@ class HpcAppConfig:
     vllm_remote_log_dir: str = (
         "/network/iss/debette/users/mathieu.poirier/csvd-hpc/logs"
     )
-    vllm_remote_venv_path: str = "/network/iss/debette/users/mathieu.poirier/.venv-vllm"
+    vllm_remote_venv_path: str = "/network/iss/debette/users/mathieu.poirier/serve/.venv"
     vllm_hf_home: str = (
         "/network/iss/debette/users/mathieu.poirier/hf-cache/huggingface"
     )
