@@ -1,9 +1,10 @@
 # R Package Manifest
 
-This manifest is derived only from the repository's `.R` source files. It
-includes packages found in explicit `library()`, `require()`,
-`requireNamespace()`, and `loadNamespace()` calls, plus namespace calls such as
-`pkg::function()`.
+This manifest is derived only from the repository's Git-tracked `.R` source
+files, excluding generated bootstrap files such as `renv/activate.R` and
+ignored local artifacts. It includes packages found in explicit `library()`,
+`require()`, `requireNamespace()`, and `loadNamespace()` calls, plus namespace
+calls such as `pkg::function()`.
 
 Comments, README content, lockfiles, and other non-source documentation are not
 used as inputs.
