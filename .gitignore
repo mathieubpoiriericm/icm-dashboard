@@ -21,6 +21,7 @@ data
 docs/guides
 docs/other
 docs/pubmed_query_distillation
+docs/sbom
 hpc-explorer
 icm-hpc
 logs
