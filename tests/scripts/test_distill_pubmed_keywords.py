@@ -2904,6 +2904,74 @@ class TestRichReportCopyPaste:
         non_blank_lines = [ln.rstrip() for ln in output.splitlines() if ln.strip()]
         assert non_blank_lines[-1] == structured
 
+    def test_hybrid_preferred_over_structured_when_both_emitted(self) -> None:
+        # Default --query-format=all emits structured AND hybrid. The
+        # trailer should pick hybrid (the empirically validated optimum)
+        # rather than the legacy structured choice.
+        hybrid = (
+            '"cerebral small vessel disease"[Title/Abstract] AND '
+            '("white matter"[Title/Abstract])'
+        )
+        structured = (
+            "(CADASIL[MeSH Terms]) AND "
+            '("white matter"[Title/Abstract])'
+        )
+        result = DistillationResult(
+            papers=3,
+            unigrams=[],
+            bigrams=[],
+            trigrams=[],
+            acronyms=[],
+            mesh_terms=[
+                KeywordScore(term="CADASIL", document_frequency=2, total_count=4)
+            ],
+            query_variants={
+                "structured": structured,
+                "mesh": "CADASIL[MeSH Terms]",
+                "titleabstract": '"white matter"[Title/Abstract]',
+                "hybrid": hybrid,
+            },
+        )
+
+        output = _capture_rich_report(result)
+
+        assert "format: hybrid — copy-paste" in output
+        # The structured trailer must NOT appear when hybrid wins —
+        # one trailer at a time, hybrid-first.
+        assert "format: structured — copy-paste" not in output
+        non_blank_lines = [ln.rstrip() for ln in output.splitlines() if ln.strip()]
+        assert non_blank_lines[-1] == hybrid
+
+    def test_structured_trailer_used_when_hybrid_empty(self) -> None:
+        # Callers that pick --query-format=structured (or whose hybrid
+        # slot is empty for any reason) still get the legacy structured
+        # trailer — the fallback preserves backwards compatibility.
+        structured = (
+            "(CADASIL[MeSH Terms]) AND "
+            '("white matter"[Title/Abstract])'
+        )
+        result = DistillationResult(
+            papers=3,
+            unigrams=[],
+            bigrams=[],
+            trigrams=[],
+            acronyms=[],
+            mesh_terms=[
+                KeywordScore(term="CADASIL", document_frequency=2, total_count=4)
+            ],
+            query_variants={
+                "structured": structured,
+                "mesh": "CADASIL[MeSH Terms]",
+                "titleabstract": '"white matter"[Title/Abstract]',
+                "hybrid": "",
+            },
+        )
+
+        output = _capture_rich_report(result)
+
+        assert "format: structured — copy-paste" in output
+        assert "format: hybrid — copy-paste" not in output
+
     def test_no_trailer_when_structured_format_not_emitted(self) -> None:
         # query-format=mesh limits emission to the mesh panel only;
         # the structured trailer must not appear in that case.

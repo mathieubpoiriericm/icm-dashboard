@@ -40,12 +40,74 @@ Usage:
     python scripts/distill_pubmed_keywords.py --query-format structured
 
 The no-flag invocation produces the empirically validated configuration
-documented in ``docs/query-validation-report.qmd``: the hybrid variant
-is anchored on ``cerebral small vessel disease`` and three seed phrases
-(``loci``, ``intracerebral haemorrhage``, ``intracerebral hemorrhage``)
-are appended to the Title/Abstract pool. Override either with
-``--anchor-phrase`` and ``--seed-phrases`` when distilling for a
-different disease scope.
+documented in ``docs/pubmed_query_distillation/query-validation-report.qmd``:
+the hybrid variant is anchored on ``cerebral small vessel disease`` and
+three seed phrases (``loci``, ``intracerebral haemorrhage``,
+``intracerebral hemorrhage``) are appended to the Title/Abstract pool.
+Override either with ``--anchor-phrase`` and ``--seed-phrases`` when
+distilling for a different disease scope.
+
+Validation history
+------------------
+
+Six query variants have been validated end-to-end against a 24-PMID
+bibliography gold standard, scored by NLM MeSH match with Claude Haiku
+4.5 as a fallback over a 200-PMID random sample (seed = 0) drawn from
+the last two years of PubMed. Summary (Table 1 of the validation
+report; see the report for figures and per-PMID failure-mode analysis):
+
+  #  Variant                       Precision  Recall  Gold   In-window  Cap?
+  -  ----------------------------  ---------  ------  -----  ---------  ----
+  1  Distilled — structured          98.0 %   20.8 %   5/24    66,035   Yes
+  2  Distilled — hybrid (baseline)   96.5 %   41.7 %  10/24     2,601   no
+  3  Distilled — title/abstract      58.1 %    0.0 %   0/24   101,889   Yes
+  4  Variant (1)                     97.5 %   58.3 %  14/24     2,772   no
+  5  Variant (3)                     87.5 %   58.3 %  14/24     6,418   no
+  6  Production SVD_QUERY            91.5 %   70.8 %  17/24     3,487   no
+
+Variants in detail:
+
+1. **Distilled — structured**: ``(MeSH OR ...) AND (T/A OR ...)`` with a
+   10-term MeSH disjunction and a 10-phrase Title/Abstract disjunction.
+   Best precision of the round but recall is unreliable — the all-time
+   esearch hit PubMed's 9 999-PMID ``retmax`` cap, dropping older gold
+   papers from the recall denominator.
+
+2. **Distilled — hybrid (baseline)**: ``"cerebral small vessel disease"
+   [T/A] AND (5 secondary T/A phrases)``. The only Step-2 variant with
+   a trustworthy (non-truncated) recall floor; the 41.7 % recall
+   motivated the seed-phrase work in subsequent variants.
+
+3. **Distilled — title/abstract**: a pure OR-disjunction of 10 T/A
+   phrases. Genuinely broken — 58.1 % precision (matches any paper
+   mentioning "white matter") and a literal 0/24 recall floor, the
+   latter an artefact of the retmax cap dropping older gold papers.
+
+4. **Variant (1)**: hybrid baseline + three seed phrases (``loci``,
+   ``intracerebral haemorrhage``, ``intracerebral hemorrhage``) added
+   to the secondary T/A clause. Recovers four gold PMIDs (31430377,
+   34987231, 35328582, 39216230) that the unaugmented hybrid misses,
+   at no precision cost. **This is the script's default output today.**
+
+5. **Variant (3)**: Variant (1) plus an anchor expansion (``CADASIL``,
+   ``leukoencephalopathy``, ``small vessel disease``) and a fourth
+   seed phrase (``subcortical infarct``). Regressed: precision fell
+   10 percentage points because the broader anchor caught PML,
+   leukodystrophies, RPLS, and vascular dementia / parkinsonism papers
+   that are not cSVD. No recall gain over Variant (1). Abandoned.
+
+6. **Production SVD_QUERY**: hand-tuned, not produced by this script.
+   Defined at ``pipeline/pubmed_search.py:88-100`` as
+   ``(anchor AND genetic-methods) OR (anchor AND cSVD-markers)``. It
+   beats Variant (1) on recall by 12.5 pp while ceding 6 pp of
+   precision — a worthwhile trade given the downstream LLM extraction
+   filter. Remains the operational query for live ingestion.
+
+The recommendation in the validation report is to **keep
+``SVD_QUERY`` in production** and to use this script as a diagnostic
+tool. The defaults above ensure that the script's diagnostic output
+is its own peak-performing variant (Variant 1), not a degraded
+baseline.
 """
 
 from __future__ import annotations
@@ -138,7 +200,7 @@ DEFAULT_MIN_LLR: Final[float] = 6.63
 # still approximate. See the module docstring's methodological note.
 
 # Empirically-validated defaults for the hybrid query variant.
-# See docs/query-validation-report.qmd for the full evidence trail.
+# See docs/pubmed_query_distillation/query-validation-report.qmd for the full evidence trail.
 # The anchor was confirmed against the bibliography gold standard; the
 # seed phrases recover four gold PMIDs (31430377, 34987231, 35328582,
 # 39216230) that the unaugmented hybrid pool misses, with no precision
@@ -2556,17 +2618,25 @@ def _render_rich_report(
             )
         )
 
-    # Plain-text rendering of the structured query at the very end so it
-    # can be selected and pasted straight into PubMed. The panel above is
-    # easier to read but its borders and ANSI styling can leak into the
-    # clipboard; `markup=False` also stops Rich from interpreting the
+    # Plain-text rendering of the recommended query at the very end so
+    # it can be selected and pasted straight into PubMed. Hybrid is
+    # preferred when emitted — it mirrors the production SVD_QUERY shape
+    # and is the empirically validated optimum (see
+    # docs/pubmed_query_distillation/query-validation-report.qmd). Structured is the fallback for
+    # callers that opted out of hybrid via --query-format. The panel
+    # above is easier to read but its borders and ANSI styling can leak
+    # into the clipboard; `markup=False` stops Rich from interpreting
     # bracketed field tags (e.g. `[Title/Abstract]`) as markup, and
     # `soft_wrap=True` keeps the whole query on a single logical line.
-    structured = variants.get(_QUERY_FORMAT_STRUCTURED, "")
-    if structured and _QUERY_FORMAT_STRUCTURED in formats:
-        console.print()
-        console.print(f"[bold {_PRIMARY_COLOR}]format: structured — copy-paste[/]")
-        console.print(structured, markup=False, soft_wrap=True)
+    for trailer_fmt in (_QUERY_FORMAT_HYBRID, _QUERY_FORMAT_STRUCTURED):
+        q = variants.get(trailer_fmt, "")
+        if q and trailer_fmt in formats:
+            console.print()
+            console.print(
+                f"[bold {_PRIMARY_COLOR}]format: {trailer_fmt} — copy-paste[/]"
+            )
+            console.print(q, markup=False, soft_wrap=True)
+            break
 
 
 # ---------------------------------------------------------------------------
@@ -2672,7 +2742,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "4-grams the n-gram extractor can't surface. "
             f"Default: {DEFAULT_ANCHOR_PHRASE!r} (empirically validated "
             "against the cSVD bibliography gold standard — see "
-            "docs/query-validation-report.qmd). Pass an alternative "
+            "docs/pubmed_query_distillation/query-validation-report.qmd). Pass an alternative "
             "phrase to distill for a different disease scope. To skip "
             "the hybrid variant entirely, choose a non-hybrid "
             "--query-format."
@@ -2691,7 +2761,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "variants, British/American spelling pairs). "
             f"Default: {', '.join(DEFAULT_SEED_PHRASES)} (validated "
             "against the cSVD bibliography — see "
-            "docs/query-validation-report.qmd). Pass --seed-phrases "
+            "docs/pubmed_query_distillation/query-validation-report.qmd). Pass --seed-phrases "
             "with no arguments to disable."
         ),
     )
