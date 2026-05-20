@@ -26,8 +26,6 @@ hpc-explorer
 icm-hpc
 logs
 history.json
-presets.json
-requirements.lock
 uv.lock
 
 # macOS-specific
