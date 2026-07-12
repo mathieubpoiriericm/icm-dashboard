@@ -35,6 +35,9 @@ uv.lock
 www/*min.css
 www/*min.js
 
+# Obsidian
+r-shiny-csvd-dash
+
 # Pipeline app settings
 config.json
 tuning_config.json
