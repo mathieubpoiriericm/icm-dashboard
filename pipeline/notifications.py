@@ -7,6 +7,7 @@ Jinja2-rendered Markdown body.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -121,16 +122,16 @@ def _build_template_context(run_data: PipelineRunData) -> dict[str, Any]:
 
 def _render_markdown(run_data: PipelineRunData) -> str:
     """Render the Markdown body for push notifications."""
-    ctx = _build_template_context(run_data)
     template = _jinja_env.get_template("digest.md.j2")
-    return template.render(ctx)
+    return template.render(_build_template_context(run_data))
 
 
-def _make_send_notification(config: PipelineConfig):
+def _make_send_notification(
+    config: PipelineConfig,
+) -> Callable[[str, str], bool | None]:
     """Return a Tenacity-wrapped sender function bound to *config*."""
     ap = apprise.Apprise()
-    for url in config.notify_urls.split(","):
-        url = url.strip()
+    for url in map(str.strip, config.notify_urls.split(",")):
         if url:
             ap.add(url)
 
@@ -190,7 +191,7 @@ def send_pipeline_notification(
 
     try:
         sender = _make_send_notification(config)
-        sender(title=title, body_text=body_md)
+        sender(title, body_md)
         logger.info("Pipeline notification sent successfully")
     except Exception as exc:
         logger.error(f"Failed to send pipeline notification: {exc}")

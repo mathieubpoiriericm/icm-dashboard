@@ -28,6 +28,8 @@ import argparse
 import sys
 from pathlib import Path
 
+DEFAULT_DAYS_BACK = 7
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser (stdlib-only, no heavy imports)."""
@@ -35,7 +37,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--days-back",
         type=int,
-        default=7,
+        default=DEFAULT_DAYS_BACK,
         help="Number of days to look back for new papers (default: 7)",
     )
     parser.add_argument(
@@ -156,7 +158,7 @@ from pipeline.config import (
     PipelineConfig,
     validate_pmid,
 )
-from pipeline.data_merger import merge_gene_entries
+from pipeline.data_merger import MergeResult, merge_gene_entries
 from pipeline.database import (
     Database,
     get_existing_pmids,
@@ -277,9 +279,81 @@ def _write_progress(
     }
     try:
         tmp_path.write_text(json.dumps(data) + "\n")
-        os.replace(str(tmp_path), str(progress_path))
+        tmp_path.replace(progress_path)
     except OSError:
         logger.debug("Failed to write progress file %s", progress_path, exc_info=True)
+
+
+@dataclass(slots=True)
+class _ProgressReporter:
+    """Track and persist the current PubMed pipeline stage."""
+
+    config: PipelineConfig
+    started_at: str = field(default_factory=lambda: datetime.now(tz=UTC).isoformat())
+    stage_index: int = 0
+    finalized: bool = False
+
+    def __post_init__(self) -> None:
+        Path(self.config.progress_file).parent.mkdir(parents=True, exist_ok=True)
+
+    def report(self, stage_index: int) -> None:
+        """Advance to and persist a running stage."""
+        self.stage_index = stage_index
+        stage, label = _STAGES[stage_index]
+        _write_progress(
+            self.config,
+            status="running",
+            stage=stage,
+            stage_label=label,
+            stage_number=stage_index + 1,
+            started_at=self.started_at,
+        )
+
+    def finalize(
+        self,
+        *,
+        status: ProgressStatus,
+        stage_label: str,
+        stage_number: int | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Persist a terminal progress state."""
+        _write_progress(
+            self.config,
+            status=status,
+            stage=_STAGES[self.stage_index][0],
+            stage_label=stage_label,
+            stage_number=(
+                stage_number if stage_number is not None else self.stage_index + 1
+            ),
+            started_at=self.started_at,
+            error_message=error_message,
+        )
+        self.finalized = True
+
+    def fail(self, exc: BaseException) -> None:
+        """Persist an interrupted or failed terminal state."""
+        stage_label = _STAGES[self.stage_index][1]
+        if isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError)):
+            label = f"Interrupted at: {stage_label}"
+            error_message = f"Run was interrupted ({type(exc).__name__})"
+        else:
+            label = f"Failed at: {stage_label}"
+            error_message = traceback.format_exc()[:500]
+        self.finalize(
+            status="error",
+            stage_label=label,
+            error_message=error_message,
+        )
+
+    def ensure_terminal_state(self) -> None:
+        """Write a defensive failure state if no explicit final state exists."""
+        if not self.finalized:
+            self.finalize(
+                status="error",
+                stage_label="Run ended without writing a terminal state",
+                error_message="Pipeline exited without finalizing progress",
+            )
 
 
 # --- Type definitions ---
@@ -328,6 +402,17 @@ class PaperResult:
         return self.error is None
 
 
+@dataclass(slots=True)
+class ExtractionOutcome:
+    """Validated extraction data and timings shared by all input modes."""
+
+    genes: list[GeneEntry]
+    rejected_genes: list[RejectedGene]
+    extracted_count: int
+    llm_time: float
+    validation_time: float
+
+
 async def _validate_genes(
     genes: list[GeneEntry],
     metrics: PipelineMetrics,
@@ -336,8 +421,10 @@ async def _validate_genes(
     """Validate genes concurrently against NCBI and return (valid, rejected) lists."""
     validated_genes: list[GeneEntry] = []
     rejected_genes: list[RejectedGene] = []
-    validation_tasks = [validate_gene_entry(gene, config=config) for gene in genes]
-    results = await asyncio.gather(*validation_tasks, return_exceptions=True)
+    results = await asyncio.gather(
+        *(validate_gene_entry(gene, config=config) for gene in genes),
+        return_exceptions=True,
+    )
 
     for gene, result in zip(genes, results, strict=True):
         # gather(return_exceptions=True) can yield BaseException (e.g. CancelledError),
@@ -356,6 +443,123 @@ async def _validate_genes(
             rejected_genes.append(RejectedGene(gene=gene, reasons=result.errors))
 
     return validated_genes, rejected_genes
+
+
+def _filter_genes_by_confidence(
+    genes: list[GeneEntry],
+    metrics: PipelineMetrics,
+    threshold: float,
+) -> tuple[list[GeneEntry], list[RejectedGene]]:
+    """Apply the local confidence check used when NCBI validation is skipped."""
+    validated: list[GeneEntry] = []
+    rejected: list[RejectedGene] = []
+    for gene in genes:
+        if gene.confidence < threshold:
+            rejected.append(
+                RejectedGene(
+                    gene=gene,
+                    reasons=[f"Low confidence: {gene.confidence:.2f} < {threshold}"],
+                )
+            )
+            metrics.genes_rejected += 1
+        else:
+            validated.append(gene)
+            metrics.genes_validated += 1
+    return validated, rejected
+
+
+async def _extract_and_validate(
+    text: str,
+    paper_id: str,
+    metrics: PipelineMetrics,
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter | None,
+    *,
+    skip_validation: bool = False,
+) -> ExtractionOutcome:
+    """Run the LLM and the validation policy shared by all pipeline modes."""
+    llm_start = time.monotonic()
+    try:
+        genes, token_usage = await extract_from_paper(
+            text,
+            paper_id,
+            config=config,
+            rate_limiter=rate_limiter,
+        )
+    except ExtractionFailedError as exc:
+        if exc.token_usage is not None:
+            metrics.token_usage += exc.token_usage
+        raise
+    llm_time = time.monotonic() - llm_start
+
+    metrics.genes_extracted += len(genes)
+    metrics.token_usage += token_usage
+    for gene in genes:
+        gene.pmid = paper_id
+
+    validation_start = time.monotonic()
+    if skip_validation:
+        validated, rejected = _filter_genes_by_confidence(
+            genes, metrics, config.confidence_threshold
+        )
+    else:
+        validated, rejected = await _validate_genes(genes, metrics, config)
+
+    return ExtractionOutcome(
+        genes=validated,
+        rejected_genes=rejected,
+        extracted_count=len(genes),
+        llm_time=llm_time,
+        validation_time=time.monotonic() - validation_start,
+    )
+
+
+def _collect_successful_genes(results: list[PaperResult]) -> list[GeneEntry]:
+    """Flatten genes from successful paper results."""
+    return [gene for result in results if result.succeeded for gene in result.genes]
+
+
+def _run_batch_validation(genes: list[GeneEntry]) -> list[str]:
+    """Run warning-only batch checks and emit each warning consistently."""
+    warnings = batch_validate(genes) if genes else []
+    for warning in warnings:
+        logger.warning(f"  Batch check: {warning}")
+    return warnings
+
+
+def _resolve_pdf_files(path: Path) -> tuple[Path, list[Path]]:
+    """Resolve one PDF or a directory into its parent and sorted PDF files."""
+    if path.is_file():
+        if path.suffix.lower() != ".pdf":
+            raise ValueError(f"Not a PDF file: {path}")
+        return path.parent, [path]
+    if not path.is_dir():
+        raise FileNotFoundError(f"Path not found: {path}")
+
+    pdf_files = sorted(path.glob("*.pdf"))
+    if not pdf_files:
+        raise ValueError(f"No .pdf files found in {path}")
+    return path, pdf_files
+
+
+def _load_pmids(path: Path) -> list[str]:
+    """Load, validate, and order-deduplicate PMIDs from a text file."""
+    if not path.exists():
+        raise FileNotFoundError(f"PMID file not found: {path}")
+
+    pmids: list[str] = []
+    for line in path.read_text().splitlines():
+        value = line.strip()
+        if not value or value.startswith("#"):
+            continue
+        try:
+            pmids.append(validate_pmid(value))
+        except ValueError:
+            logger.warning(f"Skipping invalid PMID: {value!r}")
+
+    if not (unique_pmids := list(dict.fromkeys(pmids))):
+        raise ValueError(f"No valid PMIDs found in {path}")
+    return unique_pmids
 
 
 # --- Shared HTTP client for metadata ---
@@ -389,7 +593,6 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
     """
     pmid = validate_pmid(pmid)
 
-    url = NCBI_EFETCH_URL
     params: dict[str, str] = {"db": "pubmed", "id": pmid, "retmode": "xml"}
 
     if api_key := os.getenv("NCBI_API_KEY"):
@@ -397,27 +600,25 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
 
     try:
         client = await _get_metadata_client()
-        resp = await client.get(url, params=params)
+        resp = await client.get(NCBI_EFETCH_URL, params=params)
 
         if resp.status_code != 200:
             logger.warning(f"Metadata fetch failed for PMID {pmid}: {resp.status_code}")
-            return {"pmid": pmid, "doi": None}
-
-        root = etree.fromstring(resp.content, parser=SAFE_XML_PARSER)
-        doi_elem = root.find(".//ArticleId[@IdType='doi']")
-        doi_text = doi_elem.text if doi_elem is not None else None
-        doi = doi_text if isinstance(doi_text, str) else None
-        return {"pmid": pmid, "doi": doi}
+        else:
+            root = etree.fromstring(resp.content, parser=SAFE_XML_PARSER)
+            doi_elem = root.find(".//ArticleId[@IdType='doi']")
+            doi_text = doi_elem.text if doi_elem is not None else None
+            doi = doi_text if isinstance(doi_text, str) else None
+            return {"pmid": pmid, "doi": doi}
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout fetching metadata for PMID {pmid}")
-        return {"pmid": pmid, "doi": None}
     except httpx.RequestError as e:
         logger.warning(f"Request error fetching metadata for PMID {pmid}: {e}")
-        return {"pmid": pmid, "doi": None}
     except etree.XMLSyntaxError as e:
         logger.error(f"XML parsing failed for PMID {pmid}: {e}")
-        return {"pmid": pmid, "doi": None}
+
+    return {"pmid": pmid, "doi": None}
 
 
 async def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
@@ -494,30 +695,18 @@ async def process_paper(
         metrics.abstract_only += 1
         logger.info("  Using abstract only")
 
-    # Extract structured data using LLM (returns typed GeneEntry instances)
-    try:
-        genes, token_usage = await extract_from_paper(
-            text, pmid, config=config, rate_limiter=rate_limiter
-        )
-    except ExtractionFailedError as e:
-        if e.token_usage is not None:
-            metrics.token_usage += e.token_usage
-        raise
-    metrics.genes_extracted += len(genes)
-    metrics.token_usage += token_usage
-
-    logger.info(f"  Extracted {len(genes)} genes")
-
-    # Set pmid on each gene for downstream tracking
-    for gene in genes:
-        gene.pmid = pmid
-
-    # Validate genes concurrently
-    validated_genes, rejected_genes = await _validate_genes(genes, metrics, config)
+    outcome = await _extract_and_validate(
+        text,
+        pmid,
+        metrics,
+        config,
+        rate_limiter,
+    )
+    logger.info(f"  Extracted {outcome.extracted_count} genes")
 
     return {
-        "genes": validated_genes,
-        "rejected_genes": rejected_genes,
+        "genes": outcome.genes,
+        "rejected_genes": outcome.rejected_genes,
         "fulltext": text_result["fulltext"],
         "source": text_result["source"],
     }
@@ -554,19 +743,21 @@ async def process_paper_safe(
             result = await process_paper(
                 pmid, metrics, config=config, rate_limiter=rate_limiter
             )
-            duration = time.monotonic() - start_time
             return PaperResult(
                 pmid=pmid,
                 genes=result["genes"],
                 rejected_genes=result["rejected_genes"],
                 fulltext=result["fulltext"],
                 source=result["source"],
-                processing_time=duration,
+                processing_time=time.monotonic() - start_time,
             )
         except Exception as e:
             logger.exception(f"Error processing PMID {pmid}")
-            duration = time.monotonic() - start_time
-            return PaperResult(pmid=pmid, error=str(e), processing_time=duration)
+            return PaperResult(
+                pmid=pmid,
+                error=str(e),
+                processing_time=time.monotonic() - start_time,
+            )
 
 
 async def process_papers_concurrently(
@@ -607,8 +798,332 @@ async def process_papers_concurrently(
     return [task.result() for task in tasks]
 
 
+@dataclass(slots=True)
+class _ProcessedBatch:
+    """Paper-processing outputs needed by reporting and database merge stages."""
+
+    results: list[PaperResult]
+    successful_results: list[PaperResult]
+    genes: list[GeneEntry]
+    warnings: list[str]
+
+
+async def _discover_new_pmids(
+    days_back: int,
+    *,
+    dry_run: bool,
+    test_mode: bool,
+    progress: _ProgressReporter,
+) -> tuple[list[str], list[str]]:
+    """Search PubMed and filter previously processed identifiers."""
+    progress.report(0)
+    print("##STAGE:search##", flush=True)
+    logger.info("Step 1: Searching PubMed for recent SVD genetic papers...")
+    all_pmids = await search_recent_papers(days_back)
+    logger.info(f"  Found {len(all_pmids)} papers matching SVD genetic criteria")
+    if not all_pmids:
+        return [], []
+
+    progress.report(1)
+    print("##STAGE:retrieve##", flush=True)
+    logger.info("Step 2: Filtering already-processed papers...")
+    if dry_run or test_mode:
+        existing_pmids: set[str] = set()
+        logger.info("  Skipping PMID deduplication (dry-run/test mode)")
+    else:
+        try:
+            existing_pmids = await get_existing_pmids()
+        except asyncpg.UndefinedTableError:
+            # A missing table is expected only on the first run. Other
+            # database failures must propagate to avoid silently reprocessing.
+            logger.warning(
+                "  pubmed_refs table missing; treating as empty (first run?)"
+            )
+            existing_pmids = set()
+
+    new_pmids = filter_new_pmids(all_pmids, existing_pmids)
+    logger.info(f"  {len(new_pmids)} new papers to process")
+    return all_pmids, new_pmids
+
+
+def _log_test_preview(pmids: list[str], config: PipelineConfig) -> None:
+    """Log the bounded PMID preview used by test mode."""
+    logger.info("Test mode enabled - skipping LLM extraction and database merge")
+    logger.info(f"  Would process {len(pmids)} papers:")
+    for pmid in pmids[: config.test_mode_preview_count]:
+        logger.info(f"    PMID: {pmid}")
+    if len(pmids) > config.test_mode_preview_count:
+        remaining = len(pmids) - config.test_mode_preview_count
+        logger.info(f"    ... and {remaining} more")
+
+
+async def _process_new_pmids(
+    pmids: list[str],
+    metrics: PipelineMetrics,
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter,
+    progress: _ProgressReporter,
+) -> _ProcessedBatch:
+    """Process, flatten, and batch-validate a set of new papers."""
+    progress.report(2)
+    print("##STAGE:extract##", flush=True)
+    logger.info("Step 3: Processing papers concurrently...")
+    results = await process_papers_concurrently(
+        pmids, metrics, config=config, rate_limiter=rate_limiter
+    )
+    successful_results = [result for result in results if result.succeeded]
+    genes = _collect_successful_genes(results)
+    metrics.papers_processed += len(successful_results)
+    logger.info(f"  Processed {metrics.papers_processed} papers")
+    logger.info(f"  Validated: {metrics.genes_validated} genes")
+
+    progress.report(3)
+    print("##STAGE:validate##", flush=True)
+    return _ProcessedBatch(
+        results=results,
+        successful_results=successful_results,
+        genes=genes,
+        warnings=_run_batch_validation(genes),
+    )
+
+
+async def _merge_processed_batch(
+    batch: _ProcessedBatch,
+    progress: _ProgressReporter,
+) -> MergeResult | None:
+    """Merge accepted genes and record successfully processed PMIDs."""
+    progress.report(4)
+    print("##STAGE:merge##", flush=True)
+    logger.info("Step 4: Merging validated data into database...")
+    await reset_sequence("genes")
+
+    gene_result = await merge_gene_entries(batch.genes) if batch.genes else None
+    if gene_result is not None:
+        logger.info(
+            f"  Genes: {gene_result['inserted']} inserted, "
+            f"{gene_result['updated']} updated"
+        )
+
+    pmid_records = [
+        (result.pmid, result.fulltext, result.source, len(result.genes))
+        for result in batch.successful_results
+    ]
+    recorded = await record_processed_pmids_batch(pmid_records)
+    logger.info(f"  Recorded {recorded} processed PMIDs")
+    progress.report(5)
+    print("##STAGE:sync##", flush=True)
+    return gene_result
+
+
+async def _complete_pubmed_run(
+    metrics: PipelineMetrics,
+    run_data: PipelineRunData,
+    config: PipelineConfig,
+    progress: _ProgressReporter,
+    *,
+    dry_run: bool,
+    manage_lifecycle: bool,
+) -> None:
+    """Persist live-run stats, notify, and finalize live-run progress."""
+    if not dry_run:
+        await _finalize_run(metrics, run_data, "standard")
+    if manage_lifecycle:
+        await _record_and_notify(config, run_data)
+    if not dry_run:
+        progress.finalize(
+            status="completed",
+            stage_label="Pipeline completed successfully",
+            stage_number=_TOTAL_STAGES,
+        )
+
+
+def _emit_report(run_data: PipelineRunData) -> None:
+    """Write and print a pipeline report consistently across run modes."""
+    report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
+    logger.info(f"JSON report written to: {report_path}")
+    print_rich_summary(run_data)
+
+
+def _build_pubmed_report(
+    metrics: PipelineMetrics,
+    batch: _ProcessedBatch,
+    gene_result: MergeResult | None,
+    config: PipelineConfig,
+    *,
+    days_back: int,
+    dry_run: bool,
+    total_pmids_found: int,
+    started_at: float,
+) -> PipelineRunData:
+    """Build, persist, and print a standard PubMed run report."""
+    run_data = build_run_data(
+        metrics=metrics,
+        results=batch.results,
+        gene_result=gene_result,
+        batch_warnings=batch.warnings,
+        config=config,
+        days_back=days_back,
+        dry_run=dry_run,
+        total_pmids_found=total_pmids_found,
+        new_pmids_count=len(batch.results),
+        total_duration=time.monotonic() - started_at,
+    )
+    _emit_report(run_data)
+    return run_data
+
+
+async def _process_local_pdf_file(
+    pdf_path: Path,
+    metrics: PipelineMetrics,
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter,
+    *,
+    skip_validation: bool,
+) -> PaperResult:
+    """Parse and process one local PDF with per-step timings."""
+    file_id = pdf_path.stem
+    started_at = time.monotonic()
+    try:
+        parse_started_at = time.monotonic()
+        text = await asyncio.to_thread(parse_local_pdf, pdf_path)
+        parse_time = time.monotonic() - parse_started_at
+        if not text:
+            logger.warning(f"  No text extracted from {pdf_path.name}")
+            return PaperResult(
+                pmid=file_id,
+                error="empty or corrupt PDF",
+                processing_time=time.monotonic() - started_at,
+                pdf_parse_time=parse_time,
+            )
+
+        outcome = await _extract_and_validate(
+            text,
+            file_id,
+            metrics,
+            config,
+            rate_limiter,
+            skip_validation=skip_validation,
+        )
+        logger.info(f"  Extracted {outcome.extracted_count} genes from {pdf_path.name}")
+        metrics.papers_processed += 1
+        metrics.fulltext_retrieved += 1
+        return PaperResult(
+            pmid=file_id,
+            genes=outcome.genes,
+            rejected_genes=outcome.rejected_genes,
+            fulltext=True,
+            source="local_pdf",
+            processing_time=time.monotonic() - started_at,
+            pdf_parse_time=parse_time,
+            llm_time=outcome.llm_time,
+            validation_time=outcome.validation_time,
+        )
+    except Exception as exc:
+        logger.exception(f"Error processing {pdf_path.name}")
+        return PaperResult(
+            pmid=file_id,
+            error=str(exc),
+            processing_time=time.monotonic() - started_at,
+        )
+
+
+async def _process_pmid_item(
+    pmid: str,
+    metrics: PipelineMetrics,
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter,
+    *,
+    skip_validation: bool,
+) -> PaperResult:
+    """Fetch and process one PMID for the offline PMID-list mode."""
+    started_at = time.monotonic()
+    try:
+        metadata = await fetch_paper_metadata(pmid)
+        text_result = await get_fulltext(pmid, metadata.get("doi"))
+        text = text_result.get("text")
+        if not text:
+            logger.warning(f"  No text available for PMID {pmid}")
+            return PaperResult(
+                pmid=pmid,
+                error="no text available",
+                processing_time=time.monotonic() - started_at,
+            )
+
+        is_fulltext = text_result["fulltext"]
+        source = text_result["source"]
+        logger.info(
+            f"  Retrieved full text from {source}"
+            if is_fulltext
+            else "  Using abstract only"
+        )
+        outcome = await _extract_and_validate(
+            text,
+            pmid,
+            metrics,
+            config,
+            rate_limiter,
+            skip_validation=skip_validation,
+        )
+        logger.info(f"  Extracted {outcome.extracted_count} genes")
+
+        if is_fulltext:
+            metrics.fulltext_retrieved += 1
+        else:
+            metrics.abstract_only += 1
+        metrics.papers_processed += 1
+        return PaperResult(
+            pmid=pmid,
+            genes=outcome.genes,
+            rejected_genes=outcome.rejected_genes,
+            fulltext=is_fulltext,
+            source=source,
+            processing_time=time.monotonic() - started_at,
+            llm_time=outcome.llm_time,
+            validation_time=outcome.validation_time,
+        )
+    except Exception as exc:
+        logger.exception(f"Error processing PMID {pmid}")
+        return PaperResult(
+            pmid=pmid,
+            error=str(exc),
+            processing_time=time.monotonic() - started_at,
+        )
+
+
+def _install_termination_handlers(
+    task: asyncio.Task[Any],
+) -> tuple[asyncio.AbstractEventLoop, list[int]]:
+    """Install supported SIGTERM/SIGHUP handlers that cancel *task*."""
+    loop = asyncio.get_running_loop()
+    signals = [signal.SIGTERM]
+    if hasattr(signal, "SIGHUP"):
+        signals.append(signal.SIGHUP)
+
+    def _cancel(sig: int) -> None:
+        logger.warning("Received signal %s; cancelling pipeline run", sig)
+        task.cancel()
+
+    installed: list[int] = []
+    for sig in signals:
+        try:
+            loop.add_signal_handler(sig, _cancel, sig)
+        except NotImplementedError, RuntimeError, ValueError:
+            continue
+        installed.append(sig)
+    return loop, installed
+
+
+def _remove_signal_handlers(
+    loop: asyncio.AbstractEventLoop, signals: list[int]
+) -> None:
+    """Remove any termination handlers installed for this run."""
+    for sig in signals:
+        with contextlib.suppress(NotImplementedError, ValueError):
+            loop.remove_signal_handler(sig)
+
+
 async def run_pipeline(
-    days_back: int = 7,
+    days_back: int = DEFAULT_DAYS_BACK,
     dry_run: bool = False,
     test_mode: bool = False,
     config: PipelineConfig | None = None,
@@ -634,8 +1149,7 @@ async def run_pipeline(
     Raises:
         ValueError: If days_back is out of valid range.
     """
-    if config is None:
-        config = PipelineConfig()
+    config = config or PipelineConfig()
 
     # Input validation
     if not config.min_days_back <= days_back <= config.max_days_back:
@@ -665,108 +1179,33 @@ async def run_pipeline(
         f"RPM={config.rpm_limit}, TPM={config.tpm_limit}"
     )
 
-    progress_started_at = datetime.now(tz=UTC).isoformat()
-    stage_idx = 0
-    progress_finalized = False
-    Path(config.progress_file).parent.mkdir(parents=True, exist_ok=True)
-
-    def _report_stage(idx: int) -> None:
-        nonlocal stage_idx
-        stage_idx = idx
-        sid, slabel = _STAGES[idx]
-        _write_progress(
-            config,
-            status="running",
-            stage=sid,
-            stage_label=slabel,
-            stage_number=idx + 1,
-            started_at=progress_started_at,
-        )
-
-    def _finalize_progress(
-        *,
-        status: ProgressStatus,
-        stage_label: str,
-        stage_number: int | None = None,
-        error_message: str | None = None,
-    ) -> None:
-        nonlocal progress_finalized
-        sid, _slabel = _STAGES[stage_idx]
-        _write_progress(
-            config,
-            status=status,
-            stage=sid,
-            stage_label=stage_label,
-            stage_number=stage_number if stage_number is not None else stage_idx + 1,
-            started_at=progress_started_at,
-            error_message=error_message,
-        )
-        progress_finalized = True
+    progress = _ProgressReporter(config)
 
     # Convert SIGTERM/SIGHUP into task cancellation so the except/finally
     # blocks below can write a terminal progress state. SIGINT is left to
     # asyncio's default handling (which raises KeyboardInterrupt).
     current_task = asyncio.current_task()
     assert current_task is not None  # always set inside `async def`
-    loop = asyncio.get_running_loop()
-    signals_to_handle: tuple[int, ...] = (signal.SIGTERM,)
-    if hasattr(signal, "SIGHUP"):
-        signals_to_handle = (*signals_to_handle, signal.SIGHUP)
-
-    def _on_signal(sig: int) -> None:
-        logger.warning("Received signal %s; cancelling pipeline run", sig)
-        if not current_task.done():
-            current_task.cancel()
-
-    installed_signals: list[int] = []
-    for sig in signals_to_handle:
-        try:
-            loop.add_signal_handler(sig, _on_signal, sig)
-        except NotImplementedError, RuntimeError, ValueError:
-            # Platform (e.g. Windows) or loop policy doesn't support it.
-            continue
-        installed_signals.append(sig)
+    loop, installed_signals = _install_termination_handlers(current_task)
 
     try:
-        # Step 1: Search PubMed for recent papers
-        _report_stage(0)
-        print("##STAGE:search##", flush=True)
-        logger.info("Step 1: Searching PubMed for recent SVD genetic papers...")
-        all_pmids = await search_recent_papers(days_back)
-        logger.info(f"  Found {len(all_pmids)} papers matching SVD genetic criteria")
-
+        all_pmids, new_pmids = await _discover_new_pmids(
+            days_back,
+            dry_run=dry_run,
+            test_mode=test_mode,
+            progress=progress,
+        )
         if not all_pmids:
             logger.info("No new papers found. Pipeline complete.")
-            _finalize_progress(
+            progress.finalize(
                 status="completed",
                 stage_label="No new papers found",
             )
             return metrics, None
 
-        # Step 2: Filter out already-processed papers
-        _report_stage(1)
-        print("##STAGE:retrieve##", flush=True)
-        logger.info("Step 2: Filtering already-processed papers...")
-        if dry_run or test_mode:
-            existing_pmids: set[str] = set()
-            logger.info("  Skipping PMID deduplication (dry-run/test mode)")
-        else:
-            try:
-                existing_pmids = await get_existing_pmids()
-            except asyncpg.UndefinedTableError:
-                # First run only. Other DB errors must propagate — swallowing
-                # them disables dedup and re-spends the LLM budget.
-                logger.warning(
-                    "  pubmed_refs table missing; treating as empty (first run?)"
-                )
-                existing_pmids = set()
-
-        new_pmids = filter_new_pmids(all_pmids, existing_pmids)
-        logger.info(f"  {len(new_pmids)} new papers to process")
-
         if not new_pmids:
             logger.info("All papers already processed. Pipeline complete.")
-            _finalize_progress(
+            progress.finalize(
                 status="completed",
                 stage_label="All papers already processed",
             )
@@ -774,173 +1213,60 @@ async def run_pipeline(
 
         # Test mode: skip LLM extraction and database merge
         if test_mode:
-            logger.info(
-                "Test mode enabled - skipping LLM extraction and database merge"
-            )
-            logger.info(f"  Would process {len(new_pmids)} papers:")
-            for pmid in new_pmids[: config.test_mode_preview_count]:
-                logger.info(f"    PMID: {pmid}")
-            if len(new_pmids) > config.test_mode_preview_count:
-                logger.info(
-                    f"    ... and "
-                    f"{len(new_pmids) - config.test_mode_preview_count}"
-                    f" more"
-                )
-            _finalize_progress(
+            _log_test_preview(new_pmids, config)
+            progress.finalize(
                 status="completed",
                 stage_label="Test-mode preview complete",
             )
             return metrics, None
 
-        # Step 3: Process papers concurrently
-        _report_stage(2)
-        print("##STAGE:extract##", flush=True)
-        logger.info("Step 3: Processing papers concurrently...")
-        results = await process_papers_concurrently(
-            new_pmids, metrics, config=config, rate_limiter=rate_limiter
+        batch = await _process_new_pmids(
+            new_pmids,
+            metrics,
+            config,
+            rate_limiter,
+            progress,
         )
-
-        all_genes: list[GeneEntry] = []
-        successful_results: list[PaperResult] = []
-        for result in results:
-            if result.succeeded:
-                all_genes.extend(result.genes)
-                metrics.papers_processed += 1
-                successful_results.append(result)
-
-        logger.info(f"  Processed {metrics.papers_processed} papers")
-        logger.info(f"  Validated: {metrics.genes_validated} genes")
-
-        # Step 3.5: Batch validation (warning-only quality checks)
-        _report_stage(3)
-        print("##STAGE:validate##", flush=True)
-        batch_warnings: list[str] = []
-        if all_genes:
-            batch_warnings = batch_validate(all_genes)
-            for warning in batch_warnings:
-                logger.warning(f"  Batch check: {warning}")
-
         if dry_run:
             logger.info("Dry run mode - skipping database merge")
-            _finalize_progress(
+            progress.finalize(
                 status="completed",
                 stage_label="Pipeline completed (dry run)",
             )
+            gene_result = None
+        else:
+            gene_result = await _merge_processed_batch(batch, progress)
 
-            total_duration = time.monotonic() - pipeline_start_time
-            run_data = build_run_data(
-                metrics,
-                results,
-                None,
-                batch_warnings,
-                config,
-                days_back,
-                dry_run,
-                len(all_pmids),
-                len(new_pmids),
-                total_duration,
-            )
-            report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
-            logger.info(f"JSON report written to: {report_path}")
-            print_rich_summary(run_data)
-
-            if manage_lifecycle:
-                await _record_and_notify(config, run_data)
-
-            return metrics, run_data
-
-        # Step 4: Merge into database
-        _report_stage(4)
-        print("##STAGE:merge##", flush=True)
-        logger.info("Step 4: Merging validated data into database...")
-
-        # Reset sequences to avoid primary key conflicts
-        await reset_sequence("genes")
-
-        gene_result = None
-        if all_genes:
-            gene_result = await merge_gene_entries(all_genes)
-            logger.info(
-                f"  Genes: {gene_result['inserted']} inserted, "
-                f"{gene_result['updated']} updated"
-            )
-
-        # Step 5: Record processed PMIDs AFTER successful merge
-        # This ensures PMIDs are only marked processed when genes are
-        # actually written, preventing data loss on merge failure.
-        pmid_records = [
-            (r.pmid, r.fulltext, r.source, len(r.genes)) for r in successful_results
-        ]
-        recorded = await record_processed_pmids_batch(pmid_records)
-        logger.info(f"  Recorded {recorded} processed PMIDs")
-
-        # Finalize
-        _report_stage(5)
-        print("##STAGE:sync##", flush=True)
-
-        # Comprehensive report + rich summary
-        total_duration = time.monotonic() - pipeline_start_time
-        run_data = build_run_data(
+        run_data = _build_pubmed_report(
             metrics,
-            results,
+            batch,
             gene_result,
-            batch_warnings,
             config,
-            days_back,
-            dry_run,
-            len(all_pmids),
-            len(new_pmids),
-            total_duration,
+            days_back=days_back,
+            dry_run=dry_run,
+            total_pmids_found=len(all_pmids),
+            started_at=pipeline_start_time,
         )
-        report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
-        logger.info(f"JSON report written to: {report_path}")
-        print_rich_summary(run_data)
 
-        await _finalize_run(metrics, run_data, "standard")
-        if manage_lifecycle:
-            await _record_and_notify(config, run_data)
-
-        _finalize_progress(
-            status="completed",
-            stage_label="Pipeline completed successfully",
-            stage_number=_TOTAL_STAGES,
+        await _complete_pubmed_run(
+            metrics,
+            run_data,
+            config,
+            progress,
+            dry_run=dry_run,
+            manage_lifecycle=manage_lifecycle,
         )
 
         return metrics, run_data
 
     except BaseException as exc:
-        # BaseException (not Exception) so SIGTERM-driven CancelledError and
-        # Ctrl+C KeyboardInterrupt also write a terminal state before
-        # propagating.
-        is_interrupt = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
-        sid, slabel = _STAGES[stage_idx]
-        if is_interrupt:
-            stage_label = f"Interrupted at: {slabel}"
-            error_message = f"Run was interrupted ({type(exc).__name__})"
-        else:
-            stage_label = f"Failed at: {slabel}"
-            error_message = traceback.format_exc()[:500]
-        _finalize_progress(
-            status="error",
-            stage_label=stage_label,
-            error_message=error_message,
-        )
+        # Include cancellation and Ctrl+C so they also write a terminal state.
+        progress.fail(exc)
         raise
 
     finally:
-        # Fallback for any future exit path that forgets to call
-        # _finalize_progress — keeps the dashboard from getting stuck on
-        # "running" again.
-        if not progress_finalized:
-            _finalize_progress(
-                status="error",
-                stage_label="Run ended without writing a terminal state",
-                error_message="Pipeline exited without finalizing progress",
-            )
-
-        for sig in installed_signals:
-            with contextlib.suppress(NotImplementedError, ValueError):
-                loop.remove_signal_handler(sig)
+        progress.ensure_terminal_state()
+        _remove_signal_handlers(loop, installed_signals)
 
         # Cleanup shared resources used only by this pipeline. The DB pool
         # is kept open for subsequent pipelines when the dispatcher is
@@ -973,20 +1299,9 @@ async def run_local_pdf_pipeline(
         FileNotFoundError: If pdf_dir does not exist.
         ValueError: If path is not a .pdf file, or directory contains no .pdf files.
     """
-    if config is None:
-        config = PipelineConfig()
+    config = config or PipelineConfig()
 
-    if pdf_dir.is_file():
-        if pdf_dir.suffix.lower() != ".pdf":
-            raise ValueError(f"Not a PDF file: {pdf_dir}")
-        pdf_files = [pdf_dir]
-        pdf_dir = pdf_dir.parent
-    elif pdf_dir.is_dir():
-        pdf_files = sorted(pdf_dir.glob("*.pdf"))
-    else:
-        raise FileNotFoundError(f"Path not found: {pdf_dir}")
-    if not pdf_files:
-        raise ValueError(f"No .pdf files found in {pdf_dir}")
+    pdf_dir, pdf_files = _resolve_pdf_files(pdf_dir)
 
     metrics = PipelineMetrics()
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
@@ -1002,135 +1317,43 @@ async def run_local_pdf_pipeline(
         f"validation={'disabled' if skip_validation else 'enabled'}"
     )
 
-    results: list[PaperResult] = []
-    all_genes: list[GeneEntry] = []
-
     try:
         semaphore = asyncio.Semaphore(config.max_concurrent_papers)
-        progress = {"current": 0, "total": len(pdf_files)}
 
-        async def _process_pdf(pdf_path: Path) -> PaperResult:
-            file_id = pdf_path.stem
+        async def _process_pdf(index: int, pdf_path: Path) -> PaperResult:
             async with semaphore:
-                progress["current"] += 1
-                current = progress["current"]
-                total = progress["total"]
-                logger.info(f"[{current}/{total}] Processing {pdf_path.name}")
-
-                start_time = time.monotonic()
-                try:
-                    # Extract text
-                    # Use asyncio.to_thread to avoid blocking loop with PDF parsing
-                    pdf_parse_start = time.monotonic()
-                    text = await asyncio.to_thread(parse_local_pdf, pdf_path)
-                    pdf_parse_elapsed = time.monotonic() - pdf_parse_start
-
-                    if not text:
-                        logger.warning(f"  No text extracted from {pdf_path.name}")
-                        return PaperResult(
-                            pmid=file_id,
-                            error="empty or corrupt PDF",
-                            processing_time=time.monotonic() - start_time,
-                            pdf_parse_time=pdf_parse_elapsed,
-                        )
-
-                    # LLM extraction
-                    llm_start = time.monotonic()
-                    genes, token_usage = await extract_from_paper(
-                        text, file_id, config=config, rate_limiter=rate_limiter
-                    )
-                    llm_elapsed = time.monotonic() - llm_start
-
-                    # Update metrics safely (single-threaded event loop)
-                    metrics.genes_extracted += len(genes)
-                    metrics.token_usage += token_usage
-
-                    # Set identifier
-                    for gene in genes:
-                        gene.pmid = file_id
-
-                    logger.info(f"  Extracted {len(genes)} genes from {pdf_path.name}")
-
-                    # Validation
-                    validation_start = time.monotonic()
-                    if skip_validation:
-                        # Still apply confidence threshold (cheap, local check)
-                        validated_genes = []
-                        rejected_genes: list[RejectedGene] = []
-                        for gene in genes:
-                            if gene.confidence < config.confidence_threshold:
-                                rejected_genes.append(
-                                    RejectedGene(
-                                        gene=gene,
-                                        reasons=[
-                                            f"Low confidence: {gene.confidence:.2f}"
-                                            f" < {config.confidence_threshold}"
-                                        ],
-                                    )
-                                )
-                                metrics.genes_rejected += 1
-                            else:
-                                validated_genes.append(gene)
-                                metrics.genes_validated += 1
-                    else:
-                        validated_genes, rejected_genes = await _validate_genes(
-                            genes, metrics, config
-                        )
-                    validation_elapsed = time.monotonic() - validation_start
-
-                    metrics.papers_processed += 1
-                    metrics.fulltext_retrieved += 1
-
-                    return PaperResult(
-                        pmid=file_id,
-                        genes=validated_genes,
-                        rejected_genes=rejected_genes,
-                        fulltext=True,
-                        source="local_pdf",
-                        processing_time=time.monotonic() - start_time,
-                        pdf_parse_time=pdf_parse_elapsed,
-                        llm_time=llm_elapsed,
-                        validation_time=validation_elapsed,
-                    )
-
-                except Exception as e:
-                    logger.exception(f"Error processing {pdf_path.name}")
-                    return PaperResult(
-                        pmid=file_id,
-                        error=str(e),
-                        processing_time=time.monotonic() - start_time,
-                    )
+                logger.info(f"[{index}/{len(pdf_files)}] Processing {pdf_path.name}")
+                return await _process_local_pdf_file(
+                    pdf_path,
+                    metrics,
+                    config,
+                    rate_limiter,
+                    skip_validation=skip_validation,
+                )
 
         async with asyncio.TaskGroup() as tg:
-            tasks = [tg.create_task(_process_pdf(pdf_path)) for pdf_path in pdf_files]
+            tasks = [
+                tg.create_task(_process_pdf(index, pdf_path))
+                for index, pdf_path in enumerate(pdf_files, 1)
+            ]
 
         results = [task.result() for task in tasks]
 
-        for result in results:
-            if result.succeeded:
-                all_genes.extend(result.genes)
-
-        # Batch validation (warning-only)
-        batch_warnings: list[str] = []
-        if all_genes:
-            batch_warnings = batch_validate(all_genes)
-            for warning in batch_warnings:
-                logger.warning(f"  Batch check: {warning}")
+        all_genes = _collect_successful_genes(results)
+        batch_warnings = _run_batch_validation(all_genes)
 
         # Report
         total_duration = time.monotonic() - pipeline_start_time
         run_data = build_local_pdf_run_data(
-            metrics,
-            results,
-            batch_warnings,
-            config,
-            pdf_dir,
-            skip_validation,
-            total_duration,
+            metrics=metrics,
+            results=results,
+            batch_warnings=batch_warnings,
+            config=config,
+            pdf_dir=pdf_dir,
+            skip_validation=skip_validation,
+            total_duration=total_duration,
         )
-        report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
-        logger.info(f"JSON report written to: {report_path}")
-        print_rich_summary(run_data)
+        _emit_report(run_data)
 
         await _record_and_notify(config, run_data)
 
@@ -1162,31 +1385,9 @@ async def run_pmid_pipeline(
         FileNotFoundError: If pmid_file does not exist.
         ValueError: If the file contains no valid PMIDs.
     """
-    if config is None:
-        config = PipelineConfig()
+    config = config or PipelineConfig()
 
-    if not pmid_file.exists():
-        raise FileNotFoundError(f"PMID file not found: {pmid_file}")
-
-    # Parse PMIDs: skip blank lines and # comments, validate format, dedupe
-    raw_lines = pmid_file.read_text().splitlines()
-    seen: set[str] = set()
-    pmids: list[str] = []
-    for line in raw_lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        try:
-            pmid = validate_pmid(stripped)
-        except ValueError:
-            logger.warning(f"Skipping invalid PMID: {stripped!r}")
-            continue
-        if pmid not in seen:
-            seen.add(pmid)
-            pmids.append(pmid)
-
-    if not pmids:
-        raise ValueError(f"No valid PMIDs found in {pmid_file}")
+    pmids = _load_pmids(pmid_file)
 
     metrics = PipelineMetrics()
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
@@ -1202,102 +1403,19 @@ async def run_pmid_pipeline(
         f"validation={'disabled' if skip_validation else 'enabled'}"
     )
 
-    results: list[PaperResult] = []
-    all_genes: list[GeneEntry] = []
-
     try:
         semaphore = asyncio.Semaphore(config.max_concurrent_papers)
 
         async def _process_one(idx: int, pmid: str) -> PaperResult:
             async with semaphore:
                 logger.info(f"[{idx}/{len(pmids)}] Processing PMID {pmid}")
-                start_time = time.monotonic()
-                try:
-                    # Fetch metadata (DOI) and fulltext
-                    metadata = await fetch_paper_metadata(pmid)
-                    doi = metadata.get("doi")
-                    text_result = await get_fulltext(pmid, doi)
-
-                    text = text_result.get("text")
-                    if not text:
-                        logger.warning(f"  No text available for PMID {pmid}")
-                        return PaperResult(
-                            pmid=pmid,
-                            error="no text available",
-                            processing_time=time.monotonic() - start_time,
-                        )
-
-                    is_fulltext = text_result["fulltext"]
-                    source = text_result["source"]
-                    if is_fulltext:
-                        logger.info(f"  Retrieved full text from {source}")
-                    else:
-                        logger.info("  Using abstract only")
-
-                    # LLM extraction
-                    llm_start = time.monotonic()
-                    genes, token_usage = await extract_from_paper(
-                        text, pmid, config=config, rate_limiter=rate_limiter
-                    )
-                    llm_elapsed = time.monotonic() - llm_start
-                    metrics.genes_extracted += len(genes)
-                    metrics.token_usage += token_usage
-
-                    for gene in genes:
-                        gene.pmid = pmid
-
-                    logger.info(f"  Extracted {len(genes)} genes")
-
-                    # Validation
-                    validation_start = time.monotonic()
-                    if skip_validation:
-                        # Still apply confidence threshold (cheap, local check)
-                        validated_genes = []
-                        rejected_genes: list[RejectedGene] = []
-                        for gene in genes:
-                            if gene.confidence < config.confidence_threshold:
-                                rejected_genes.append(
-                                    RejectedGene(
-                                        gene=gene,
-                                        reasons=[
-                                            f"Low confidence: {gene.confidence:.2f}"
-                                            f" < {config.confidence_threshold}"
-                                        ],
-                                    )
-                                )
-                                metrics.genes_rejected += 1
-                            else:
-                                validated_genes.append(gene)
-                                metrics.genes_validated += 1
-                    else:
-                        validated_genes, rejected_genes = await _validate_genes(
-                            genes, metrics, config
-                        )
-                    validation_elapsed = time.monotonic() - validation_start
-
-                    if is_fulltext:
-                        metrics.fulltext_retrieved += 1
-                    else:
-                        metrics.abstract_only += 1
-                    metrics.papers_processed += 1
-
-                    return PaperResult(
-                        pmid=pmid,
-                        genes=validated_genes,
-                        rejected_genes=rejected_genes,
-                        fulltext=is_fulltext,
-                        source=source,
-                        processing_time=time.monotonic() - start_time,
-                        llm_time=llm_elapsed,
-                        validation_time=validation_elapsed,
-                    )
-                except Exception as e:
-                    logger.exception(f"Error processing PMID {pmid}")
-                    return PaperResult(
-                        pmid=pmid,
-                        error=str(e),
-                        processing_time=time.monotonic() - start_time,
-                    )
+                return await _process_pmid_item(
+                    pmid,
+                    metrics,
+                    config,
+                    rate_limiter,
+                    skip_validation=skip_validation,
+                )
 
         # Process all PMIDs concurrently
         async with asyncio.TaskGroup() as tg:
@@ -1307,31 +1425,21 @@ async def run_pmid_pipeline(
             ]
         results = [task.result() for task in tasks]
 
-        for result in results:
-            if result.succeeded:
-                all_genes.extend(result.genes)
-
-        # Batch validation (warning-only)
-        batch_warnings: list[str] = []
-        if all_genes:
-            batch_warnings = batch_validate(all_genes)
-            for warning in batch_warnings:
-                logger.warning(f"  Batch check: {warning}")
+        all_genes = _collect_successful_genes(results)
+        batch_warnings = _run_batch_validation(all_genes)
 
         # Report
         total_duration = time.monotonic() - pipeline_start_time
         run_data = build_pmid_run_data(
-            metrics,
-            results,
-            batch_warnings,
-            config,
-            pmid_file,
-            skip_validation,
-            total_duration,
+            metrics=metrics,
+            results=results,
+            batch_warnings=batch_warnings,
+            config=config,
+            pmid_file=pmid_file,
+            skip_validation=skip_validation,
+            total_duration=total_duration,
         )
-        report_path = write_comprehensive_report(run_data, LOG_DIR / "json")
-        logger.info(f"JSON report written to: {report_path}")
-        print_rich_summary(run_data)
+        _emit_report(run_data)
 
         await _record_and_notify(config, run_data)
 
@@ -1364,8 +1472,7 @@ async def run_external_data_sync(
     """
     from pipeline.external_data_sync import sync_all_external_data
 
-    if config is None:
-        config = PipelineConfig()
+    config = config or PipelineConfig()
 
     logger.info("Starting external data sync...")
     try:
@@ -1416,8 +1523,7 @@ async def run_clinical_trials_pipeline(
     Returns:
         Per-pipeline summary dict suitable for combined notification rendering.
     """
-    if config is None:
-        config = PipelineConfig()
+    config = config or PipelineConfig()
 
     if not config.ct_enabled:
         logger.warning("ClinicalTrials.gov sync disabled (ct_enabled=False); skipping")
@@ -1559,28 +1665,24 @@ async def _run_selected_pipelines(
             }
             await _record_and_notify(config, combined)
 
-        if any_failed:
-            return 1
+        return int(any_failed)
 
     finally:
         await close_async_client()
         await Database.close()
 
-    return 0
 
+def _prepare_cli_args(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+) -> argparse.Namespace:
+    """Validate mode combinations and apply the default pipeline selection."""
+    offline_modes = (args.local_pdfs, args.pmids)
+    online_modes = (args.pubmed, args.clinical_trials, args.sync_external_data)
 
-def main() -> None:
-    """CLI entry point."""
-    parser = _build_parser()
-    args = parser.parse_args()
-
-    offline_modes = [args.local_pdfs, args.pmids]
-    online_modes = [args.pubmed, args.clinical_trials, args.sync_external_data]
-
-    # Offline modes are mutually exclusive with each other and with online
-    # modes. Validate up front.
-    if sum(1 for m in offline_modes if m) > 1:
+    if sum(map(bool, offline_modes)) > 1:
         parser.error("--local-pdfs and --pmids cannot be combined")
+
     offline_selected = any(offline_modes)
     online_selected = any(online_modes)
     if offline_selected and online_selected:
@@ -1588,24 +1690,27 @@ def main() -> None:
             "--local-pdfs / --pmids cannot be combined with --pubmed,"
             " --clinical-trials, or --sync-external-data"
         )
-
     if args.skip_validation and not offline_selected:
         parser.error("--skip-validation requires --local-pdfs or --pmids")
 
-    # PubMed-scoped flags are harmless for offline modes (they share the
-    # --days-back / --test-mode argparse slots) but must not be combined
-    # with CT-only or sync-only runs.
-    pubmed_only_flags_set = args.test_mode or args.dry_run or args.days_back != 7
-    if pubmed_only_flags_set and online_selected and not args.pubmed:
+    pubmed_options_set = (
+        args.test_mode or args.dry_run or args.days_back != DEFAULT_DAYS_BACK
+    )
+    if pubmed_options_set and online_selected and not args.pubmed:
         logger.warning(
             "--days-back / --dry-run / --test-mode are PubMed-only;"
             " ignoring because --pubmed was not selected"
         )
 
-    # Default: if no selection flag was given, run the PubMed pipeline
-    # (preserves the original no-flag behavior).
     if not offline_selected and not online_selected:
         args.pubmed = True
+    return args
+
+
+def main() -> None:
+    """CLI entry point."""
+    parser = _build_parser()
+    args = _prepare_cli_args(parser, parser.parse_args())
 
     config = PipelineConfig()
 
@@ -1628,7 +1733,7 @@ def main() -> None:
             )
         else:
             exit_code = asyncio.run(_run_selected_pipelines(args, config))
-            if exit_code != 0:
+            if exit_code:
                 sys.exit(exit_code)
     except (ValueError, FileNotFoundError) as e:
         logger.error(f"Invalid argument: {e}")

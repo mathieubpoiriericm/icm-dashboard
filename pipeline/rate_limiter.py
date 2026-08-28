@@ -154,5 +154,4 @@ class AsyncRateLimiter:
             now = asyncio.get_running_loop().time()
             new_deadline = now + backoff_seconds
             # Only extend, never shorten an existing backoff
-            if new_deadline > self._global_backoff_until:
-                self._global_backoff_until = new_deadline
+            self._global_backoff_until = max(self._global_backoff_until, new_deadline)

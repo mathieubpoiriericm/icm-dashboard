@@ -64,16 +64,13 @@ class Database:
                     ) from None
 
                 # Validate required config
-                missing = [
-                    name
-                    for name, val in [
-                        ("DB_HOST", db_host),
-                        ("DB_NAME", db_name),
-                        ("DB_USER", db_user),
-                        ("DB_PASSWORD", db_password),
-                    ]
-                    if not val
-                ]
+                required = {
+                    "DB_HOST": db_host,
+                    "DB_NAME": db_name,
+                    "DB_USER": db_user,
+                    "DB_PASSWORD": db_password,
+                }
+                missing = [name for name, value in required.items() if not value]
                 if missing:
                     raise DatabaseConfigError(
                         f"Missing required database environment variables: {missing}"
@@ -96,7 +93,7 @@ class Database:
     @classmethod
     async def close(cls) -> None:
         """Close the connection pool."""
-        if cls._pool:
+        if cls._pool is not None:
             await cls._pool.close()
             cls._pool = None
 

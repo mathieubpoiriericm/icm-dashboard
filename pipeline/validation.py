@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 _last_request_time: float = 0.0
 _throttle_lock: asyncio.Lock | None = None
-_validation_state_initialized: bool = False
 
 
 def init_validation_state(config: PipelineConfig | None = None) -> None:
@@ -46,9 +45,7 @@ def init_validation_state(config: PipelineConfig | None = None) -> None:
     Must be called once from the running event loop before concurrent use.
     Safe to call multiple times (idempotent).
     """
-    global _throttle_lock, _cache_lock, _ncbi_semaphore, _validation_state_initialized
-    if _validation_state_initialized:
-        return
+    global _throttle_lock, _cache_lock, _ncbi_semaphore
     if _throttle_lock is None:
         _throttle_lock = asyncio.Lock()
     if _cache_lock is None:
@@ -56,7 +53,6 @@ def init_validation_state(config: PipelineConfig | None = None) -> None:
     if _ncbi_semaphore is None:
         limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
         _ncbi_semaphore = asyncio.Semaphore(limit)
-    _validation_state_initialized = True
 
 
 def _get_throttle_lock() -> asyncio.Lock:
@@ -159,8 +155,7 @@ async def _ncbi_get_with_retry(
     Returns:
         httpx.Response on success, None on exhausted retries or error.
     """
-    if config is None:
-        config = PipelineConfig()
+    config = config or PipelineConfig()
 
     full_params = get_ncbi_params(params)
     client = await _client_manager.get()
@@ -227,25 +222,28 @@ async def validate_gene_entry(
     Returns:
         ValidationResult with validation status and normalized data.
     """
-    if config is None:
-        config = PipelineConfig()
-
-    errors: list[str] = []
+    config = config or PipelineConfig()
     warnings: list[str] = []
 
     # Stage 1: Confidence threshold - filters out LLM hallucinations
     if entry.confidence < config.confidence_threshold:
-        errors.append(
-            f"Low confidence: {entry.confidence:.2f} < {config.confidence_threshold}"
+        return ValidationResult(
+            False,
+            [f"Low confidence: {entry.confidence:.2f} < {config.confidence_threshold}"],
+            warnings,
+            None,
         )
-        return ValidationResult(False, errors, warnings, None)
 
     # Stage 2: NCBI Gene validation - ensures gene symbol is real
     ncbi_info = await verify_ncbi_gene(entry.gene_symbol, config=config)
 
     if not ncbi_info:
-        errors.append(f"Gene '{entry.gene_symbol}' not found in NCBI Gene")
-        return ValidationResult(False, errors, warnings, None)
+        return ValidationResult(
+            False,
+            [f"Gene '{entry.gene_symbol}' not found in NCBI Gene"],
+            warnings,
+            None,
+        )
 
     # Normalize gene symbol to official NCBI symbol (handles aliases). Use
     # model_copy so we don't mutate the caller's GeneEntry — other observers
@@ -257,11 +255,13 @@ async def validate_gene_entry(
         normalized = entry
 
     # Stage 3: GWAS trait validation (warnings only - unknown traits allowed)
-    for trait in normalized.gwas_trait:
-        if trait not in VALID_GWAS_TRAITS:
-            warnings.append(f"Unknown GWAS trait: {trait}")
+    warnings.extend(
+        f"Unknown GWAS trait: {trait}"
+        for trait in normalized.gwas_trait
+        if trait not in VALID_GWAS_TRAITS
+    )
 
-    return ValidationResult(True, errors, warnings, normalized)
+    return ValidationResult(True, [], warnings, normalized)
 
 
 async def verify_ncbi_gene(
@@ -295,7 +295,6 @@ async def _fetch_ncbi_gene_uncached(
     Returns:
         Gene info dict if found, None otherwise.
     """
-    url = NCBI_ESEARCH_URL
     # [Sym] indexes both the official HGNC symbol and the aliases list, so a
     # paper that mentions a gene by its alias (e.g. "MFS2" for TGFBR2) still
     # resolves. [Gene Name] indexes the gene title only and silently misses
@@ -307,7 +306,10 @@ async def _fetch_ncbi_gene_uncached(
     }
 
     resp = await _ncbi_get_with_retry(
-        url, params, config=config, context=f"esearch for {symbol}"
+        NCBI_ESEARCH_URL,
+        params,
+        config=config,
+        context=f"esearch for {symbol}",
     )
     if resp is None or resp.status_code != 200:
         if resp is not None:
@@ -337,11 +339,13 @@ async def fetch_gene_details(
     Returns:
         Gene metadata dict if successful, None otherwise.
     """
-    url = NCBI_ESUMMARY_URL
     params = {"db": "gene", "id": gene_id, "retmode": "json"}
 
     resp = await _ncbi_get_with_retry(
-        url, params, config=config, context=f"esummary for gene_id {gene_id}"
+        NCBI_ESUMMARY_URL,
+        params,
+        config=config,
+        context=f"esummary for gene_id {gene_id}",
     )
     if resp is None or resp.status_code != 200:
         if resp is not None:
@@ -365,16 +369,13 @@ async def fetch_gene_details(
             )
             return None
 
+        aliases = gene_data.get("otheraliases", "")
         return {
             "gene_id": gene_id,
             "symbol": symbol,
             "description": gene_data.get("description", ""),
             "chromosome": gene_data.get("chromosome", ""),
-            "aliases": (
-                gene_data.get("otheraliases", "").split(", ")
-                if gene_data.get("otheraliases")
-                else []
-            ),
+            "aliases": aliases.split(", ") if aliases else [],
         }
     except (KeyError, json.JSONDecodeError) as e:
         logger.warning(f"Failed to parse NCBI response for gene_id {gene_id}: {e}")

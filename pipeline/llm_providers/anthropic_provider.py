@@ -63,6 +63,236 @@ _OUTPUT_CONFIG: dict[str, Any] = {
 }
 
 
+def _extract_response_text(response: Any) -> tuple[str, int, int]:
+    """Return text plus thinking/text character counts from content blocks."""
+    text_parts: list[str] = []
+    thinking_chars = 0
+    text_chars = 0
+    for block in response.content:
+        match getattr(block, "type", None):
+            case "thinking":
+                thinking_chars += len(getattr(block, "thinking", ""))
+            case "text":
+                block_text: str = getattr(block, "text", "")
+                text_parts.append(block_text)
+                text_chars += len(block_text)
+    return "".join(text_parts), thinking_chars, text_chars
+
+
+async def _release_reservation(
+    rate_limiter: AsyncRateLimiter | None,
+    request_id: int | None,
+) -> None:
+    """Release a failed call's pre-reserved token budget, when present."""
+    if rate_limiter is not None and request_id is not None:
+        await rate_limiter.record_actual_usage(request_id, 0)
+
+
+def _build_stream_kwargs(
+    text: str,
+    pmid: str,
+    config: PipelineConfig,
+) -> dict[str, Any]:
+    """Build the Anthropic streaming request payload."""
+    prompt = build_extraction_prompt(
+        paper_text=text,
+        pmid=pmid,
+        max_chars=config.max_paper_text_chars,
+        prompt_version=config.prompt_version,
+    )
+    if config.llm_model in ADAPTIVE_THINKING_MODELS:
+        # Summaries keep thinking blocks populated for the ratio estimator.
+        thinking: dict[str, Any] = {
+            "type": "adaptive",
+            "display": "summarized",
+        }
+    else:
+        budget = max(
+            config.llm_max_tokens - THINKING_OUTPUT_RESERVE,
+            config.llm_max_tokens // 2,
+        )
+        thinking = {"type": "enabled", "budget_tokens": budget}
+
+    # "high" is the API default — only transmit when overridden.
+    output_config = dict(_OUTPUT_CONFIG)
+    if config.llm_model in EFFORT_CAPABLE_MODELS and config.llm_effort != "high":
+        output_config["effort"] = config.llm_effort
+
+    return {
+        "model": config.llm_model,
+        "max_tokens": config.llm_max_tokens,
+        "system": [
+            {
+                "type": "text",
+                "text": prompt.system_prompt,
+                "cache_control": {"type": "ephemeral", "ttl": "1h"},
+            },
+            {
+                "type": "text",
+                "text": prompt.extraction_instructions,
+                "cache_control": {"type": "ephemeral", "ttl": "1h"},
+            },
+        ],
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": prompt.user_text}],
+            }
+        ],
+        "thinking": thinking,
+        "output_config": output_config,
+    }
+
+
+async def _stream_and_parse(
+    client: anthropic.AsyncAnthropic,
+    stream_kwargs: dict[str, Any],
+    usage: TokenUsage,
+    *,
+    pmid: str,
+    config: PipelineConfig,
+    rate_limiter: AsyncRateLimiter | None,
+    request_id: int | None,
+) -> list[GeneEntry]:
+    """Consume one streamed response, account for it, and parse its genes."""
+    stream_start = time.monotonic()
+    async with client.messages.stream(**stream_kwargs) as stream:
+        response = await stream.get_final_message()
+    stream_elapsed = time.monotonic() - stream_start
+
+    accumulate_usage(usage, response)
+    if rate_limiter is not None and request_id is not None and response.usage:
+        actual = response.usage.input_tokens + response.usage.output_tokens
+        await rate_limiter.record_actual_usage(request_id, actual)
+
+    # Truncation is a deterministic token-budget problem, so retrying the
+    # identical request cannot help.
+    if response.stop_reason == "max_tokens":
+        used = response.usage.output_tokens if response.usage else "?"
+        logger.error(
+            f"Response truncated for PMID {pmid} "
+            f"(stop_reason=max_tokens, "
+            f"output_tokens={used}/{config.llm_max_tokens}). "
+            f"Raise PIPELINE_LLM_MAX_TOKENS or reduce effort level."
+        )
+        usage.truncated_responses = 1
+        raise ExtractionFailedError(f"Response truncated for PMID {pmid}", usage)
+
+    text_content, thinking_chars, text_chars = _extract_response_text(response)
+    total_chars = thinking_chars + text_chars
+    if total_chars > 0 and usage.output_tokens > 0:
+        usage.thinking_tokens = int(usage.output_tokens * thinking_chars / total_chars)
+
+    tokens_per_second = (
+        usage.output_tokens / stream_elapsed if stream_elapsed > 0 else 0
+    )
+    logger.info(
+        f"  LLM stream: {stream_elapsed:.1f}s, "
+        f"{usage.output_tokens:,} output tokens "
+        f"(~{usage.thinking_tokens:,} thinking + "
+        f"~{usage.text_output_tokens:,} text), "
+        f"{tokens_per_second:.0f} tok/s"
+    )
+
+    if not text_content.strip():
+        logger.warning(f"Empty text response for PMID {pmid}")
+        raise ExtractionFailedError(f"Empty text response for PMID {pmid}", usage)
+
+    result = parse_extraction_response(text_content)
+    # Ignore any PMID supplied by the model in favor of the caller's value.
+    for gene in result.genes:
+        gene.pmid = pmid
+    logger.info(f"Extracted {len(result.genes)} gene(s) from PMID {pmid}")
+    return result.genes
+
+
+async def _retry_rate_limit(
+    error: anthropic.RateLimitError,
+    retry_count: int,
+    *,
+    pmid: str,
+    config: PipelineConfig,
+    usage: TokenUsage,
+    rate_limiter: AsyncRateLimiter | None,
+) -> int:
+    """Back off after a rate limit, or raise when its retry budget is spent."""
+    retry_count += 1
+    if retry_count > config.max_rate_limit_retries:
+        logger.error(
+            f"Rate limit retries exhausted for PMID {pmid} "
+            f"({retry_count}/{config.max_rate_limit_retries})"
+        )
+        raise ExtractionFailedError(
+            f"Rate limit retries exhausted for PMID {pmid}", usage
+        ) from error
+
+    backoff_delay = compute_backoff(config.rate_limit_retry_delay, retry_count)
+    retry_after = error.response.headers.get("retry-after") if error.response else None
+    delay, delay_source = resolve_retry_delay(retry_after, backoff_delay)
+    logger.warning(
+        f"Rate limited on PMID {pmid}. "
+        f"Waiting {delay:.1f}s ({delay_source}) "
+        f"(rate limit retry {retry_count}/{config.max_rate_limit_retries})..."
+    )
+    if rate_limiter is not None:
+        await rate_limiter.signal_rate_limit(delay)
+    await asyncio.sleep(delay)
+    return retry_count
+
+
+async def _retry_connection(
+    error: Exception,
+    retry_count: int,
+    *,
+    pmid: str,
+    config: PipelineConfig,
+    usage: TokenUsage,
+) -> int:
+    """Back off after a connection failure, or raise when retries are spent."""
+    retry_count += 1
+    if retry_count > config.max_connection_retries:
+        logger.error(
+            f"Connection retries exhausted for PMID {pmid} "
+            f"({retry_count}/{config.max_connection_retries}): {error}"
+        )
+        raise ExtractionFailedError(
+            f"Connection retries exhausted for PMID {pmid}: {error}", usage
+        ) from error
+
+    delay = compute_backoff(config.connection_retry_delay, retry_count)
+    logger.warning(
+        f"Connection error on PMID {pmid}: {error!r}. "
+        f"Retrying in {delay:.1f}s "
+        f"(connection retry {retry_count}/{config.max_connection_retries})..."
+    )
+    await asyncio.sleep(delay)
+    return retry_count
+
+
+def _retry_validation(
+    error: Exception,
+    retry_count: int,
+    *,
+    pmid: str,
+    config: PipelineConfig,
+    usage: TokenUsage,
+) -> int:
+    """Record a schema retry, or raise when its retry budget is spent."""
+    retry_count += 1
+    if retry_count > config.max_retries:
+        logger.error(
+            f"Validation retries exhausted for PMID {pmid} "
+            f"({retry_count}/{config.max_retries}): {error}"
+        )
+        raise ExtractionFailedError(
+            f"Validation retries exhausted for PMID {pmid}: {error}", usage
+        ) from error
+    logger.warning(
+        f"Validation retry {retry_count}/{config.max_retries} for PMID {pmid}: {error}"
+    )
+    return retry_count
+
+
 # ---------------------------------------------------------------------------
 # PROVIDER
 # ---------------------------------------------------------------------------
@@ -153,60 +383,7 @@ class AnthropicProvider:
         """
         usage = TokenUsage()
         client = self._get_client()
-
-        prompt = build_extraction_prompt(
-            paper_text=text,
-            pmid=pmid,
-            max_chars=config.max_paper_text_chars,
-            prompt_version=config.prompt_version,
-        )
-        system_blocks: list[dict[str, Any]] = [
-            {
-                "type": "text",
-                "text": prompt.system_prompt,
-                "cache_control": {"type": "ephemeral", "ttl": "1h"},
-            },
-            {
-                "type": "text",
-                "text": prompt.extraction_instructions,
-                "cache_control": {"type": "ephemeral", "ttl": "1h"},
-            },
-        ]
-        messages = [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": prompt.user_text}],
-            }
-        ]
-
-        if config.llm_model in ADAPTIVE_THINKING_MODELS:
-            # "summarized" keeps thinking blocks populated for the char-ratio
-            # estimator below — otherwise models that default to "omitted"
-            # return empty thinking text and the split collapses to all-text.
-            thinking_config: dict[str, Any] = {
-                "type": "adaptive",
-                "display": "summarized",
-            }
-        else:
-            budget = max(
-                config.llm_max_tokens - THINKING_OUTPUT_RESERVE,
-                config.llm_max_tokens // 2,
-            )
-            thinking_config = {"type": "enabled", "budget_tokens": budget}
-
-        # "high" is the API default — only transmit when overridden.
-        output_config = dict(_OUTPUT_CONFIG)
-        if config.llm_model in EFFORT_CAPABLE_MODELS and config.llm_effort != "high":
-            output_config["effort"] = config.llm_effort
-
-        stream_kwargs: dict[str, Any] = {
-            "model": config.llm_model,
-            "max_tokens": config.llm_max_tokens,
-            "system": system_blocks,
-            "messages": messages,
-            "thinking": thinking_config,
-            "output_config": output_config,
-        }
+        stream_kwargs = _build_stream_kwargs(text, pmid, config)
 
         rate_limit_retries = 0
         validation_retries = 0
@@ -219,119 +396,27 @@ class AnthropicProvider:
                     request_id = await rate_limiter.acquire(
                         estimated_tokens=config.estimated_tokens_per_call
                     )
-
-                stream_start = time.monotonic()
-                async with client.messages.stream(**stream_kwargs) as stream:
-                    response = await stream.get_final_message()
-                stream_elapsed = time.monotonic() - stream_start
-
-                accumulate_usage(usage, response)
-
-                if (
-                    rate_limiter is not None
-                    and request_id is not None
-                    and response.usage
-                ):
-                    actual = response.usage.input_tokens + response.usage.output_tokens
-                    await rate_limiter.record_actual_usage(request_id, actual)
-
-                # Detect truncation: with adaptive thinking, max_tokens covers
-                # both thinking + text output. If thinking consumed most of the
-                # budget, the JSON output gets cut off mid-stream. This is a
-                # deterministic config problem — retrying with identical
-                # max_tokens will always truncate again, so we bail immediately
-                # instead of consuming the validation retry budget.
-                if response.stop_reason == "max_tokens":
-                    used = response.usage.output_tokens if response.usage else "?"
-                    logger.error(
-                        f"Response truncated for PMID {pmid} "
-                        f"(stop_reason=max_tokens, "
-                        f"output_tokens={used}/{config.llm_max_tokens}). "
-                        f"Raise PIPELINE_LLM_MAX_TOKENS or "
-                        f"reduce effort level."
-                    )
-                    usage.truncated_responses = 1
-                    raise ExtractionFailedError(
-                        f"Response truncated for PMID {pmid}", usage
-                    )
-
-                # Extract text content and estimate thinking tokens from
-                # content blocks. The API lumps thinking + text into
-                # output_tokens, so we estimate the split from char counts.
-                text_content = ""
-                thinking_chars = 0
-                text_chars = 0
-                for block in response.content:
-                    block_type = getattr(block, "type", None)
-                    if block_type == "thinking":
-                        thinking_chars += len(getattr(block, "thinking", ""))
-                    elif block_type == "text":
-                        block_text: str = getattr(block, "text", "")
-                        text_content += block_text
-                        text_chars += len(block_text)
-
-                total_chars = thinking_chars + text_chars
-                if total_chars > 0 and usage.output_tokens > 0:
-                    thinking_ratio = thinking_chars / total_chars
-                    usage.thinking_tokens = int(usage.output_tokens * thinking_ratio)
-
-                tok_per_sec = (
-                    usage.output_tokens / stream_elapsed if stream_elapsed > 0 else 0
+                genes = await _stream_and_parse(
+                    client,
+                    stream_kwargs,
+                    usage,
+                    pmid=pmid,
+                    config=config,
+                    rate_limiter=rate_limiter,
+                    request_id=request_id,
                 )
-                logger.info(
-                    f"  LLM stream: {stream_elapsed:.1f}s, "
-                    f"{usage.output_tokens:,} output tokens "
-                    f"(~{usage.thinking_tokens:,} thinking + "
-                    f"~{usage.text_output_tokens:,} text), "
-                    f"{tok_per_sec:.0f} tok/s"
-                )
-
-                if not text_content.strip():
-                    logger.warning(f"Empty text response for PMID {pmid}")
-                    raise ExtractionFailedError(
-                        f"Empty text response for PMID {pmid}", usage
-                    )
-
-                result = parse_extraction_response(text_content)
-                # The JSON schema exposes GeneEntry.pmid to the model, so it
-                # can emit a (possibly hallucinated) value. Overwrite with the
-                # caller's PMID unconditionally.
-                for g in result.genes:
-                    g.pmid = pmid
-                logger.info(f"Extracted {len(result.genes)} gene(s) from PMID {pmid}")
-                return result.genes, usage
+                return genes, usage
 
             except anthropic.RateLimitError as e:
-                # Zero out the unused rate limiter reservation
-                if rate_limiter is not None and request_id is not None:
-                    await rate_limiter.record_actual_usage(request_id, 0)
-
-                rate_limit_retries += 1
-                if rate_limit_retries > config.max_rate_limit_retries:
-                    logger.error(
-                        f"Rate limit retries exhausted for PMID {pmid} "
-                        f"({rate_limit_retries}/{config.max_rate_limit_retries})"
-                    )
-                    raise ExtractionFailedError(
-                        f"Rate limit retries exhausted for PMID {pmid}", usage
-                    ) from e
-
-                backoff_delay = compute_backoff(
-                    config.rate_limit_retry_delay, rate_limit_retries
+                await _release_reservation(rate_limiter, request_id)
+                rate_limit_retries = await _retry_rate_limit(
+                    e,
+                    rate_limit_retries,
+                    pmid=pmid,
+                    config=config,
+                    usage=usage,
+                    rate_limiter=rate_limiter,
                 )
-                retry_after = (
-                    e.response.headers.get("retry-after") if e.response else None
-                )
-                delay, delay_source = resolve_retry_delay(retry_after, backoff_delay)
-                logger.warning(
-                    f"Rate limited on PMID {pmid}. "
-                    f"Waiting {delay:.1f}s ({delay_source}) "
-                    f"(rate limit retry "
-                    f"{rate_limit_retries}/{config.max_rate_limit_retries})..."
-                )
-                if rate_limiter is not None:
-                    await rate_limiter.signal_rate_limit(delay)
-                await asyncio.sleep(delay)
 
             except (
                 anthropic.APIConnectionError,
@@ -339,43 +424,22 @@ class AnthropicProvider:
                 httpx.ReadError,
                 httpx.ConnectError,
             ) as e:
-                # Zero out the unused rate limiter reservation
-                if rate_limiter is not None and request_id is not None:
-                    await rate_limiter.record_actual_usage(request_id, 0)
-
-                connection_retries += 1
-                if connection_retries > config.max_connection_retries:
-                    logger.error(
-                        f"Connection retries exhausted for PMID {pmid} "
-                        f"({connection_retries}/{config.max_connection_retries}): {e}"
-                    )
-                    raise ExtractionFailedError(
-                        f"Connection retries exhausted for PMID {pmid}: {e}", usage
-                    ) from e
-                backoff_delay = compute_backoff(
-                    config.connection_retry_delay, connection_retries
+                await _release_reservation(rate_limiter, request_id)
+                connection_retries = await _retry_connection(
+                    e,
+                    connection_retries,
+                    pmid=pmid,
+                    config=config,
+                    usage=usage,
                 )
-                logger.warning(
-                    f"Connection error on PMID {pmid}: {e!r}. "
-                    f"Retrying in {backoff_delay:.1f}s "
-                    f"(connection retry "
-                    f"{connection_retries}/{config.max_connection_retries})..."
-                )
-                await asyncio.sleep(backoff_delay)
 
             except (json.JSONDecodeError, ValidationError, ValueError) as e:
-                validation_retries += 1
-                if validation_retries > config.max_retries:
-                    logger.error(
-                        f"Validation retries exhausted for PMID {pmid} "
-                        f"({validation_retries}/{config.max_retries}): {e}"
-                    )
-                    raise ExtractionFailedError(
-                        f"Validation retries exhausted for PMID {pmid}: {e}", usage
-                    ) from e
-                logger.warning(
-                    f"Validation retry {validation_retries}/{config.max_retries} "
-                    f"for PMID {pmid}: {e}"
+                validation_retries = _retry_validation(
+                    e,
+                    validation_retries,
+                    pmid=pmid,
+                    config=config,
+                    usage=usage,
                 )
 
             except anthropic.APIError as e:

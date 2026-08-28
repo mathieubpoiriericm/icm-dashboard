@@ -123,8 +123,7 @@ async def get_all_pmids() -> list[str]:
     for row in rows:
         refs = row["references"]
         if refs:
-            pmids = extract_pmids_from_text(refs)
-            all_pmids.update(pmids)
+            all_pmids.update(extract_pmids_from_text(refs))
 
     return sorted(all_pmids)
 
@@ -134,10 +133,8 @@ _MAX_ERRORS_PER_SOURCE: int = 10
 
 def _append_errors_truncated(target: list[str], source: list[str], label: str) -> None:
     """Append errors from source to target, truncating with a message."""
-    if len(source) <= _MAX_ERRORS_PER_SOURCE:
-        target.extend(source)
-    else:
-        target.extend(source[:_MAX_ERRORS_PER_SOURCE])
+    target.extend(source[:_MAX_ERRORS_PER_SOURCE])
+    if len(source) > _MAX_ERRORS_PER_SOURCE:
         suppressed = len(source) - _MAX_ERRORS_PER_SOURCE
         target.append(f"... and {suppressed} more {label} errors suppressed")
 

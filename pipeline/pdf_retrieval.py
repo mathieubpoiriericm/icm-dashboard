@@ -31,6 +31,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 DOI_PATTERN: Final[re.Pattern[str]] = re.compile(r"^10\.\d{4,}/[^\s]+$")
+_BACK_MATTER_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"\n(?:References|Bibliography|Methods|Online content|Acknowledgements|"
+    r"Data availability)\n",
+    re.IGNORECASE,
+)
+_PDF_TOP_MARGIN: Final[int] = 40
+_PDF_BOTTOM_MARGIN: Final[int] = 740
 
 # Timeout configurations
 DEFAULT_TIMEOUT: Final[httpx.Timeout] = httpx.Timeout(
@@ -101,9 +108,97 @@ def _validate_doi(doi: str) -> str:
         ValueError: If the DOI format is invalid.
     """
     doi = doi.strip()
-    if not DOI_PATTERN.match(doi):
+    if not DOI_PATTERN.fullmatch(doi):
         raise ValueError(f"Invalid DOI format: {doi!r}")
     return doi
+
+
+def _element_text(element: Any) -> str:
+    """Join the string fragments yielded by an lxml element."""
+    return "".join(part for part in element.itertext() if isinstance(part, str))
+
+
+def _parse_pmc_xml(content: bytes) -> str | None:
+    """Extract body paragraphs from a PMC JATS document."""
+    root = etree.fromstring(content, parser=SAFE_XML_PARSER)
+    paragraphs = root.findall(".//{*}body//{*}p") or root.findall(".//{*}sec//{*}p")
+    text_parts = [
+        text for paragraph in paragraphs if (text := _element_text(paragraph).strip())
+    ]
+    return "\n\n".join(text_parts) if text_parts else None
+
+
+def _parse_abstract_xml(content: bytes) -> str | None:
+    """Extract either a plain or structured abstract from PubMed XML."""
+    root = etree.fromstring(content, parser=SAFE_XML_PARSER)
+    abstract_parts = root.findall(".//AbstractText")
+    if not abstract_parts:
+        return None
+    if len(abstract_parts) == 1:
+        return _element_text(abstract_parts[0])
+
+    sections: list[str] = []
+    for part in abstract_parts:
+        text = _element_text(part).strip()
+        if text:
+            label = part.get("Label", "")
+            sections.append(f"{label}: {text}" if label else text)
+    return "\n\n".join(sections) if sections else None
+
+
+async def _read_pdf_bytes(response: httpx.Response, url: str) -> bytes | None:
+    """Validate and read a streamed PDF response within the size limit."""
+    if response.status_code != 200:
+        logger.debug(f"PDF download failed: {response.status_code} for {url}")
+        return None
+
+    raw_content_length = response.headers.get("content-length", "0")
+    try:
+        content_length = int(raw_content_length)
+    except ValueError:
+        logger.debug(
+            "Non-numeric content-length %r for %s; relying on streaming guard",
+            raw_content_length,
+            url,
+        )
+        content_length = 0
+    if content_length > MAX_PDF_BYTES:
+        logger.warning(f"PDF too large ({content_length} bytes), skipping: {url}")
+        return None
+
+    content_type = response.headers.get("content-type", "")
+    if "pdf" not in content_type.lower() and not url.endswith(".pdf"):
+        logger.debug(f"Not a PDF (content-type: {content_type}): {url}")
+        return None
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes(65536):
+        total += len(chunk)
+        if total > MAX_PDF_BYTES:
+            logger.warning(
+                f"PDF exceeded {MAX_PDF_BYTES} bytes during download, skipping: {url}"
+            )
+            return None
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
+    if not content.startswith(b"%PDF-"):
+        logger.debug(
+            f"Response for {url} passed content-type check but is not a "
+            f"PDF (first bytes: {content[:16]!r})"
+        )
+        return None
+    return content
+
+
+def _extract_and_close_pdf(doc: Any) -> str | None:
+    """Extract cleaned text and always release the PyMuPDF document."""
+    try:
+        text = _extract_clean_pdf_text(doc)
+    finally:
+        doc.close()
+    return text if text.strip() else None
 
 
 # ---------------------------------------------------------------------------
@@ -231,36 +326,16 @@ async def fetch_pmc_fulltext(pmid: str) -> str | None:
             logger.debug(f"PMC fetch failed for {pmcid}: {pmc_resp.status_code}")
             return None
 
-        # Parse XML and extract body text
-        root = etree.fromstring(pmc_resp.content, parser=SAFE_XML_PARSER)
-
-        # Use namespace-wildcard XPath so queries work regardless of whether
-        # the PMC JATS XML uses explicit namespace prefixes.
-        paragraphs = root.findall(".//{*}body//{*}p")
-        if not paragraphs:
-            paragraphs = root.findall(".//{*}sec//{*}p")
-
-        if not paragraphs:
-            return None
-
-        text_parts = []
-        for p in paragraphs:
-            # lxml's itertext() is typed as yielding str | None; filter to str.
-            text = "".join(t for t in p.itertext() if isinstance(t, str))
-            if text.strip():
-                text_parts.append(text.strip())
-
-        return "\n\n".join(text_parts) if text_parts else None
+        return _parse_pmc_xml(pmc_resp.content)
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout fetching PMC fulltext for PMID {pmid}")
-        return None
     except httpx.RequestError as e:
         logger.warning(f"Request error fetching PMC fulltext for PMID {pmid}: {e}")
-        return None
     except etree.XMLSyntaxError as e:
         logger.error(f"XML parsing failed for PMID {pmid}: {e}")
-        return None
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -288,82 +363,23 @@ async def download_and_parse_pdf(url: str) -> str | None:
 
         # Stream the response to avoid loading oversized PDFs into memory
         async with client.stream("GET", url, timeout=PDF_TIMEOUT) as resp:
-            if resp.status_code != 200:
-                logger.debug(f"PDF download failed: {resp.status_code} for {url}")
-                return None
-
-            # Missing or non-numeric content-length is safe to ignore because
-            # the streaming guard below (MAX_PDF_BYTES) bounds memory anyway.
-            raw_cl = resp.headers.get("content-length", "0")
-            try:
-                content_length = int(raw_cl)
-            except ValueError:
-                logger.debug(
-                    "Non-numeric content-length %r for %s; relying on streaming guard",
-                    raw_cl,
-                    url,
-                )
-                content_length = 0
-            if content_length > MAX_PDF_BYTES:
-                logger.warning(
-                    f"PDF too large ({content_length} bytes), skipping: {url}"
-                )
-                return None
-
-            # Check content type
-            content_type = resp.headers.get("content-type", "")
-            if "pdf" not in content_type.lower() and not url.endswith(".pdf"):
-                logger.debug(f"Not a PDF (content-type: {content_type}): {url}")
-                return None
-
-            # Stream body with size guard (handles chunked transfers
-            # where content-length is 0 or absent)
-            chunks: list[bytes] = []
-            total = 0
-            async for chunk in resp.aiter_bytes(65536):
-                total += len(chunk)
-                if total > MAX_PDF_BYTES:
-                    logger.warning(
-                        f"PDF exceeded {MAX_PDF_BYTES} bytes during download, "
-                        f"skipping: {url}"
-                    )
-                    return None
-                chunks.append(chunk)
-
-            pdf_bytes = b"".join(chunks)
-            del chunks
-
-        # Defense in depth: the content-type check upstream has a hole — URLs
-        # ending in ".pdf" pass even when the server returned HTML (paywall
-        # redirect, login page, captcha). Bail cleanly on non-PDF magic bytes.
-        if not pdf_bytes.startswith(b"%PDF-"):
-            logger.debug(
-                f"Response for {url} passed content-type check but is not a "
-                f"PDF (first bytes: {pdf_bytes[:16]!r})"
-            )
+            pdf_bytes = await _read_pdf_bytes(resp, url)
+        if pdf_bytes is None:
             return None
 
-        # Parse PDF from bytes — use try/finally to ensure C-level resources
-        # held by PyMuPDF are released even if _extract_clean_pdf_text raises.
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        try:
-            text = _extract_clean_pdf_text(doc)
-        finally:
-            doc.close()
-
-        return text if text.strip() else None
+        return _extract_and_close_pdf(doc)
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout downloading PDF from {url}")
-        return None
     except httpx.RequestError as e:
         logger.warning(f"Request error downloading PDF from {url}: {e}")
-        return None
     except Exception as e:
         # Intentionally broad: PyMuPDF (fitz) raises arbitrary C-level
         # exceptions (RuntimeError, ValueError, etc.) for corrupt PDFs.
         logger.warning(f"PDF parsing failed for {url}: {e}")
-        return None
+
+    return None
 
 
 def parse_local_pdf(path: Path) -> str | None:
@@ -389,12 +405,7 @@ def parse_local_pdf(path: Path) -> str | None:
 
     try:
         doc = fitz.open(str(path))
-        try:
-            text = _extract_clean_pdf_text(doc)
-        finally:
-            doc.close()
-
-        return text if text.strip() else None
+        return _extract_and_close_pdf(doc)
 
     except Exception as e:
         # Intentionally broad: PyMuPDF (fitz) raises arbitrary C-level
@@ -411,14 +422,10 @@ def _extract_clean_pdf_text(doc: Any) -> str:
     2. Truncates the document at the 'References' section to avoid LLM
        hallucinations from bibliography gene mentions.
     """
-    text_parts = []
-
-    # Heuristic margins for typical A4/Letter papers (points)
-    TOP_MARGIN = 40
-    BOTTOM_MARGIN = 740
+    text_parts: list[str] = []
 
     for page in doc:
-        # Blocks: (x0, y0, x1, y1, "text", block_no, block_type)
+        # PyMuPDF blocks contain coordinates, text, a block number, and type.
         blocks = page.get_text("blocks")
 
         page_text_parts = []
@@ -430,7 +437,7 @@ def _extract_clean_pdf_text(doc: Any) -> str:
             y0, y1 = b[1], b[3]
 
             # Filter out headers and footers
-            if y0 < TOP_MARGIN or y1 > BOTTOM_MARGIN:
+            if y0 < _PDF_TOP_MARGIN or y1 > _PDF_BOTTOM_MARGIN:
                 continue
 
             text = b[4].strip()
@@ -442,32 +449,9 @@ def _extract_clean_pdf_text(doc: Any) -> str:
 
     full_text = "\n\n".join(text_parts)
 
-    # Truncate at common "back matter" headers (References, etc.)
-    # We look for these patterns starting from 50% into the document.
-    back_matter_patterns = [
-        r"\nReferences\n",
-        r"\nREFERENCES\n",
-        r"\nBibliography\n",
-        r"\nBIBLIOGRAPHY\n",
-        r"\nMethods\n",
-        r"\nOnline content\n",
-        r"\nAcknowledgements\n",
-        r"\nData availability\n",
-    ]
-
-    earliest_pos = len(full_text)
-    search_start = len(full_text) // 2
-
-    for pattern in back_matter_patterns:
-        match = re.search(pattern, full_text[search_start:], re.IGNORECASE)
-        if match:
-            pos = match.start() + search_start
-            earliest_pos = min(earliest_pos, pos)
-
-    if earliest_pos < len(full_text):
-        full_text = full_text[:earliest_pos]
-
-    return full_text
+    # Truncate at the first common back-matter header in the latter half.
+    match = _BACK_MATTER_PATTERN.search(full_text, len(full_text) // 2)
+    return full_text[: match.start()] if match else full_text
 
 
 async def fetch_abstract(pmid: str) -> str | None:
@@ -479,7 +463,6 @@ async def fetch_abstract(pmid: str) -> str | None:
     Returns:
         Abstract text if available, None otherwise.
     """
-    url = NCBI_EFETCH_URL
     params = get_ncbi_params(
         {
             "db": "pubmed",
@@ -491,48 +474,19 @@ async def fetch_abstract(pmid: str) -> str | None:
 
     try:
         client = await _client_manager.get()
-        resp = await client.get(url, params=params)
+        resp = await client.get(NCBI_EFETCH_URL, params=params)
 
         if resp.status_code != 200:
             logger.debug(f"Abstract fetch failed for PMID {pmid}: {resp.status_code}")
             return None
 
-        root = etree.fromstring(resp.content, parser=SAFE_XML_PARSER)
-
-        # Find abstract text
-        abstract_elem = root.find(".//AbstractText")
-        if abstract_elem is not None:
-            abstract_parts = root.findall(".//AbstractText")
-            if len(abstract_parts) > 1:
-                # Structured abstract with multiple sections
-                sections = []
-                for part in abstract_parts:
-                    label = part.get("Label", "")
-                    # itertext() is typed as str | None; filter to str.
-                    text = "".join(t for t in part.itertext() if isinstance(t, str))
-                    stripped = text.strip()
-                    if not stripped:
-                        # Empty section would otherwise emit "Label: " or ""
-                        # and pollute the text handed to the LLM.
-                        continue
-                    if label:
-                        sections.append(f"{label}: {stripped}")
-                    else:
-                        sections.append(stripped)
-                return "\n\n".join(sections) if sections else None
-            else:
-                return "".join(
-                    t for t in abstract_elem.itertext() if isinstance(t, str)
-                )
-
-        return None
+        return _parse_abstract_xml(resp.content)
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout fetching abstract for PMID {pmid}")
-        return None
     except httpx.RequestError as e:
         logger.warning(f"Request error fetching abstract for PMID {pmid}: {e}")
-        return None
     except etree.XMLSyntaxError as e:
         logger.error(f"XML parsing failed for abstract PMID {pmid}: {e}")
-        return None
+
+    return None

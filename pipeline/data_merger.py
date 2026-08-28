@@ -34,13 +34,7 @@ def dedupe_list[T](items: Sequence[T]) -> list[T]:
     Returns:
         New list with duplicates removed, maintaining first occurrence order.
     """
-    seen: set[Any] = set()
-    result: list[T] = []
-    for item in items:
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
-    return result
+    return list(dict.fromkeys(items))
 
 
 def format_omics(evidence: Sequence[str]) -> str:
@@ -67,27 +61,22 @@ def _build_combined_gene_data(entries: Sequence[GeneEntry]) -> dict[str, Any]:
     overwriting one another.
     """
     first = entries[0]
-    all_gwas: list[str] = []
-    all_omics: list[str] = []
-    all_pmids: list[str] = []
-    protein_name: str | None = None
-    has_mr = False
-    for entry in entries:
-        all_gwas.extend(entry.gwas_trait)
-        all_omics.extend(entry.omics_evidence)
-        if entry.pmid:
-            all_pmids.append(entry.pmid)
-        if protein_name is None and entry.protein_name:
-            protein_name = entry.protein_name
-        if entry.mendelian_randomization:
-            has_mr = True
+    all_gwas = [trait for entry in entries for trait in entry.gwas_trait]
+    all_omics = [evidence for entry in entries for evidence in entry.omics_evidence]
+    all_pmids = [entry.pmid for entry in entries if entry.pmid]
+    protein_name = next(
+        (entry.protein_name for entry in entries if entry.protein_name),
+        first.gene_symbol,
+    )
 
     return {
-        "protein": protein_name or first.gene_symbol,
+        "protein": protein_name,
         "gene": first.gene_symbol,
         "chromosomal_location": "",
         "gwas_trait": ", ".join(dedupe_list(all_gwas)),
-        "mendelian_randomization": "Y" if has_mr else "",
+        "mendelian_randomization": (
+            "Y" if any(entry.mendelian_randomization for entry in entries) else ""
+        ),
         "evidence_from_other_omics_studies": format_omics(dedupe_list(all_omics)),
         "link_to_monogenetic_disease": "",
         "brain_cell_types": "",

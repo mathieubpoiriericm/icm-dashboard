@@ -39,11 +39,8 @@ def _get_database_url() -> str:
     user = os.getenv("DB_USER")
     password = os.getenv("DB_PASSWORD")
 
-    if not all([name, user, password]):
-        missing = [
-            k for k, v in [("DB_NAME", name), ("DB_USER", user), ("DB_PASSWORD", password)]
-            if not v
-        ]
+    required = {"DB_NAME": name, "DB_USER": user, "DB_PASSWORD": password}
+    if missing := [key for key, value in required.items() if not value]:
         raise RuntimeError(
             f"Missing required database environment variables: {missing}. "
             f"Set them in .env or as environment variables."

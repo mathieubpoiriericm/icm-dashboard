@@ -1307,13 +1307,14 @@ def build_extraction_prompt(
     (Anthropic cache-controlled blocks, vLLM OpenAI chat completions,
     MLX-LM chat records for fine-tuning).
     """
-    if prompt_version not in _PROMPTS:
+    prompt_parts = _PROMPTS.get(prompt_version)
+    if prompt_parts is None:
         logger.warning(
             f"Unknown prompt version {prompt_version!r}, falling back to 'v5'"
         )
-        prompt_version = "v5"
+        prompt_parts = _PROMPTS["v5"]
 
-    system_prompt, extraction_instructions = _PROMPTS[prompt_version]
+    system_prompt, extraction_instructions = prompt_parts
 
     if len(paper_text) > max_chars:
         logger.info(

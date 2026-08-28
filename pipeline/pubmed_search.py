@@ -13,7 +13,7 @@ import warnings
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from http.client import HTTPException
-from typing import Final, Protocol, TypedDict, cast
+from typing import Any, Final, Protocol, TypedDict, cast
 from urllib.error import HTTPError, URLError
 
 from Bio import Entrez
@@ -119,6 +119,15 @@ SVD_QUERY: Final[str] = _build_query()
 MAX_TOTAL_RESULTS: Final[int] = 5000
 
 
+async def _run_entrez_search(**params: Any) -> _EntrezSearchResult:
+    """Run blocking Entrez search/read calls off the event loop."""
+    handle = await asyncio.to_thread(partial(Entrez.esearch, **params))
+    return cast(
+        _EntrezSearchResult,
+        await asyncio.to_thread(Entrez.read, handle),
+    )
+
+
 async def search_recent_papers(days_back: int = 7) -> list[str]:
     """Return PMIDs of papers published in the last N days.
 
@@ -151,21 +160,14 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
     logger.info(f"PubMed query (last {days_back}d): {SVD_QUERY[:120]}...")
 
     try:
-        handle = await asyncio.to_thread(
-            partial(
-                Entrez.esearch,
-                db="pubmed",
-                term=SVD_QUERY,
-                datetype="pdat",
-                mindate=mindate,
-                maxdate="3000",
-                retmax=DEFAULT_RETMAX,
-                usehistory="y",
-            )
-        )
-        results = cast(
-            _EntrezSearchResult,
-            await asyncio.to_thread(Entrez.read, handle),
+        results = await _run_entrez_search(
+            db="pubmed",
+            term=SVD_QUERY,
+            datetype="pdat",
+            mindate=mindate,
+            maxdate="3000",
+            retmax=DEFAULT_RETMAX,
+            usehistory="y",
         )
     except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
         raise PubMedSearchError(f"Entrez API call failed: {e}") from e
@@ -179,43 +181,33 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
         query_key = results.get("QueryKey")
 
         if web_env and query_key:
-            fetched = len(pmids)
-            pagination_error = False
-            while fetched < total_count and fetched < MAX_TOTAL_RESULTS:
+            while len(pmids) < total_count and len(pmids) < MAX_TOTAL_RESULTS:
                 try:
-                    handle = await asyncio.to_thread(
-                        partial(
-                            Entrez.esearch,
-                            db="pubmed",
-                            term=SVD_QUERY,
-                            retstart=fetched,
-                            retmax=DEFAULT_RETMAX,
-                            webenv=web_env,
-                            query_key=query_key,
-                        )
-                    )
-                    batch = cast(
-                        _EntrezSearchResult,
-                        await asyncio.to_thread(Entrez.read, handle),
+                    batch = await _run_entrez_search(
+                        db="pubmed",
+                        term=SVD_QUERY,
+                        retstart=len(pmids),
+                        retmax=DEFAULT_RETMAX,
+                        webenv=web_env,
+                        query_key=query_key,
                     )
                 except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
-                    logger.warning(f"PubMed pagination failed at offset {fetched}: {e}")
-                    pagination_error = True
+                    logger.warning(
+                        f"PubMed pagination failed at offset {len(pmids)}: {e}"
+                    )
+                    logger.warning(
+                        f"PubMed results TRUNCATED due to pagination error: "
+                        f"retrieved {len(pmids)} of {total_count} total available. "
+                        f"Some papers may be missing from this pipeline run."
+                    )
                     break
 
                 batch_ids = batch.get("IdList", [])
                 if not batch_ids:
                     break
                 pmids.extend(batch_ids)
-                fetched += len(batch_ids)
 
-            if pagination_error:
-                logger.warning(
-                    f"PubMed results TRUNCATED due to pagination error: "
-                    f"retrieved {len(pmids)} of {total_count} total available. "
-                    f"Some papers may be missing from this pipeline run."
-                )
-            elif fetched >= MAX_TOTAL_RESULTS:
+            if len(pmids) >= MAX_TOTAL_RESULTS:
                 logger.warning(
                     f"PubMed results capped at {MAX_TOTAL_RESULTS} "
                     f"(total available: {total_count})"
@@ -235,10 +227,4 @@ def filter_new_pmids(pmids: list[str], existing: set[str]) -> list[str]:
     Returns:
         List of new, unique PMIDs in original order.
     """
-    seen: set[str] = set()
-    result: list[str] = []
-    for p in pmids:
-        if p not in existing and p not in seen:
-            seen.add(p)
-            result.append(p)
-    return result
+    return list(dict.fromkeys(pmid for pmid in pmids if pmid not in existing))

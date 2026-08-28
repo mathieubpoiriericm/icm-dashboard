@@ -81,11 +81,6 @@ _client_manager = AsyncHttpClientManager(timeout=30.0)
 _ctg_semaphore: asyncio.Semaphore | None = None
 
 
-def _resolve_concurrency(config: PipelineConfig | None) -> int:
-    cfg = config or PipelineConfig()
-    return cfg.ct_max_concurrency
-
-
 def init_ctg_fetch_state(config: PipelineConfig | None = None) -> None:
     """Eagerly initialize the CTG concurrency semaphore.
 
@@ -103,7 +98,7 @@ def init_ctg_fetch_state(config: PipelineConfig | None = None) -> None:
         raise RuntimeError(
             "init_ctg_fetch_state() must be called from inside a running event loop"
         ) from e
-    _ctg_semaphore = asyncio.Semaphore(_resolve_concurrency(config))
+    _ctg_semaphore = asyncio.Semaphore((config or PipelineConfig()).ct_max_concurrency)
 
 
 def _get_ctg_semaphore() -> asyncio.Semaphore:
@@ -136,6 +131,11 @@ def _get_path(obj: Any, *path: str) -> Any:
     return current
 
 
+def _nonempty_str(value: Any) -> str | None:
+    """Return non-empty strings unchanged and normalize other values to None."""
+    return value if isinstance(value, str) and value else None
+
+
 def _first_primary_outcome(study: dict[str, Any]) -> str | None:
     """Extract the first primary outcome measure, if any."""
     outcomes = _get_path(study, "protocolSection", "outcomesModule", "primaryOutcomes")
@@ -144,8 +144,7 @@ def _first_primary_outcome(study: dict[str, Any]) -> str | None:
     first = outcomes[0]
     if not isinstance(first, dict):
         return None
-    measure = first.get("measure")
-    return measure if isinstance(measure, str) and measure else None
+    return _nonempty_str(first.get("measure"))
 
 
 def _first_phase(study: dict[str, Any]) -> str | None:
@@ -153,8 +152,7 @@ def _first_phase(study: dict[str, Any]) -> str | None:
     phases = _get_path(study, "protocolSection", "designModule", "phases")
     if not isinstance(phases, list) or not phases:
         return None
-    first = phases[0]
-    if not isinstance(first, str) or not first:
+    if (first := _nonempty_str(phases[0])) is None:
         return None
     return _PHASE_DISPLAY_MAP.get(first, first)
 
@@ -211,8 +209,6 @@ def _map_study_to_records(study: dict[str, Any]) -> list[ClinicalTrialRecord]:
     completion = _get_path(
         study, "protocolSection", "statusModule", "completionDateStruct", "date"
     )
-    completion_str = completion if isinstance(completion, str) and completion else None
-
     primary_outcome = _first_primary_outcome(study)
 
     sponsor_type = _get_path(
@@ -222,22 +218,16 @@ def _map_study_to_records(study: dict[str, Any]) -> list[ClinicalTrialRecord]:
         "leadSponsor",
         "class",
     )
-    sponsor_type_str = (
-        sponsor_type if isinstance(sponsor_type, str) and sponsor_type else None
-    )
-
-    trial_name_str = trial_name if isinstance(trial_name, str) and trial_name else None
-
     return [
         ClinicalTrialRecord(
             drug=drug,
-            trial_name=trial_name_str,
+            trial_name=_nonempty_str(trial_name),
             registry_id=nct_id,
             clinical_trial_phase=phase,
             target_sample_size=sample_size,
-            estimated_completion_date=completion_str,
+            estimated_completion_date=_nonempty_str(completion),
             primary_outcome=primary_outcome,
-            sponsor_type=sponsor_type_str,
+            sponsor_type=_nonempty_str(sponsor_type),
         )
         for drug in drugs
     ]
@@ -377,8 +367,8 @@ async def fetch_csvd_studies(
             continue
         for study in result:
             nct = _get_path(study, "protocolSection", "identificationModule", "nctId")
-            if isinstance(nct, str) and nct and nct not in deduped:
-                deduped[nct] = study
+            if isinstance(nct, str) and nct:
+                deduped.setdefault(nct, study)
 
     logger.info(
         f"CTG: {len(deduped)} unique cSVD-relevant studies "
@@ -409,7 +399,6 @@ async def sync_clinical_trials(config: PipelineConfig) -> SyncResult:
 
     init_ctg_fetch_state(config)
 
-    errors: list[str] = []
     try:
         studies, term_errors = await fetch_csvd_studies(
             search_terms=config.ct_search_terms,
@@ -420,7 +409,7 @@ async def sync_clinical_trials(config: PipelineConfig) -> SyncResult:
         logger.exception("CTG fetch failed")
         return SyncResult(fetched=0, cached=0, failed=0, errors=[f"CTG fetch: {e}"])
 
-    errors.extend(term_errors)
+    errors = term_errors.copy()
 
     records: list[ClinicalTrialRecord] = []
     studies_without_nct = 0

@@ -125,13 +125,11 @@ def _format_authors(author_list: list[str], max_authors: int = 3) -> str:
 
 def _title_case(text: str) -> str:
     """Convert text to title case, handling special cases."""
-    if not text:
-        return ""
-
     # Simple title case - capitalize first letter of each sentence
     words = text.split()
-    if words:
-        words[0] = words[0].capitalize()
+    if not words:
+        return ""
+    words[0] = words[0].capitalize()
     return " ".join(words)
 
 
@@ -157,12 +155,8 @@ def _format_citation(
         formatted_title = _title_case(title)
         parts.append(f"<i>{formatted_title}</i>")
 
-    journal_part = ""
     if journal:
-        journal_part = journal
-        if pub_date:
-            journal_part += f" ({pub_date})"
-        parts.append(journal_part)
+        parts.append(f"{journal} ({pub_date})" if pub_date else journal)
 
     if doi:
         parts.append(f"DOI: {doi}")
@@ -234,7 +228,7 @@ def _parse_pubmed_xml(pmid: str, xml_content: bytes) -> PubMedCitation | None:
             )
 
         # Extract authors
-        author_list = []
+        author_list: list[str] = []
         for author in article.findall(".//Author"):
             last_name = author.findtext("LastName", "")
             initials = author.findtext("Initials", "")
@@ -247,12 +241,12 @@ def _parse_pubmed_xml(pmid: str, xml_content: bytes) -> PubMedCitation | None:
         title = article.findtext(".//ArticleTitle", "")
 
         # Extract journal
-        journal = article.findtext(".//Journal/Title", "")
-        if not journal:
-            journal = article.findtext(".//Journal/ISOAbbreviation", "")
+        journal = article.findtext(".//Journal/Title", "") or article.findtext(
+            ".//Journal/ISOAbbreviation", ""
+        )
 
         # Extract publication date
-        pub_date = None
+        pub_date: str | None = None
         pub_date_elem = article.find(".//PubDate")
         if pub_date_elem is not None:
             year = pub_date_elem.findtext("Year", "")
@@ -261,12 +255,15 @@ def _parse_pubmed_xml(pmid: str, xml_content: bytes) -> PubMedCitation | None:
                 pub_date = f"{month} {year}".strip() if month else year
 
         # Extract DOI
-        doi = None
-        for article_id in article.findall(".//ArticleId"):
-            if article_id.get("IdType") == "doi":
-                doi_text = article_id.text
-                doi = doi_text if isinstance(doi_text, str) else None
-                break
+        doi = next(
+            (
+                article_id.text
+                for article_id in article.findall(".//ArticleId")
+                if article_id.get("IdType") == "doi"
+                and isinstance(article_id.text, str)
+            ),
+            None,
+        )
 
         # Format the citation
         formatted_ref = _format_citation(authors, title, journal, pub_date, doi)

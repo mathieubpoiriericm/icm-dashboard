@@ -57,7 +57,6 @@ _client_manager = AsyncHttpClientManager(timeout=15.0)
 _gene_cache: OrderedDict[str, NCBIGeneInfo | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
-_ncbi_fetch_state_initialized: bool = False
 # Single-flight registry keyed by uppercase symbol; see ``single_flight_get``.
 _in_flight: dict[str, asyncio.Task[NCBIGeneInfo | None]] = {}
 
@@ -68,15 +67,12 @@ def init_ncbi_fetch_state(config: PipelineConfig | None = None) -> None:
     Must be called once from the running event loop before concurrent use.
     Safe to call multiple times (idempotent).
     """
-    global _cache_lock, _ncbi_semaphore, _ncbi_fetch_state_initialized
-    if _ncbi_fetch_state_initialized:
-        return
+    global _cache_lock, _ncbi_semaphore
     if _cache_lock is None:
         _cache_lock = asyncio.Lock()
     if _ncbi_semaphore is None:
         limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
         _ncbi_semaphore = asyncio.Semaphore(limit)
-    _ncbi_fetch_state_initialized = True
 
 
 def _get_cache_lock() -> asyncio.Lock:

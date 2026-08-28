@@ -23,6 +23,12 @@ from pipeline.llm_providers.base import GeneEntry
 
 logger = logging.getLogger(__name__)
 
+_MAX_PAPERS_PER_GENE = 3
+_MAX_MEAN_CONFIDENCE = 0.95
+_MAX_NULL_PROTEIN_RATE = 0.3
+_MAX_GENES_PER_PAPER = 20
+_MAX_SUMMARY_LENGTH = 1000
+
 # Pandera schema for individual gene entry validation within the batch.
 # This catches any data quality issues that slipped past Pydantic
 # (e.g., empty strings that pass str validation).
@@ -79,11 +85,11 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     try:
         BATCH_SCHEMA.validate(df, lazy=True)
     except pa.errors.SchemaErrors as e:
-        for _, row in e.failure_cases.iterrows():
-            warnings.append(
-                f"Schema violation in column '{row.get('column', '?')}': "
-                f"{row.get('check', '?')} — value: {row.get('failure_case', '?')}"
-            )
+        warnings.extend(
+            f"Schema violation in column '{row.get('column', '?')}': "
+            f"{row.get('check', '?')} — value: {row.get('failure_case', '?')}"
+            for row in e.failure_cases.to_dict("records")
+        )
 
     # --- Batch-level quality checks ---
 
@@ -94,21 +100,20 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     for gene in genes:
         if gene.pmid:
             papers_by_gene[gene.gene_symbol].add(gene.pmid)
-    for symbol, paper_ids in papers_by_gene.items():
-        count = len(paper_ids)
-        if count > 3:
-            warnings.append(
-                f"Gene '{symbol}' extracted from {count} different papers "
-                f"in this batch (>3 — verify not over-extracted)"
-            )
+    warnings.extend(
+        f"Gene '{symbol}' extracted from {count} different papers "
+        f"in this batch (>{_MAX_PAPERS_PER_GENE} — verify not over-extracted)"
+        for symbol, paper_ids in papers_by_gene.items()
+        if (count := len(paper_ids)) > _MAX_PAPERS_PER_GENE
+    )
 
     # Check 2: Confidence distribution
     # A mean confidence > 0.95 across the batch suggests the LLM is not
     # discriminating well between strong and weak evidence.
     mean_confidence = sum(gene.confidence for gene in genes) / len(genes)
-    if mean_confidence > 0.95:
+    if mean_confidence > _MAX_MEAN_CONFIDENCE:
         warnings.append(
-            f"Mean confidence {mean_confidence:.3f} > 0.95 — "
+            f"Mean confidence {mean_confidence:.3f} > {_MAX_MEAN_CONFIDENCE} — "
             f"suspiciously uniform, check LLM calibration"
         )
 
@@ -116,7 +121,7 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # Protein names should be findable for most genes. A high null rate
     # may indicate the LLM is skipping the protein_name field.
     null_rate = sum(gene.protein_name is None for gene in genes) / len(genes)
-    if null_rate > 0.3:
+    if null_rate > _MAX_NULL_PROTEIN_RATE:
         warnings.append(
             f"protein_name null rate {null_rate:.1%} > 30% — "
             f"check extraction prompt quality"
@@ -125,24 +130,22 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # Check 4: Per-paper gene count sanity
     # A single paper yielding >20 genes is unusual for cSVD literature.
     genes_per_paper = Counter(gene.pmid for gene in genes if gene.pmid)
-    for pmid, count in genes_per_paper.items():
-        if count > 20:
-            warnings.append(
-                f"PMID {pmid} yielded {count} genes (>20 is unusual — "
-                f"verify extraction quality)"
-            )
+    warnings.extend(
+        f"PMID {pmid} yielded {count} genes "
+        f"(>{_MAX_GENES_PER_PAPER} is unusual — verify extraction quality)"
+        for pmid, count in genes_per_paper.items()
+        if count > _MAX_GENES_PER_PAPER
+    )
 
     # Check 5: Suspiciously long summaries
     # LLMs sometimes hallucinate by copying large chunks of text instead of summarizing.
-    for gene in genes:
-        if gene.causal_evidence_summary is not None:
-            summary_len = len(gene.causal_evidence_summary)
-            if summary_len <= 1000:
-                continue
-            warnings.append(
-                f"Gene '{gene.gene_symbol}' in PMID {gene.pmid} has a "
-                f"suspiciously long summary ({summary_len} chars)"
-            )
+    warnings.extend(
+        f"Gene '{gene.gene_symbol}' in PMID {gene.pmid} has a "
+        f"suspiciously long summary ({len(gene.causal_evidence_summary)} chars)"
+        for gene in genes
+        if gene.causal_evidence_summary is not None
+        and len(gene.causal_evidence_summary) > _MAX_SUMMARY_LENGTH
+    )
 
     if warnings:
         logger.warning(f"Batch validation: {len(warnings)} warning(s) raised")

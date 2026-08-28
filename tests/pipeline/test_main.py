@@ -13,6 +13,11 @@ from pipeline.main import (
     ExtractionFailedError,
     PaperResult,
     _build_parser,
+    _extract_and_validate,
+    _filter_genes_by_confidence,
+    _load_pmids,
+    _prepare_cli_args,
+    _resolve_pdf_files,
     _run_selected_pipelines,
     _validate_genes,
     fetch_paper_metadata,
@@ -58,6 +63,80 @@ class TestValidateGenesNoneGuard:
         validated, rejected = await _validate_genes([gene], metrics, config)
         assert len(validated) == 1
         assert metrics.genes_validated == 1
+
+
+# ---------------------------------------------------------------------------
+# Shared extraction and input helpers
+# ---------------------------------------------------------------------------
+
+
+class TestSharedPipelineHelpers:
+    def test_confidence_filter_partitions_and_counts(self, make_gene_entry):
+        accepted_gene = make_gene_entry(gene_symbol="NOTCH3", confidence=0.9)
+        rejected_gene = make_gene_entry(gene_symbol="HTRA1", confidence=0.4)
+        metrics = PipelineMetrics()
+
+        accepted, rejected = _filter_genes_by_confidence(
+            [accepted_gene, rejected_gene], metrics, threshold=0.65
+        )
+
+        assert accepted == [accepted_gene]
+        assert [item.gene for item in rejected] == [rejected_gene]
+        assert rejected[0].reasons == ["Low confidence: 0.40 < 0.65"]
+        assert metrics.genes_validated == 1
+        assert metrics.genes_rejected == 1
+
+    async def test_extract_and_validate_owns_shared_metrics(
+        self, make_gene_entry, mocker
+    ):
+        accepted_gene = make_gene_entry(gene_symbol="NOTCH3", confidence=0.9)
+        rejected_gene = make_gene_entry(gene_symbol="HTRA1", confidence=0.4)
+        usage = TokenUsage(input_tokens=100, output_tokens=20)
+        mocker.patch(
+            "pipeline.main.extract_from_paper",
+            new=AsyncMock(return_value=([accepted_gene, rejected_gene], usage)),
+        )
+        metrics = PipelineMetrics()
+        config = PipelineConfig(confidence_threshold=0.65)
+
+        outcome = await _extract_and_validate(
+            "paper text",
+            "987654",
+            metrics,
+            config,
+            None,
+            skip_validation=True,
+        )
+
+        assert outcome.genes == [accepted_gene]
+        assert [item.gene for item in outcome.rejected_genes] == [rejected_gene]
+        assert outcome.extracted_count == 2
+        assert accepted_gene.pmid == "987654"
+        assert rejected_gene.pmid == "987654"
+        assert metrics.genes_extracted == 2
+        assert metrics.genes_validated == 1
+        assert metrics.genes_rejected == 1
+        assert metrics.token_usage.total_tokens == 120
+
+    def test_resolve_pdf_files_handles_file_and_sorted_directory(self, tmp_path):
+        later = tmp_path / "z.pdf"
+        earlier = tmp_path / "a.pdf"
+        later.touch()
+        earlier.touch()
+
+        directory, files = _resolve_pdf_files(tmp_path)
+        assert directory == tmp_path
+        assert files == [earlier, later]
+        assert _resolve_pdf_files(later) == (tmp_path, [later])
+
+    def test_load_pmids_ignores_comments_invalid_values_and_duplicates(
+        self, tmp_path, caplog
+    ):
+        pmid_file = tmp_path / "pmids.txt"
+        pmid_file.write_text("# papers\n123\ninvalid\n456\n123\n\n")
+
+        assert _load_pmids(pmid_file) == ["123", "456"]
+        assert "Skipping invalid PMID" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +442,24 @@ class TestCliParser:
         assert args.pubmed is False
         assert args.clinical_trials is False
         assert args.sync_external_data is False
+
+    def test_prepare_args_selects_pubmed_by_default(self):
+        parser = _build_parser()
+        args = _prepare_cli_args(parser, parser.parse_args([]))
+        assert args.pubmed is True
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            ["--local-pdfs", "/tmp/papers", "--pmids", "/tmp/pmids.txt"],
+            ["--local-pdfs", "/tmp/papers", "--pubmed"],
+            ["--skip-validation"],
+        ],
+    )
+    def test_prepare_args_rejects_incompatible_modes(self, arguments):
+        parser = _build_parser()
+        with pytest.raises(SystemExit):
+            _prepare_cli_args(parser, parser.parse_args(arguments))
 
 
 # ---------------------------------------------------------------------------

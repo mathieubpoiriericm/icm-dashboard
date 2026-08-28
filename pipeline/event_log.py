@@ -101,17 +101,15 @@ class EventLog:
             "SELECT id, event_type, payload, created_at "
             "FROM events WHERE notified = 0 ORDER BY id"
         )
-        rows: list[dict[str, Any]] = []
-        for row_id, event_type, payload_json, created_at in cur.fetchall():
-            rows.append(
-                {
-                    "id": row_id,
-                    "event_type": event_type,
-                    "payload": json.loads(payload_json),
-                    "created_at": created_at,
-                }
-            )
-        return rows
+        return [
+            {
+                "id": row_id,
+                "event_type": event_type,
+                "payload": json.loads(payload_json),
+                "created_at": created_at,
+            }
+            for row_id, event_type, payload_json, created_at in cur.fetchall()
+        ]
 
     def close(self) -> None:
         """Close the underlying SQLite connection.

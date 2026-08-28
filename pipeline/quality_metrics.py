@@ -57,16 +57,17 @@ class TokenUsage:
 
 def accumulate_usage(usage: TokenUsage, response: Any) -> None:
     """Extract token counts from an Anthropic response and accumulate into *usage*."""
-    if not hasattr(response, "usage") or response.usage is None:
+    response_usage = getattr(response, "usage", None)
+    if response_usage is None:
         return
-    usage.input_tokens += response.usage.input_tokens
-    usage.output_tokens += response.usage.output_tokens
-    if hasattr(response.usage, "cache_creation_input_tokens"):
-        usage.cache_creation_input_tokens += (
-            response.usage.cache_creation_input_tokens or 0
-        )
-    if hasattr(response.usage, "cache_read_input_tokens"):
-        usage.cache_read_input_tokens += response.usage.cache_read_input_tokens or 0
+    usage.input_tokens += response_usage.input_tokens
+    usage.output_tokens += response_usage.output_tokens
+    usage.cache_creation_input_tokens += (
+        getattr(response_usage, "cache_creation_input_tokens", 0) or 0
+    )
+    usage.cache_read_input_tokens += (
+        getattr(response_usage, "cache_read_input_tokens", 0) or 0
+    )
 
 
 @dataclass(slots=True)

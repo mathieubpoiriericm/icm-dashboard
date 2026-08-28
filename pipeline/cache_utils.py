@@ -33,7 +33,7 @@ class SyncResult:
     errors: list[str]
 
 
-def make_log_progress(label: str, interval: int = 10):
+def make_log_progress(label: str, interval: int = 10) -> Callable[[int, int], None]:
     """Create a progress callback that logs every *interval* items.
 
     Args:
@@ -65,15 +65,15 @@ async def run_batched_fetch[T, R](
     """
     total = len(items)
     completed = 0
-    completed_lock = asyncio.Lock()
 
     async def _tracked(item: T) -> R:
         nonlocal completed
         result = await fetch_one(item)
-        async with completed_lock:
-            completed += 1
-            if progress_callback is not None:
-                progress_callback(completed, total)
+        # No await occurs between the increment and callback, so this section
+        # is already atomic under asyncio's cooperative scheduling model.
+        completed += 1
+        if progress_callback is not None:
+            progress_callback(completed, total)
         return result
 
     results: list[R] = []

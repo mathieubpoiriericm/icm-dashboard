@@ -32,6 +32,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 UNIPROT_BASE_URL: Final[str] = "https://rest.uniprot.org/uniprotkb/search"
+_GO_FIELDS: Final[tuple[str, str, str]] = (
+    "biological_process",
+    "molecular_function",
+    "cellular_component",
+)
+
+
+def _empty_go_info() -> dict[str, str | None]:
+    """Return an empty GO-annotation mapping."""
+    return dict.fromkeys(_GO_FIELDS)
 
 
 @dataclass(slots=True)
@@ -108,6 +118,36 @@ def _clean_go_term(text: str | None) -> str | None:
     return cleaned.strip() or None
 
 
+def _parse_search_rows(
+    lines: list[str], gene_symbol: str
+) -> tuple[str | None, str | None]:
+    """Select an exact primary-gene match, falling back to the first row."""
+    header = lines[0].split("\t")
+
+    def _column_index(name: str, fallback: int) -> int:
+        return header.index(name) if name in header else fallback
+
+    accession_index = _column_index("Entry", 0)
+    gene_index = _column_index("Gene Names (primary)", 1)
+    protein_index = _column_index("Protein names", 3)
+    required_columns = max(accession_index, gene_index, protein_index)
+    fallback: tuple[str, str] | None = None
+
+    for line in lines[1:]:
+        columns = line.split("\t")
+        if len(columns) <= required_columns:
+            continue
+        accession = columns[accession_index]
+        primary_gene = columns[gene_index]
+        protein_name = columns[protein_index]
+        if primary_gene.upper() == gene_symbol.upper():
+            return accession, protein_name
+        if fallback is None:
+            fallback = accession, protein_name
+
+    return fallback or (None, None)
+
+
 # ---------------------------------------------------------------------------
 # SEARCH FUNCTIONS
 # ---------------------------------------------------------------------------
@@ -126,9 +166,7 @@ async def _fetch_uniprot_accession_status(
         is False for transient API/client failures that should not be stored
         as durable negative cache rows.
     """
-    # Try exact gene name match first
     params = {
-        "query": f'gene_exact:"{gene_symbol}" AND organism_id:9606',
         "format": "tsv",
         "fields": "accession,gene_primary,gene_synonym,protein_name",
         "size": "5",
@@ -136,59 +174,25 @@ async def _fetch_uniprot_accession_status(
 
     try:
         client = await _client_manager.get()
-        resp = await client.get(UNIPROT_BASE_URL, params=params)
-
-        if resp.status_code != 200:
-            logger.warning(
-                f"UniProt search failed for {gene_symbol}: {resp.status_code}"
-            )
-            return None, None, False
-
-        lines = resp.text.strip().split("\n")
-        if len(lines) < 2:
-            # No results with exact match, try synonym search
-            params["query"] = f'gene:"{gene_symbol}" AND organism_id:9606'
-            resp = await client.get(UNIPROT_BASE_URL, params=params)
-
-            if resp.status_code != 200:
-                return None, None, False
-
-            lines = resp.text.strip().split("\n")
-            if len(lines) < 2:
-                logger.debug(f"No UniProt entry found for {gene_symbol}")
-                return None, None, True
-
-        # Parse TSV response - first line is header
-        # Prefer exact primary gene match, otherwise take first result
-        header = lines[0].split("\t")
-        accession_idx = header.index("Entry") if "Entry" in header else 0
-        gene_idx = (
-            header.index("Gene Names (primary)")
-            if "Gene Names (primary)" in header
-            else 1
+        queries = (
+            f'gene_exact:"{gene_symbol}" AND organism_id:9606',
+            f'gene:"{gene_symbol}" AND organism_id:9606',
         )
-        protein_idx = header.index("Protein names") if "Protein names" in header else 3
+        for query in queries:
+            params["query"] = query
+            resp = await client.get(UNIPROT_BASE_URL, params=params)
+            if resp.status_code != 200:
+                logger.warning(
+                    f"UniProt search failed for {gene_symbol}: {resp.status_code}"
+                )
+                return None, None, False
+            lines = resp.text.strip().split("\n")
+            if len(lines) >= 2:
+                accession, protein_name = _parse_search_rows(lines, gene_symbol)
+                return accession, protein_name, True
 
-        best_accession = None
-        best_protein = None
-
-        for line in lines[1:]:
-            cols = line.split("\t")
-            if len(cols) > max(accession_idx, gene_idx, protein_idx):
-                accession = cols[accession_idx]
-                primary_gene = cols[gene_idx] if gene_idx < len(cols) else ""
-                protein_name = cols[protein_idx] if protein_idx < len(cols) else ""
-
-                # Prefer exact match on primary gene
-                if primary_gene.upper() == gene_symbol.upper():
-                    return accession, protein_name, True
-
-                # Store first result as fallback
-                if best_accession is None:
-                    best_accession = accession
-                    best_protein = protein_name
-
-        return best_accession, best_protein, True
+        logger.debug(f"No UniProt entry found for {gene_symbol}")
+        return None, None, True
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout querying UniProt for {gene_symbol}")
@@ -210,9 +214,7 @@ async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | N
         Tuple of (accession, protein_name) or (None, None) if not found or if
         UniProt is temporarily unavailable.
     """
-    accession, protein_name, _cacheable_miss = await _fetch_uniprot_accession_status(
-        gene_symbol
-    )
+    accession, protein_name, _ = await _fetch_uniprot_accession_status(gene_symbol)
     return accession, protein_name
 
 
@@ -239,27 +241,18 @@ async def fetch_uniprot_go_info(accession: str) -> dict[str, str | None]:
             logger.warning(
                 f"UniProt GO fetch failed for {accession}: {resp.status_code}"
             )
-            return {
-                "biological_process": None,
-                "molecular_function": None,
-                "cellular_component": None,
-            }
+            return _empty_go_info()
 
         lines = resp.text.strip().split("\n")
         if len(lines) < 2:
-            return {
-                "biological_process": None,
-                "molecular_function": None,
-                "cellular_component": None,
-            }
+            return _empty_go_info()
 
         # Parse TSV - first line is header, second is data
         cols = lines[1].split("\t")
 
         return {
-            "biological_process": _clean_go_term(cols[0] if len(cols) > 0 else None),
-            "molecular_function": _clean_go_term(cols[1] if len(cols) > 1 else None),
-            "cellular_component": _clean_go_term(cols[2] if len(cols) > 2 else None),
+            field: _clean_go_term(cols[index] if index < len(cols) else None)
+            for index, field in enumerate(_GO_FIELDS)
         }
 
     except httpx.TimeoutException:
@@ -269,11 +262,7 @@ async def fetch_uniprot_go_info(accession: str) -> dict[str, str | None]:
     except (ValueError, IndexError) as e:
         logger.warning(f"Failed to parse GO response for {accession}: {e}")
 
-    return {
-        "biological_process": None,
-        "molecular_function": None,
-        "cellular_component": None,
-    }
+    return _empty_go_info()
 
 
 async def fetch_uniprot_info(

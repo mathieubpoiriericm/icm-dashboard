@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal, cast, get_args
@@ -16,30 +17,32 @@ from typing import Final, Literal, cast, get_args
 from lxml import etree  # type: ignore[import-untyped]
 
 
-def _env_int(name: str, default: int) -> int:
-    """Read an integer from an environment variable, falling back to *default*."""
+def _env_number[T](
+    name: str,
+    default: T,
+    convert: Callable[[str], T],
+    type_name: str,
+) -> T:
+    """Read and convert an environment variable, falling back to *default*."""
     raw = os.getenv(name)
     if raw is None:
         return default
     try:
-        return int(raw)
+        return convert(raw)
     except ValueError:
         raise ValueError(
-            f"Environment variable {name} must be an integer, got {raw!r}"
+            f"Environment variable {name} must be {type_name}, got {raw!r}"
         ) from None
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer from an environment variable, falling back to *default*."""
+    return _env_number(name, default, int, "an integer")
 
 
 def _env_float(name: str, default: float) -> float:
     """Read a float from an environment variable, falling back to *default*."""
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        raise ValueError(
-            f"Environment variable {name} must be a float, got {raw!r}"
-        ) from None
+    return _env_number(name, default, float, "a float")
 
 
 def _env_str(name: str, default: str) -> str:
@@ -69,6 +72,12 @@ def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     if raw is None:
         return default
     return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _env_path(name: str, default: Path) -> str:
+    """Read a path-like string, treating an empty override as unset."""
+    default_str = str(default)
+    return _env_str(name, default_str) or default_str
 
 
 # Valid GWAS traits from cSVD literature (immutable reference data)
@@ -340,21 +349,17 @@ class PipelineConfig:
         default_factory=lambda: _env_str("PIPELINE_NOTIFY_URLS", "")
     )
     event_db_path: str = field(
-        default_factory=lambda: (
-            _env_str("PIPELINE_EVENT_DB_PATH", str(PROJECT_ROOT / "logs" / "events.db"))
-            or str(PROJECT_ROOT / "logs" / "events.db")
-        ),
+        default_factory=lambda: _env_path(
+            "PIPELINE_EVENT_DB_PATH", PROJECT_ROOT / "logs" / "events.db"
+        )
     )
 
     # --- Progress reporting ---
     progress_file: str = field(
-        default_factory=lambda: (
-            _env_str(
-                "PIPELINE_PROGRESS_FILE",
-                str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json"),
-            )
-            or str(PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json")
-        ),
+        default_factory=lambda: _env_path(
+            "PIPELINE_PROGRESS_FILE",
+            PROJECT_ROOT / "logs" / "json" / "pipeline_progress.json",
+        )
     )
 
     notify_max_retries: int = field(
@@ -384,7 +389,7 @@ class PipelineConfig:
             raise ValueError(
                 f"ct_max_concurrency must be >= 1, got {self.ct_max_concurrency}"
             )
-        if self.ct_page_size < 1 or self.ct_page_size > 1000:
+        if not 1 <= self.ct_page_size <= 1000:
             raise ValueError(
                 f"ct_page_size must be in [1, 1000], got {self.ct_page_size}"
             )
