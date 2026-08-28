@@ -11,12 +11,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from pipeline.llm_extraction import (
-    ExtractionResult,
-    GeneEntry,
-    extract_from_paper,
-)
-from pipeline.llm_providers.base import parse_extraction_response
+from pipeline.llm_extraction import GeneEntry, extract_from_paper
+from pipeline.llm_providers.base import ExtractionResult, parse_extraction_response
 
 # ---------------------------------------------------------------------------
 # GeneEntry Pydantic model

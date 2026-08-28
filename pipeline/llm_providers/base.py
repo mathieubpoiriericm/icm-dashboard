@@ -85,8 +85,6 @@ class LLMProvider(Protocol):
         - pipeline.llm_providers.anthropic_provider.AnthropicProvider
     """
 
-    name: str  # currently "anthropic"
-
     async def extract(
         self,
         text: str,
@@ -96,10 +94,6 @@ class LLMProvider(Protocol):
     ) -> tuple[list[GeneEntry], TokenUsage]: ...
 
     async def close(self) -> None: ...
-
-    def supports_thinking(self) -> bool: ...
-
-    def supports_prompt_caching(self) -> bool: ...
 
     def report_metadata(self, config: PipelineConfig) -> dict[str, Any]:
         """Provider-specific fields for the run-data `pipeline_config` section.

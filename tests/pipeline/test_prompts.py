@@ -7,96 +7,96 @@ import json
 from pipeline.llm_providers.base import ExtractionResult
 from pipeline.prompts import (
     _PROMPTS,
-    EXTRACTION_INSTRUCTIONS,
-    SYSTEM_PROMPT,
     build_extraction_prompt,
 )
+
+DEFAULT_SYSTEM_PROMPT, DEFAULT_EXTRACTION_INSTRUCTIONS = _PROMPTS["v5"]
 
 
 class TestSystemPrompt:
     def test_contains_csvd(self):
-        assert "cSVD" in SYSTEM_PROMPT
+        assert "cSVD" in DEFAULT_SYSTEM_PROMPT
 
     def test_contains_role(self):
-        assert "systematic reviewer" in SYSTEM_PROMPT
+        assert "systematic reviewer" in DEFAULT_SYSTEM_PROMPT
 
     def test_mentions_causal_distinction(self):
-        assert "causal" in SYSTEM_PROMPT
-        assert "association" in SYSTEM_PROMPT
+        assert "causal" in DEFAULT_SYSTEM_PROMPT
+        assert "association" in DEFAULT_SYSTEM_PROMPT
 
 
 class TestExtractionInstructions:
     def test_contains_task_xml(self):
-        assert "<task>" in EXTRACTION_INSTRUCTIONS
+        assert "<task>" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_contains_confidence_scoring_xml(self):
-        assert "<confidence_scoring>" in EXTRACTION_INSTRUCTIONS
+        assert "<confidence_scoring>" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_mentions_gwas(self):
-        assert "GWAS" in EXTRACTION_INSTRUCTIONS
+        assert "GWAS" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_mentions_mendelian_randomization(self):
-        assert "Mendelian randomization" in EXTRACTION_INSTRUCTIONS
+        assert "Mendelian randomization" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_mentions_omics(self):
-        assert "TWAS" in EXTRACTION_INSTRUCTIONS
-        assert "PWAS" in EXTRACTION_INSTRUCTIONS
-        assert "EWAS" in EXTRACTION_INSTRUCTIONS
+        assert "TWAS" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "PWAS" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "EWAS" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_has_xml_structure(self):
-        assert "<instructions>" in EXTRACTION_INSTRUCTIONS
-        assert "</instructions>" in EXTRACTION_INSTRUCTIONS
-        assert "<inclusion_criteria>" in EXTRACTION_INSTRUCTIONS
-        assert "<extraction_strategy>" in EXTRACTION_INSTRUCTIONS
-        assert "<field_guidance>" in EXTRACTION_INSTRUCTIONS
+        assert "<instructions>" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "</instructions>" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "<inclusion_criteria>" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "<extraction_strategy>" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "<field_guidance>" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_has_examples(self):
-        assert "<examples>" in EXTRACTION_INSTRUCTIONS
-        assert 'type="include_validated"' in EXTRACTION_INSTRUCTIONS
-        assert 'type="include_high_confidence"' in EXTRACTION_INSTRUCTIONS
-        assert 'type="exclude_general_stroke"' in EXTRACTION_INSTRUCTIONS
-        assert 'type="exclude_pathway_only"' in EXTRACTION_INSTRUCTIONS
-        assert 'type="exclude_background_monogenic"' in EXTRACTION_INSTRUCTIONS
+        assert "<examples>" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert 'type="include_validated"' in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert 'type="include_high_confidence"' in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert 'type="exclude_general_stroke"' in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert 'type="exclude_pathway_only"' in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert 'type="exclude_background_monogenic"' in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_has_positional_candidate_exclusion_example(self):
-        assert 'type="exclude_positional_candidate"' in EXTRACTION_INSTRUCTIONS
+        assert 'type="exclude_positional_candidate"' in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_has_orf_gene_example(self):
-        assert 'type="include_orf_gene"' in EXTRACTION_INSTRUCTIONS
+        assert 'type="include_orf_gene"' in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_positional_candidate_warning(self):
-        assert "positional candidate" in EXTRACTION_INSTRUCTIONS
+        assert "positional candidate" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_confidence_hard_cap(self):
-        assert "maximum score is 0.30" in EXTRACTION_INSTRUCTIONS
-        assert "hard cap of 0.20" in EXTRACTION_INSTRUCTIONS
+        assert "maximum score is 0.30" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "hard cap of 0.20" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_gwas_trait_vocabulary(self):
         """GWAS traits in prompt should use canonical abbreviations."""
-        assert "WMH" in EXTRACTION_INSTRUCTIONS
-        assert "DWMH" in EXTRACTION_INSTRUCTIONS
-        assert "PVWMH" in EXTRACTION_INSTRUCTIONS
-        assert "SVS" in EXTRACTION_INSTRUCTIONS
-        assert "BG-PVS" in EXTRACTION_INSTRUCTIONS
-        assert "WM-PVS" in EXTRACTION_INSTRUCTIONS
-        assert "HIP-PVS" in EXTRACTION_INSTRUCTIONS
-        assert "PSMD" in EXTRACTION_INSTRUCTIONS
-        assert "MD" in EXTRACTION_INSTRUCTIONS
-        assert "extreme-cSVD" in EXTRACTION_INSTRUCTIONS
-        assert "FA" in EXTRACTION_INSTRUCTIONS
-        assert "ICH-lobar" in EXTRACTION_INSTRUCTIONS
-        assert "ICH-non-lobar" in EXTRACTION_INSTRUCTIONS
-        assert "DTI-ALPS" in EXTRACTION_INSTRUCTIONS
-        assert "ICVF" in EXTRACTION_INSTRUCTIONS
-        assert "ISOVF" in EXTRACTION_INSTRUCTIONS
-        assert "WMH-cortical-atrophy" in EXTRACTION_INSTRUCTIONS
-        assert "WM-BAG" in EXTRACTION_INSTRUCTIONS
-        assert "retinal-vessels" in EXTRACTION_INSTRUCTIONS
+        assert "WMH" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "DWMH" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "PVWMH" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "SVS" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "BG-PVS" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "WM-PVS" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "HIP-PVS" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "PSMD" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "MD" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "extreme-cSVD" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "FA" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "ICH-lobar" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "ICH-non-lobar" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "DTI-ALPS" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "ICVF" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "ISOVF" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "WMH-cortical-atrophy" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "WM-BAG" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "retinal-vessels" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
     def test_grounding_instruction(self):
         """Should instruct the model to verify evidence before extracting."""
-        assert "Identify all passages" in EXTRACTION_INSTRUCTIONS
-        assert "Verify" in EXTRACTION_INSTRUCTIONS
+        assert "Identify all passages" in DEFAULT_EXTRACTION_INSTRUCTIONS
+        assert "Verify" in DEFAULT_EXTRACTION_INSTRUCTIONS
 
 
 class TestBuildExtractionPrompt:
@@ -109,17 +109,13 @@ class TestBuildExtractionPrompt:
         assert isinstance(prompt.user_text, str)
 
     def test_parts_match_canonical_constants(self):
-        prompt = build_extraction_prompt(
-            paper_text="Test", pmid="111", max_chars=50000
-        )
-        assert prompt.system_prompt == SYSTEM_PROMPT
-        assert prompt.extraction_instructions == EXTRACTION_INSTRUCTIONS
+        prompt = build_extraction_prompt(paper_text="Test", pmid="111", max_chars=50000)
+        assert prompt.system_prompt == DEFAULT_SYSTEM_PROMPT
+        assert prompt.extraction_instructions == DEFAULT_EXTRACTION_INSTRUCTIONS
         assert "<instructions>" in prompt.extraction_instructions
 
     def test_user_text_contains_document(self):
-        prompt = build_extraction_prompt(
-            paper_text="Test", pmid="111", max_chars=50000
-        )
+        prompt = build_extraction_prompt(paper_text="Test", pmid="111", max_chars=50000)
         assert "<document" in prompt.user_text
         assert "Extract all genes" in prompt.user_text
 

@@ -39,7 +39,7 @@ class TestValidateGenesNoneGuard:
         mocker.patch(
             "pipeline.main.validate_gene_entry",
             return_value=ValidationResult(
-                is_valid=True, errors=[], warnings=[], normalized_data=None
+                is_valid=True, errors=[], normalized_data=None
             ),
         )
         config = PipelineConfig()
@@ -55,7 +55,7 @@ class TestValidateGenesNoneGuard:
         mocker.patch(
             "pipeline.main.validate_gene_entry",
             return_value=ValidationResult(
-                is_valid=True, errors=[], warnings=[], normalized_data=gene
+                is_valid=True, errors=[], normalized_data=gene
             ),
         )
         config = PipelineConfig()
@@ -165,11 +165,6 @@ class TestPaperResult:
         r = PaperResult(pmid="111", genes=[gene])
         assert len(r.genes) == 1
 
-    def test_with_token_usage(self):
-        tu = TokenUsage(input_tokens=100, output_tokens=50)
-        r = PaperResult(pmid="111", token_usage=tu)
-        assert r.token_usage.total_tokens == 150
-
 
 # ---------------------------------------------------------------------------
 # fetch_paper_metadata
@@ -201,7 +196,6 @@ class TestFetchPaperMetadata:
         )
 
         result = await fetch_paper_metadata("12345678")
-        assert result["pmid"] == "12345678"
         assert result["doi"] == "10.1234/test"
 
     async def test_no_doi_in_response(self, mocker):
@@ -253,7 +247,6 @@ class TestFetchPaperMetadata:
         )
 
         result = await fetch_paper_metadata("12345678")
-        assert result["pmid"] == "12345678"
         assert result["doi"] is None
 
     async def test_invalid_pmid(self):
@@ -337,7 +330,7 @@ class TestRunPipeline:
         mocker.patch(
             "pipeline.main.fetch_paper_metadata",
             new_callable=AsyncMock,
-            return_value={"pmid": "111", "doi": None},
+            return_value={"doi": None},
         )
         mocker.patch(
             "pipeline.main.get_fulltext",
@@ -356,7 +349,7 @@ class TestRunPipeline:
                 TokenUsage(input_tokens=10, output_tokens=5),
             ),
         )
-        mocker.patch("pipeline.main.reset_sequence", new_callable=AsyncMock)
+        mocker.patch("pipeline.main.reset_gene_sequence", new_callable=AsyncMock)
         mocker.patch("pipeline.main.merge_gene_entries", new_callable=AsyncMock)
         mock_record_pmids = mocker.patch(
             "pipeline.main.record_processed_pmids_batch",

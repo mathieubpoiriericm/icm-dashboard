@@ -1288,10 +1288,6 @@ _PROMPTS: Final[dict[str, tuple[str, str]]] = {
     "gemma_v1": (_GEMMA_V1_SYSTEM, _EXTRACTION_INSTRUCTIONS_GEMMA_V1),
 }
 
-# Public aliases for backwards compatibility (point to current default)
-SYSTEM_PROMPT: Final[str] = _SYSTEM_PROMPT_V5
-EXTRACTION_INSTRUCTIONS: Final[str] = _EXTRACTION_INSTRUCTIONS_V5
-
 
 def build_extraction_prompt(
     paper_text: str,

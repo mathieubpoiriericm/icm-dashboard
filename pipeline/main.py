@@ -162,7 +162,7 @@ from pipeline.database import (
     get_existing_pmids,
     record_pipeline_run,
     record_processed_pmids_batch,
-    reset_sequence,
+    reset_gene_sequence,
 )
 from pipeline.event_log import EventLog
 from pipeline.http_client import AsyncHttpClientManager
@@ -172,7 +172,6 @@ from pipeline.llm_extraction import (
     extract_from_paper,
 )
 from pipeline.llm_providers.base import GeneEntry
-from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state
 from pipeline.notifications import send_pipeline_notification
 from pipeline.pdf_retrieval import (
     close_http_client,
@@ -180,7 +179,7 @@ from pipeline.pdf_retrieval import (
     parse_local_pdf,
 )
 from pipeline.pubmed_search import filter_new_pmids, search_recent_papers
-from pipeline.quality_metrics import PipelineMetrics, TokenUsage
+from pipeline.quality_metrics import PipelineMetrics
 from pipeline.rate_limiter import AsyncRateLimiter
 from pipeline.report import (
     PipelineRunData,
@@ -235,13 +234,13 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------------------------------
 # PIPELINE PROGRESS REPORTING
 # -------------------------------------------------------------------------
-_STAGES: Final[tuple[tuple[str, str], ...]] = (
-    ("searching_pubmed", "Searching PubMed"),
-    ("filtering_pmids", "Filtering already-processed papers"),
-    ("processing_papers", "Processing papers"),
-    ("batch_validation", "Running batch quality checks"),
-    ("merging_database", "Merging validated data into database"),
-    ("finalizing", "Recording results and finalizing"),
+_STAGES: Final[tuple[str, ...]] = (
+    "searching_pubmed",
+    "filtering_pmids",
+    "processing_papers",
+    "batch_validation",
+    "merging_database",
+    "finalizing",
 )
 _TOTAL_STAGES: Final[int] = len(_STAGES)
 
@@ -251,11 +250,8 @@ def _write_progress(
     *,
     status: ProgressStatus,
     stage: str,
-    stage_label: str,
     stage_number: int,
-    started_at: str | None = None,
     error_message: str | None = None,
-    run_mode: str = "standard",
 ) -> None:
     """Write pipeline progress to JSON for dashboard consumption.
 
@@ -267,13 +263,10 @@ def _write_progress(
     data = {
         "status": status,
         "stage": stage,
-        "stage_label": stage_label,
         "stage_number": stage_number,
         "total_stages": _TOTAL_STAGES,
-        "started_at": started_at,
         "updated_at": datetime.now(tz=UTC).isoformat(),
         "error_message": error_message,
-        "run_mode": run_mode,
     }
     try:
         tmp_path.write_text(json.dumps(data) + "\n")
@@ -287,7 +280,6 @@ class _ProgressReporter:
     """Track and persist the current PubMed pipeline stage."""
 
     config: PipelineConfig
-    started_at: str = field(default_factory=lambda: datetime.now(tz=UTC).isoformat())
     stage_index: int = 0
     finalized: bool = False
 
@@ -297,21 +289,17 @@ class _ProgressReporter:
     def report(self, stage_index: int) -> None:
         """Advance to and persist a running stage."""
         self.stage_index = stage_index
-        stage, label = _STAGES[stage_index]
         _write_progress(
             self.config,
             status="running",
-            stage=stage,
-            stage_label=label,
+            stage=_STAGES[stage_index],
             stage_number=stage_index + 1,
-            started_at=self.started_at,
         )
 
     def finalize(
         self,
         *,
         status: ProgressStatus,
-        stage_label: str,
         stage_number: int | None = None,
         error_message: str | None = None,
     ) -> None:
@@ -319,28 +307,22 @@ class _ProgressReporter:
         _write_progress(
             self.config,
             status=status,
-            stage=_STAGES[self.stage_index][0],
-            stage_label=stage_label,
+            stage=_STAGES[self.stage_index],
             stage_number=(
                 stage_number if stage_number is not None else self.stage_index + 1
             ),
-            started_at=self.started_at,
             error_message=error_message,
         )
         self.finalized = True
 
     def fail(self, exc: BaseException) -> None:
         """Persist an interrupted or failed terminal state."""
-        stage_label = _STAGES[self.stage_index][1]
         if isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError)):
-            label = f"Interrupted at: {stage_label}"
             error_message = f"Run was interrupted ({type(exc).__name__})"
         else:
-            label = f"Failed at: {stage_label}"
             error_message = traceback.format_exc()[:500]
         self.finalize(
             status="error",
-            stage_label=label,
             error_message=error_message,
         )
 
@@ -349,7 +331,6 @@ class _ProgressReporter:
         if not self.finalized:
             self.finalize(
                 status="error",
-                stage_label="Run ended without writing a terminal state",
                 error_message="Pipeline exited without finalizing progress",
             )
 
@@ -358,7 +339,6 @@ class _ProgressReporter:
 class MetadataResult(TypedDict):
     """Result from metadata fetch."""
 
-    pmid: str
     doi: str | None
 
 
@@ -389,7 +369,6 @@ class PaperResult:
     fulltext: bool = False
     source: str = "none"
     error: str | None = None
-    token_usage: TokenUsage = field(default_factory=TokenUsage)
     processing_time: float = 0.0
     pdf_parse_time: float = 0.0
     llm_time: float = 0.0
@@ -587,7 +566,7 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
         pmid: PubMed ID.
 
     Returns:
-        MetadataResult with pmid and doi.
+        MetadataResult with the paper DOI, when available.
     """
     pmid = validate_pmid(pmid)
 
@@ -607,7 +586,7 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
             doi_elem = root.find(".//ArticleId[@IdType='doi']")
             doi_text = doi_elem.text if doi_elem is not None else None
             doi = doi_text if isinstance(doi_text, str) else None
-            return {"pmid": pmid, "doi": doi}
+            return {"doi": doi}
 
     except httpx.TimeoutException:
         logger.warning(f"Timeout fetching metadata for PMID {pmid}")
@@ -616,7 +595,7 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
     except etree.XMLSyntaxError as e:
         logger.error(f"XML parsing failed for PMID {pmid}: {e}")
 
-    return {"pmid": pmid, "doi": None}
+    return {"doi": None}
 
 
 async def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
@@ -628,9 +607,8 @@ async def _record_and_notify(config: PipelineConfig, run_data: Any) -> None:
 
     def _run() -> None:
         with EventLog(config.event_db_path) as event_log:
-            event_id = event_log.record("pipeline_completed", run_data)
+            event_log.record("pipeline_completed", run_data)
             send_pipeline_notification(run_data, config)
-            event_log.mark_notified([event_id])
 
     await asyncio.to_thread(_run)
 
@@ -893,7 +871,7 @@ async def _merge_processed_batch(
     progress.report(4)
     print("##STAGE:merge##", flush=True)
     logger.info("Step 4: Merging validated data into database...")
-    await reset_sequence("genes")
+    await reset_gene_sequence()
 
     gene_result = await merge_gene_entries(batch.genes) if batch.genes else None
     if gene_result is not None:
@@ -930,7 +908,6 @@ async def _complete_pubmed_run(
     if not dry_run:
         progress.finalize(
             status="completed",
-            stage_label="Pipeline completed successfully",
             stage_number=_TOTAL_STAGES,
         )
 
@@ -1163,8 +1140,6 @@ async def run_pipeline(
 
     # Eagerly initialize async locks/semaphores (safe under free-threading)
     init_validation_state(config)
-    init_ncbi_fetch_state(config)
-
     # Set up rate limiter
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
@@ -1197,7 +1172,6 @@ async def run_pipeline(
             logger.info("No new papers found. Pipeline complete.")
             progress.finalize(
                 status="completed",
-                stage_label="No new papers found",
             )
             return metrics, None
 
@@ -1205,7 +1179,6 @@ async def run_pipeline(
             logger.info("All papers already processed. Pipeline complete.")
             progress.finalize(
                 status="completed",
-                stage_label="All papers already processed",
             )
             return metrics, None
 
@@ -1214,7 +1187,6 @@ async def run_pipeline(
             _log_test_preview(new_pmids, config)
             progress.finalize(
                 status="completed",
-                stage_label="Test-mode preview complete",
             )
             return metrics, None
 
@@ -1229,7 +1201,6 @@ async def run_pipeline(
             logger.info("Dry run mode - skipping database merge")
             progress.finalize(
                 status="completed",
-                stage_label="Pipeline completed (dry run)",
             )
             gene_result = None
         else:
@@ -1305,8 +1276,6 @@ async def run_local_pdf_pipeline(
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
     init_validation_state(config)
-    init_ncbi_fetch_state(config)
-
     pipeline_start_time = time.monotonic()
 
     logger.info(f"Starting local PDF pipeline: {len(pdf_files)} files in {pdf_dir}")
@@ -1391,8 +1360,6 @@ async def run_pmid_pipeline(
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
 
     init_validation_state(config)
-    init_ncbi_fetch_state(config)
-
     pipeline_start_time = time.monotonic()
 
     logger.info(f"Starting PMID pipeline: {len(pmids)} PMIDs from {pmid_file}")

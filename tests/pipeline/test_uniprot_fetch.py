@@ -10,8 +10,8 @@ from pipeline.uniprot_fetch import (
     SyncResult,
     UniProtInfo,
     _clean_go_term,
+    _fetch_uniprot_accession_status,
     clear_uniprot_cache,
-    fetch_uniprot_accession,
     fetch_uniprot_batch,
     fetch_uniprot_go_info,
     fetch_uniprot_info,
@@ -72,11 +72,11 @@ class TestClearCache:
 
 
 # ---------------------------------------------------------------------------
-# fetch_uniprot_accession
+# _fetch_uniprot_accession_status
 # ---------------------------------------------------------------------------
 
 
-class TestFetchUniProtAccession:
+class TestFetchUniProtAccessionStatus:
     async def test_exact_match_found(self, mocker):
         tsv = (
             "Entry\tGene Names (primary)\tGene Names (synonym)\tProtein names\n"
@@ -90,9 +90,10 @@ class TestFetchUniProtAccession:
             return_value=mock_client,
         )
 
-        accession, protein = await fetch_uniprot_accession("NOTCH3")
+        accession, protein, cacheable = await _fetch_uniprot_accession_status("NOTCH3")
         assert accession == "P12345"
         assert protein == "Notch receptor 3"
+        assert cacheable is True
 
     async def test_falls_back_to_synonym_search(self, mocker):
         no_results = httpx.Response(200, text="Entry\tGene Names (primary)\n")
@@ -109,8 +110,9 @@ class TestFetchUniProtAccession:
             return_value=mock_client,
         )
 
-        accession, protein = await fetch_uniprot_accession("NOTCH3")
+        accession, protein, cacheable = await _fetch_uniprot_accession_status("NOTCH3")
         assert accession == "Q99999"
+        assert cacheable is True
 
     async def test_first_result_fallback(self, mocker):
         """When no primary gene matches, returns first row."""
@@ -128,8 +130,9 @@ class TestFetchUniProtAccession:
         )
 
         # NOTCH3 is in second row, so exact match returns it
-        accession, protein = await fetch_uniprot_accession("NOTCH3")
+        accession, protein, cacheable = await _fetch_uniprot_accession_status("NOTCH3")
         assert accession == "P22222"
+        assert cacheable is True
 
     async def test_no_results_returns_none_none(self, mocker):
         no_results = httpx.Response(200, text="Entry\tGene Names (primary)\n")
@@ -140,9 +143,12 @@ class TestFetchUniProtAccession:
             return_value=mock_client,
         )
 
-        accession, protein = await fetch_uniprot_accession("FAKEGENE")
+        accession, protein, cacheable = await _fetch_uniprot_accession_status(
+            "FAKEGENE"
+        )
         assert accession is None
         assert protein is None
+        assert cacheable is True
 
     async def test_non_200_returns_none_none(self, mocker):
         resp = httpx.Response(500)
@@ -153,9 +159,10 @@ class TestFetchUniProtAccession:
             return_value=mock_client,
         )
 
-        accession, protein = await fetch_uniprot_accession("NOTCH3")
+        accession, protein, cacheable = await _fetch_uniprot_accession_status("NOTCH3")
         assert accession is None
         assert protein is None
+        assert cacheable is False
 
     async def test_timeout_returns_none_none(self, mocker):
         mock_client = AsyncMock()
@@ -165,9 +172,10 @@ class TestFetchUniProtAccession:
             return_value=mock_client,
         )
 
-        accession, protein = await fetch_uniprot_accession("NOTCH3")
+        accession, protein, cacheable = await _fetch_uniprot_accession_status("NOTCH3")
         assert accession is None
         assert protein is None
+        assert cacheable is False
 
     async def test_tsv_parsing_error_returns_none_none(self, mocker):
         mock_client = AsyncMock()
@@ -177,9 +185,10 @@ class TestFetchUniProtAccession:
             return_value=mock_client,
         )
 
-        accession, protein = await fetch_uniprot_accession("NOTCH3")
+        accession, protein, cacheable = await _fetch_uniprot_accession_status("NOTCH3")
         assert accession is None
         assert protein is None
+        assert cacheable is False
 
 
 # ---------------------------------------------------------------------------

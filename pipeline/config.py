@@ -78,49 +78,6 @@ def _env_path(name: str, default: Path) -> str:
     return _env_str(name, default_str) or default_str
 
 
-# Valid GWAS traits from cSVD literature (immutable reference data)
-VALID_GWAS_TRAITS: Final[frozenset[str]] = frozenset(
-    {
-        "WMH",  # White matter hyperintensities
-        "DWMH",  # Deep WMH
-        "PVWMH",  # Periventricular WMH
-        "SVS",  # Small vessel stroke
-        "BG-PVS",  # Basal ganglia perivascular spaces
-        "WM-PVS",  # White matter perivascular spaces
-        "HIP-PVS",  # Hippocampal perivascular spaces
-        "PSMD",  # Peak width of skeletonized mean diffusivity
-        "MD",  # Mean diffusivity
-        "extreme-cSVD",
-        "FA",  # Fractional anisotropy
-        "lacunes",
-        "stroke",
-        "cerebral-microbleeds",
-        "ICH-lobar",  # Lobar intracerebral hemorrhage
-        "ICH-non-lobar",  # Non-lobar intracerebral hemorrhage
-        "DTI-ALPS",  # Glymphatic function marker
-        "ICVF",  # Neurite density (NODDI)
-        "ISOVF",  # Free-water volume fraction (NODDI)
-        "OD",  # Orientation dispersion (NODDI)
-        "WMH-cortical-atrophy",  # WMH-associated cortical atrophy
-        "WM-BAG",  # White matter brain age gap
-        "retinal-vessels",  # Retinal vessel phenotypes
-    }
-)
-
-# Whitelist of allowed tables/columns for dynamic SQL (prevents SQL injection)
-ALLOWED_TABLES: Final[frozenset[str]] = frozenset(
-    {
-        "genes",
-        "pubmed_refs",
-        "pipeline_runs",
-        "ncbi_gene_info",
-        "uniprot_info",
-        "pubmed_citations",
-        "clinical_trials",
-    }
-)
-ALLOWED_COLUMNS: Final[frozenset[str]] = frozenset({"id"})
-
 PMID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{1,9}$")
 
 # NCBI E-utilities base URLs

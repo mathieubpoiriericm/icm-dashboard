@@ -140,13 +140,12 @@ Validation happens at two levels: per-gene (individual) and per-batch (aggregate
 
 #### Individual validation (`validation.py`)
 
-Three stages, fail-fast on critical errors:
+Two stages, fail-fast on critical errors:
 
 1. **Confidence threshold.** Rejects genes with `confidence < 0.65` (configurable via `PIPELINE_CONFIDENCE_THRESHOLD`). Filters out weak associations and likely hallucinations.
-2. **NCBI Gene lookup.** Queries NCBI Entrez `esearch` + `esummary` to verify the gene symbol exists in the human genome. Results are cached in a shared `OrderedDict`-backed LRU keyed by uppercase symbol (evicted by `evict_lru()` once past `DEFAULT_MAX_SIZE=10,000` entries, dropping the oldest `DEFAULT_EVICT_FRACTION=20%`). If the official NCBI symbol differs from the extracted one (alias resolution), the entry is normalized and a warning is attached. NCBI requests are throttled to 10 req/s with an API key (3 req/s without) and bounded by a semaphore (`ncbi_rate_limit`, default 10 concurrent).
-3. **GWAS trait check.** Warns (but does not reject) on unrecognized GWAS trait abbreviations not in the `VALID_GWAS_TRAITS` frozenset (23 canonical cSVD phenotypes defined in `config.py`).
+2. **NCBI Gene lookup.** Queries NCBI Entrez `esearch` + `esummary` to verify the gene symbol exists in the human genome. Results are cached in a shared `OrderedDict`-backed LRU keyed by uppercase symbol (evicted by `evict_lru()` once past `DEFAULT_MAX_SIZE=10,000` entries, dropping the oldest `DEFAULT_EVICT_FRACTION=20%`). If the official NCBI symbol differs from the extracted one (alias resolution), the entry is normalized. NCBI requests are throttled to 10 req/s with an API key (3 req/s without) and bounded by a semaphore (`ncbi_rate_limit`, default 10 concurrent).
 
-The `ValidationResult` dataclass returned to the caller carries `is_valid`, `errors`, `warnings`, and the possibly-normalized `GeneEntry`.
+The `ValidationResult` dataclass returned to the caller carries `is_valid`, `errors`, and the possibly-normalized `GeneEntry`.
 
 #### Batch validation (`batch_validation.py`)
 
@@ -174,7 +173,7 @@ Merges validated genes into PostgreSQL and records processed PMIDs.
 
 **PMID recording.** `record_processed_pmids_batch()` records each processed PMID in the `pubmed_refs` table with metadata (fulltext availability, source, gene count) using `ON CONFLICT ... DO UPDATE` for idempotency. This step runs *after* the gene merge succeeds, ensuring PMIDs are only marked processed when their genes are actually written.
 
-**Sequence reset.** Before merging, `reset_sequence("genes")` sets the PostgreSQL auto-increment sequence to `MAX(id) + 1` to avoid primary key conflicts. Table and column names are validated against `ALLOWED_TABLES` / `ALLOWED_COLUMNS` whitelists and passed through `quote_ident()` for SQL injection safety.
+**Sequence reset.** Before merging, `reset_gene_sequence()` sets the PostgreSQL `genes_id_seq` sequence to `MAX(id) + 1` to avoid primary key conflicts. The table, column, and sequence identifiers are fixed in the SQL statement; no dynamic identifiers are accepted.
 
 ## External Data Sync
 
@@ -229,7 +228,7 @@ As it enters each stage, the standard-mode runner calls `_report_stage(idx)` (wh
 
 ### Progress file
 
-`_write_progress()` serialises the current stage, status (`running` / `completed` / `error`), timestamps, run mode, and any error message to JSON and atomically replaces the target path (`tmp` + `os.replace()`). The Shiny dashboard reads this file to display pipeline status. The path is `logs/json/pipeline_progress.json` by default (overridable via `PIPELINE_PROGRESS_FILE`). Write failures are logged at debug level and never raised — progress reporting never disrupts the pipeline.
+`_write_progress()` serialises the current stage, status (`running` / `completed` / `error`), stage index, update timestamp, and any error message to JSON and atomically replaces the target path (`tmp` + `os.replace()`). The Shiny dashboard reads this file to display pipeline status. The path is `logs/json/pipeline_progress.json` by default (overridable via `PIPELINE_PROGRESS_FILE`). Write failures are logged at debug level and never raised — progress reporting never disrupts the pipeline.
 
 ### Notifications (`notifications.py`)
 
@@ -239,9 +238,9 @@ Sending is wrapped in a Tenacity `@retry` decorator: up to `notify_max_retries` 
 
 ### Event log (`event_log.py`)
 
-`event_log.py` defines the `EventLog` class with three methods: `record(event_type, data)` persists a JSON-serialised event to a local SQLite database at `PIPELINE_EVENT_DB_PATH` (default `logs/events.db`, WAL journal mode); `mark_notified(event_ids)` stamps events after a successful notification dispatch; `get_pending()` returns events where `notified = 0`, useful for replaying missed notifications and for cross-run deduplication / audit trails.
+`event_log.py` defines the `EventLog` class. `record(event_type, data)` persists a JSON-serialised audit event to a local SQLite database at `PIPELINE_EVENT_DB_PATH` (default `logs/events.db`, WAL journal mode).
 
-The orchestration function `_record_and_notify()` lives in `main.py` (not `event_log.py`) and offloads the blocking SQLite + Apprise work to a worker thread via `asyncio.to_thread`. It records a `pipeline_completed` event, sends the Apprise notification, then stamps the event as notified — all under a single `EventLog` context manager.
+The orchestration function `_record_and_notify()` lives in `main.py` (not `event_log.py`) and offloads the blocking SQLite + Apprise work to a worker thread via `asyncio.to_thread`. It records a `pipeline_completed` event and sends the Apprise notification under a single `EventLog` context manager.
 
 ### Reporting (`report.py`)
 

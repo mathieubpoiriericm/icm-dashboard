@@ -64,6 +64,7 @@ class TestAnthropicProviderExtract:
         mocker.patch.object(provider, "_get_client", return_value=mock_client)
 
         from pipeline.config import PipelineConfig
+
         genes, usage = await provider.extract(
             "This paper discusses NOTCH3...", "12345678", PipelineConfig(), None
         )
@@ -80,6 +81,7 @@ class TestAnthropicProviderExtract:
         mocker.patch.object(provider, "_get_client", return_value=mock_client)
 
         from pipeline.config import PipelineConfig
+
         with pytest.raises(ExtractionFailedError, match="Empty text response"):
             await provider.extract(
                 "Some paper text", "12345678", PipelineConfig(), None
@@ -93,6 +95,7 @@ class TestAnthropicProviderExtract:
         mocker.patch.object(provider, "_get_client", return_value=mock_client)
 
         from pipeline.config import PipelineConfig
+
         genes, _ = await provider.extract(
             "Paper text", "12345678", PipelineConfig(), None
         )
@@ -110,6 +113,7 @@ class TestAnthropicProviderExtract:
         mocker.patch.object(provider, "_get_client", return_value=mock_client)
 
         from pipeline.config import PipelineConfig
+
         with pytest.raises(ExtractionFailedError, match="Claude API error"):
             await provider.extract("Paper text", "12345678", PipelineConfig(), None)
 
@@ -301,18 +305,6 @@ class TestAnthropicProviderExtract:
 
 
 class TestAnthropicProviderLifecycle:
-    def test_name(self):
-        provider = AnthropicProvider()
-        assert provider.name == "anthropic"
-
-    def test_supports_thinking(self):
-        provider = AnthropicProvider()
-        assert provider.supports_thinking() is True
-
-    def test_supports_prompt_caching(self):
-        provider = AnthropicProvider()
-        assert provider.supports_prompt_caching() is True
-
     def test_client_lazy_created(self, mocker, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         mock_cls = mocker.patch(

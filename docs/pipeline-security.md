@@ -202,18 +202,16 @@ async with Database.connection() as conn, conn.transaction():
     )
 ```
 
-### Identifier allowlist + defense-in-depth quoting
+### Fixed SQL identifiers
 
-When a query needs a dynamic table or column name (e.g., resetting a sequence), the names are checked against `ALLOWED_TABLES` / `ALLOWED_COLUMNS` allowlists *and* passed through PostgreSQL's `quote_ident` / `quote_literal` (`pipeline/database.py:140-174`):
+The sequence-reset query uses fixed table, column, and sequence identifiers. It does not accept caller-controlled identifiers, eliminating that SQL-injection surface:
 
 ```python
-if table not in ALLOWED_TABLES:
-    raise ValueError(f"Table '{table}' not in allowed list: {ALLOWED_TABLES}")
-if column not in ALLOWED_COLUMNS:
-    raise ValueError(f"Column '{column}' not in allowed list: {ALLOWED_COLUMNS}")
-
-safe_table = await conn.fetchval("SELECT quote_ident($1)", table)
-safe_column = await conn.fetchval("SELECT quote_ident($1)", column)
+await conn.execute("""
+    SELECT setval('genes_id_seq', COALESCE(
+        (SELECT MAX(id) FROM genes), 0
+    ) + 1, false)
+""")
 ```
 
 ### Atomic merges

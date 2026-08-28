@@ -501,7 +501,6 @@ class TestRejectedGeneSerialization:
         )
         result = MockPaperResult(pmid="999", rejected_genes=[rejected])
         summaries = _paper_results_to_summaries([result])
-        assert summaries[0]["rejected_gene_count"] == 1
         assert len(summaries[0]["rejected_genes"]) == 1
         rg = summaries[0]["rejected_genes"][0]
         assert rg["gene"]["gene_symbol"] == "FAKEGENE"
@@ -510,7 +509,6 @@ class TestRejectedGeneSerialization:
     def test_summaries_empty_rejected_by_default(self):
         result = MockPaperResult(pmid="111")
         summaries = _paper_results_to_summaries([result])
-        assert summaries[0]["rejected_gene_count"] == 0
         assert summaries[0]["rejected_genes"] == []
 
     def test_json_serializable_with_rejected(self):
@@ -555,7 +553,6 @@ class TestPrintRichSummaryWithRejected:
                                 "omics_evidence": [],
                             }
                         ],
-                        "rejected_gene_count": 1,
                         "rejected_genes": [
                             {
                                 "gene": {

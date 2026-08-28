@@ -10,9 +10,9 @@ import pytest
 from pipeline.config import PipelineConfig
 from pipeline.validation import (
     _fetch_ncbi_gene_uncached,
+    _fetch_official_gene_symbol,
     _ncbi_get_with_retry,
     clear_gene_cache,
-    fetch_gene_details,
     validate_gene_entry,
     verify_ncbi_gene,
 )
@@ -33,7 +33,7 @@ class TestConfidenceValidation:
         entry = make_gene_entry(confidence=0.7)
         mocker.patch(
             "pipeline.validation.verify_ncbi_gene",
-            return_value={"symbol": "NOTCH3", "gene_id": "1234"},
+            return_value="NOTCH3",
         )
         result = await validate_gene_entry(entry)
         assert result.is_valid
@@ -49,7 +49,7 @@ class TestConfidenceValidation:
         cfg = PipelineConfig(confidence_threshold=0.9)
         mocker.patch(
             "pipeline.validation.verify_ncbi_gene",
-            return_value={"symbol": "NOTCH3", "gene_id": "1234"},
+            return_value="NOTCH3",
         )
         result = await validate_gene_entry(entry, config=cfg)
         assert result.is_valid
@@ -72,7 +72,7 @@ class TestNcbiValidation:
         entry = make_gene_entry(confidence=0.9)
         mocker.patch(
             "pipeline.validation.verify_ncbi_gene",
-            return_value={"symbol": "NOTCH3", "gene_id": "4854"},
+            return_value="NOTCH3",
         )
         result = await validate_gene_entry(entry)
         assert result.is_valid
@@ -82,49 +82,12 @@ class TestNcbiValidation:
         entry = make_gene_entry(gene_symbol="notch3", confidence=0.9)
         mocker.patch(
             "pipeline.validation.verify_ncbi_gene",
-            return_value={"symbol": "NOTCH3", "gene_id": "4854"},
+            return_value="NOTCH3",
         )
         result = await validate_gene_entry(entry)
         assert result.is_valid
         assert result.normalized_data is not None
         assert result.normalized_data.gene_symbol == "NOTCH3"
-        assert any("Normalized" in w for w in result.warnings)
-
-
-# ---------------------------------------------------------------------------
-# Stage 3: GWAS trait validation
-# ---------------------------------------------------------------------------
-
-
-class TestGwasTraitValidation:
-    async def test_valid_traits_no_warning(self, make_gene_entry, mocker):
-        entry = make_gene_entry(gwas_trait=["WMH", "SVS"], confidence=0.9)
-        mocker.patch(
-            "pipeline.validation.verify_ncbi_gene",
-            return_value={"symbol": "NOTCH3", "gene_id": "4854"},
-        )
-        result = await validate_gene_entry(entry)
-        assert result.is_valid
-        assert not any("Unknown GWAS" in w for w in result.warnings)
-
-    async def test_unknown_trait_warns(self, make_gene_entry, mocker):
-        entry = make_gene_entry(gwas_trait=["WMH", "FAKE_TRAIT"], confidence=0.9)
-        mocker.patch(
-            "pipeline.validation.verify_ncbi_gene",
-            return_value={"symbol": "NOTCH3", "gene_id": "4854"},
-        )
-        result = await validate_gene_entry(entry)
-        assert result.is_valid  # warnings don't block
-        assert any("Unknown GWAS trait: FAKE_TRAIT" in w for w in result.warnings)
-
-    async def test_empty_traits_no_warning(self, make_gene_entry, mocker):
-        entry = make_gene_entry(gwas_trait=[], confidence=0.9)
-        mocker.patch(
-            "pipeline.validation.verify_ncbi_gene",
-            return_value={"symbol": "NOTCH3", "gene_id": "4854"},
-        )
-        result = await validate_gene_entry(entry)
-        assert result.is_valid
 
 
 # ---------------------------------------------------------------------------
@@ -136,28 +99,26 @@ class TestVerifyNcbiGeneCache:
     async def test_cache_hit(self, mocker):
         import pipeline.validation as val
 
-        val._gene_cache["NOTCH3"] = {"symbol": "NOTCH3", "gene_id": "4854"}
+        val._gene_cache["NOTCH3"] = "NOTCH3"
 
         mock_fetch = mocker.patch("pipeline.validation._fetch_ncbi_gene_uncached")
         result = await verify_ncbi_gene("NOTCH3")
 
-        assert result is not None
-        assert result["symbol"] == "NOTCH3"
+        assert result == "NOTCH3"
         mock_fetch.assert_not_called()
 
     async def test_cache_miss_fetches(self, mocker):
         mocker.patch(
             "pipeline.validation._fetch_ncbi_gene_uncached",
-            return_value={"symbol": "HTRA1", "gene_id": "5654"},
+            return_value="HTRA1",
         )
         result = await verify_ncbi_gene("HTRA1")
-        assert result is not None
-        assert result["symbol"] == "HTRA1"
+        assert result == "HTRA1"
 
     async def test_case_insensitive_cache(self, mocker):
         import pipeline.validation as val
 
-        val._gene_cache["NOTCH3"] = {"symbol": "NOTCH3", "gene_id": "4854"}
+        val._gene_cache["NOTCH3"] = "NOTCH3"
 
         mock_fetch = mocker.patch("pipeline.validation._fetch_ncbi_gene_uncached")
         result = await verify_ncbi_gene("notch3")
@@ -178,7 +139,7 @@ class TestVerifyNcbiGeneCache:
     def test_clear_gene_cache(self):
         import pipeline.validation as val
 
-        val._gene_cache["TEST"] = {"symbol": "TEST"}
+        val._gene_cache["TEST"] = "TEST"
         clear_gene_cache()
         assert len(val._gene_cache) == 0
 
@@ -197,26 +158,24 @@ class TestVerifyNcbiGeneCache:
         clear_gene_cache()
         call_count = 0
 
-        async def slow_fetch(symbol: str, *, config=None) -> dict[str, str]:
+        async def slow_fetch(symbol: str, *, config=None) -> str:
             nonlocal call_count
             call_count += 1
             # Yield so the scheduler actually races — without this, the
             # first task would finish atomically and any buggy
             # implementation would still pass.
             await asyncio.sleep(0)
-            return {"symbol": "NOTCH3", "gene_id": "4854"}
+            return "NOTCH3"
 
         mocker.patch(
             "pipeline.validation._fetch_ncbi_gene_uncached",
             side_effect=slow_fetch,
         )
 
-        results = await asyncio.gather(
-            *(verify_ncbi_gene("NOTCH3") for _ in range(10))
-        )
-        assert all(r is not None and r["gene_id"] == "4854" for r in results)
+        results = await asyncio.gather(*(verify_ncbi_gene("NOTCH3") for _ in range(10)))
+        assert results == ["NOTCH3"] * 10
         assert call_count == 1
-        assert val._gene_cache["NOTCH3"]["gene_id"] == "4854"
+        assert val._gene_cache["NOTCH3"] == "NOTCH3"
 
 
 # ---------------------------------------------------------------------------
@@ -256,9 +215,7 @@ class TestFetchNcbiGene:
         )
 
         result = await _fetch_ncbi_gene_uncached("NOTCH3")
-        assert result is not None
-        assert result["symbol"] == "NOTCH3"
-        assert result["gene_id"] == "4854"
+        assert result == "NOTCH3"
 
     async def test_gene_not_found(self, mocker):
         mock_client = AsyncMock()
@@ -313,11 +270,11 @@ class TestFetchNcbiGene:
 
 
 # ---------------------------------------------------------------------------
-# fetch_gene_details
+# _fetch_official_gene_symbol
 # ---------------------------------------------------------------------------
 
 
-class TestFetchGeneDetails:
+class TestFetchOfficialGeneSymbol:
     async def test_successful_fetch(self, mocker):
         mock_client = AsyncMock()
         response = MagicMock()
@@ -338,10 +295,8 @@ class TestFetchGeneDetails:
             return_value=mock_client,
         )
 
-        result = await fetch_gene_details("4854")
-        assert result is not None
-        assert result["symbol"] == "NOTCH3"
-        assert "CADASIL" in result["aliases"]
+        result = await _fetch_official_gene_symbol("4854")
+        assert result == "NOTCH3"
 
     async def test_missing_name_field_returns_none(self, mocker):
         """Bug 3: NCBI response with no 'name' field should return None."""
@@ -362,7 +317,7 @@ class TestFetchGeneDetails:
             return_value=mock_client,
         )
 
-        result = await fetch_gene_details("4854")
+        result = await _fetch_official_gene_symbol("4854")
         assert result is None
 
     async def test_empty_name_field_returns_none(self, mocker):
@@ -385,7 +340,7 @@ class TestFetchGeneDetails:
             return_value=mock_client,
         )
 
-        result = await fetch_gene_details("4854")
+        result = await _fetch_official_gene_symbol("4854")
         assert result is None
 
     async def test_error_in_response(self, mocker):
@@ -401,32 +356,8 @@ class TestFetchGeneDetails:
             return_value=mock_client,
         )
 
-        result = await fetch_gene_details("4854")
+        result = await _fetch_official_gene_symbol("4854")
         assert result is None
-
-    async def test_no_aliases(self, mocker):
-        mock_client = AsyncMock()
-        response = MagicMock()
-        response.status_code = 200
-        response.json.return_value = {
-            "result": {
-                "4854": {
-                    "name": "NOTCH3",
-                    "description": "notch receptor 3",
-                    "chromosome": "19",
-                    "otheraliases": "",
-                }
-            }
-        }
-        mock_client.get = AsyncMock(return_value=response)
-        mocker.patch(
-            "pipeline.validation._client_manager.get",
-            return_value=mock_client,
-        )
-
-        result = await fetch_gene_details("4854")
-        assert result is not None
-        assert result["aliases"] == []
 
 
 # ---------------------------------------------------------------------------

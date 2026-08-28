@@ -1,8 +1,4 @@
-"""SQLite-backed event log for pipeline notification persistence.
-
-Records pipeline events and tracks notification delivery status,
-enabling cross-run deduplication and audit trails.
-"""
+"""SQLite-backed audit log for pipeline events."""
 
 import json
 import logging
@@ -17,9 +13,7 @@ CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type  TEXT    NOT NULL,
     payload     TEXT    NOT NULL,
-    created_at  TEXT    NOT NULL,
-    notified    INTEGER NOT NULL DEFAULT 0,
-    notified_at TEXT
+    created_at  TEXT    NOT NULL
 );
 """
 
@@ -46,68 +40,26 @@ class EventLog:
     def __enter__(self) -> EventLog:
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+    def __exit__(self, _exc_type: Any, _exc: Any, _traceback: Any) -> None:
         self.close()
 
-    def record(self, event_type: str, payload: Any) -> int:
-        """Insert an event and return its row ID.
+    def record(self, event_type: str, payload: Any) -> None:
+        """Insert an event.
 
         Args:
             event_type: Category string (e.g. "pipeline_completed").
             payload: JSON-serialisable data attached to the event.
 
-        Returns:
-            The auto-generated row ID.
         """
         now = datetime.now(UTC).isoformat()
-        # default=str is intentionally lossy — payloads are human-audit + dedup,
+        # default=str is intentionally lossy — payloads are for human audit,
         # not round-trip typed.
         payload_json = json.dumps(payload, default=str)
-        cur = self._conn.execute(
+        self._conn.execute(
             "INSERT INTO events (event_type, payload, created_at) VALUES (?, ?, ?)",
             (event_type, payload_json, now),
         )
         self._conn.commit()
-        if cur.lastrowid is None:
-            raise RuntimeError("INSERT did not return a lastrowid")
-        return cur.lastrowid
-
-    def mark_notified(self, event_ids: list[int]) -> None:
-        """Mark events as successfully notified.
-
-        Args:
-            event_ids: Row IDs to mark.
-        """
-        if not event_ids:
-            return
-        now = datetime.now(UTC).isoformat()
-        placeholders = ",".join("?" for _ in event_ids)
-        self._conn.execute(
-            f"UPDATE events SET notified = 1, notified_at = ? "
-            f"WHERE id IN ({placeholders})",
-            [now, *event_ids],
-        )
-        self._conn.commit()
-
-    def get_pending(self) -> list[dict[str, Any]]:
-        """Retrieve all events that have not been notified yet.
-
-        Returns:
-            List of dicts with id, event_type, payload, and created_at.
-        """
-        cur = self._conn.execute(
-            "SELECT id, event_type, payload, created_at "
-            "FROM events WHERE notified = 0 ORDER BY id"
-        )
-        return [
-            {
-                "id": row_id,
-                "event_type": event_type,
-                "payload": json.loads(payload_json),
-                "created_at": created_at,
-            }
-            for row_id, event_type, payload_json, created_at in cur.fetchall()
-        ]
 
     def close(self) -> None:
         """Close the underlying SQLite connection.

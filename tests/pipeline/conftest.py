@@ -10,7 +10,6 @@ _project_root = str(Path(__file__).resolve().parent.parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-import asyncio  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -218,7 +217,7 @@ def _reset_llm_client():
     import pipeline.llm_extraction as llm
 
     llm._provider = None
-    llm._provider_cache_key = None
+    llm._provider_name = None
 
 
 @pytest.fixture(autouse=True)
@@ -232,7 +231,6 @@ def _reset_validation_client():
     val._last_request_time = 0.0
     val._throttle_lock = None
     val._cache_lock = None
-    val._validation_state_initialized = False
 
 
 @pytest.fixture(autouse=True)
@@ -284,7 +282,6 @@ def _reset_ncbi_gene_client():
     ncbi._gene_cache = OrderedDict()
     ncbi._ncbi_semaphore = None
     ncbi._cache_lock = None
-    ncbi._ncbi_fetch_state_initialized = False
 
 
 @pytest.fixture(autouse=True)
@@ -334,11 +331,3 @@ def _isolate_pipeline_progress_file(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "PIPELINE_PROGRESS_FILE", str(tmp_path / "pipeline_progress.json")
     )
-
-
-@pytest.fixture
-def event_loop():
-    """Provide a fresh event loop for each test."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()

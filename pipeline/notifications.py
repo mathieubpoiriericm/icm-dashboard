@@ -101,10 +101,6 @@ def _build_template_context(run_data: PipelineRunData) -> dict[str, Any]:
         "model": cfg.get("model", "N/A"),
         "duration": _format_duration(run_data.get("total_processing_time", 0.0)),
         "effort": cfg.get("effort", "N/A"),
-        "show_days_back": is_standard,
-        "days_back": cfg.get("days_back", "N/A"),
-        "pdf_directory": cfg.get("pdf_directory"),
-        "pmid_file": cfg.get("pmid_file"),
         "show_search": is_standard,
         "search": run_data.get("search", {}),
         "papers": run_data.get("papers", {}),
@@ -126,7 +122,7 @@ def _render_markdown(run_data: PipelineRunData) -> str:
 
 def _make_send_notification(
     config: PipelineConfig,
-) -> Callable[[str, str], bool | None]:
+) -> Callable[[str, str], None]:
     """Return a Tenacity-wrapped sender function bound to *config*."""
     ap = apprise.Apprise()
     for url in map(str.strip, config.notify_urls.split(",")):
@@ -141,16 +137,12 @@ def _make_send_notification(
         ),
         reraise=True,
     )
-    def _send(
-        title: str,
-        body_text: str,
-        notify_type: NotifyType = NotifyType.INFO,
-    ) -> bool | None:
-        return ap.notify(
+    def _send(title: str, body_text: str) -> None:
+        ap.notify(
             title=title,
             body=body_text,
             body_format=NotifyFormat.MARKDOWN,
-            notify_type=notify_type,
+            notify_type=NotifyType.INFO,
         )
 
     return _send

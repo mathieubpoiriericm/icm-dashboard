@@ -202,20 +202,6 @@ async def _fetch_uniprot_accession_status(
     return None, None, False
 
 
-async def fetch_uniprot_accession(gene_symbol: str) -> tuple[str | None, str | None]:
-    """Fetch UniProt accession for a gene symbol.
-
-    Args:
-        gene_symbol: Gene symbol to look up.
-
-    Returns:
-        Tuple of (accession, protein_name) or (None, None) if not found or if
-        UniProt is temporarily unavailable.
-    """
-    accession, protein_name, _ = await _fetch_uniprot_accession_status(gene_symbol)
-    return accession, protein_name
-
-
 async def fetch_uniprot_go_info(accession: str) -> dict[str, str | None]:
     """Fetch GO annotations for a UniProt accession.
 

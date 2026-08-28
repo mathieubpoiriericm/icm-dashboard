@@ -5,12 +5,9 @@ from __future__ import annotations
 import pytest
 
 from pipeline.config import (
-    ALLOWED_COLUMNS,
-    ALLOWED_TABLES,
     LLM_PROVIDERS,
     MODEL_MAX_OUTPUT_TOKENS,
     PROJECT_ROOT,
-    VALID_GWAS_TRAITS,
     PipelineConfig,
     validate_pmid,
 )
@@ -93,20 +90,6 @@ class TestPipelineConfigEnvOverrides:
 
 class TestConstants:
     """Verify module-level constants are valid."""
-
-    def test_valid_gwas_traits_nonempty(self):
-        assert len(VALID_GWAS_TRAITS) > 0
-
-    def test_known_traits_present(self):
-        for trait in ("WMH", "SVS", "lacunes", "stroke"):
-            assert trait in VALID_GWAS_TRAITS
-
-    def test_allowed_tables(self):
-        assert "genes" in ALLOWED_TABLES
-        assert "pubmed_refs" in ALLOWED_TABLES
-
-    def test_allowed_columns(self):
-        assert "id" in ALLOWED_COLUMNS
 
     def test_project_root_exists(self):
         assert PROJECT_ROOT.exists()

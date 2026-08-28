@@ -33,7 +33,6 @@ class PaperSummary(TypedDict):
     error: str | None
     gene_count: int
     genes: list[dict[str, Any]]
-    rejected_gene_count: int
     rejected_genes: list[dict[str, Any]]
     processing_time: float
     pdf_parse_time: NotRequired[float]
@@ -90,7 +89,6 @@ def _paper_results_to_summaries(
             "error": r.error,
             "gene_count": len(r.genes),
             "genes": genes_data,
-            "rejected_gene_count": len(rejected_data),
             "rejected_genes": rejected_data,
             "processing_time": getattr(r, "processing_time", 0.0),
         }

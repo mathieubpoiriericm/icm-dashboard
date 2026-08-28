@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 from pipeline.batch_validation import batch_validate
 from pipeline.llm_providers.base import ExtractionFailedError, GeneEntry
-from pipeline.ncbi_gene_fetch import init_ncbi_fetch_state
 from pipeline.pdf_retrieval import parse_local_pdf
 from pipeline.quality_metrics import PipelineMetrics
 from pipeline.rate_limiter import AsyncRateLimiter
@@ -162,7 +161,6 @@ async def run(
     metrics = PipelineMetrics()
     rate_limiter = AsyncRateLimiter(rpm=config.rpm_limit, tpm=config.tpm_limit)
     init_validation_state(config)
-    init_ncbi_fetch_state(config)
 
     pipeline_start = time.monotonic()
     semaphore = asyncio.Semaphore(config.max_concurrent_papers)

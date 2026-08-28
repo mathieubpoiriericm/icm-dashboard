@@ -110,8 +110,8 @@ This dashboard provides up-to-date and standardized information on:
 Browse putative causal genes with filters for:
 
 - Mendelian Randomization status
-- GWAS traits — the 23 canonical cSVD phenotypes defined in
-  `pipeline/config.py:VALID_GWAS_TRAITS`: WMH, DWMH, PVWMH, SVS, BG-PVS,
+- GWAS traits — canonical cSVD phenotypes used by the extraction prompt: WMH,
+  DWMH, PVWMH, SVS, BG-PVS,
   WM-PVS, HIP-PVS, PSMD, MD, extreme-cSVD, FA, lacunes, stroke,
   cerebral-microbleeds, ICH-lobar, ICH-non-lobar, DTI-ALPS, ICVF, ISOVF, OD,
   WMH-cortical-atrophy, WM-BAG, retinal-vessels
@@ -975,9 +975,9 @@ Claude reads full-text cSVD research papers and extracts genes with putative cau
 
 The prompt uses a two-part architecture defined in `pipeline/prompts.py`: a system prompt for role assignment and extraction instructions for the task specification.
 
-**System prompt** (`SYSTEM_PROMPT`) — Assigns Claude the role of "a systematic reviewer specializing in cerebral small vessel disease (cSVD) genetics." The [system prompts documentation](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) recommends using the `system` parameter for role assignment, noting it provides "enhanced accuracy" in complex domain scenarios. The highly specific role follows the documentation's advice that more specific roles yield better results.
+**System prompt** — Assigns Claude the role of "a systematic reviewer specializing in cerebral small vessel disease (cSVD) genetics." The [system prompts documentation](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) recommends using the `system` parameter for role assignment, noting it provides "enhanced accuracy" in complex domain scenarios. The highly specific role follows the documentation's advice that more specific roles yield better results.
 
-**Extraction instructions** (`EXTRACTION_INSTRUCTIONS`) — An XML-tagged structure with these components:
+**Extraction instructions** — An XML-tagged structure selected with the system prompt by `build_extraction_prompt()`:
 
 | Component | Purpose | Documentation Rationale |
 | ----------- | --------- | ------------------------ |

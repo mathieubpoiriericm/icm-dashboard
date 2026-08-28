@@ -5,7 +5,6 @@ import logging
 from pipeline.config import PipelineConfig
 from pipeline.llm_providers import (
     ExtractionFailedError,
-    ExtractionResult,
     GeneEntry,
     LLMProvider,
     get_provider,
@@ -17,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "ExtractionFailedError",
-    "ExtractionResult",
     "GeneEntry",
     "close_async_client",
     "extract_from_paper",

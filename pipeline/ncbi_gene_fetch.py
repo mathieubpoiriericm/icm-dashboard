@@ -59,20 +59,6 @@ _ncbi_semaphore: asyncio.Semaphore | None = None
 _in_flight: dict[str, asyncio.Task[NCBIGeneInfo | None]] = {}
 
 
-def init_ncbi_fetch_state(config: PipelineConfig | None = None) -> None:
-    """Eagerly initialize module-level locks and semaphores.
-
-    Must be called once from the running event loop before concurrent use.
-    Safe to call multiple times (idempotent).
-    """
-    global _cache_lock, _ncbi_semaphore
-    if _cache_lock is None:
-        _cache_lock = asyncio.Lock()
-    if _ncbi_semaphore is None:
-        limit = config.ncbi_rate_limit if config else PipelineConfig().ncbi_rate_limit
-        _ncbi_semaphore = asyncio.Semaphore(limit)
-
-
 def _get_cache_lock() -> asyncio.Lock:
     """Get cache lock, initializing lazily if needed."""
     global _cache_lock

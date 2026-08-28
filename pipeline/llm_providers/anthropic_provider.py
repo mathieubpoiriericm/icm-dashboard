@@ -299,8 +299,6 @@ def _retry_validation(
 class AnthropicProvider:
     """Streaming Claude provider (current default)."""
 
-    name = "anthropic"
-
     def __init__(self) -> None:
         self._client: anthropic.AsyncAnthropic | None = None
 
@@ -325,12 +323,6 @@ class AnthropicProvider:
         if self._client is not None:
             await self._client.close()
             self._client = None
-
-    def supports_thinking(self) -> bool:
-        return True
-
-    def supports_prompt_caching(self) -> bool:
-        return True
 
     def report_metadata(self, config: PipelineConfig) -> dict[str, Any]:
         return {

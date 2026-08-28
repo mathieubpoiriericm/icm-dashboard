@@ -12,7 +12,7 @@ from typing import Any, ClassVar, cast
 
 import asyncpg
 
-from pipeline.config import ALLOWED_COLUMNS, ALLOWED_TABLES, PipelineConfig
+from pipeline.config import PipelineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -132,40 +132,12 @@ async def get_existing_pmids() -> set[str]:
         return {row["pmid"] for row in rows}
 
 
-async def reset_sequence(table: str, column: str = "id") -> None:
-    """Reset a table's sequence to avoid primary key conflicts.
-
-    Uses whitelist validation to prevent SQL injection.
-
-    Args:
-        table: Table name (must be in ALLOWED_TABLES).
-        column: Column name (must be in ALLOWED_COLUMNS).
-
-    Raises:
-        ValueError: If table or column is not in the allowed whitelist.
-    """
-    # Whitelist validation - prevents SQL injection
-    if table not in ALLOWED_TABLES:
-        raise ValueError(f"Table '{table}' not in allowed list: {ALLOWED_TABLES}")
-    if column not in ALLOWED_COLUMNS:
-        raise ValueError(f"Column '{column}' not in allowed list: {ALLOWED_COLUMNS}")
-
+async def reset_gene_sequence() -> None:
+    """Reset the genes table sequence to avoid primary key conflicts."""
     async with Database.connection() as conn:
-        # Use quote_ident for defense-in-depth (even after whitelist validation)
-        safe_table = await conn.fetchval("SELECT quote_ident($1)", table)
-        safe_column = await conn.fetchval("SELECT quote_ident($1)", column)
-        safe_seq = await conn.fetchval(
-            "SELECT quote_literal($1)", f"{table}_{column}_seq"
-        )
-
-        if safe_table is None or safe_column is None or safe_seq is None:
-            raise RuntimeError(
-                f"quote_ident/quote_literal returned NULL for {table}.{column}"
-            )
-
-        await conn.execute(f"""
-            SELECT setval({safe_seq}, COALESCE(
-                (SELECT MAX({safe_column}) FROM {safe_table}), 0
+        await conn.execute("""
+            SELECT setval('genes_id_seq', COALESCE(
+                (SELECT MAX(id) FROM genes), 0
             ) + 1, false)
         """)
 

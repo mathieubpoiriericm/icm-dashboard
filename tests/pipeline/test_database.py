@@ -1,4 +1,4 @@
-"""Tests for pipeline.database — whitelist validation, empty-input short-circuits."""
+"""Tests for pipeline.database — sequence reset and empty-input short-circuits."""
 
 from __future__ import annotations
 
@@ -6,34 +6,23 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pipeline.config import ALLOWED_COLUMNS, ALLOWED_TABLES
 from pipeline.database import (
     Database,
     DatabaseConfigError,
     merge_genes_transactional,
     record_pipeline_run,
     record_processed_pmids_batch,
-    reset_sequence,
+    reset_gene_sequence,
 )
 
 # ---------------------------------------------------------------------------
-# Whitelist validation for reset_sequence
+# Gene sequence reset
 # ---------------------------------------------------------------------------
 
 
-class TestResetSequenceWhitelist:
-    async def test_invalid_table_raises(self):
-        with pytest.raises(ValueError, match="not in allowed list"):
-            await reset_sequence("evil_table")
-
-    async def test_invalid_column_raises(self):
-        with pytest.raises(ValueError, match="not in allowed list"):
-            await reset_sequence("genes", column="evil_column")
-
-    async def test_valid_table_valid_column(self, mocker):
-        """Valid table + column should proceed to DB call (which we mock)."""
+class TestResetGeneSequence:
+    async def test_executes_fixed_statement(self, mocker):
         mock_conn = AsyncMock()
-        mock_conn.fetchval = AsyncMock(side_effect=["genes", "id", "'genes_id_seq'"])
         mock_conn.execute = AsyncMock()
 
         # Mock Database.connection() as an async context manager
@@ -46,8 +35,10 @@ class TestResetSequenceWhitelist:
             ),
         )
 
-        await reset_sequence("genes", "id")
-        mock_conn.execute.assert_awaited_once()
+        await reset_gene_sequence()
+        sql = mock_conn.execute.await_args.args[0]
+        assert "genes_id_seq" in sql
+        assert "MAX(id) FROM genes" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -183,33 +174,6 @@ class TestDatabaseSingleton:
         await Database.close()
         mock_pool.close.assert_awaited_once()
         assert Database._pool is None
-
-
-# ---------------------------------------------------------------------------
-# Allowed tables/columns consistency
-# ---------------------------------------------------------------------------
-
-
-class TestAllowedLists:
-    def test_genes_table_allowed(self):
-        assert "genes" in ALLOWED_TABLES
-
-    def test_pubmed_refs_allowed(self):
-        assert "pubmed_refs" in ALLOWED_TABLES
-
-    def test_pipeline_runs_allowed(self):
-        assert "pipeline_runs" in ALLOWED_TABLES
-
-    def test_id_column_allowed(self):
-        assert "id" in ALLOWED_COLUMNS
-
-    def test_all_tables_are_strings(self):
-        for t in ALLOWED_TABLES:
-            assert isinstance(t, str)
-
-    def test_all_columns_are_strings(self):
-        for c in ALLOWED_COLUMNS:
-            assert isinstance(c, str)
 
 
 # ---------------------------------------------------------------------------

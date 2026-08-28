@@ -65,17 +65,15 @@ class TestParseExtractionResponse:
 class TestLLMProviderProtocol:
     def test_protocol_is_runtime_checkable(self):
         class Stub:
-            name = "stub"
             async def extract(self, text, pmid, config, rate_limiter):
                 return [], None
+
             async def close(self):
                 pass
-            def supports_thinking(self):
-                return False
-            def supports_prompt_caching(self):
-                return False
+
             def report_metadata(self, config):
                 return {}
+
             def estimate_cost(self, usage, config):
                 return None
 

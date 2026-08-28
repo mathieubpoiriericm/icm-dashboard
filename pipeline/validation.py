@@ -11,7 +11,6 @@ import os
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any
 
 import httpx
 
@@ -19,7 +18,6 @@ from pipeline.cache_utils import single_flight_get
 from pipeline.config import (
     NCBI_ESEARCH_URL,
     NCBI_ESUMMARY_URL,
-    VALID_GWAS_TRAITS,
     PipelineConfig,
     get_ncbi_params,
 )
@@ -67,7 +65,6 @@ class ValidationResult:
 
     is_valid: bool
     errors: list[str]
-    warnings: list[str]
     normalized_data: GeneEntry | None
 
 
@@ -83,11 +80,11 @@ async def close_validation_client() -> None:
     await _client_manager.close()
 
 
-_gene_cache: OrderedDict[str, dict[str, Any] | None] = OrderedDict()
+_gene_cache: OrderedDict[str, str | None] = OrderedDict()
 _cache_lock: asyncio.Lock | None = None
 _ncbi_semaphore: asyncio.Semaphore | None = None
 # Single-flight registry keyed by uppercase symbol; see ``single_flight_get``.
-_in_flight: dict[str, asyncio.Task[dict[str, Any] | None]] = {}
+_in_flight: dict[str, asyncio.Task[str | None]] = {}
 
 
 def _get_cache_lock() -> asyncio.Lock:
@@ -208,8 +205,6 @@ async def validate_gene_entry(
     Validation stages (fail-fast on critical errors):
     1. Confidence threshold - reject low-confidence LLM extractions
     2. NCBI Gene lookup - verify gene exists in human genome
-    3. GWAS trait check - warn on unrecognized phenotypes (non-blocking)
-
     Note: Required field validation (Stage 0 in prior versions) is now
     handled by Pydantic at extraction time.
 
@@ -221,50 +216,39 @@ async def validate_gene_entry(
         ValidationResult with validation status and normalized data.
     """
     config = config or PipelineConfig()
-    warnings: list[str] = []
 
     # Stage 1: Confidence threshold - filters out LLM hallucinations
     if entry.confidence < config.confidence_threshold:
         return ValidationResult(
             False,
             [f"Low confidence: {entry.confidence:.2f} < {config.confidence_threshold}"],
-            warnings,
             None,
         )
 
     # Stage 2: NCBI Gene validation - ensures gene symbol is real
-    ncbi_info = await verify_ncbi_gene(entry.gene_symbol, config=config)
+    official_symbol = await verify_ncbi_gene(entry.gene_symbol, config=config)
 
-    if not ncbi_info:
+    if not official_symbol:
         return ValidationResult(
             False,
             [f"Gene '{entry.gene_symbol}' not found in NCBI Gene"],
-            warnings,
             None,
         )
 
     # Normalize gene symbol to official NCBI symbol (handles aliases). Use
     # model_copy so we don't mutate the caller's GeneEntry — other observers
     # (batch_validation, the report) may still be holding the original.
-    if ncbi_info["symbol"] != entry.gene_symbol:
-        warnings.append(f"Normalized '{entry.gene_symbol}' -> '{ncbi_info['symbol']}'")
-        normalized = entry.model_copy(update={"gene_symbol": ncbi_info["symbol"]})
+    if official_symbol != entry.gene_symbol:
+        normalized = entry.model_copy(update={"gene_symbol": official_symbol})
     else:
         normalized = entry
 
-    # Stage 3: GWAS trait validation (warnings only - unknown traits allowed)
-    warnings.extend(
-        f"Unknown GWAS trait: {trait}"
-        for trait in normalized.gwas_trait
-        if trait not in VALID_GWAS_TRAITS
-    )
-
-    return ValidationResult(True, [], warnings, normalized)
+    return ValidationResult(True, [], normalized)
 
 
 async def verify_ncbi_gene(
     symbol: str, *, config: PipelineConfig | None = None
-) -> dict[str, Any] | None:
+) -> str | None:
     """Query NCBI Gene database to verify gene symbol.
 
     Results are cached; concurrent callers for the same symbol share one
@@ -283,7 +267,7 @@ async def verify_ncbi_gene(
 
 async def _fetch_ncbi_gene_uncached(
     symbol: str, *, config: PipelineConfig | None = None
-) -> dict[str, Any] | None:
+) -> str | None:
     """Internal: fetch gene from NCBI without caching.
 
     Args:
@@ -318,24 +302,24 @@ async def _fetch_ncbi_gene_uncached(
         data = resp.json()
         if data["esearchresult"]["count"] != "0":
             gene_id = data["esearchresult"]["idlist"][0]
-            return await fetch_gene_details(gene_id, config=config)
+            return await _fetch_official_gene_symbol(gene_id, config=config)
     except (KeyError, IndexError) as e:
         logger.warning(f"Unexpected NCBI response format for gene {symbol}: {e}")
 
     return None
 
 
-async def fetch_gene_details(
+async def _fetch_official_gene_symbol(
     gene_id: str, *, config: PipelineConfig | None = None
-) -> dict[str, Any] | None:
-    """Fetch gene details from NCBI using esummary.
+) -> str | None:
+    """Fetch the official gene symbol from NCBI using esummary.
 
     Args:
         gene_id: NCBI Gene ID.
         config: Pipeline configuration for retry settings.
 
     Returns:
-        Gene metadata dict if successful, None otherwise.
+        Official gene symbol if successful, None otherwise.
     """
     params = {"db": "gene", "id": gene_id, "retmode": "json"}
 
@@ -367,15 +351,8 @@ async def fetch_gene_details(
             )
             return None
 
-        aliases = gene_data.get("otheraliases", "")
-        return {
-            "gene_id": gene_id,
-            "symbol": symbol,
-            "description": gene_data.get("description", ""),
-            "chromosome": gene_data.get("chromosome", ""),
-            "aliases": aliases.split(", ") if aliases else [],
-        }
-    except (KeyError, json.JSONDecodeError) as e:
+        return symbol
+    except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse NCBI response for gene_id {gene_id}: {e}")
 
     return None

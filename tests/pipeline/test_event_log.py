@@ -1,76 +1,41 @@
+import json
+import sqlite3
+
 from pipeline.event_log import EventLog
 
 
-def test_record_and_retrieve(tmp_path):
-    """Record an event and verify get_pending() returns it."""
+def _read_events(db_path: str) -> list[tuple[str, dict, str]]:
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT event_type, payload, created_at FROM events ORDER BY id"
+        ).fetchall()
+    return [
+        (event_type, json.loads(payload), created_at)
+        for event_type, payload, created_at in rows
+    ]
+
+
+def test_record_persists_event(tmp_path):
     db_path = str(tmp_path / "events.db")
-    log = EventLog(db_path)
-    try:
-        event_id = log.record("pipeline_completed", {"genes": 5})
-        assert event_id == 1
 
-        pending = log.get_pending()
-        assert len(pending) == 1
-        assert pending[0]["id"] == 1
-        assert pending[0]["event_type"] == "pipeline_completed"
-        assert pending[0]["payload"] == {"genes": 5}
-    finally:
-        log.close()
+    with EventLog(db_path) as log:
+        log.record("pipeline_completed", {"genes": 5})
+
+    events = _read_events(db_path)
+    assert len(events) == 1
+    assert events[0][0] == "pipeline_completed"
+    assert events[0][1] == {"genes": 5}
+    assert events[0][2]
 
 
-def test_mark_notified(tmp_path):
-    """After marking notified, get_pending() returns empty."""
+def test_multiple_events_preserve_order(tmp_path):
     db_path = str(tmp_path / "events.db")
-    log = EventLog(db_path)
-    try:
-        event_id = log.record("pipeline_completed", {"genes": 3})
-        log.mark_notified([event_id])
 
-        pending = log.get_pending()
-        assert len(pending) == 0
-    finally:
-        log.close()
+    with EventLog(db_path) as log:
+        log.record("pipeline_completed", {"run": 1})
+        log.record("pipeline_completed", {"run": 2})
 
-
-def test_multiple_events(tmp_path):
-    """Multiple events are all returned as pending."""
-    db_path = str(tmp_path / "events.db")
-    log = EventLog(db_path)
-    try:
-        id1 = log.record("pipeline_completed", {"run": 1})
-        id2 = log.record("pipeline_completed", {"run": 2})
-
-        pending = log.get_pending()
-        assert len(pending) == 2
-        assert pending[0]["id"] == id1
-        assert pending[1]["id"] == id2
-    finally:
-        log.close()
-
-
-def test_mark_notified_empty_list(tmp_path):
-    """Marking an empty list is a no-op."""
-    db_path = str(tmp_path / "events.db")
-    log = EventLog(db_path)
-    try:
-        log.record("test", {})
-        log.mark_notified([])  # should not raise
-        assert len(log.get_pending()) == 1
-    finally:
-        log.close()
-
-
-def test_partial_mark(tmp_path):
-    """Marking one of two events leaves the other pending."""
-    db_path = str(tmp_path / "events.db")
-    log = EventLog(db_path)
-    try:
-        id1 = log.record("first", {})
-        id2 = log.record("second", {})
-
-        log.mark_notified([id1])
-        pending = log.get_pending()
-        assert len(pending) == 1
-        assert pending[0]["id"] == id2
-    finally:
-        log.close()
+    assert [payload for _, payload, _ in _read_events(db_path)] == [
+        {"run": 1},
+        {"run": 2},
+    ]
