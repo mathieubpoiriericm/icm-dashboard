@@ -1,7 +1,5 @@
 """LLM-based gene extraction — caching dispatcher over provider backends."""
 
-from __future__ import annotations
-
 import logging
 
 from pipeline.config import PipelineConfig

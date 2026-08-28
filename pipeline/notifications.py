@@ -4,8 +4,6 @@ Sends pipeline run digests via Apprise (multi-channel) using a
 Jinja2-rendered Markdown body.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime

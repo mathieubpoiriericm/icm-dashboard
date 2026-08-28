@@ -4,8 +4,6 @@ This module provides efficient multi-source text fetching for academic papers,
 supporting PubMed Central, Unpaywall, and abstract fallback.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import os

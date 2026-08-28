@@ -4,8 +4,6 @@ Reads database connection parameters from environment variables (same ones
 used by the pipeline) and runs migrations using raw SQL.
 """
 
-from __future__ import annotations
-
 import os
 import sys
 from logging.config import fileConfig

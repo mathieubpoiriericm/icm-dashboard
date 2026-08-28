@@ -3,8 +3,6 @@
 Provides connection pooling, batch operations, and safe SQL execution.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import os

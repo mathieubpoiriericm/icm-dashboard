@@ -4,8 +4,6 @@ Uses NCBI Entrez API to search PubMed for recent publications.
 Requires ENTREZ_EMAIL environment variable (NCBI policy).
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import os

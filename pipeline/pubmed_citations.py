@@ -4,8 +4,6 @@ Fetches citation details (authors, title, journal, DOI) from PubMed
 and formats them for dashboard display.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import re

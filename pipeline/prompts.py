@@ -6,8 +6,6 @@ iterated on without touching extraction code.
 Supports versioned prompts (v1, v2, v3, v4, v5) for A/B testing during tuning.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from dataclasses import dataclass

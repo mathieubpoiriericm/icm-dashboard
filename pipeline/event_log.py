@@ -4,8 +4,6 @@ Records pipeline events and tracks notification delivery status,
 enabling cross-run deduplication and audit trails.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import sqlite3

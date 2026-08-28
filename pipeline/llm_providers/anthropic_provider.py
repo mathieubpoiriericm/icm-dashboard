@@ -4,8 +4,6 @@ Uses the Anthropic streaming API with adaptive thinking, structured
 outputs (JSON Schema constrained decoding), and prompt caching.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging

@@ -1,7 +1,5 @@
 """LLM provider abstraction — pluggable backends for gene extraction."""
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 

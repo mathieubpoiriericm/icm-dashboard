@@ -10,8 +10,6 @@ default to NULL on INSERT and are omitted from the ON CONFLICT update set,
 so existing curator edits are preserved across runs.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging

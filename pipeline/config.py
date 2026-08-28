@@ -5,8 +5,6 @@ environment variable (prefixed with ``PIPELINE_``).  Modules accept a
 ``PipelineConfig`` instance instead of defining their own constants.
 """
 
-from __future__ import annotations
-
 import os
 import re
 from collections.abc import Callable

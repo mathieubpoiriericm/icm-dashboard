@@ -11,8 +11,6 @@ Checks:
 4. Per-paper gene count sanity (>20 genes from one paper = unusual)
 """
 
-from __future__ import annotations
-
 import logging
 from collections import Counter, defaultdict
 

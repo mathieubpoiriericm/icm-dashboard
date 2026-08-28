@@ -1,7 +1,5 @@
 """Shared LRU cache eviction utilities for pipeline modules."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from collections import OrderedDict

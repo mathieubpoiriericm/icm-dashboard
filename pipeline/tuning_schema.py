@@ -1,7 +1,5 @@
 """Shared tuning-run CSV schema metadata."""
 
-from __future__ import annotations
-
 TUNING_RUN_CSV_COLUMNS: list[str] = [
     "run_id",
     "timestamp",

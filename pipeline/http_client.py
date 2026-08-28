@@ -5,8 +5,6 @@ ncbi_gene_fetch, uniprot_fetch, pubmed_citations, validation,
 and pdf_retrieval.
 """
 
-from __future__ import annotations
-
 import asyncio
 from typing import Any
 

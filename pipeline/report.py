@@ -4,8 +4,6 @@ Assembles per-paper gene data, metrics, and configuration into a single
 report structure used for both the JSON file and terminal output.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from datetime import UTC, datetime

@@ -4,8 +4,6 @@ Provides lightweight, memory-efficient dataclasses for accumulating
 metrics during pipeline execution.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any
 

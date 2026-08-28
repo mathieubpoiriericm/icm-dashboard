@@ -4,8 +4,6 @@ Fetches gene metadata (uid, description, aliases) from NCBI Gene database
 and stores results in PostgreSQL for dashboard consumption.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging

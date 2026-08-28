@@ -4,8 +4,6 @@ Validates extracted genes against NCBI Gene database with caching
 to avoid redundant API calls for repeated gene symbols.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging

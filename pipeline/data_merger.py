@@ -3,8 +3,6 @@
 Handles merging new gene entries into PostgreSQL with batch operations.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Sequence
 from typing import Any, TypedDict

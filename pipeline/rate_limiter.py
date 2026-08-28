@@ -5,8 +5,6 @@ errors rather than reacting to them. Supports both requests-per-minute
 (RPM) and tokens-per-minute (TPM) tracking.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import random
