@@ -264,7 +264,8 @@ def _parse_pubmed_xml(pmid: str, xml_content: bytes) -> PubMedCitation | None:
         doi = None
         for article_id in article.findall(".//ArticleId"):
             if article_id.get("IdType") == "doi":
-                doi = article_id.text
+                doi_text = article_id.text
+                doi = doi_text if isinstance(doi_text, str) else None
                 break
 
         # Format the citation

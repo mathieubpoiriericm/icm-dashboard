@@ -405,7 +405,8 @@ async def fetch_paper_metadata(pmid: str) -> MetadataResult:
 
         root = etree.fromstring(resp.content, parser=SAFE_XML_PARSER)
         doi_elem = root.find(".//ArticleId[@IdType='doi']")
-        doi = doi_elem.text if doi_elem is not None else None
+        doi_text = doi_elem.text if doi_elem is not None else None
+        doi = doi_text if isinstance(doi_text, str) else None
         return {"pmid": pmid, "doi": doi}
 
     except httpx.TimeoutException:

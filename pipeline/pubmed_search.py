@@ -13,7 +13,7 @@ import warnings
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from http.client import HTTPException
-from typing import Final
+from typing import Final, Protocol, TypedDict, cast
 from urllib.error import HTTPError, URLError
 
 from Bio import Entrez
@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 _entrez_configured: bool = False
+
+
+class _EntrezConfiguration(Protocol):
+    """Writable Entrez globals whose upstream stubs are typed as ``None``."""
+
+    email: str
+    api_key: str | None
 
 
 def _configure_entrez() -> None:
@@ -41,9 +48,9 @@ def _configure_entrez() -> None:
             stacklevel=3,
         )
 
-    # Bio.Entrez stubs type email/api_key as None; assigning strings is correct.
-    Entrez.email = email  # ty: ignore[invalid-assignment]
-    Entrez.api_key = api_key  # ty: ignore[invalid-assignment]
+    entrez_config = cast(_EntrezConfiguration, Entrez)
+    entrez_config.email = email
+    entrez_config.api_key = api_key
     _entrez_configured = True
 
 
@@ -83,6 +90,15 @@ GENETIC_TERMS: Final[tuple[str, ...]] = (
 
 class PubMedSearchError(Exception):
     """Raised when PubMed search fails."""
+
+
+class _EntrezSearchResult(TypedDict, total=False):
+    """Subset of Entrez ``esearch`` fields consumed by this module."""
+
+    IdList: list[str]
+    Count: str | int
+    WebEnv: str
+    QueryKey: str
 
 
 def _build_query() -> str:
@@ -147,7 +163,10 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
                 usehistory="y",
             )
         )
-        results = await asyncio.to_thread(Entrez.read, handle)
+        results = cast(
+            _EntrezSearchResult,
+            await asyncio.to_thread(Entrez.read, handle),
+        )
     except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
         raise PubMedSearchError(f"Entrez API call failed: {e}") from e
 
@@ -175,7 +194,10 @@ async def search_recent_papers(days_back: int = 7) -> list[str]:
                             query_key=query_key,
                         )
                     )
-                    batch = await asyncio.to_thread(Entrez.read, handle)
+                    batch = cast(
+                        _EntrezSearchResult,
+                        await asyncio.to_thread(Entrez.read, handle),
+                    )
                 except (URLError, HTTPError, HTTPException, OSError, RuntimeError) as e:
                     logger.warning(f"PubMed pagination failed at offset {fetched}: {e}")
                     pagination_error = True

@@ -90,3 +90,13 @@ extra-paths = ["scripts"]
 [tool.ty.rules]
 # Third-party packages may not have type stubs available
 unresolved-import = "warn"
+
+[tool.pyrefly]
+project-includes = ["pipeline/**/*.py"]
+python-version = "3.14"
+search-path = ["."]
+
+[tool.basedpyright]
+include = ["pipeline"]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"

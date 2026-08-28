@@ -14,6 +14,7 @@ Checks:
 from __future__ import annotations
 
 import logging
+from collections import Counter, defaultdict
 
 import pandas as pd
 import pandera.pandas as pa
@@ -89,23 +90,22 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # Check 1: Gene symbol duplication across papers
     # A gene appearing in many papers is expected, but >3 unique papers
     # extracting the same gene in one batch may indicate over-extraction.
-    if "pmid" in df.columns and df["pmid"].notna().any():
-        gene_paper_counts = (
-            df[df["pmid"].notna() & (df["pmid"] != "")]
-            .groupby("gene_symbol")["pmid"]
-            .nunique()
-        )
-        for symbol, count in gene_paper_counts.items():
-            if count > 3:
-                warnings.append(
-                    f"Gene '{symbol}' extracted from {count} different papers "
-                    f"in this batch (>3 — verify not over-extracted)"
-                )
+    papers_by_gene: defaultdict[str, set[str]] = defaultdict(set)
+    for gene in genes:
+        if gene.pmid:
+            papers_by_gene[gene.gene_symbol].add(gene.pmid)
+    for symbol, paper_ids in papers_by_gene.items():
+        count = len(paper_ids)
+        if count > 3:
+            warnings.append(
+                f"Gene '{symbol}' extracted from {count} different papers "
+                f"in this batch (>3 — verify not over-extracted)"
+            )
 
     # Check 2: Confidence distribution
     # A mean confidence > 0.95 across the batch suggests the LLM is not
     # discriminating well between strong and weak evidence.
-    mean_confidence = df["confidence"].mean()
+    mean_confidence = sum(gene.confidence for gene in genes) / len(genes)
     if mean_confidence > 0.95:
         warnings.append(
             f"Mean confidence {mean_confidence:.3f} > 0.95 — "
@@ -115,34 +115,32 @@ def batch_validate(genes: list[GeneEntry]) -> list[str]:
     # Check 3: Null protein_name rate
     # Protein names should be findable for most genes. A high null rate
     # may indicate the LLM is skipping the protein_name field.
-    if "protein_name" in df.columns:
-        null_rate = df["protein_name"].isna().mean()
-        if null_rate > 0.3:
-            warnings.append(
-                f"protein_name null rate {null_rate:.1%} > 30% — "
-                f"check extraction prompt quality"
-            )
+    null_rate = sum(gene.protein_name is None for gene in genes) / len(genes)
+    if null_rate > 0.3:
+        warnings.append(
+            f"protein_name null rate {null_rate:.1%} > 30% — "
+            f"check extraction prompt quality"
+        )
 
     # Check 4: Per-paper gene count sanity
     # A single paper yielding >20 genes is unusual for cSVD literature.
-    if "pmid" in df.columns and df["pmid"].notna().any():
-        per_paper = df[df["pmid"].notna() & (df["pmid"] != "")].groupby("pmid").size()
-        for pmid, count in per_paper.items():
-            if count > 20:
-                warnings.append(
-                    f"PMID {pmid} yielded {count} genes (>20 is unusual — "
-                    f"verify extraction quality)"
-                )
+    genes_per_paper = Counter(gene.pmid for gene in genes if gene.pmid)
+    for pmid, count in genes_per_paper.items():
+        if count > 20:
+            warnings.append(
+                f"PMID {pmid} yielded {count} genes (>20 is unusual — "
+                f"verify extraction quality)"
+            )
 
     # Check 5: Suspiciously long summaries
     # LLMs sometimes hallucinate by copying large chunks of text instead of summarizing.
-    if "causal_evidence_summary" in df.columns:
-        summary_col = df["causal_evidence_summary"].dropna()
-        long_summaries = df.loc[summary_col[summary_col.str.len() > 1000].index]
-        for _, row in long_summaries.iterrows():
-            summary_len = len(row["causal_evidence_summary"])
+    for gene in genes:
+        if gene.causal_evidence_summary is not None:
+            summary_len = len(gene.causal_evidence_summary)
+            if summary_len <= 1000:
+                continue
             warnings.append(
-                f"Gene '{row['gene_symbol']}' in PMID {row['pmid']} has a "
+                f"Gene '{gene.gene_symbol}' in PMID {gene.pmid} has a "
                 f"suspiciously long summary ({summary_len} chars)"
             )
 

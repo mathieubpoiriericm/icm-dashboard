@@ -8,9 +8,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import asyncpg
 
@@ -102,7 +102,7 @@ class Database:
 
     @classmethod
     @asynccontextmanager
-    async def connection(cls) -> AsyncIterator[asyncpg.Connection]:
+    async def connection(cls) -> AsyncGenerator[asyncpg.Connection]:
         """Acquire a connection from the pool with automatic release.
 
         Yields:
@@ -110,7 +110,9 @@ class Database:
         """
         pool = await cls.get_pool()
         async with pool.acquire() as conn:
-            yield conn
+            # asyncpg's proxy exposes the Connection API but its inline types do
+            # not model that structural relationship.
+            yield cast(asyncpg.Connection, conn)
 
 
 async def get_existing_genes() -> set[str]:
@@ -483,7 +485,7 @@ async def record_pipeline_run(
         The id of the inserted row.
     """
     async with Database.connection() as conn:
-        row_id: int = await conn.fetchval(
+        row_id = await conn.fetchval(
             """
             INSERT INTO pipeline_runs (
                 run_timestamp, papers_processed, fulltext_retrieved,
@@ -498,6 +500,8 @@ async def record_pipeline_run(
             genes_validated,
             run_mode,
         )
+    if not isinstance(row_id, int):
+        raise RuntimeError("Database did not return an integer pipeline run id")
     logger.info("Recorded pipeline run id=%d (mode=%s)", row_id, run_mode)
     return row_id
 

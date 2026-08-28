@@ -11,7 +11,7 @@ import logging
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from rich.console import Console
 from rich.panel import Panel
@@ -26,7 +26,7 @@ from pipeline.quality_metrics import PipelineMetrics
 logger = logging.getLogger(__name__)
 
 
-class PaperSummary(TypedDict, total=False):
+class PaperSummary(TypedDict):
     """Serialisable summary for one processed paper."""
 
     pmid: str
@@ -38,23 +38,23 @@ class PaperSummary(TypedDict, total=False):
     rejected_gene_count: int
     rejected_genes: list[dict[str, Any]]
     processing_time: float
-    pdf_parse_time: float
-    llm_time: float
-    validation_time: float
+    pdf_parse_time: NotRequired[float]
+    llm_time: NotRequired[float]
+    validation_time: NotRequired[float]
 
 
-class PipelineRunData(TypedDict, total=False):
+class PipelineRunData(TypedDict):
     """Full run data used by both JSON writer and rich printer."""
 
     timestamp: str
     total_processing_time: float
     total_compute_time: float
     pipeline_config: dict[str, Any]
-    search: dict[str, int]
+    search: NotRequired[dict[str, int]]
     papers: dict[str, Any]
     genes: dict[str, Any]
     token_usage: dict[str, Any]
-    database: MergeResult | None
+    database: NotRequired[MergeResult | None]
     batch_validation_warnings: list[str]
     papers_detail: list[PaperSummary]
 
@@ -397,12 +397,15 @@ def print_rich_summary(data: PipelineRunData) -> None:
 
             # Per-step timing breakdown
             parts: list[str] = []
-            if p.get("pdf_parse_time", 0) > 0:
-                parts.append(f"pdf:{p['pdf_parse_time']:.1f}s")
-            if p.get("llm_time", 0) > 0:
-                parts.append(f"llm:{p['llm_time']:.1f}s")
-            if p.get("validation_time", 0) > 0:
-                parts.append(f"val:{p['validation_time']:.1f}s")
+            pdf_parse_time = p.get("pdf_parse_time", 0)
+            llm_time = p.get("llm_time", 0)
+            validation_time = p.get("validation_time", 0)
+            if pdf_parse_time > 0:
+                parts.append(f"pdf:{pdf_parse_time:.1f}s")
+            if llm_time > 0:
+                parts.append(f"llm:{llm_time:.1f}s")
+            if validation_time > 0:
+                parts.append(f"val:{validation_time:.1f}s")
             breakdown = " ".join(parts) if parts else ""
 
             papers_table.add_row(

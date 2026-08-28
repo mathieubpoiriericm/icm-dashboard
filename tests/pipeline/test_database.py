@@ -98,6 +98,28 @@ class TestRecordPipelineRun:
         sql = mock_conn.fetchval.call_args[0][0]
         assert "pipeline_runs" in sql
 
+    async def test_rejects_missing_returned_id(self, mocker):
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=None)
+
+        mocker.patch.object(
+            Database,
+            "connection",
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(return_value=False),
+            ),
+        )
+
+        with pytest.raises(RuntimeError, match="integer pipeline run id"):
+            await record_pipeline_run(
+                run_timestamp="2026-03-24T10:00:00+00:00",
+                papers_processed=5,
+                fulltext_retrieved=3,
+                genes_extracted=12,
+                genes_validated=10,
+            )
+
 
 # ---------------------------------------------------------------------------
 # DatabaseConfigError
@@ -213,7 +235,7 @@ class TestReferenceSqlPatterns:
         import inspect
 
         source = inspect.getsource(merge_genes_transactional)
-        assert 'string_to_array(COALESCE("references", \'\'), \';\')' in source
+        assert "string_to_array(COALESCE(\"references\", ''), ';')" in source
         assert "string_agg(val, '; ' ORDER BY first_ord)" in source
         assert "GROUP BY val" in source
 
